@@ -1,0 +1,1 @@
+Amply provides quick access to supported Android battery charge-protection modes. On validated devices it can temporarily allow one full charge and restore the protective limit automatically. Direct control requires user-authorized WRITE_SECURE_SETTINGS or Shizuku access.

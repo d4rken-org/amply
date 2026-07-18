@@ -1,0 +1,59 @@
+# Architecture
+
+Amply follows the feature/core/ui organization used by CAPod and Octi, CAPod's short-lived tile and Glance entry-point patterns, and SD Maid SE's typed Shizuku UserService boundary.
+
+## Package layout
+
+Code is grouped by feature rather than framework layer:
+
+- `charging/core`: policies, device capability checks, OEM adapters, WSS, and Shizuku
+- `fullcharge/core`: temporary sessions, recovery, and the reconnect gesture
+- `main/ui`: activity, onboarding, dashboard, settings screens, setup guide, tile, and widget
+- `diagnostics/core` and `diagnostics/ui`: privileged settings comparison and its guided UI
+- `common/theming`: persisted brand, Material You, mode, and contrast preferences
+- `common/settings`: reusable hierarchical settings rows and section components
+- `common/debug`: opt-in debug sessions and logging backends
+- `common`: the shared DataStore owner and cross-feature primitives
+
+Feature-specific preference facades live with their owning feature while sharing one process-safe DataStore instance.
+
+## UI shell
+
+The root theme uses explicit paired light/dark brand schemes so every foreground color has a matching surface color. Material You is an opt-in theme style rather than an implicit device-dependent default. Theme mode, style, and accent are persisted in DataStore and exposed from General settings.
+
+First run presents the product intent and the complete WSS/Shizuku setup guide. The same guide is rendered on the dashboard whenever durable WSS is absent. Settings use an index plus focused General, Support, Changelog, Acknowledgements, and Privacy sub-screens; translation and project-help destinations remain external. The developer-facing setting-discovery workflow lives in a Diagnostics sub-screen and is only listed when an installed package declares Shizuku's API permission.
+
+Shizuku installation detection intentionally resolves the owner of `ShizukuProvider.PERMISSION` rather than checking a fixed package name. Permissions use a global namespace, so this recognizes renamed forks and Shizuku's hidden-package mode without broad installed-package visibility.
+
+## Debug logging
+
+`Logging` fans structured events out to independent backends. Debug builds always attach Logcat; Support can attach a synchronized file logger after an explicit consent dialog. Stopping a recording packages the event log and basic build/device metadata into a zip in private cache storage. Nothing is transmitted automatically: Android's share sheet is opened only after a separate user action, and completed recordings can be deleted in-app.
+
+## Data flow
+
+`AdapterRegistry` selects an OEM adapter from immutable device information. `AccessResolver` independently probes direct WSS and Shizuku. `ChargingRepository` selects the strongest backend per operation: Shizuku for reads, direct WSS for durable writes, then Shizuku for verification when both are available.
+
+`ChargeObservation` is deliberately not a Boolean. A state can be verified, merely last-requested, unknown, unsupported, or blocked on setup. Hidden Pixel secure settings are never described as verified from WSS-only access. On supported Pixels, Amply also consumes `BatteryManager.EXTRA_CHARGING_STATUS`: long-life (`4`) verifies that the fixed limit is active and adaptive (`5`) verifies an active adaptive profile. Normal (`1`) remains unknown without Shizuku because inactive adaptive charging and unrestricted charging are indistinguishable.
+
+While a temporary session is active, the foreground service observes the adapter's settings URIs. An unexpected native/system change cancels the session without restoring, so Amply cannot overwrite a newer external choice.
+
+## Pixel adapter
+
+The adapter writes only:
+
+- `secure/adaptive_charging_enabled`
+- `secure/charge_optimization_mode`
+
+Fixed 80% writes adaptive `0` then mode `1`; unrestricted writes mode `0` then adaptive `0`; adaptive writes mode `0` then adaptive `1`. The mapping and real charging behavior passed the physical-device gate on Pixel 8 / Android 17 (API 37) and Pixel 9 Pro / Android 16 (API 36). Google's Settings Intelligence worker applies external secure-setting changes asynchronously; measured charging-HAL delay was 11–12 seconds.
+
+Control requires all of: Google manufacturer, a Google-supported Pixel 6a-or-newer phone model, Android 15/API 35 or newer, telephony capability, and a resolvable Settings Intelligence charging-optimization action. This runtime capability gate avoids both a brittle exact-model allowlist and unsafe Android-version-only matching. Pixel Tablet is excluded.
+
+## Temporary session
+
+Before removing the limit, Amply persists the exact verified/requested protective policy, or the user's stored protective baseline. A `specialUse` foreground service monitors the sticky battery broadcast every 30 seconds and restores on full, disconnect after a connection, a 15-minute arming timeout, or a 24-hour safety timeout. Boot recovery attempts a direct restore and leaves a recovery notification when Shizuku must be restarted.
+
+The same service powers the opt-in reconnect gesture. It arms only when the public battery broadcast simultaneously reports external power, charging-policy hardware state `4`, a non-charging battery status, and an expected limit-range battery level. A powered-to-unpowered transition opens a 10-second window; reconnecting inside it starts the normal persisted temporary session. A persistent low-priority notification is required because Android does not deliver `ACTION_POWER_CONNECTED` and `ACTION_POWER_DISCONNECTED` to modern manifest receivers.
+
+## Privileged boundary
+
+The Shizuku process exposes a typed AIDL interface for get, put, WSS grant, and diagnostic snapshots. `ProcessBuilder` receives separate arguments; no shell string is evaluated. Writes require a valid namespace, key/value syntax, and an explicit key allowlist. Samsung and OnePlus candidate keys are present for future lab adapters but no production code invokes them.

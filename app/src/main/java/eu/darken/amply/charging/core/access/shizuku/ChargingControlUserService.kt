@@ -1,0 +1,82 @@
+package eu.darken.amply.charging.core.access.shizuku
+
+import android.content.Context
+import androidx.annotation.Keep
+import java.util.concurrent.TimeUnit
+import kotlin.system.exitProcess
+
+@Keep
+class ChargingControlUserService(
+    @Suppress("UNUSED_PARAMETER") context: Context,
+) : IChargingControlService.Stub() {
+
+    override fun readSetting(namespace: String, key: String): String? {
+        requireNamespace(namespace)
+        requireKey(key)
+        val result = runCommand("/system/bin/settings", "get", namespace, key)
+        if (result.exitCode != 0) throw IllegalStateException(result.stderr.ifBlank { "settings get failed" })
+        return result.stdout.trim().takeUnless { it == "null" || it.isEmpty() }
+    }
+
+    override fun writeSetting(namespace: String, key: String, value: String): Boolean {
+        requireNamespace(namespace)
+        requireKey(key)
+        require(key in WRITABLE_KEYS.getValue(namespace)) { "Setting is not allowlisted for writes" }
+        require(VALUE.matches(value)) { "Invalid setting value" }
+        return runCommand("/system/bin/settings", "put", namespace, key, value).exitCode == 0
+    }
+
+    override fun grantWriteSecureSettings(packageName: String): Boolean {
+        require(PACKAGE.matches(packageName)) { "Invalid package name" }
+        return runCommand(
+            "/system/bin/pm",
+            "grant",
+            packageName,
+            "android.permission.WRITE_SECURE_SETTINGS",
+        ).exitCode == 0
+    }
+
+    override fun snapshotSettings(namespace: String): String {
+        requireNamespace(namespace)
+        val result = runCommand("/system/bin/settings", "list", namespace)
+        if (result.exitCode != 0) throw IllegalStateException(result.stderr.ifBlank { "settings list failed" })
+        return result.stdout
+    }
+
+    override fun destroy() = exitProcess(0)
+
+    private fun requireNamespace(namespace: String) {
+        require(namespace in NAMESPACES) { "Unsupported settings namespace" }
+    }
+
+    private fun requireKey(key: String) {
+        require(KEY.matches(key)) { "Invalid settings key" }
+    }
+
+    private fun runCommand(vararg args: String): CommandResult {
+        val process = ProcessBuilder(*args).redirectErrorStream(false).start()
+        check(process.waitFor(10, TimeUnit.SECONDS)) {
+            process.destroyForcibly()
+            "Command timed out"
+        }
+        return CommandResult(
+            exitCode = process.exitValue(),
+            stdout = process.inputStream.bufferedReader().use { it.readText() },
+            stderr = process.errorStream.bufferedReader().use { it.readText() },
+        )
+    }
+
+    private data class CommandResult(val exitCode: Int, val stdout: String, val stderr: String)
+
+    companion object {
+        private val NAMESPACES = setOf("secure", "global", "system")
+        private val WRITABLE_KEYS = mapOf(
+            "secure" to setOf("charge_optimization_mode", "adaptive_charging_enabled"),
+            "global" to setOf("protect_battery", "battery_protection_threshold"),
+            "system" to setOf("regular_charge_protection_switch_state"),
+        )
+        private val KEY = Regex("[A-Za-z0-9_.:-]{1,160}")
+        private val VALUE = Regex("[A-Za-z0-9_.:+,/-]{1,160}")
+        private val PACKAGE = Regex("[A-Za-z][A-Za-z0-9_.]{2,200}")
+    }
+}
