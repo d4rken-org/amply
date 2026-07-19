@@ -11,6 +11,7 @@ import eu.darken.amply.charging.core.ChargingPreferences
 import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -55,6 +56,11 @@ class ChargingRepository @Inject constructor(
         applyLocked(policy, updateProtective = false)
     }
 
+    /** Re-write that forces a real settings change so a missed observer registration is re-triggered. */
+    suspend fun reapplyPersistent(policy: ChargePolicy): ApplyResult = operationMutex.withLock {
+        applyLocked(policy, updateProtective = policy != ChargePolicy.Unrestricted, forceNotify = true)
+    }
+
     suspend fun requestShizukuPermission(): Boolean {
         val result = runCatching { shizukuController.requestPermission() }.getOrDefault(false)
         refresh(if (result) "Shizuku permission granted" else "Shizuku permission was not granted")
@@ -71,8 +77,14 @@ class ChargingRepository @Inject constructor(
 
     fun shizukuManagerPackage(): String? = shizukuController.managerPackage()
 
-    private suspend fun applyLocked(policy: ChargePolicy, updateProtective: Boolean): ApplyResult {
-        log(TAG, Logging.Priority.INFO) { "apply(policy=${policy.stableId}, persistent=$updateProtective)" }
+    private suspend fun applyLocked(
+        policy: ChargePolicy,
+        updateProtective: Boolean,
+        forceNotify: Boolean = false,
+    ): ApplyResult {
+        log(TAG, Logging.Priority.INFO) {
+            "apply(policy=${policy.stableId}, persistent=$updateProtective, forceNotify=$forceNotify)"
+        }
         val selection = registry.select()
         val adapter = selection.adapter
         if (adapter == null || !selection.support.controlEnabled) {
@@ -92,7 +104,14 @@ class ChargingRepository @Inject constructor(
         }
 
         mutableState.value = state.value.copy(busy = true, message = "Applying ${policy.label}…")
-        val written = runCatching { adapter.apply(policy, backend) }.getOrDefault(false)
+        val written = try {
+            if (forceNotify) adapter.reapply(policy, backend) else adapter.apply(policy, backend)
+        } catch (e: CancellationException) {
+            // A cancelled write must not run failure side effects (state churn, notifications).
+            throw e
+        } catch (e: Exception) {
+            false
+        }
         if (!written) {
             log(TAG, Logging.Priority.ERROR) { "Settings write failed for ${policy.stableId}" }
             val observation = ChargeObservation.Unknown("The settings write failed")

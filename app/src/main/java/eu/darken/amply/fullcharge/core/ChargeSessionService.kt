@@ -11,9 +11,14 @@ import android.os.BatteryManager
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
+import eu.darken.amply.R
+import eu.darken.amply.charging.core.ChargePolicy
+import eu.darken.amply.charging.core.ChargingPreferences
+import eu.darken.amply.charging.core.ChargingRepository
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
 import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
@@ -26,6 +31,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -33,10 +40,14 @@ class ChargeSessionService : Service() {
     @Inject lateinit var manager: ChargeSessionManager
     @Inject lateinit var fullChargeStore: FullChargeStore
     @Inject lateinit var adapterRegistry: AdapterRegistry
+    @Inject lateinit var repository: ChargingRepository
+    @Inject lateinit var preferences: ChargingPreferences
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val commandMutex = Mutex()
     private val quickGesture = QuickFullChargeGesture()
     private var monitorJob: Job? = null
+    private var recoveryJob: Job? = null
     @Volatile private var monitorReady = false
     private var settingObserverRegistered = false
     @Volatile private var restoring = false
@@ -74,17 +85,7 @@ class ChargeSessionService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         log(TAG) { "Start command: action=${intent?.action ?: "<restart>"}" }
-        scope.launch {
-            when (intent?.action) {
-                ACTION_RESTORE -> restoreAndContinue()
-                ACTION_MONITOR -> continueGestureOrStop()
-                ACTION_START -> beginOrResume()
-                null -> {
-                    if (fullChargeStore.currentSession() != null) beginOrResume() else continueGestureOrStop()
-                }
-                else -> continueGestureOrStop()
-            }
-        }
+        scope.launch { commandMutex.withLock { handleCommand(intent?.action) } }
         return START_STICKY
     }
 
@@ -208,6 +209,83 @@ class ChargeSessionService : Service() {
         }
     }
 
+    // All command handling is serialized by commandMutex; recoveryJob is only touched
+    // while holding it, except for the recovery job's own tail, which re-acquires the
+    // mutex (a cancelled job aborts at that acquisition instead of blocking a canceller).
+    private suspend fun handleCommand(action: String?) {
+        when (action) {
+            ACTION_RESTORE -> if (recoveryJob?.isActive != true) restoreAndContinue()
+            ACTION_MONITOR -> if (recoveryJob?.isActive != true) continueGestureOrStop()
+            ACTION_START -> {
+                // A user-initiated session supersedes boot recovery; the new session
+                // overwrites the policy anyway. Join so a cancelled re-write cannot
+                // land after the session's own policy write.
+                recoveryJob?.let { it.cancel(); it.join() }
+                fullChargeStore.clearPendingRecoveryTarget()
+                beginOrResume()
+            }
+            ACTION_RECOVER -> startRecovery()
+            null -> when {
+                recoveryJob?.isActive == true -> Unit
+                fullChargeStore.pendingRecoveryTarget() != null -> startRecovery()
+                fullChargeStore.currentSession() != null -> beginOrResume()
+                else -> continueGestureOrStop()
+            }
+            else -> continueGestureOrStop()
+        }
+    }
+
+    private fun startRecovery() {
+        if (recoveryJob?.isActive == true) return
+        startAsForeground(SessionNotifications.recovering(this))
+        recoveryJob = scope.launch {
+            val outcome = BootRecoveryFlow(recoveryHooks).run()
+            log(TAG) { "Boot recovery outcome: $outcome" }
+            commandMutex.withLock {
+                SurfaceUpdater.update(this@ChargeSessionService)
+                continueGestureOrStop()
+            }
+        }
+    }
+
+    private val recoveryHooks = object : BootRecoveryFlow.Hooks {
+        override suspend fun currentSessionTarget() = fullChargeStore.currentSession()?.restorePolicy
+        override suspend fun pendingTarget() = fullChargeStore.pendingRecoveryTarget()
+        override suspend fun setPendingTarget(policy: ChargePolicy) =
+            fullChargeStore.setPendingRecoveryTarget(policy)
+
+        override suspend fun clearPendingTarget() = fullChargeStore.clearPendingRecoveryTarget()
+        override suspend fun restoreSession() = manager.restore().success
+        override suspend fun rewrite(policy: ChargePolicy) =
+            repository.reapplyPersistent(policy).success
+
+        override suspend fun intendedTarget() = preferences.lastRequestedNow()
+
+        override fun batterySnapshot(): BatterySnapshot? {
+            val battery = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                ?: return null
+            val level = battery.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+            val scale = battery.getIntExtra(BatteryManager.EXTRA_SCALE, 100)
+            return BatterySnapshot(
+                plugged = battery.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0,
+                percent = if (level >= 0 && scale > 0) level * 100 / scale else -1,
+                chargingState = battery.getIntExtra(BatteryManager.EXTRA_CHARGING_STATUS, 0),
+            )
+        }
+
+        override fun hardwareObservation(snapshot: BatterySnapshot) =
+            adapterRegistry.select().adapter?.decodeHardware(snapshot.chargingState, snapshot.plugged)
+
+        override fun notifyFailure(writeFailed: Boolean) = SessionNotifications.showRecovery(
+            this@ChargeSessionService,
+            if (writeFailed) R.string.recovery_notification_body
+            else R.string.recovery_notification_body_convergence,
+        )
+
+        override suspend fun tick() = delay(BootRecoveryEngine.TICK_MILLIS)
+        override fun elapsedRealtime() = SystemClock.elapsedRealtime()
+    }
+
     private suspend fun restoreAndContinue() {
         log(TAG) { "Restoring the saved charging policy" }
         restoring = true
@@ -264,5 +342,6 @@ class ChargeSessionService : Service() {
         const val ACTION_START = "eu.darken.amply.action.START_FULL_CHARGE"
         const val ACTION_RESTORE = "eu.darken.amply.action.RESTORE_CHARGE_LIMIT"
         const val ACTION_MONITOR = "eu.darken.amply.action.MONITOR_QUICK_FULL_CHARGE"
+        const val ACTION_RECOVER = "eu.darken.amply.action.RECOVER_CHARGE_LIMIT"
     }
 }

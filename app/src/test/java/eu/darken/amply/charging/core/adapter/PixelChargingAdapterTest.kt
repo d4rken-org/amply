@@ -93,6 +93,32 @@ class PixelChargingAdapterTest {
     }
 
     @Test
+    fun `reapply forces a mode change before restoring the fixed limit`() = runTest {
+        val backend = FakeBackend()
+
+        assertThat(adapter.reapply(ChargePolicy.FixedLimit(80), backend)).isTrue()
+
+        assertThat(backend.writes).containsExactly(
+            SettingMutation(SettingNamespace.SECURE, PixelChargingAdapter.KEY_MODE, "0"),
+            SettingMutation(SettingNamespace.SECURE, PixelChargingAdapter.KEY_ADAPTIVE, "0"),
+            SettingMutation(SettingNamespace.SECURE, PixelChargingAdapter.KEY_MODE, "1"),
+        ).inOrder()
+    }
+
+    @Test
+    fun `reapply forces a mode change before restoring adaptive`() = runTest {
+        val backend = FakeBackend()
+
+        assertThat(adapter.reapply(ChargePolicy.Adaptive, backend)).isTrue()
+
+        assertThat(backend.writes).containsExactly(
+            SettingMutation(SettingNamespace.SECURE, PixelChargingAdapter.KEY_MODE, "1"),
+            SettingMutation(SettingNamespace.SECURE, PixelChargingAdapter.KEY_MODE, "0"),
+            SettingMutation(SettingNamespace.SECURE, PixelChargingAdapter.KEY_ADAPTIVE, "1"),
+        ).inOrder()
+    }
+
+    @Test
     fun `adaptive values decode as verified adaptive policy`() = runTest {
         val backend = FakeBackend(
             values = mutableMapOf(
@@ -108,15 +134,37 @@ class PixelChargingAdapterTest {
 
     @Test
     fun `long life hardware state verifies fixed 80`() {
-        assertThat(PixelChargingAdapter.decodeHardwareState(4)).isEqualTo(
+        assertThat(PixelChargingAdapter.decodeHardwareState(4, plugged = true)).isEqualTo(
             ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.BATTERY_HARDWARE),
         )
     }
 
     @Test
+    fun `adaptive hardware state verifies adaptive`() {
+        assertThat(PixelChargingAdapter.decodeHardwareState(5, plugged = true)).isEqualTo(
+            ChargeObservation.Verified(ChargePolicy.Adaptive, BackendKind.BATTERY_HARDWARE),
+        )
+    }
+
+    @Test
     fun `normal hardware state does not claim unrestricted`() {
-        assertThat(PixelChargingAdapter.decodeHardwareState(1))
+        assertThat(PixelChargingAdapter.decodeHardwareState(1, plugged = true))
             .isInstanceOf(ChargeObservation.Unknown::class.java)
+    }
+
+    @Test
+    fun `unplugged long life state is not verified`() {
+        assertThat(PixelChargingAdapter.decodeHardwareState(4, plugged = false)).isNull()
+    }
+
+    @Test
+    fun `unplugged adaptive state is not verified`() {
+        assertThat(PixelChargingAdapter.decodeHardwareState(5, plugged = false)).isNull()
+    }
+
+    @Test
+    fun `unplugged temperature state is not reported`() {
+        assertThat(PixelChargingAdapter.decodeHardwareState(3, plugged = false)).isNull()
     }
 
     @Test

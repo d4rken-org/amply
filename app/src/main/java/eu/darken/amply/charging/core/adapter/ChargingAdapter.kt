@@ -22,7 +22,11 @@ interface ChargingAdapter {
 
     fun probe(device: DeviceInfo): AdapterSupport
     fun readHardware(context: Context): ChargeObservation? = null
+    fun decodeHardware(chargingState: Int, plugged: Boolean): ChargeObservation? = null
     suspend fun read(backend: AccessBackend): ChargeObservation
     suspend fun apply(policy: ChargePolicy, backend: AccessBackend): Boolean
+
+    /** Like [apply], but must produce a real settings mutation even if the values are already configured. */
+    suspend fun reapply(policy: ChargePolicy, backend: AccessBackend): Boolean = apply(policy, backend)
     fun nativeSettingsIntent(context: Context): Intent
 }

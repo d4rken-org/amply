@@ -14,4 +14,7 @@
     <string name="recovery_channel_name">Charge policy recovery</string>
     <string name="recovery_notification_title">Charge limit needs attention</string>
     <string name="recovery_notification_body">Open Amply and restart Shizuku to restore your protective policy.</string>
+    <string name="recovery_notification_body_convergence">The protective policy was rewritten, but the charging hardware has not confirmed it yet. Open Amply to check.</string>
+    <string name="recovering_notification_title">Restoring charge limit</string>
+    <string name="recovering_notification_body">Confirming the protective policy with the charging hardware.</string>
 </resources>

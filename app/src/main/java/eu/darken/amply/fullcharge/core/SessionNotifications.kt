@@ -104,7 +104,26 @@ object SessionNotifications {
             .build()
     }
 
-    fun showRecovery(context: Context) {
+    fun recovering(context: Context): Notification {
+        ensureChannels(context)
+        val openPendingIntent = PendingIntent.getActivity(
+            context,
+            5,
+            Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        return NotificationCompat.Builder(context, SESSION_CHANNEL)
+            .setSmallIcon(R.drawable.ic_amply)
+            .setContentTitle(context.getString(R.string.recovering_notification_title))
+            .setContentText(context.getString(R.string.recovering_notification_body))
+            .setContentIntent(openPendingIntent)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .build()
+    }
+
+    fun showRecovery(context: Context, bodyRes: Int = R.string.recovery_notification_body) {
         ensureChannels(context)
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(
                 context,
@@ -123,7 +142,7 @@ object SessionNotifications {
                 NotificationCompat.Builder(context, RECOVERY_CHANNEL)
                     .setSmallIcon(R.drawable.ic_amply)
                     .setContentTitle(context.getString(R.string.recovery_notification_title))
-                    .setContentText(context.getString(R.string.recovery_notification_body))
+                    .setContentText(context.getString(bodyRes))
                     .setContentIntent(openIntent)
                     .setAutoCancel(true)
                     .build(),

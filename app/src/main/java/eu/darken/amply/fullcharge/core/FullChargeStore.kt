@@ -54,6 +54,17 @@ class FullChargeStore @Inject constructor(
         }
     }
 
+    suspend fun pendingRecoveryTarget(): ChargePolicy? =
+        dataStore.store.data.first()[RECOVERY_PENDING_TARGET]?.let(ChargePolicy::fromStableId)
+
+    suspend fun setPendingRecoveryTarget(policy: ChargePolicy) {
+        dataStore.store.edit { it[RECOVERY_PENDING_TARGET] = policy.stableId }
+    }
+
+    suspend fun clearPendingRecoveryTarget() {
+        dataStore.store.edit { it.remove(RECOVERY_PENDING_TARGET) }
+    }
+
     suspend fun isQuickFullChargeEnabled(): Boolean = quickFullChargeEnabled.first()
 
     suspend fun setQuickFullChargeEnabled(enabled: Boolean) {
@@ -76,5 +87,6 @@ class FullChargeStore @Inject constructor(
         val SESSION_STARTED_AT = longPreferencesKey("session.started_at")
         val SESSION_CONNECTED = booleanPreferencesKey("session.connected_seen")
         val QUICK_FULL_CHARGE_ENABLED = booleanPreferencesKey("fullcharge.quick_replug_enabled")
+        val RECOVERY_PENDING_TARGET = stringPreferencesKey("recovery.pending_target")
     }
 }

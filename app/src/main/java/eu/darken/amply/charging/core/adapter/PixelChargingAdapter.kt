@@ -59,12 +59,16 @@ class PixelChargingAdapter @Inject constructor() : ChargingAdapter {
     override fun readHardware(context: Context): ChargeObservation? {
         val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
             ?: return null
+        val plugged = battery.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0
         val chargingState = battery.getIntExtra(
             BatteryManager.EXTRA_CHARGING_STATUS,
             CHARGING_STATE_INVALID,
         )
-        return decodeHardwareState(chargingState)
+        return decodeHardwareState(chargingState, plugged)
     }
+
+    override fun decodeHardware(chargingState: Int, plugged: Boolean): ChargeObservation? =
+        decodeHardwareState(chargingState, plugged)
 
     override suspend fun read(backend: AccessBackend): ChargeObservation {
         val mode = backend.read(SettingNamespace.SECURE, KEY_MODE)
@@ -104,6 +108,16 @@ class PixelChargingAdapter @Inject constructor() : ChargingAdapter {
         return changes.all { backend.write(it) }
     }
 
+    override suspend fun reapply(policy: ChargePolicy, backend: AccessBackend): Boolean {
+        // A same-value write from Amply's own package does not fire the settings content
+        // observer, so Settings Intelligence's policy worker never runs (verified on Pixel 7a /
+        // Android 16). Force a real change on the worker's trigger key before applying the
+        // target configuration; both keys and all values stay within the write allowlist.
+        val inverseMode = if (policy is ChargePolicy.FixedLimit) "0" else "1"
+        if (!backend.write(SettingMutation(SettingNamespace.SECURE, KEY_MODE, inverseMode))) return false
+        return apply(policy, backend)
+    }
+
     override fun nativeSettingsIntent(context: Context): Intent {
         val specific = Intent().setComponent(
             ComponentName(
@@ -137,25 +151,30 @@ class PixelChargingAdapter @Inject constructor() : ChargingAdapter {
             return generation != null && generation >= 7
         }
 
-        internal fun decodeHardwareState(chargingState: Int): ChargeObservation = when (chargingState) {
-            CHARGING_STATE_NORMAL -> ChargeObservation.Unknown(
-                "Charging hardware is normal; without Shizuku, Amply cannot distinguish unrestricted from inactive adaptive charging",
-            )
-            CHARGING_STATE_TOO_COLD -> ChargeObservation.Unknown(
-                "Charging is currently temperature-limited because the battery is too cold",
-            )
-            CHARGING_STATE_TOO_HOT -> ChargeObservation.Unknown(
-                "Charging is currently temperature-limited because the battery is too hot",
-            )
-            CHARGING_STATE_LONG_LIFE -> ChargeObservation.Verified(
-                ChargePolicy.FixedLimit(80),
-                BackendKind.BATTERY_HARDWARE,
-            )
-            CHARGING_STATE_ADAPTIVE -> ChargeObservation.Verified(
-                ChargePolicy.Adaptive,
-                BackendKind.BATTERY_HARDWARE,
-            )
-            else -> ChargeObservation.Unknown("Android did not report a recognized charging-hardware state")
+        // The sticky battery broadcast retains its last powered value, so the charging-state
+        // extra only reflects the current HAL policy while external power is present.
+        internal fun decodeHardwareState(chargingState: Int, plugged: Boolean): ChargeObservation? {
+            if (!plugged) return null
+            return when (chargingState) {
+                CHARGING_STATE_NORMAL -> ChargeObservation.Unknown(
+                    "Charging hardware is normal; without Shizuku, Amply cannot distinguish unrestricted from inactive adaptive charging",
+                )
+                CHARGING_STATE_TOO_COLD -> ChargeObservation.Unknown(
+                    "Charging is currently temperature-limited because the battery is too cold",
+                )
+                CHARGING_STATE_TOO_HOT -> ChargeObservation.Unknown(
+                    "Charging is currently temperature-limited because the battery is too hot",
+                )
+                CHARGING_STATE_LONG_LIFE -> ChargeObservation.Verified(
+                    ChargePolicy.FixedLimit(80),
+                    BackendKind.BATTERY_HARDWARE,
+                )
+                CHARGING_STATE_ADAPTIVE -> ChargeObservation.Verified(
+                    ChargePolicy.Adaptive,
+                    BackendKind.BATTERY_HARDWARE,
+                )
+                else -> ChargeObservation.Unknown("Android did not report a recognized charging-hardware state")
+            }
         }
 
         private val PIXEL_GENERATION = Regex("""Pixel (\d+)(?:\D.*)?""", RegexOption.IGNORE_CASE)

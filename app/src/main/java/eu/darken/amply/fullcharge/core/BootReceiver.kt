@@ -14,22 +14,23 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class BootReceiver : BroadcastReceiver() {
     @Inject lateinit var sessionStore: FullChargeStore
-    @Inject lateinit var manager: ChargeSessionManager
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
         val pending = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                if (sessionStore.currentSession() != null) {
-                    val result = manager.restore()
-                    if (!result.success) SessionNotifications.showRecovery(context)
-                }
-                if (sessionStore.isQuickFullChargeEnabled()) {
+                // A single intent: the service sequences recovery before gesture monitoring,
+                // so their policy writes cannot interleave.
+                val action = BootRecoveryFlow.bootAction(
+                    sessionExists = sessionStore.currentSession() != null,
+                    pendingRecovery = sessionStore.pendingRecoveryTarget() != null,
+                    gestureEnabled = sessionStore.isQuickFullChargeEnabled(),
+                )
+                if (action != null) {
                     ContextCompat.startForegroundService(
                         context,
-                        Intent(context, ChargeSessionService::class.java)
-                            .setAction(ChargeSessionService.ACTION_MONITOR),
+                        Intent(context, ChargeSessionService::class.java).setAction(action),
                     )
                 }
             } finally {
