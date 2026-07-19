@@ -19,6 +19,7 @@ object SessionNotifications {
     const val SESSION_ID = 4101
     private const val RECOVERY_ID = 4102
     private const val SESSION_CHANNEL = "temporary_full_charge"
+    private const val GESTURE_CHANNEL = "reconnect_gesture"
     private const val RECOVERY_CHANNEL = "charge_policy_recovery"
 
     fun ensureChannels(context: Context) {
@@ -30,6 +31,18 @@ object SessionNotifications {
                 NotificationManager.IMPORTANCE_LOW,
             ).apply {
                 description = "Shows while Amply temporarily allows charging to 100%"
+                setShowBadge(false)
+            },
+        )
+        // Its own channel at DEFAULT importance so the persistent reconnect monitor is
+        // reliably visible in the status bar (the shared low channel was easy to miss).
+        manager.createNotificationChannel(
+            NotificationChannel(
+                GESTURE_CHANNEL,
+                context.getString(R.string.gesture_channel_name),
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply {
+                description = "Shows while the reconnect-for-100% gesture is watching for a replug"
                 setShowBadge(false)
             },
         )
@@ -88,7 +101,7 @@ object SessionNotifications {
             Intent(context, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        return NotificationCompat.Builder(context, SESSION_CHANNEL)
+        return NotificationCompat.Builder(context, GESTURE_CHANNEL)
             .setSmallIcon(R.drawable.ic_amply)
             .setContentTitle(context.getString(R.string.gesture_notification_title))
             .setContentText(
@@ -101,6 +114,9 @@ object SessionNotifications {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            // Show at once instead of the ~10s foreground-service deferral, so the armed
+            // "reconnect now" cue is visible within its 10-second window.
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build()
     }
 

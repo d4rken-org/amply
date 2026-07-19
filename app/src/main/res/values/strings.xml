@@ -8,6 +8,7 @@
     <string name="session_notification_armed">Waiting for a charger</string>
     <string name="session_notification_active">The battery limit will return at 100% or when unplugged.</string>
     <string name="session_notification_restore">Restore now</string>
+    <string name="gesture_channel_name">Reconnect gesture</string>
     <string name="gesture_notification_title">Quick full charge is on</string>
     <string name="gesture_notification_waiting">When the 80% limit pauses charging, reconnect the cable to charge fully once.</string>
     <string name="gesture_notification_armed">80% limit reached. Reconnect within 10 seconds to charge fully once.</string>
