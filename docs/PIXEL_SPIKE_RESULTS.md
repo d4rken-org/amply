@@ -112,3 +112,14 @@ A session armed under a simulated unplug wrote the unrestricted policy immediate
 2. **Hardware-state verification can be stale while unplugged** (fixed and re-verified 2026-07-19). With no external power, the sticky battery broadcast retained long-life state `4` while the configured setting and sysfs policy were already unrestricted, so the dashboard showed a hardware-confirmed "80% limit active" above an active full-charge session card. Battery-broadcast state now only counts as verification while external power is present; unplugged, the dashboard truthfully falls back to the last-requested description and returns to hardware-confirmed on replug.
 
 A test-harness note: `cmd statusbar click-tile` on a collapsed panel can queue the click until the panel is next expanded; physical taps behaved correctly.
+
+## Unsupported-device sweep
+
+Tested on 2026-07-19 with the same build:
+
+- Google Pixel 3a (`sargo`), Android 12 / API 32
+- Google Pixel 2 (`walleye`), Android 9 / API 28
+
+On both devices the capability gate correctly reported "Requires Android 15 or newer", the one-time-charge button and policy selector were disabled, tapping them wrote nothing, the Quick Settings tile did not start a session, all settings screens opened, the Diagnostics entry stayed hidden without a Shizuku installation, and no crashes occurred down to API 28. No permissions were granted and no device settings were modified.
+
+One presentational gap: the onboarding and dashboard still show the full "Set up charge control" card (Shizuku and ADB grant paths) on unsupported devices, inviting a setup that can never enable control there. The card should be suppressed or replaced with the unsupported explanation when the adapter gate is closed. A Pixel XL / Android 10 pass is still outstanding (device was offline during the sweep).
