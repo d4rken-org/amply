@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.main.ui.dashboard.DashboardUiState
 
 @Composable
@@ -37,6 +38,11 @@ fun AccessSetupGuide(
     onCopyAdb: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // A device that fails the adapter gate can never gain control; offering the
+    // permission setup would invite a grant that does nothing. Gate on the confirmed
+    // observation rather than controlEnabled, whose pre-refresh default is false.
+    if (state.charging.observation is ChargeObservation.Unsupported) return
+
     val access = state.charging.access
     val wssReady = access?.direct?.ready == true
     val shizukuRunning = access?.shizuku?.available == true

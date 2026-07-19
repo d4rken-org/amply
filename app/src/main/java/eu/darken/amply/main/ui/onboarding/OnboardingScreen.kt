@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.main.ui.dashboard.DashboardUiState
 import eu.darken.amply.main.ui.setup.AccessSetupGuide
 
@@ -144,7 +145,10 @@ fun OnboardingScreen(
                 }
             } else {
                 OutlinedButton(onClick = onContinue, modifier = Modifier.fillMaxWidth()) {
-                    Text("Set up later")
+                    Text(
+                        if (state.charging.observation is ChargeObservation.Unsupported) "Continue"
+                        else "Set up later",
+                    )
                 }
             }
         }

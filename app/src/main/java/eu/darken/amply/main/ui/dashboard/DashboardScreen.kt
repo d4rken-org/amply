@@ -112,7 +112,9 @@ fun DashboardScreen(
                     onEnabledChange = onQuickFullChargeChange,
                 )
             }
-            if (state.charging.access?.shizuku?.ready != true) {
+            if (state.charging.observation !is ChargeObservation.Unsupported &&
+                state.charging.access?.shizuku?.ready != true
+            ) {
                 item {
                     ShizukuBanner(
                         running = state.charging.access?.shizuku?.available == true,
