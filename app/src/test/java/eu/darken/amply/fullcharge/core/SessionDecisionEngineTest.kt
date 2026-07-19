@@ -56,6 +56,51 @@ class SessionDecisionEngineTest {
         ).isEqualTo(SessionDecision.RESTORE_SAFETY_TIMEOUT)
     }
 
+    @Test
+    fun `release timeout constants are the real durations`() {
+        assertThat(SessionDecisionEngine.ARM_TIMEOUT_MILLIS).isEqualTo(15 * 60 * 1000L)
+        assertThat(SessionDecisionEngine.SAFETY_TIMEOUT_MILLIS).isEqualTo(24 * 60 * 60 * 1000L)
+    }
+
+    @Test
+    fun `custom safety timeout shortens the safety restore`() {
+        val decision = SessionDecisionEngine.decide(
+            session = ChargeSessionRecord(ChargePolicy.FixedLimit(80), started, connectedSeen = true),
+            nowMillis = started + 120_000L,
+            plugged = true,
+            full = false,
+            armTimeoutMillis = 60_000L,
+            safetyTimeoutMillis = 120_000L,
+        )
+        assertThat(decision).isEqualTo(SessionDecision.RESTORE_SAFETY_TIMEOUT)
+    }
+
+    @Test
+    fun `custom arm timeout shortens the arm restore`() {
+        val decision = SessionDecisionEngine.decide(
+            session = ChargeSessionRecord(ChargePolicy.FixedLimit(80), started, connectedSeen = false),
+            nowMillis = started + 60_000L,
+            plugged = false,
+            full = false,
+            armTimeoutMillis = 60_000L,
+            safetyTimeoutMillis = 120_000L,
+        )
+        assertThat(decision).isEqualTo(SessionDecision.RESTORE_ARM_TIMEOUT)
+    }
+
+    @Test
+    fun `below a shortened safety timeout still continues`() {
+        val decision = SessionDecisionEngine.decide(
+            session = ChargeSessionRecord(ChargePolicy.FixedLimit(80), started, connectedSeen = true),
+            nowMillis = started + 119_000L,
+            plugged = true,
+            full = false,
+            armTimeoutMillis = 60_000L,
+            safetyTimeoutMillis = 120_000L,
+        )
+        assertThat(decision).isEqualTo(SessionDecision.CONTINUE)
+    }
+
     private fun decide(age: Long, connectedSeen: Boolean, plugged: Boolean, full: Boolean) =
         SessionDecisionEngine.decide(
             session = ChargeSessionRecord(ChargePolicy.FixedLimit(80), started, connectedSeen),

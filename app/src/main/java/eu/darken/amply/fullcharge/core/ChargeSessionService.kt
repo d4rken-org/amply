@@ -15,6 +15,7 @@ import android.os.SystemClock
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
+import eu.darken.amply.BuildConfig
 import eu.darken.amply.R
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingPreferences
@@ -162,7 +163,18 @@ class ChargeSessionService : Service() {
         val session = fullChargeStore.currentSession()
         if (session != null) {
             val full = status == BatteryManager.BATTERY_STATUS_FULL || percent >= 100
-            when (SessionDecisionEngine.decide(session, System.currentTimeMillis(), plugged, full)) {
+            val shortTimeouts = BuildConfig.DEBUG && fullChargeStore.isTestShortTimeouts()
+            val decision = SessionDecisionEngine.decide(
+                session = session,
+                nowMillis = System.currentTimeMillis(),
+                plugged = plugged,
+                full = full,
+                armTimeoutMillis = if (shortTimeouts) DEBUG_ARM_TIMEOUT_MILLIS
+                else SessionDecisionEngine.ARM_TIMEOUT_MILLIS,
+                safetyTimeoutMillis = if (shortTimeouts) DEBUG_SAFETY_TIMEOUT_MILLIS
+                else SessionDecisionEngine.SAFETY_TIMEOUT_MILLIS,
+            )
+            when (decision) {
                 SessionDecision.MARK_CONNECTED -> {
                     manager.markConnected()
                     startAsForeground(SessionNotifications.session(this, connected = true))
@@ -343,5 +355,9 @@ class ChargeSessionService : Service() {
         const val ACTION_RESTORE = "eu.darken.amply.action.RESTORE_CHARGE_LIMIT"
         const val ACTION_MONITOR = "eu.darken.amply.action.MONITOR_QUICK_FULL_CHARGE"
         const val ACTION_RECOVER = "eu.darken.amply.action.RECOVER_CHARGE_LIMIT"
+
+        // Debug-only shortened timeouts (see FullChargeStore.testShortTimeouts); never used in release.
+        private const val DEBUG_ARM_TIMEOUT_MILLIS = 60_000L
+        private const val DEBUG_SAFETY_TIMEOUT_MILLIS = 120_000L
     }
 }

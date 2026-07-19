@@ -66,6 +66,7 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val state by viewModel.state.collectAsState()
                     val debugState by settingsViewModel.debugState.collectAsState()
+                    val testShortTimeouts by settingsViewModel.testShortTimeouts.collectAsState()
                     val diagnosticsState by diagnosticsViewModel.state.collectAsState()
                     var destination by rememberSaveable { mutableStateOf(SettingsDestination.DASHBOARD) }
                 var notificationAction by remember { mutableStateOf<NotificationAction?>(null) }
@@ -207,6 +208,8 @@ class MainActivity : ComponentActivity() {
                             onStopDebugLog = settingsViewModel::stopDebugLog,
                             onShareDebugLog = settingsViewModel::shareLatestDebugLog,
                             onClearDebugLogs = settingsViewModel::clearDebugLogs,
+                            testShortTimeouts = testShortTimeouts,
+                            onTestShortTimeoutsChange = settingsViewModel::setTestShortTimeouts,
                         )
                         SettingsDestination.ACKNOWLEDGEMENTS -> AcknowledgementsScreen(
                             onBack = { destination = SettingsDestination.SETTINGS },

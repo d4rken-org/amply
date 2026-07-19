@@ -20,14 +20,16 @@ object SessionDecisionEngine {
         nowMillis: Long,
         plugged: Boolean,
         full: Boolean,
+        armTimeoutMillis: Long = ARM_TIMEOUT_MILLIS,
+        safetyTimeoutMillis: Long = SAFETY_TIMEOUT_MILLIS,
     ): SessionDecision {
         val age = (nowMillis - session.startedAtMillis).coerceAtLeast(0)
         return when {
             full -> SessionDecision.RESTORE_FULL
-            age >= SAFETY_TIMEOUT_MILLIS -> SessionDecision.RESTORE_SAFETY_TIMEOUT
+            age >= safetyTimeoutMillis -> SessionDecision.RESTORE_SAFETY_TIMEOUT
             session.connectedSeen && !plugged -> SessionDecision.RESTORE_DISCONNECTED
             !session.connectedSeen && plugged -> SessionDecision.MARK_CONNECTED
-            !session.connectedSeen && !plugged && age >= ARM_TIMEOUT_MILLIS ->
+            !session.connectedSeen && !plugged && age >= armTimeoutMillis ->
                 SessionDecision.RESTORE_ARM_TIMEOUT
             else -> SessionDecision.CONTINUE
         }

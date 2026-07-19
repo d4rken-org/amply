@@ -28,6 +28,11 @@ class FullChargeStore @Inject constructor(
         it[QUICK_FULL_CHARGE_ENABLED] ?: false
     }
 
+    /** Debug-only testing aid: shorten the arm/safety session timeouts. Honored only in debug builds. */
+    val testShortTimeouts: Flow<Boolean> = dataStore.store.data.map {
+        it[TEST_SHORT_TIMEOUTS] ?: false
+    }
+
     suspend fun currentSession(): ChargeSessionRecord? = session.first()
 
     suspend fun startSession(restorePolicy: ChargePolicy, startedAtMillis: Long) {
@@ -71,6 +76,12 @@ class FullChargeStore @Inject constructor(
         dataStore.store.edit { it[QUICK_FULL_CHARGE_ENABLED] = enabled }
     }
 
+    suspend fun isTestShortTimeouts(): Boolean = testShortTimeouts.first()
+
+    suspend fun setTestShortTimeouts(enabled: Boolean) {
+        dataStore.store.edit { it[TEST_SHORT_TIMEOUTS] = enabled }
+    }
+
     private fun toRecord(prefs: Preferences): ChargeSessionRecord? {
         if (prefs[SESSION_ACTIVE] != true) return null
         val policy = ChargePolicy.fromStableId(prefs[SESSION_RESTORE_POLICY]) ?: return null
@@ -88,5 +99,6 @@ class FullChargeStore @Inject constructor(
         val SESSION_CONNECTED = booleanPreferencesKey("session.connected_seen")
         val QUICK_FULL_CHARGE_ENABLED = booleanPreferencesKey("fullcharge.quick_replug_enabled")
         val RECOVERY_PENDING_TARGET = stringPreferencesKey("recovery.pending_target")
+        val TEST_SHORT_TIMEOUTS = booleanPreferencesKey("debug.short_session_timeouts")
     }
 }
