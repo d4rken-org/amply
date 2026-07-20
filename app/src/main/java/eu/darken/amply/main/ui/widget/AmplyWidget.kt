@@ -10,17 +10,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.annotation.Keep
 import androidx.core.content.ContextCompat
+import androidx.glance.ColorFilter
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
+import androidx.glance.Image
+import androidx.glance.ImageProvider
+import androidx.glance.LocalSize
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
+import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.provideContent
-import androidx.glance.appwidget.updateAll
 import androidx.glance.background
 import androidx.glance.color.ColorProvider
 import androidx.glance.layout.Alignment
@@ -30,6 +34,7 @@ import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.padding
+import androidx.glance.layout.size
 import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
@@ -39,6 +44,7 @@ import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
+import eu.darken.amply.R
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingPreferences
 import eu.darken.amply.charging.core.ChargingRepository
@@ -50,8 +56,16 @@ import eu.darken.amply.fullcharge.core.ChargeSessionService
 import eu.darken.amply.fullcharge.core.policyOrNull
 import eu.darken.amply.main.ui.MainActivity
 
+/** Below this width the brand mark + name is dropped so the status line stays readable. */
+private val BRAND_MIN_WIDTH = 200.dp
+
+private val TITLE_COLOR = ColorProvider(Color(0xFF15382B), Color(0xFFE4F5EC))
+
 @Keep
 class AmplyWidget : GlanceAppWidget() {
+    // Exact so LocalSize reports the actual widget size and we can show the brand only when it fits.
+    override val sizeMode: SizeMode = SizeMode.Exact
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val entryPoint = EntryPointAccessors.fromApplication(
             context.applicationContext,
@@ -62,11 +76,16 @@ class AmplyWidget : GlanceAppWidget() {
         val repo = entryPoint.chargingRepository()
         val state = runCatching { repo.refresh() }.getOrElse { repo.state.value }
         val sessionActive = entryPoint.sessionStore().currentSession() != null
+        val now = System.currentTimeMillis()
         val requestedTarget = runCatching { entryPoint.chargingPreferences().lastRequestedNow() }.getOrNull()
-        val settling = state.isSettling(System.currentTimeMillis())
+        val settling = state.isSettling(now)
+        // "Constant" state = a plain resting policy, nothing in flight — the only time the brand is shown.
+        val steady = !sessionActive && !settling
         val status = statusLine(sessionActive, settling, state, requestedTarget)
 
         provideContent {
+            val showBrand = steady && LocalSize.current.width >= BRAND_MIN_WIDTH
+            val titleStyle = TextStyle(color = TITLE_COLOR, fontWeight = FontWeight.Bold)
             Column(
                 modifier = GlanceModifier
                     .fillMaxSize()
@@ -80,13 +99,22 @@ class AmplyWidget : GlanceAppWidget() {
                     .padding(12.dp),
                 verticalAlignment = Alignment.Vertical.CenterVertically,
             ) {
-                Text(
-                    text = status,
-                    style = TextStyle(
-                        color = ColorProvider(Color(0xFF15382B), Color(0xFFE4F5EC)),
-                        fontWeight = FontWeight.Bold,
-                    ),
-                )
+                Row(verticalAlignment = Alignment.Vertical.CenterVertically) {
+                    if (showBrand) {
+                        Image(
+                            provider = ImageProvider(R.drawable.ic_amply),
+                            contentDescription = null,
+                            modifier = GlanceModifier.size(16.dp),
+                            colorFilter = ColorFilter.tint(TITLE_COLOR),
+                        )
+                        Spacer(GlanceModifier.width(6.dp))
+                    }
+                    Text(
+                        text = if (showBrand) "Amply · $status" else status,
+                        style = titleStyle,
+                        maxLines = 1,
+                    )
+                }
                 // Compact single-line labels: slightly smaller text, and maxLines=1 so the worst case
                 // ellipsizes on one line instead of wrapping/clipping inside the button.
                 val buttonText = TextStyle(fontSize = 12.sp)
@@ -120,7 +148,12 @@ class AmplyWidget : GlanceAppWidget() {
     }
 }
 
-/** Human-readable widget status derived from the requested target (observation alone degrades to Unknown on WSS-only). */
+/**
+ * Human-readable widget status. A just-tapped change surfaces within ~0.4s as the service-written
+ * "<target> · waiting for system…" cue — that is the tap acknowledgement (no separate optimistic phase,
+ * which is unreliable given Glance's widget-session caching). Derived from the requested target because
+ * observation alone degrades to Unknown on WSS-only.
+ */
 private fun statusLine(
     sessionActive: Boolean,
     settling: Boolean,
@@ -157,7 +190,6 @@ interface AmplyWidgetEntryPoint {
 class ProtectAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         setPersistentOrOpen(context, ChargePolicy.FixedLimit(80))
-        AmplyWidget().updateAll(context)
     }
 }
 
@@ -166,7 +198,6 @@ class ProtectAction : ActionCallback {
 class AlwaysFullAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         setPersistentOrOpen(context, ChargePolicy.Unrestricted)
-        AmplyWidget().updateAll(context)
     }
 }
 
@@ -187,7 +218,6 @@ class FullChargeAction : ActionCallback {
             val state = entryPoint.chargingRepository().refresh()
             if (!state.controlEnabled || state.access?.canControl != true) {
                 openApp(context, false)
-                AmplyWidget().updateAll(context)
                 return
             }
             // A once-session is meaningless when the persistent policy is already Unrestricted (it would
@@ -198,18 +228,18 @@ class FullChargeAction : ActionCallback {
                 ?: entryPoint.chargingPreferences().lastRequestedNow()
             if (currentPolicy == ChargePolicy.Unrestricted) {
                 openApp(context, false)
-                AmplyWidget().updateAll(context)
                 return
             }
             startService(context, ChargeSessionService.ACTION_START)
         }
-        AmplyWidget().updateAll(context)
     }
 }
 
 /**
  * Route a persistent-policy change through the service (serialized, cancels sessions, force-writes so a
- * same-value write still re-triggers the HAL), or open the app when charging can't be controlled.
+ * same-value write still re-triggers the HAL), or open the app when charging can't be controlled. The
+ * service does the write AND the authoritative widget render, so the charging command is never gated on a
+ * widget update.
  */
 private suspend fun setPersistentOrOpen(context: Context, policy: ChargePolicy) {
     val entryPoint = EntryPointAccessors.fromApplication(

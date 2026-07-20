@@ -24,6 +24,7 @@ import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
 import eu.darken.amply.main.core.SurfaceUpdater
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -91,10 +92,17 @@ class ChargeSessionService : Service() {
             IntentFilter(Intent.ACTION_BATTERY_CHANGED),
             ContextCompat.RECEIVER_EXPORTED,
         )
-        // Drain commands one at a time, in the order they were enqueued.
+        // Drain commands one at a time, in the order they were enqueued. A failure in one command (e.g. a
+        // surface update throwing) must not kill the consumer and strand every command that follows.
         scope.launch {
             for (command in commandChannel) {
-                commandMutex.withLock { handleCommand(command.action, command.target) }
+                try {
+                    commandMutex.withLock { handleCommand(command.action, command.target) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    log(TAG, Logging.Priority.ERROR) { "Command ${command.action} failed: ${e.message}" }
+                }
             }
         }
     }
@@ -127,7 +135,7 @@ class ChargeSessionService : Service() {
                 log(TAG, Logging.Priority.WARN) { "Unable to start full-charge session: ${result.message}" }
                 if (fullChargeStore.currentSession() != null) SessionNotifications.showRecovery(this)
                 continueGestureOrStop()
-                SurfaceUpdater.update(this)
+                SurfaceUpdater.updateNow(this)
                 return
             }
         }
@@ -136,7 +144,7 @@ class ChargeSessionService : Service() {
         startMonitoringLoop()
         monitorReady = true
         evaluateBattery()
-        SurfaceUpdater.update(this)
+        SurfaceUpdater.updateNow(this)
     }
 
     private suspend fun continueGestureOrStop() {
@@ -153,7 +161,7 @@ class ChargeSessionService : Service() {
         startMonitoringLoop()
         monitorReady = true
         evaluateBattery()
-        SurfaceUpdater.update(this)
+        SurfaceUpdater.updateNow(this)
     }
 
     private fun startMonitoringLoop() {
@@ -329,7 +337,7 @@ class ChargeSessionService : Service() {
         }
         restoring = false
         quickGesture.reset()
-        SurfaceUpdater.update(this)
+        SurfaceUpdater.updateNow(this)
         continueGestureOrStop()
     }
 
@@ -360,7 +368,7 @@ class ChargeSessionService : Service() {
             restoring = false
         }
         quickGesture.reset()
-        SurfaceUpdater.update(this)
+        SurfaceUpdater.updateNow(this)
         continueGestureOrStop()
     }
 
