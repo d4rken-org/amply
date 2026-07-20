@@ -38,7 +38,8 @@ The optional reconnect gesture runs a low-work foreground monitor. Once Android 
 ./gradlew testGplayDebugUnitTest assembleGplayDebug
 ```
 
-Compile/target SDK is 36, minimum SDK is 26, and Java 17 is required.
+Compile/target SDK is 36, minimum SDK is 26. Build and test on JDK 21 (Robolectric needs it for SDK 36); compiled
+bytecode targets Java 17.
 
 ## Safety boundary
 

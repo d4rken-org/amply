@@ -5,7 +5,7 @@
 # Checked files per locale:
 #   title.txt             - hard limit 30 chars
 #   short_description.txt - hard limit 80 chars
-#   full_description.txt  - hard limit 3800 chars, warn at 3700
+#   full_description.txt  - project limit 3800 chars (Play allows 4000; the headroom is deliberate), warn at 3700
 #   changelogs/*.txt      - hard limit 500 chars each
 
 set -euo pipefail

@@ -154,9 +154,15 @@ androidComponents {
             doLast {
                 val builtArtifacts = loader.load(apkFolder.get()) ?: return@doLast
 
+                val multipleOutputs = builtArtifacts.elements.size > 1
                 builtArtifacts.elements.forEach { element ->
                     val apkFile = File(element.outputFile)
-                    val outputFileName = "$packageName-v${element.versionName}-${element.versionCode}-$formattedVariantName.apk"
+                    // Unsigned builds must stay recognizable; split outputs must not overwrite each other.
+                    val unsignedMarker = if (apkFile.name.contains("unsigned")) "-UNSIGNED" else ""
+                    val splitMarker = if (multipleOutputs) "-${apkFile.nameWithoutExtension}" else ""
+                    val outputFileName =
+                        "$packageName-v${element.versionName}-${element.versionCode}" +
+                            "-$formattedVariantName$unsignedMarker$splitMarker.apk"
                     if (apkFile.exists() && apkFile.name != outputFileName) {
                         apkFile.copyTo(File(apkFile.parentFile, outputFileName), overwrite = true)
                     }

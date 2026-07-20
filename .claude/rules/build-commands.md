@@ -11,7 +11,7 @@ wrapper (`./gradlew`). Build/test on **JDK 21** (Robolectric needs it for Androi
 ./gradlew assembleFossDebug
 ./gradlew assembleGplayDebug
 
-# Release APKs (minified; needs signing config — see release.md)
+# Release APKs (minified; signed when signing material is present, unsigned otherwise — see release.md)
 ./gradlew assembleFossRelease
 ./gradlew assembleGplayRelease
 

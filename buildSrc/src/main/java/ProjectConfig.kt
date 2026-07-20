@@ -1,7 +1,6 @@
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import java.io.File
-import java.io.FileInputStream
 import java.util.Properties
 
 open class ProjectConfig {
@@ -19,7 +18,7 @@ open class ProjectConfig {
 
     fun init(project: Project) {
         val versionProperties = Properties().apply {
-            load(FileInputStream(File(project.rootDir, "version.properties")))
+            File(project.rootDir, "version.properties").inputStream().use(::load)
         }
         version = Version(
             major = versionProperties.getProperty("project.versioning.major").toInt(),
@@ -37,10 +36,19 @@ open class ProjectConfig {
         val build: Int,
         val type: String,
     ) {
+        init {
+            require(major >= 0) { "major must be >= 0, was $major" }
+            require(minor in 0..99) { "minor must be 0..99 (100 collides with major+1), was $minor" }
+            require(patch in 0..99) { "patch must be 0..99 (100 collides with minor+1), was $patch" }
+            require(build in 0..99) { "build must be 0..99 (100 collides with patch+1), was $build" }
+            require(type.isNotBlank() && type.all { it.isLetter() }) { "type must be letters only, was '$type'" }
+            require(code in 1..2_100_000_000L) { "versionCode $code outside Android's supported range" }
+        }
+
         val name: String
             get() = "$major.$minor.$patch-$type$build"
         val code: Long
-            get() = major * 10000000 + minor * 100000 + patch * 1000 + build * 10L
+            get() = major * 10_000_000L + minor * 100_000L + patch * 1_000L + build * 10L
     }
 }
 
