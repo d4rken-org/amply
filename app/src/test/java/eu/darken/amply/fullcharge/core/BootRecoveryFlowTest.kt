@@ -1,14 +1,17 @@
 package eu.darken.amply.fullcharge.core
 
-import com.google.common.truth.Truth.assertThat
 import eu.darken.amply.charging.core.BackendKind
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
+import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
+import io.kotest.matchers.collections.shouldHaveSize
+import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
-import org.junit.Test
+import org.junit.jupiter.api.Test
 
 class BootRecoveryFlowTest {
     private val fixedLimit = ChargePolicy.FixedLimit(80)
@@ -19,56 +22,56 @@ class BootRecoveryFlowTest {
     fun `nothing to do without session or pending target`() = runTest {
         val hooks = FakeHooks(sessionTarget = null)
 
-        assertThat(BootRecoveryFlow(hooks).run()).isEqualTo(BootRecoveryFlow.Outcome.NOTHING_TO_DO)
-        assertThat(hooks.restoreCalls).isEqualTo(0)
+        BootRecoveryFlow(hooks).run() shouldBe BootRecoveryFlow.Outcome.NOTHING_TO_DO
+        hooks.restoreCalls shouldBe 0
     }
 
     @Test
     fun `restore failure notifies as write failure and skips convergence`() = runTest {
         val hooks = FakeHooks(restoreResult = false)
 
-        assertThat(BootRecoveryFlow(hooks).run()).isEqualTo(BootRecoveryFlow.Outcome.RESTORE_FAILED)
-        assertThat(hooks.failures).containsExactly(true)
-        assertThat(hooks.rewrites).isEmpty()
-        assertThat(hooks.pending).isNull()
+        BootRecoveryFlow(hooks).run() shouldBe BootRecoveryFlow.Outcome.RESTORE_FAILED
+        hooks.failures shouldContainExactlyInAnyOrder listOf(true)
+        hooks.rewrites.shouldBeEmpty()
+        hooks.pending shouldBe null
     }
 
     @Test
     fun `hardware confirmation clears the pending target`() = runTest {
         val hooks = FakeHooks(observation = { hardwareLongLife })
 
-        assertThat(BootRecoveryFlow(hooks).run()).isEqualTo(BootRecoveryFlow.Outcome.CONVERGED)
-        assertThat(hooks.pending).isNull()
-        assertThat(hooks.rewrites).isEmpty()
+        BootRecoveryFlow(hooks).run() shouldBe BootRecoveryFlow.Outcome.CONVERGED
+        hooks.pending shouldBe null
+        hooks.rewrites.shouldBeEmpty()
     }
 
     @Test
     fun `persistent divergence rewrites then gives up with a convergence notification`() = runTest {
         val hooks = FakeHooks()
 
-        assertThat(BootRecoveryFlow(hooks).run()).isEqualTo(BootRecoveryFlow.Outcome.GAVE_UP)
-        assertThat(hooks.rewrites).hasSize(BootRecoveryEngine.MAX_REWRITES)
-        assertThat(hooks.failures).containsExactly(false)
-        assertThat(hooks.pending).isNull()
+        BootRecoveryFlow(hooks).run() shouldBe BootRecoveryFlow.Outcome.GAVE_UP
+        hooks.rewrites shouldHaveSize BootRecoveryEngine.MAX_REWRITES
+        hooks.failures shouldContainExactlyInAnyOrder listOf(false)
+        hooks.pending shouldBe null
     }
 
     @Test
     fun `rewrite failure notifies as write failure and preserves the pending target for retry`() = runTest {
         val hooks = FakeHooks(rewriteResult = false)
 
-        assertThat(BootRecoveryFlow(hooks).run()).isEqualTo(BootRecoveryFlow.Outcome.GAVE_UP)
-        assertThat(hooks.failures).containsExactly(true)
-        assertThat(hooks.pending).isEqualTo(fixedLimit)
+        BootRecoveryFlow(hooks).run() shouldBe BootRecoveryFlow.Outcome.GAVE_UP
+        hooks.failures shouldContainExactlyInAnyOrder listOf(true)
+        hooks.pending shouldBe fixedLimit
     }
 
     @Test
     fun `a newer policy choice supersedes recovery without re-writes`() = runTest {
         val hooks = FakeHooks(intended = { ChargePolicy.Adaptive })
 
-        assertThat(BootRecoveryFlow(hooks).run()).isEqualTo(BootRecoveryFlow.Outcome.SUPERSEDED)
-        assertThat(hooks.rewrites).isEmpty()
-        assertThat(hooks.failures).isEmpty()
-        assertThat(hooks.pending).isNull()
+        BootRecoveryFlow(hooks).run() shouldBe BootRecoveryFlow.Outcome.SUPERSEDED
+        hooks.rewrites.shouldBeEmpty()
+        hooks.failures.shouldBeEmpty()
+        hooks.pending shouldBe null
     }
 
     @Test
@@ -77,10 +80,10 @@ class BootRecoveryFlowTest {
             snapshot = BatterySnapshot(plugged = false, percent = 80, chargingState = 4),
         )
 
-        assertThat(BootRecoveryFlow(hooks).run()).isEqualTo(BootRecoveryFlow.Outcome.CONVERGED)
-        assertThat(hooks.rewrites).hasSize(1)
-        assertThat(hooks.failures).isEmpty()
-        assertThat(hooks.pending).isNull()
+        BootRecoveryFlow(hooks).run() shouldBe BootRecoveryFlow.Outcome.CONVERGED
+        hooks.rewrites shouldHaveSize 1
+        hooks.failures.shouldBeEmpty()
+        hooks.pending shouldBe null
     }
 
     @Test
@@ -91,20 +94,16 @@ class BootRecoveryFlowTest {
 
         job.cancelAndJoin()
 
-        assertThat(hooks.pending).isEqualTo(fixedLimit)
-        assertThat(hooks.failures).isEmpty()
+        hooks.pending shouldBe fixedLimit
+        hooks.failures.shouldBeEmpty()
     }
 
     @Test
     fun `boot dispatch prefers recovery and falls back to monitoring`() {
-        assertThat(BootRecoveryFlow.bootAction(sessionExists = true, pendingRecovery = false, gestureEnabled = true))
-            .isEqualTo(ChargeSessionService.ACTION_RECOVER)
-        assertThat(BootRecoveryFlow.bootAction(sessionExists = false, pendingRecovery = true, gestureEnabled = false))
-            .isEqualTo(ChargeSessionService.ACTION_RECOVER)
-        assertThat(BootRecoveryFlow.bootAction(sessionExists = false, pendingRecovery = false, gestureEnabled = true))
-            .isEqualTo(ChargeSessionService.ACTION_MONITOR)
-        assertThat(BootRecoveryFlow.bootAction(sessionExists = false, pendingRecovery = false, gestureEnabled = false))
-            .isNull()
+        BootRecoveryFlow.bootAction(sessionExists = true, pendingRecovery = false, gestureEnabled = true) shouldBe ChargeSessionService.ACTION_RECOVER
+        BootRecoveryFlow.bootAction(sessionExists = false, pendingRecovery = true, gestureEnabled = false) shouldBe ChargeSessionService.ACTION_RECOVER
+        BootRecoveryFlow.bootAction(sessionExists = false, pendingRecovery = false, gestureEnabled = true) shouldBe ChargeSessionService.ACTION_MONITOR
+        BootRecoveryFlow.bootAction(sessionExists = false, pendingRecovery = false, gestureEnabled = false) shouldBe null
     }
 
     private inner class FakeHooks(

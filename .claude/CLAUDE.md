@@ -19,7 +19,9 @@ Package: `eu.darken.amply`. License: GPL-3.0-or-later. Status: pre-launch (`0.1.
 - **Single Gradle module**: `:app` (declared in `settings.gradle.kts`). This is *not* a multi-module project.
 - **Product flavors** (`distribution` dimension): `foss` and `gplay`.
 - **Build types**: `debug` (applicationId suffix `.debug`), `beta` (minified), `release` (minified).
-- **SDKs**: `compileSdk`/`targetSdk` 36, `minSdk` 26. Java 17. Core-library desugaring enabled.
+- **SDKs**: `compileSdk`/`targetSdk` 36, `minSdk` 26. Core-library desugaring enabled.
+- **Java**: build/test toolchain needs **JDK 21** (Robolectric requires it to emulate Android SDK 36); compiled
+  bytecode still targets **Java 17** (`compileOptions`/`jvmTarget` in `app/build.gradle.kts`).
 - **Stack**: Kotlin, Jetpack Compose + Material 3, Navigation3, Glance (widget), Hilt/KSP, Coroutines/Flow,
   Preferences DataStore, Shizuku (AIDL user service).
 
@@ -56,7 +58,7 @@ Topic-specific guidance lives in `.claude/rules/`:
 - `privileged-access.md` — Shizuku/WSS access paths, capability gate, AIDL safety boundary (read before touching control code)
 - `build-commands.md` — gradle build/test/lint commands, flavors, build types
 - `code-style.md` — Kotlin/Compose conventions, logging, DataStore
-- `testing.md` — JUnit 4 + Truth + Robolectric conventions
+- `testing.md` — JUnit 5 + Kotest conventions (JUnit 4 only for Robolectric)
 - `commit-guidelines.md` — commit/PR format and prefixes
 - `localization.md` — string extraction conventions and the current gap
 - `release.md` — versioning, signing, CI (pre-launch state)

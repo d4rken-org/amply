@@ -1,7 +1,7 @@
 package eu.darken.amply.common.debug.logging
 
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import io.kotest.matchers.shouldBe
+import org.junit.jupiter.api.Test
 
 class LoggingTest {
     @Test
@@ -29,6 +29,6 @@ class LoggingTest {
             Logging.remove(logger)
         }
 
-        assertEquals(listOf("I|AMP:Test|recorded|2"), received)
+        received shouldBe listOf("I|AMP:Test|recorded|2")
     }
 }

@@ -13,7 +13,9 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          # JDK 21 for the build/test toolchain — Robolectric requires Java 21 to emulate
+          # Android SDK 36. Compiled bytecode still targets Java 17 (see app/build.gradle.kts).
+          java-version: 21
           cache: gradle
       - uses: android-actions/setup-android@v3
       - name: Validate Gradle wrapper

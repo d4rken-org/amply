@@ -2,8 +2,8 @@ package eu.darken.amply.charging.core.access.shizuku
 
 import android.content.pm.PackageManager
 import android.content.pm.PermissionInfo
-import com.google.common.truth.Truth.assertThat
-import org.junit.Test
+import io.kotest.matchers.shouldBe
+import org.junit.jupiter.api.Test
 
 @Suppress("DEPRECATION")
 class ShizukuInstallationDetectorTest {
@@ -13,7 +13,7 @@ class ShizukuInstallationDetectorTest {
             PermissionInfo().apply { packageName = "com.example.shizuku.fork" }
         }
 
-        assertThat(result).isEqualTo("com.example.shizuku.fork")
+        result shouldBe "com.example.shizuku.fork"
     }
 
     @Test
@@ -22,7 +22,7 @@ class ShizukuInstallationDetectorTest {
             throw PackageManager.NameNotFoundException()
         }
 
-        assertThat(result).isNull()
+        result shouldBe null
     }
 
     @Test
@@ -31,6 +31,6 @@ class ShizukuInstallationDetectorTest {
             PermissionInfo().apply { packageName = "" }
         }
 
-        assertThat(result).isNull()
+        result shouldBe null
     }
 }

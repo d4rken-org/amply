@@ -1,18 +1,18 @@
 package eu.darken.amply.fullcharge.core
 
 import android.os.BatteryManager
-import com.google.common.truth.Truth.assertThat
-import org.junit.Test
+import io.kotest.matchers.shouldBe
+import org.junit.jupiter.api.Test
 
 class QuickFullChargeGestureTest {
     private val gesture = QuickFullChargeGesture()
 
     @Test
     fun `reconnect after policy stops charging triggers one full charge`() {
-        assertThat(atLimit(1_000)).isEqualTo(QuickFullChargeDecision.ARMED)
-        assertThat(disconnected(2_000)).isEqualTo(QuickFullChargeDecision.WAITING_FOR_RECONNECT)
-        assertThat(charging(5_000)).isEqualTo(QuickFullChargeDecision.TRIGGER)
-        assertThat(charging(5_100)).isEqualTo(QuickFullChargeDecision.IDLE)
+        atLimit(1_000) shouldBe QuickFullChargeDecision.ARMED
+        disconnected(2_000) shouldBe QuickFullChargeDecision.WAITING_FOR_RECONNECT
+        charging(5_000) shouldBe QuickFullChargeDecision.TRIGGER
+        charging(5_100) shouldBe QuickFullChargeDecision.IDLE
     }
 
     @Test
@@ -20,7 +20,7 @@ class QuickFullChargeGestureTest {
         atLimit(1_000)
         disconnected(2_000)
 
-        assertThat(charging(12_001)).isEqualTo(QuickFullChargeDecision.IDLE)
+        charging(12_001) shouldBe QuickFullChargeDecision.IDLE
     }
 
     @Test
@@ -28,7 +28,7 @@ class QuickFullChargeGestureTest {
         charging(1_000)
         disconnected(2_000)
 
-        assertThat(charging(3_000)).isEqualTo(QuickFullChargeDecision.IDLE)
+        charging(3_000) shouldBe QuickFullChargeDecision.IDLE
     }
 
     @Test
@@ -41,20 +41,18 @@ class QuickFullChargeGestureTest {
             chargingStatus = 1,
         )
 
-        assertThat(normalNotCharging).isEqualTo(QuickFullChargeDecision.IDLE)
+        normalNotCharging shouldBe QuickFullChargeDecision.IDLE
     }
 
     @Test
     fun `policy state far above expected limit does not arm`() {
-        assertThat(
-            gesture.update(
-                nowMillis = 1_000,
-                plugged = true,
-                percent = 100,
-                batteryStatus = BatteryManager.BATTERY_STATUS_NOT_CHARGING,
-                chargingStatus = QuickFullChargeGesture.CHARGING_STATUS_POLICY,
-            ),
-        ).isEqualTo(QuickFullChargeDecision.IDLE)
+        gesture.update(
+            nowMillis = 1_000,
+            plugged = true,
+            percent = 100,
+            batteryStatus = BatteryManager.BATTERY_STATUS_NOT_CHARGING,
+            chargingStatus = QuickFullChargeGesture.CHARGING_STATUS_POLICY,
+        ) shouldBe QuickFullChargeDecision.IDLE
     }
 
     private fun atLimit(now: Long) = gesture.update(

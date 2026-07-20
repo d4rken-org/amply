@@ -1,6 +1,5 @@
 package eu.darken.amply.charging.core.adapter
 
-import com.google.common.truth.Truth.assertThat
 import eu.darken.amply.charging.core.access.AccessBackend
 import eu.darken.amply.charging.core.access.BackendStatus
 import eu.darken.amply.charging.core.access.SettingMutation
@@ -10,8 +9,12 @@ import eu.darken.amply.charging.core.BackendKind
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.DeviceInfo
+import io.kotest.matchers.collections.shouldContainExactly
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.types.shouldBeInstanceOf
 import kotlinx.coroutines.test.runTest
-import org.junit.Test
+import org.junit.jupiter.api.Test
 
 class PixelChargingAdapterTest {
     private val adapter = PixelChargingAdapter()
@@ -20,25 +23,23 @@ class PixelChargingAdapterTest {
     fun `pixel 8 on api 37 is enabled`() {
         val support = adapter.probe(DeviceInfo("Google", "Pixel 8", 37, "test"))
 
-        assertThat(support.matched).isTrue()
-        assertThat(support.controlEnabled).isTrue()
-        assertThat(support.detail).contains("Supported Pixel capability")
+        support.matched shouldBe true
+        support.controlEnabled shouldBe true
+        support.detail shouldContain "Supported Pixel capability"
     }
 
     @Test
     fun `pixel 9 pro on api 36 is enabled`() {
         val support = adapter.probe(DeviceInfo("Google", "Pixel 9 Pro", 36, "test"))
 
-        assertThat(support.matched).isTrue()
-        assertThat(support.controlEnabled).isTrue()
+        support.matched shouldBe true
+        support.controlEnabled shouldBe true
     }
 
     @Test
     fun `pixel 6a is the oldest enabled model`() {
-        assertThat(adapter.probe(DeviceInfo("Google", "Pixel 6a", 35, "test")).controlEnabled)
-            .isTrue()
-        assertThat(adapter.probe(DeviceInfo("Google", "Pixel 6 Pro", 35, "test")).controlEnabled)
-            .isFalse()
+        adapter.probe(DeviceInfo("Google", "Pixel 6a", 35, "test")).controlEnabled shouldBe true
+        adapter.probe(DeviceInfo("Google", "Pixel 6 Pro", 35, "test")).controlEnabled shouldBe false
     }
 
     @Test
@@ -58,64 +59,63 @@ class PixelChargingAdapterTest {
             isPhone = false,
         )
 
-        assertThat(adapter.probe(missingController).controlEnabled).isFalse()
-        assertThat(adapter.probe(tablet).controlEnabled).isFalse()
+        adapter.probe(missingController).controlEnabled shouldBe false
+        adapter.probe(tablet).controlEnabled shouldBe false
     }
 
     @Test
     fun `android 14 remains unsupported`() {
-        assertThat(adapter.probe(DeviceInfo("Google", "Pixel 8", 34, "test")).controlEnabled)
-            .isFalse()
+        adapter.probe(DeviceInfo("Google", "Pixel 8", 34, "test")).controlEnabled shouldBe false
     }
 
     @Test
     fun `fixed limit disables adaptive before selecting mode one`() = runTest {
         val backend = FakeBackend()
 
-        assertThat(adapter.apply(ChargePolicy.FixedLimit(80), backend)).isTrue()
+        adapter.apply(ChargePolicy.FixedLimit(80), backend) shouldBe true
 
-        assertThat(backend.writes).containsExactly(
+        backend.writes shouldContainExactly listOf(
             SettingMutation(SettingNamespace.SECURE, PixelChargingAdapter.KEY_ADAPTIVE, "0"),
             SettingMutation(SettingNamespace.SECURE, PixelChargingAdapter.KEY_MODE, "1"),
-        ).inOrder()
+        )
     }
 
     @Test
     fun `unrestricted clears mode before adaptive`() = runTest {
         val backend = FakeBackend()
 
-        assertThat(adapter.apply(ChargePolicy.Unrestricted, backend)).isTrue()
+        adapter.apply(ChargePolicy.Unrestricted, backend) shouldBe true
 
-        assertThat(backend.writes).containsExactly(
+        backend.writes shouldContainExactly listOf(
             SettingMutation(SettingNamespace.SECURE, PixelChargingAdapter.KEY_MODE, "0"),
             SettingMutation(SettingNamespace.SECURE, PixelChargingAdapter.KEY_ADAPTIVE, "0"),
-        ).inOrder()
+        )
     }
 
     @Test
     fun `reapply forces a mode change before restoring the fixed limit`() = runTest {
         val backend = FakeBackend()
 
-        assertThat(adapter.reapply(ChargePolicy.FixedLimit(80), backend)).isTrue()
+        adapter.reapply(ChargePolicy.FixedLimit(80), backend) shouldBe true
 
-        assertThat(backend.writes).containsExactly(
+        backend.writes shouldContainExactly listOf(
             SettingMutation(SettingNamespace.SECURE, PixelChargingAdapter.KEY_MODE, "0"),
             SettingMutation(SettingNamespace.SECURE, PixelChargingAdapter.KEY_ADAPTIVE, "0"),
             SettingMutation(SettingNamespace.SECURE, PixelChargingAdapter.KEY_MODE, "1"),
-        ).inOrder()
+        )
     }
 
     @Test
     fun `reapply forces a mode change before restoring adaptive`() = runTest {
         val backend = FakeBackend()
 
-        assertThat(adapter.reapply(ChargePolicy.Adaptive, backend)).isTrue()
+        adapter.reapply(ChargePolicy.Adaptive, backend) shouldBe true
 
-        assertThat(backend.writes).containsExactly(
+        backend.writes shouldContainExactly listOf(
             SettingMutation(SettingNamespace.SECURE, PixelChargingAdapter.KEY_MODE, "1"),
             SettingMutation(SettingNamespace.SECURE, PixelChargingAdapter.KEY_MODE, "0"),
             SettingMutation(SettingNamespace.SECURE, PixelChargingAdapter.KEY_ADAPTIVE, "1"),
-        ).inOrder()
+        )
     }
 
     @Test
@@ -127,51 +127,54 @@ class PixelChargingAdapterTest {
             ),
         )
 
-        assertThat(adapter.read(backend)).isEqualTo(
-            ChargeObservation.Verified(ChargePolicy.Adaptive, BackendKind.SHIZUKU),
+        adapter.read(backend) shouldBe ChargeObservation.Verified(
+            ChargePolicy.Adaptive,
+            BackendKind.SHIZUKU,
         )
     }
 
     @Test
     fun `long life hardware state verifies fixed 80`() {
-        assertThat(PixelChargingAdapter.decodeHardwareState(4, plugged = true)).isEqualTo(
-            ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.BATTERY_HARDWARE),
+        PixelChargingAdapter.decodeHardwareState(4, plugged = true) shouldBe ChargeObservation.Verified(
+            ChargePolicy.FixedLimit(80),
+            BackendKind.BATTERY_HARDWARE,
         )
     }
 
     @Test
     fun `adaptive hardware state verifies adaptive`() {
-        assertThat(PixelChargingAdapter.decodeHardwareState(5, plugged = true)).isEqualTo(
-            ChargeObservation.Verified(ChargePolicy.Adaptive, BackendKind.BATTERY_HARDWARE),
+        PixelChargingAdapter.decodeHardwareState(5, plugged = true) shouldBe ChargeObservation.Verified(
+            ChargePolicy.Adaptive,
+            BackendKind.BATTERY_HARDWARE,
         )
     }
 
     @Test
     fun `normal hardware state does not claim unrestricted`() {
-        assertThat(PixelChargingAdapter.decodeHardwareState(1, plugged = true))
-            .isInstanceOf(ChargeObservation.Unknown::class.java)
+        PixelChargingAdapter.decodeHardwareState(1, plugged = true)
+            .shouldBeInstanceOf<ChargeObservation.Unknown>()
     }
 
     @Test
     fun `unplugged long life state is not verified`() {
-        assertThat(PixelChargingAdapter.decodeHardwareState(4, plugged = false)).isNull()
+        PixelChargingAdapter.decodeHardwareState(4, plugged = false) shouldBe null
     }
 
     @Test
     fun `unplugged adaptive state is not verified`() {
-        assertThat(PixelChargingAdapter.decodeHardwareState(5, plugged = false)).isNull()
+        PixelChargingAdapter.decodeHardwareState(5, plugged = false) shouldBe null
     }
 
     @Test
     fun `unplugged temperature state is not reported`() {
-        assertThat(PixelChargingAdapter.decodeHardwareState(3, plugged = false)).isNull()
+        PixelChargingAdapter.decodeHardwareState(3, plugged = false) shouldBe null
     }
 
     @Test
     fun `unreadable hidden values never become verified`() = runTest {
         val backend = FakeBackend(readable = false)
 
-        assertThat(adapter.read(backend)).isInstanceOf(ChargeObservation.Unknown::class.java)
+        adapter.read(backend).shouldBeInstanceOf<ChargeObservation.Unknown>()
     }
 
     private class FakeBackend(

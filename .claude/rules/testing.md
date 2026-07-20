@@ -6,9 +6,10 @@
 - **JUnit 4** only for **Robolectric** tests — Robolectric does not support the JUnit 5 runner.
 - **Kotest matchers** for assertions (`io.kotest.matchers.shouldBe`, `shouldThrow`, …).
 - **Robolectric** for tests that need the Android framework.
-- **MockK** for mocking; `kotlinx-coroutines-test` for coroutine tests.
+- `kotlinx-coroutines-test` for coroutine tests.
 
-Migrate existing JUnit 4 + Truth tests to JUnit 5 + Kotest when you touch them; write all new pure tests that way.
+Write pure JVM tests as JUnit 5 + Kotest; Robolectric tests stay on JUnit 4 (`@RunWith(RobolectricTestRunner::class)`)
+but still use Kotest matchers. Truth is not a dependency — do not reintroduce it.
 
 ## What to Test
 

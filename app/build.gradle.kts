@@ -114,7 +114,10 @@ android {
         "META-INF/LGPL2.1",
     )
 
-    testOptions.unitTests.isIncludeAndroidResources = true
+    testOptions.unitTests.apply {
+        isIncludeAndroidResources = true
+        all { it.useJUnitPlatform() }
+    }
 }
 
 tasks.withType<KotlinCompile>().configureEach {
@@ -166,8 +169,13 @@ dependencies {
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
 
+    testImplementation(platform("org.junit:junit-bom:5.11.4"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testImplementation("io.kotest:kotest-assertions-core:5.9.1")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    // Vintage engine runs the JUnit 4 Robolectric tests on the JUnit Platform.
+    testRuntimeOnly("org.junit.vintage:junit-vintage-engine")
     testImplementation("junit:junit:4.13.2")
-    testImplementation("com.google.truth:truth:1.4.5")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     testImplementation("androidx.test:core-ktx:1.7.0")
     testImplementation("org.robolectric:robolectric:4.16.1")

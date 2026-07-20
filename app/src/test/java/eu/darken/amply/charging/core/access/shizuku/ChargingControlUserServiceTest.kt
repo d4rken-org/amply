@@ -1,7 +1,8 @@
 package eu.darken.amply.charging.core.access.shizuku
 
 import androidx.test.core.app.ApplicationProvider
-import com.google.common.truth.Truth.assertThat
+import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.types.shouldBeInstanceOf
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -16,8 +17,8 @@ class ChargingControlUserServiceTest {
             service.writeSetting("secure", "totally_unrelated_setting", "1")
         }.exceptionOrNull()
 
-        assertThat(failure).isInstanceOf(IllegalArgumentException::class.java)
-        assertThat(failure).hasMessageThat().contains("allowlisted")
+        failure.shouldBeInstanceOf<IllegalArgumentException>()
+        failure!!.message shouldContain "allowlisted"
     }
 
     @Test
@@ -26,15 +27,15 @@ class ChargingControlUserServiceTest {
             service.writeSetting("secure", "charge_optimization_mode", "1;id")
         }.exceptionOrNull()
 
-        assertThat(failure).isInstanceOf(IllegalArgumentException::class.java)
-        assertThat(failure).hasMessageThat().contains("Invalid setting value")
+        failure.shouldBeInstanceOf<IllegalArgumentException>()
+        failure!!.message shouldContain "Invalid setting value"
     }
 
     @Test
     fun `snapshot rejects unknown namespace`() {
         val failure = runCatching { service.snapshotSettings("vendor") }.exceptionOrNull()
 
-        assertThat(failure).isInstanceOf(IllegalArgumentException::class.java)
-        assertThat(failure).hasMessageThat().contains("namespace")
+        failure.shouldBeInstanceOf<IllegalArgumentException>()
+        failure!!.message shouldContain "namespace"
     }
 }

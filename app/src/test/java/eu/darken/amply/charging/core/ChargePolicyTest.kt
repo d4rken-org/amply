@@ -1,7 +1,7 @@
 package eu.darken.amply.charging.core
 
-import com.google.common.truth.Truth.assertThat
-import org.junit.Test
+import io.kotest.matchers.shouldBe
+import org.junit.jupiter.api.Test
 
 class ChargePolicyTest {
     @Test
@@ -11,13 +11,13 @@ class ChargePolicyTest {
             ChargePolicy.Adaptive,
             ChargePolicy.Unrestricted,
         ).forEach { policy ->
-            assertThat(ChargePolicy.fromStableId(policy.stableId)).isEqualTo(policy)
+            ChargePolicy.fromStableId(policy.stableId) shouldBe policy
         }
     }
 
     @Test
     fun `unknown stable id is rejected`() {
-        assertThat(ChargePolicy.fromStableId("fixed:nope")).isNull()
-        assertThat(ChargePolicy.fromStableId("vendor-mode")).isNull()
+        ChargePolicy.fromStableId("fixed:nope") shouldBe null
+        ChargePolicy.fromStableId("vendor-mode") shouldBe null
     }
 }

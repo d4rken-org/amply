@@ -1,65 +1,57 @@
 package eu.darken.amply.fullcharge.core
 
-import com.google.common.truth.Truth.assertThat
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.fullcharge.core.ChargeSessionRecord
-import org.junit.Test
+import io.kotest.matchers.shouldBe
+import org.junit.jupiter.api.Test
 
 class SessionDecisionEngineTest {
     private val started = 1_000_000L
 
     @Test
     fun `unplug before first connection remains armed`() {
-        assertThat(decide(age = 1_000, connectedSeen = false, plugged = false, full = false))
-            .isEqualTo(SessionDecision.CONTINUE)
+        decide(age = 1_000, connectedSeen = false, plugged = false, full = false) shouldBe SessionDecision.CONTINUE
     }
 
     @Test
     fun `first connection is persisted`() {
-        assertThat(decide(age = 1_000, connectedSeen = false, plugged = true, full = false))
-            .isEqualTo(SessionDecision.MARK_CONNECTED)
+        decide(age = 1_000, connectedSeen = false, plugged = true, full = false) shouldBe SessionDecision.MARK_CONNECTED
     }
 
     @Test
     fun `disconnect after connection restores`() {
-        assertThat(decide(age = 10_000, connectedSeen = true, plugged = false, full = false))
-            .isEqualTo(SessionDecision.RESTORE_DISCONNECTED)
+        decide(age = 10_000, connectedSeen = true, plugged = false, full = false) shouldBe SessionDecision.RESTORE_DISCONNECTED
     }
 
     @Test
     fun `full battery wins immediately`() {
-        assertThat(decide(age = 1_000, connectedSeen = false, plugged = false, full = true))
-            .isEqualTo(SessionDecision.RESTORE_FULL)
+        decide(age = 1_000, connectedSeen = false, plugged = false, full = true) shouldBe SessionDecision.RESTORE_FULL
     }
 
     @Test
     fun `unconnected session expires after arm timeout`() {
-        assertThat(
-            decide(
-                age = SessionDecisionEngine.ARM_TIMEOUT_MILLIS,
-                connectedSeen = false,
-                plugged = false,
-                full = false,
-            ),
-        ).isEqualTo(SessionDecision.RESTORE_ARM_TIMEOUT)
+        decide(
+            age = SessionDecisionEngine.ARM_TIMEOUT_MILLIS,
+            connectedSeen = false,
+            plugged = false,
+            full = false,
+        ) shouldBe SessionDecision.RESTORE_ARM_TIMEOUT
     }
 
     @Test
     fun `safety timeout restores even while plugged`() {
-        assertThat(
-            decide(
-                age = SessionDecisionEngine.SAFETY_TIMEOUT_MILLIS,
-                connectedSeen = true,
-                plugged = true,
-                full = false,
-            ),
-        ).isEqualTo(SessionDecision.RESTORE_SAFETY_TIMEOUT)
+        decide(
+            age = SessionDecisionEngine.SAFETY_TIMEOUT_MILLIS,
+            connectedSeen = true,
+            plugged = true,
+            full = false,
+        ) shouldBe SessionDecision.RESTORE_SAFETY_TIMEOUT
     }
 
     @Test
     fun `release timeout constants are the real durations`() {
-        assertThat(SessionDecisionEngine.ARM_TIMEOUT_MILLIS).isEqualTo(15 * 60 * 1000L)
-        assertThat(SessionDecisionEngine.SAFETY_TIMEOUT_MILLIS).isEqualTo(24 * 60 * 60 * 1000L)
+        SessionDecisionEngine.ARM_TIMEOUT_MILLIS shouldBe 15 * 60 * 1000L
+        SessionDecisionEngine.SAFETY_TIMEOUT_MILLIS shouldBe 24 * 60 * 60 * 1000L
     }
 
     @Test
@@ -72,7 +64,7 @@ class SessionDecisionEngineTest {
             armTimeoutMillis = 60_000L,
             safetyTimeoutMillis = 120_000L,
         )
-        assertThat(decision).isEqualTo(SessionDecision.RESTORE_SAFETY_TIMEOUT)
+        decision shouldBe SessionDecision.RESTORE_SAFETY_TIMEOUT
     }
 
     @Test
@@ -85,7 +77,7 @@ class SessionDecisionEngineTest {
             armTimeoutMillis = 60_000L,
             safetyTimeoutMillis = 120_000L,
         )
-        assertThat(decision).isEqualTo(SessionDecision.RESTORE_ARM_TIMEOUT)
+        decision shouldBe SessionDecision.RESTORE_ARM_TIMEOUT
     }
 
     @Test
@@ -98,7 +90,7 @@ class SessionDecisionEngineTest {
             armTimeoutMillis = 60_000L,
             safetyTimeoutMillis = 120_000L,
         )
-        assertThat(decision).isEqualTo(SessionDecision.CONTINUE)
+        decision shouldBe SessionDecision.CONTINUE
     }
 
     private fun decide(age: Long, connectedSeen: Boolean, plugged: Boolean, full: Boolean) =

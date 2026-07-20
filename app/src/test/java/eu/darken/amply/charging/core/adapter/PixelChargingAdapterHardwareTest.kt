@@ -4,10 +4,11 @@ import android.content.Context
 import android.content.Intent
 import android.os.BatteryManager
 import androidx.test.core.app.ApplicationProvider
-import com.google.common.truth.Truth.assertThat
 import eu.darken.amply.charging.core.BackendKind
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.types.shouldBeInstanceOf
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -29,8 +30,9 @@ class PixelChargingAdapterHardwareTest {
     fun `plugged long life broadcast verifies fixed 80`() {
         seedBattery(plugged = BatteryManager.BATTERY_PLUGGED_USB, chargingStatus = 4)
 
-        assertThat(adapter.readHardware(context)).isEqualTo(
-            ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.BATTERY_HARDWARE),
+        adapter.readHardware(context) shouldBe ChargeObservation.Verified(
+            ChargePolicy.FixedLimit(80),
+            BackendKind.BATTERY_HARDWARE,
         )
     }
 
@@ -38,20 +40,20 @@ class PixelChargingAdapterHardwareTest {
     fun `unplugged long life broadcast is not verified`() {
         seedBattery(plugged = 0, chargingStatus = 4)
 
-        assertThat(adapter.readHardware(context)).isNull()
+        adapter.readHardware(context) shouldBe null
     }
 
     @Test
     fun `unplugged adaptive broadcast is not verified`() {
         seedBattery(plugged = 0, chargingStatus = 5)
 
-        assertThat(adapter.readHardware(context)).isNull()
+        adapter.readHardware(context) shouldBe null
     }
 
     @Test
     fun `plugged normal broadcast stays unknown`() {
         seedBattery(plugged = BatteryManager.BATTERY_PLUGGED_AC, chargingStatus = 1)
 
-        assertThat(adapter.readHardware(context)).isInstanceOf(ChargeObservation.Unknown::class.java)
+        adapter.readHardware(context).shouldBeInstanceOf<ChargeObservation.Unknown>()
     }
 }

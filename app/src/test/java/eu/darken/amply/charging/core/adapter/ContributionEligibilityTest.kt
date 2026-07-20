@@ -2,8 +2,8 @@ package eu.darken.amply.charging.core.adapter
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
-import com.google.common.truth.Truth.assertThat
 import eu.darken.amply.charging.core.DeviceInfo
+import io.kotest.matchers.shouldBe
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -31,22 +31,22 @@ class ContributionEligibilityTest {
     @Test
     fun `unknown OEM is a wanted contribution`() {
         val support = registry.select(device("Xiaomi")).support
-        assertThat(support.matched).isFalse()
-        assertThat(support.contributionWanted).isTrue()
+        support.matched shouldBe false
+        support.contributionWanted shouldBe true
     }
 
     @Test
     fun `samsung and oneplus diagnostics-only adapters want contributions`() {
-        assertThat(registry.select(device("Samsung")).support.contributionWanted).isTrue()
-        assertThat(registry.select(device("OnePlus")).support.contributionWanted).isTrue()
-        assertThat(registry.select(device("Oppo")).support.contributionWanted).isTrue()
+        registry.select(device("Samsung")).support.contributionWanted shouldBe true
+        registry.select(device("OnePlus")).support.contributionWanted shouldBe true
+        registry.select(device("Oppo")).support.contributionWanted shouldBe true
     }
 
     @Test
     fun `supported pixel does not solicit a contribution`() {
         val support = registry.select(device("Google", model = "Pixel 8")).support
-        assertThat(support.matched).isTrue()
-        assertThat(support.contributionWanted).isFalse()
+        support.matched shouldBe true
+        support.contributionWanted shouldBe false
     }
 
     @Test
@@ -54,6 +54,6 @@ class ContributionEligibilityTest {
         // Old Pixel model: matched by the Pixel adapter but control-gated — a known limitation,
         // not a new device to add support for.
         val support = registry.select(device("Google", model = "Pixel 4", sdk = 33)).support
-        assertThat(support.contributionWanted).isFalse()
+        support.contributionWanted shouldBe false
     }
 }

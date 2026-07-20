@@ -1,7 +1,8 @@
 # Build Commands
 
-Single module (`:app`), two flavors (`foss`, `gplay`), three build types (`debug`, `beta`, `release`). Java 17
-required. Use the Gradle wrapper (`./gradlew`).
+Single module (`:app`), two flavors (`foss`, `gplay`), three build types (`debug`, `beta`, `release`). Use the Gradle
+wrapper (`./gradlew`). Build/test on **JDK 21** (Robolectric needs it for Android SDK 36); compiled bytecode targets
+**Java 17**. CI runs on JDK 21 (`.github/workflows/code-checks.yml`).
 
 ## Build
 

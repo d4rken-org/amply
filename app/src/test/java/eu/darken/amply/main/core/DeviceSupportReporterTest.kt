@@ -1,7 +1,10 @@
 package eu.darken.amply.main.core
 
-import com.google.common.truth.Truth.assertThat
-import org.junit.Test
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
+import io.kotest.matchers.string.shouldStartWith
+import org.junit.jupiter.api.Test
 import java.net.URLDecoder
 
 class DeviceSupportReporterTest {
@@ -37,31 +40,31 @@ class DeviceSupportReporterTest {
     @Test
     fun `format is deterministic and schema-tagged`() {
         val text = formatReport(report())
-        assertThat(text).startsWith("Amply device-support request")
-        assertThat(text).contains("report_schema=1")
-        assertThat(text).contains("manufacturer=Samsung")
-        assertThat(text).contains("model=SM-S911B")
-        assertThat(text).contains("adapter=samsung-lab")
-        assertThat(text).contains("contribution_wanted=true")
+        text shouldStartWith "Amply device-support request"
+        text shouldContain "report_schema=1"
+        text shouldContain "manufacturer=Samsung"
+        text shouldContain "model=SM-S911B"
+        text shouldContain "adapter=samsung-lab"
+        text shouldContain "contribution_wanted=true"
         // Same input twice must produce byte-identical output.
-        assertThat(formatReport(report())).isEqualTo(text)
+        formatReport(report()) shouldBe text
     }
 
     @Test
     fun `missing adapter renders as none`() {
-        assertThat(formatReport(report(adapterId = null))).contains("adapter=none")
+        formatReport(report(adapterId = null)) shouldContain "adapter=none"
     }
 
     @Test
     fun `sanitize collapses control characters to a single space`() {
-        assertThat(sanitizeReportValue("line1\r\nline2\tend")).isEqualTo("line1 line2 end")
-        assertThat(sanitizeReportValue("  padded  ")).isEqualTo("padded")
-        assertThat(sanitizeReportValue(null)).isEqualTo("")
+        sanitizeReportValue("line1\r\nline2\tend") shouldBe "line1 line2 end"
+        sanitizeReportValue("  padded  ") shouldBe "padded"
+        sanitizeReportValue(null) shouldBe ""
     }
 
     @Test
     fun `sanitize caps length with an ellipsis`() {
-        assertThat(sanitizeReportValue("x".repeat(50), max = 10)).isEqualTo("xxxxxxxxxx…")
+        sanitizeReportValue("x".repeat(50), max = 10) shouldBe "xxxxxxxxxx…"
     }
 
     @Test
@@ -69,14 +72,14 @@ class DeviceSupportReporterTest {
         val r = report(manufacturer = "Föö", model = "A&B #1 100%+x")
         val url = issueUrl(r)
 
-        assertThat(url).startsWith("https://github.com/d4rken-org/amply/issues/new?title=")
-        assertThat(url).contains("&body=")
-        assertThat(url).doesNotContain("labels=")
+        url shouldStartWith "https://github.com/d4rken-org/amply/issues/new?title="
+        url shouldContain "&body="
+        url shouldNotContain "labels="
 
         val titlePart = url.substringAfter("?title=").substringBefore("&body=")
         val bodyPart = url.substringAfter("&body=")
-        assertThat(URLDecoder.decode(titlePart, Charsets.UTF_8.name())).isEqualTo(issueTitle(r))
-        assertThat(URLDecoder.decode(bodyPart, Charsets.UTF_8.name())).isEqualTo(issueBody(r))
+        URLDecoder.decode(titlePart, Charsets.UTF_8.name()) shouldBe issueTitle(r)
+        URLDecoder.decode(bodyPart, Charsets.UTF_8.name()) shouldBe issueBody(r)
     }
 
     @Test
@@ -86,21 +89,20 @@ class DeviceSupportReporterTest {
             issueUrl(r).substringAfter("&body="),
             Charsets.UTF_8.name(),
         )
-        assertThat(decodedBody).contains("```")
-        assertThat(decodedBody).contains(formatReport(r))
+        decodedBody shouldContain "```"
+        decodedBody shouldContain formatReport(r)
     }
 
     @Test
     fun `empty model still yields a clean title`() {
-        assertThat(issueTitle(report(manufacturer = "Nothing", model = "")))
-            .isEqualTo("[Device support] Nothing")
+        issueTitle(report(manufacturer = "Nothing", model = "")) shouldBe "[Device support] Nothing"
     }
 
     @Test
     fun `newlines in values survive encoding without breaking the query`() {
         // A CR/LF that slipped past sanitization must still encode to a single query value.
         val url = issueUrl(report(model = "bad\nmodel"))
-        assertThat(url).doesNotContain("\n")
-        assertThat(url.count { it == '?' }).isEqualTo(1)
+        url shouldNotContain "\n"
+        url.count { it == '?' } shouldBe 1
     }
 }
