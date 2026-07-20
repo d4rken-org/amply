@@ -37,6 +37,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -263,9 +264,14 @@ private fun QuickFullChargeCard(
     canControl: Boolean,
     onEnabledChange: (Boolean) -> Unit,
 ) {
+    // When the gesture can neither be used nor turned off, dim the whole card so it reads as
+    // disabled like the other controls, instead of showing a full-colour but inert toggle.
+    val interactive = enabled || canControl
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier.padding(20.dp),
+            modifier = Modifier
+                .padding(20.dp)
+                .alpha(if (interactive) 1f else 0.38f),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
