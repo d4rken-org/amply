@@ -3,7 +3,10 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import com.android.build.api.dsl.SigningConfig
 import java.util.Properties
 
-fun SigningConfig.loadAmplySigning(path: File): Boolean {
+// Lives here rather than in buildSrc because it references AGP types — see buildSrc/build.gradle.kts.
+// Returns whether a complete configuration was loaded; callers only assign the signing config when
+// ready, so credential-less machines still build (unsigned) release variants.
+fun SigningConfig.setupCredentials(path: File): Boolean {
     val environmentStore = System.getenv("STORE_PATH")?.let(::File)?.takeIf(File::exists)
     if (environmentStore != null) {
         storeFile = environmentStore
@@ -17,8 +20,10 @@ fun SigningConfig.loadAmplySigning(path: File): Boolean {
         keyAlias = properties.getProperty("release.keyAlias")
         keyPassword = properties.getProperty("release.keyPassword")
     }
-    return storeFile != null && !storePassword.isNullOrBlank() &&
+    val ready = storeFile != null && !storePassword.isNullOrBlank() &&
         !keyAlias.isNullOrBlank() && !keyPassword.isNullOrBlank()
+    if (!ready) println("WARNING: No valid signing configuration ($path), builds will be unsigned.")
+    return ready
 }
 
 plugins {
@@ -50,10 +55,10 @@ android {
     var gplaySigningReady = false
     signingConfigs {
         create("releaseFoss") {
-            fossSigningReady = loadAmplySigning(File(signingBase, "signing-foss.properties"))
+            fossSigningReady = setupCredentials(File(signingBase, "signing-foss.properties"))
         }
         create("releaseGplay") {
-            gplaySigningReady = loadAmplySigning(File(signingBase, "signing-gplay-upload.properties"))
+            gplaySigningReady = setupCredentials(File(signingBase, "signing-gplay-upload.properties"))
         }
     }
 
