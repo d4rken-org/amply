@@ -127,7 +127,10 @@ android {
 
     testOptions.unitTests.apply {
         isIncludeAndroidResources = true
-        all { it.useJUnitPlatform() }
+        all {
+            it.useJUnitPlatform()
+            it.setupTestLogging()
+        }
     }
 }
 
