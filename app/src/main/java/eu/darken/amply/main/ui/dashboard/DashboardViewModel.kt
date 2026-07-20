@@ -187,7 +187,8 @@ class DashboardViewModel @Inject constructor(
 
     /**
      * Lower-barrier alternative to GitHub: open the user's mail app with a short friendly message and
-     * the device report attached as a .txt (not pasted raw into the body).
+     * the device report attached as a .txt. If the attachment can't be created, the report is inlined
+     * into the body instead, so the email always carries the details the copy promises.
      */
     fun emailDeviceSupport() = viewModelScope.launch {
         val report = deviceReport.value ?: deviceSupportReporter.collect().also { deviceReport.value = it }
@@ -200,11 +201,19 @@ class DashboardViewModel @Inject constructor(
             }
         }.getOrNull()
 
+        val body = buildString {
+            append(context.getString(R.string.setup_unsupported_email_body))
+            if (attachment == null) {
+                // No attachment could be created; inline the report so it isn't lost.
+                append("\n\n")
+                append(formatReport(report))
+            }
+        }
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(Intent.EXTRA_EMAIL, arrayOf("support@darken.eu"))
             putExtra(Intent.EXTRA_SUBJECT, issueTitle(report))
-            putExtra(Intent.EXTRA_TEXT, context.getString(R.string.setup_unsupported_email_body))
+            putExtra(Intent.EXTRA_TEXT, body)
             attachment?.let { putExtra(Intent.EXTRA_STREAM, it) }
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         }
