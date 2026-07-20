@@ -28,9 +28,9 @@ wrapper (`./gradlew`). Build/test on **JDK 21** (Robolectric needs it for Androi
 
 # Everything CI runs, in one go
 ./gradlew testFossDebugUnitTest testGplayDebugUnitTest \
-  lintFossDebug lintGplayDebug \
-  assembleFossDebug assembleGplayDebug \
-  assembleFossRelease assembleGplayRelease
+  lintVitalFossBeta lintVitalFossRelease lintVitalGplayBeta lintVitalGplayRelease \
+  assembleFossDebug assembleGplayDebug
+bash fastlane/check_metadata_length.sh
 ```
 
 ## Lint
@@ -66,5 +66,7 @@ explicitly asks for full output.
 - `buildFeatures { aidl = true; buildConfig = true; compose = true }` are all enabled — the Shizuku `IChargingControlService.aidl`
   and `BuildConfig.ENABLE_PIXEL_LAB_ADAPTER` depend on this.
 - `testOptions.unitTests.isIncludeAndroidResources = true` — Robolectric tests can read resources.
-- CI (`.github/workflows/code-checks.yml`) builds **both** flavors and both debug+release; a change that only compiles
-  under one flavor will fail CI.
+- CI (`.github/workflows/code-checks.yml`) is matrix-based (CAPod-style): `lintVital{Foss,Gplay}{Beta,Release}`,
+  `assemble{Foss,Gplay}Debug`, `test{Foss,Gplay}DebugUnitTest`, plus a fastlane metadata length check. A change that
+  only compiles under one flavor still fails CI, and lintVital compiles the beta/release sources — but CI does **not**
+  run R8 packaging. Run `./gradlew assembleFossRelease assembleGplayRelease` locally before a release.

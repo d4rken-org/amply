@@ -33,8 +33,11 @@ Never commit signing material or point these at repo paths.
 
 ## CI
 
-`.github/workflows/code-checks.yml` runs on push to `main` and on PRs: validates the Gradle wrapper, then builds +
-tests + lints **both** flavors including release assembly. It does **not** publish — CI is verification only.
+`.github/workflows/code-checks.yml` runs on push to `main` and on PRs as matrix jobs (CAPod parity): wrapper
+validation (in the shared `common-setup` action), `lintVital{Foss,Gplay}{Beta,Release}`, `assemble{Foss,Gplay}Debug`,
+`test{Foss,Gplay}DebugUnitTest`, and a fastlane metadata length check. CI does **not** run R8/minified packaging
+(lintVital only compiles the beta/release sources) and does **not** publish — run
+`./gradlew assembleFossRelease assembleGplayRelease` locally before tagging a release.
 
 ## Google Play gate
 
