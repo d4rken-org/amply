@@ -51,6 +51,8 @@ run `./gradlew assembleFossRelease assembleGplayRelease` locally before tagging 
 - **`release-prepare.yml`** (`workflow_dispatch`): computes the next version with `bump.sh`, guards tag collisions,
   and — when `dry_run=false` — commits `version.properties`+`VERSION`, tags `v<name>`, and pushes. The push job needs
   the `RELEASE_APP_CLIENT_ID` / `RELEASE_APP_PRIVATE_KEY` GitHub App secrets; the dry-run plan needs no secrets.
+  A manual `workflow_dispatch` (dry-run/build-only) must be launched **from a `v*` tag ref**, not a branch — the
+  tag-validation job intentionally fails on a branch ref so the publish job can never run against a non-tag.
 - **`release-tag.yml`** (on a `v*` tag): validates the tag against `version.properties`, builds `assembleFossBeta`
   (for `-beta` tags) or `assembleFossRelease`, and attaches the versioned APK to a GitHub (pre-)release. Signed only
   when `SIGNING_KEYSTORE_BASE64` + `STORE_PASSWORD`/`KEY_ALIAS`/`KEY_PASSWORD` secrets are present; otherwise the APK
