@@ -12,7 +12,7 @@ The first control adapter targets **Pixel charging optimization**. Direct contro
 newer phones on Android 15+ when Google's charging-optimization controller is present. Other Pixels, Samsung, and
 OnePlus/Oppo remain diagnostics-only.
 
-Package: `eu.darken.amply`. License: GPL-3.0-or-later. Status: pre-launch (`0.1.0-spike1`).
+Package: `eu.darken.amply`. License: GPL-3.0-or-later. Status: pre-launch (`0.1.0-beta1`).
 
 ## Project Shape
 
@@ -43,7 +43,8 @@ AIDL boundary: `app/src/main/aidl/eu/darken/amply/charging/core/access/shizuku/I
 
 ## Important File Locations
 
-- `version.properties` — versioning source of truth (parsed by the buildSrc `ProjectConfigPlugin`)
+- `version.properties` + `VERSION` — versioning source of truth (parsed by the buildSrc `ProjectConfigPlugin`) and
+  its drift mirror; bump via `tools/release/bump.sh`, never by hand
 - `buildSrc/` — `ProjectConfig` (packageName/SDKs/version) plus shared build helpers
 - `app/build.gradle.kts` — flavors, build types, signing wiring, dependencies
 - `build.gradle.kts` (root) — plugin versions (AGP, KSP, Kotlin Compose, Hilt)

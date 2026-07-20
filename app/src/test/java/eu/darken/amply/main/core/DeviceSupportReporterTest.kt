@@ -31,8 +31,8 @@ class DeviceSupportReporterTest {
         adapterDetail = "Detected for diagnostics only; no unverified writes are exposed",
         batteryChargingStatus = 1,
         batteryPlugged = true,
-        appVersionName = "0.1.0-spike1",
-        appVersionCode = 10,
+        appVersionName = "0.1.0-beta1",
+        appVersionCode = 100010,
         flavor = "foss",
         buildType = "debug",
     )
