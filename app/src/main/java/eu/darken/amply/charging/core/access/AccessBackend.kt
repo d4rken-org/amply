@@ -1,6 +1,7 @@
 package eu.darken.amply.charging.core.access
 
 import eu.darken.amply.charging.core.BackendKind
+import eu.darken.amply.common.ca.CaString
 
 enum class SettingNamespace(val commandName: String) {
     SECURE("secure"),
@@ -11,7 +12,7 @@ enum class SettingNamespace(val commandName: String) {
 data class SettingRead(
     val readable: Boolean,
     val value: String? = null,
-    val error: String? = null,
+    val error: CaString? = null,
 )
 
 data class SettingMutation(
@@ -23,7 +24,7 @@ data class SettingMutation(
 data class BackendStatus(
     val available: Boolean,
     val granted: Boolean,
-    val detail: String,
+    val detail: CaString,
     val installed: Boolean = available,
 ) {
     val ready: Boolean get() = available && granted

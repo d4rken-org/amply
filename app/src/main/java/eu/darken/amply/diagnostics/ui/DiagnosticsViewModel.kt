@@ -3,6 +3,9 @@ package eu.darken.amply.diagnostics.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import eu.darken.amply.R
+import eu.darken.amply.common.ca.CaString
+import eu.darken.amply.common.ca.toCaString
 import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
@@ -16,7 +19,7 @@ import javax.inject.Inject
 data class DiagnosticsUiState(
     val busy: Boolean = false,
     val baselineCaptured: Boolean = false,
-    val status: String = "Ready to capture a baseline.",
+    val status: CaString = R.string.diagnostics_status_ready.toCaString(),
     val report: String? = null,
 )
 
@@ -35,11 +38,12 @@ class DiagnosticsViewModel @Inject constructor(
                 onSuccess = { count ->
                     DiagnosticsUiState(
                         baselineCaptured = true,
-                        status = "Baseline captured ($count settings). Change one Pixel setting, then compare.",
+                        status = R.string.diagnostics_status_baseline_captured.toCaString(count),
                     )
                 },
                 onFailure = {
-                    DiagnosticsUiState(status = it.message ?: "Baseline capture failed")
+                    log(TAG, Logging.Priority.WARN) { "Baseline capture failed: ${it.message}" }
+                    DiagnosticsUiState(status = R.string.diagnostics_status_capture_failed.toCaString())
                 },
             )
     }
@@ -53,14 +57,15 @@ class DiagnosticsViewModel @Inject constructor(
                 onSuccess = { report ->
                     DiagnosticsUiState(
                         baselineCaptured = true,
-                        status = "Comparison complete. Review the redacted changes below.",
+                        status = R.string.diagnostics_status_compare_complete.toCaString(),
                         report = report,
                     )
                 },
                 onFailure = {
+                    log(TAG, Logging.Priority.WARN) { "Comparison failed: ${it.message}" }
                     mutableState.value.copy(
                         busy = false,
-                        status = it.message ?: "Comparison failed",
+                        status = R.string.diagnostics_status_compare_failed.toCaString(),
                     )
                 },
             )

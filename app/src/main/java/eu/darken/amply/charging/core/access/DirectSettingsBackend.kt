@@ -6,7 +6,9 @@ import android.content.pm.PackageManager
 import android.provider.Settings
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
+import eu.darken.amply.R
 import eu.darken.amply.charging.core.BackendKind
+import eu.darken.amply.common.ca.toCaString
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -25,7 +27,7 @@ class DirectSettingsBackend @Inject constructor(
         return BackendStatus(
             available = true,
             granted = granted,
-            detail = if (granted) "WRITE_SECURE_SETTINGS granted" else "WRITE_SECURE_SETTINGS not granted",
+            detail = (if (granted) R.string.access_wss_granted else R.string.access_wss_not_granted).toCaString(),
         )
     }
 
@@ -40,8 +42,8 @@ class DirectSettingsBackend @Inject constructor(
         SettingRead(
             readable = false,
             error = when (it) {
-                is SecurityException -> "Android blocks third-party reads of this hidden setting"
-                else -> it.message ?: it.javaClass.simpleName
+                is SecurityException -> R.string.access_read_blocked.toCaString()
+                else -> (it.message ?: it.javaClass.simpleName).toCaString()
             },
         )
     }

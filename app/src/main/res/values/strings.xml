@@ -2,6 +2,7 @@
     <string name="app_name">Amply</string>
     <string name="tile_label" formatted="false">100% once</string>
     <string name="tile_active">Restore limit</string>
+    <string name="tile_override_active">Temporary override active</string>
     <string name="widget_description">Amply charge controls</string>
     <string name="session_channel_name">Temporary full charge</string>
     <string name="session_notification_title" formatted="false">Charging to 100% once</string>
@@ -51,4 +52,85 @@
     <string name="onboarding_caveat_support_body">Charge control is added one phone at a time, so not every device is supported yet. Amply shows where yours stands and, when it can, how to help add support.</string>
     <string name="onboarding_caveat_setup_title">One-time setup on supported devices</string>
     <string name="onboarding_caveat_setup_body">To change the charge policy, Amply needs elevated access granted once — either by running a command from a computer over ADB, or on-device with Shizuku. If your device is supported, the dashboard walks you through it.</string>
+
+    <!-- Charging policy labels -->
+    <string name="charging_policy_unrestricted_label">Unrestricted (100%)</string>
+    <string name="charging_policy_adaptive_label">Adaptive charging</string>
+    <string name="charging_policy_fixed_label">Limit to %1$d%%</string>
+
+    <!-- Charging state messages (dashboard status line) -->
+    <string name="charging_message_setup_required">Setup required</string>
+    <string name="charging_message_applying">Applying %1$s…</string>
+    <string name="charging_message_write_failed">Write failed</string>
+    <string name="charging_message_verified">%1$s setting verified; charging hardware may take about 15 seconds</string>
+    <string name="charging_message_requested_slow">%1$s requested; charging hardware may take about 15 seconds</string>
+    <string name="charging_message_requested">%1$s requested</string>
+    <string name="charging_message_shizuku_granted">Shizuku permission granted</string>
+    <string name="charging_message_shizuku_denied">Shizuku permission was not granted</string>
+    <string name="charging_message_wss_granted">WRITE_SECURE_SETTINGS granted</string>
+    <string name="charging_message_wss_failed">Could not grant WRITE_SECURE_SETTINGS</string>
+
+    <!-- Charge observation reasons (dashboard status detail) -->
+    <string name="charging_reason_loading">Loading</string>
+    <string name="charging_reason_state_unavailable">State unavailable</string>
+    <string name="charging_reason_write_failed">The settings write failed</string>
+    <string name="charging_reason_needs_setup">Grant WSS or connect Shizuku</string>
+    <string name="charging_reason_policy_unsupported">%1$s is not supported by %2$s</string>
+    <string name="charging_reason_settings_unreadable">Settings are not readable</string>
+    <string name="charging_reason_values_unrecognized">Unrecognized Pixel values: %1$s=%2$s, %3$s=%4$s</string>
+    <string name="charging_reason_hw_normal">Charging hardware is normal; without Shizuku, Amply cannot distinguish unrestricted from inactive adaptive charging</string>
+    <string name="charging_reason_hw_too_cold">Charging is currently temperature-limited because the battery is too cold</string>
+    <string name="charging_reason_hw_too_hot">Charging is currently temperature-limited because the battery is too hot</string>
+    <string name="charging_reason_hw_unrecognized">Android did not report a recognized charging-hardware state</string>
+    <string name="charging_reason_lab_diagnostics_only">This OEM adapter is diagnostics-only</string>
+
+    <!-- Adapter display names -->
+    <string name="adapter_name_detecting">Detecting…</string>
+    <string name="adapter_name_unsupported">Unsupported device</string>
+    <string name="adapter_name_pixel">Google Pixel charging optimization</string>
+    <string name="adapter_name_samsung">Samsung (diagnostics)</string>
+    <string name="adapter_name_oneplus">OnePlus/Oppo (diagnostics)</string>
+
+    <!-- Adapter support detail (why a device is or isn\'t controllable) -->
+    <string name="adapter_detail_requires_pixel">Requires a supported Google Pixel phone</string>
+    <string name="adapter_detail_requires_android15">Requires Android 15 or newer</string>
+    <string name="adapter_detail_requires_model" formatted="false">The 80% limit is officially supported on Pixel 6a and newer phones</string>
+    <string name="adapter_detail_no_tablet">Pixel tablets are not supported</string>
+    <string name="adapter_detail_no_controller">Google\'s charging-optimization controller is not available</string>
+    <string name="adapter_detail_disabled_build">Adapter disabled in this build</string>
+    <string name="adapter_detail_pixel_ready">Supported Pixel capability detected; charging hardware may take about 15 seconds to react</string>
+    <string name="adapter_detail_lab_diagnostics">Detected for diagnostics only; no unverified writes are exposed</string>
+    <string name="adapter_detail_none">No charging adapter is known for this device</string>
+
+    <!-- Access backend detail + summary labels -->
+    <string name="access_wss_granted">WRITE_SECURE_SETTINGS granted</string>
+    <string name="access_wss_not_granted">WRITE_SECURE_SETTINGS not granted</string>
+    <string name="access_shizuku_not_installed">Shizuku is not installed</string>
+    <string name="access_shizuku_not_running">Shizuku is installed but not running</string>
+    <string name="access_shizuku_not_granted">Shizuku permission not granted</string>
+    <string name="access_shizuku_ready">Shizuku ready</string>
+    <string name="access_read_blocked">Android blocks third-party reads of this hidden setting</string>
+    <string name="access_label_wss_shizuku">WSS + Shizuku</string>
+    <string name="access_label_wss">WRITE_SECURE_SETTINGS</string>
+    <string name="access_label_shizuku">Shizuku</string>
+    <string name="access_label_setup_required">Setup required</string>
+
+    <!-- Dashboard status card (observation title + detail, policy short labels) -->
+    <string name="dashboard_status_verified_active">%1$s active</string>
+    <string name="dashboard_status_setup_required">Setup required</string>
+    <string name="dashboard_status_unsupported">Unsupported device</string>
+    <string name="dashboard_status_unknown">Policy not verified</string>
+    <string name="dashboard_detail_hw_confirmed">Confirmed by Android\'s charging hardware</string>
+    <string name="dashboard_detail_readback">Read back through %1$s</string>
+    <string name="dashboard_detail_last_requested">Last requested by Amply; connect Shizuku for exact readback</string>
+    <string name="dashboard_policy_adaptive">Adaptive charging</string>
+    <string name="dashboard_policy_full">100% charging</string>
+    <string name="dashboard_policy_fixed">%1$d%% limit</string>
+
+    <!-- Diagnostics status line -->
+    <string name="diagnostics_status_ready">Ready to capture a baseline.</string>
+    <string name="diagnostics_status_baseline_captured">Baseline captured (%1$d settings). Change one Pixel setting, then compare.</string>
+    <string name="diagnostics_status_capture_failed">Baseline capture failed</string>
+    <string name="diagnostics_status_compare_complete">Comparison complete. Review the redacted changes below.</string>
+    <string name="diagnostics_status_compare_failed">Comparison failed</string>
 </resources>

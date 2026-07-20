@@ -31,9 +31,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import eu.darken.amply.R
 import eu.darken.amply.charging.core.access.BackendStatus
+import eu.darken.amply.common.ca.toCaString
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
+import eu.darken.amply.common.compose.asComposable
 import eu.darken.amply.common.settings.SettingsBaseItem
 import eu.darken.amply.common.settings.SettingsCategoryHeader
 import eu.darken.amply.common.settings.SettingsDivider
@@ -127,7 +130,7 @@ fun DiagnosticsScreen(
                     ),
                 ) {
                     Text(
-                        text = state.status,
+                        text = state.status.asComposable(),
                         modifier = Modifier.padding(16.dp),
                         style = MaterialTheme.typography.bodyMedium,
                     )
@@ -210,7 +213,7 @@ private fun ShizukuAccessCard(
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        status?.detail ?: "Checking Shizuku access…",
+                        status?.detail?.asComposable() ?: "Checking Shizuku access…",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -241,10 +244,10 @@ private fun DiagnosticsScreenPreview() = PreviewWrapper {
     DiagnosticsScreen(
         state = DiagnosticsUiState(
             baselineCaptured = true,
-            status = "Comparison complete. Review the redacted changes below.",
+            status = R.string.diagnostics_status_compare_complete.toCaString(),
             report = "secure/charge_optimization_mode: 0 → 1\nsecure/adaptive_charging_enabled: 1 → 0",
         ),
-        shizuku = BackendStatus(available = true, granted = true, detail = "Shizuku connected"),
+        shizuku = BackendStatus(available = true, granted = true, detail = "Shizuku connected".toCaString()),
         onBack = {},
         onRefresh = {},
         onOpenShizuku = {},

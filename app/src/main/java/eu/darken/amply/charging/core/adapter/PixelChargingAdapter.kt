@@ -7,6 +7,7 @@ import android.content.IntentFilter
 import android.os.BatteryManager
 import android.provider.Settings
 import eu.darken.amply.BuildConfig
+import eu.darken.amply.R
 import eu.darken.amply.charging.core.access.AccessBackend
 import eu.darken.amply.charging.core.access.SettingMutation
 import eu.darken.amply.charging.core.access.SettingNamespace
@@ -14,13 +15,14 @@ import eu.darken.amply.charging.core.BackendKind
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.DeviceInfo
+import eu.darken.amply.common.ca.toCaString
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class PixelChargingAdapter @Inject constructor() : ChargingAdapter {
     override val id = "google-pixel-lab-v1"
-    override val displayName = "Google Pixel charging optimization"
+    override val displayName = R.string.adapter_name_pixel.toCaString()
     override val supportedPolicies = listOf(
         ChargePolicy.FixedLimit(80),
         ChargePolicy.Adaptive,
@@ -45,13 +47,13 @@ class PixelChargingAdapter @Inject constructor() : ChargingAdapter {
                 device.hasChargingOptimization &&
                 BuildConfig.ENABLE_PIXEL_LAB_ADAPTER,
             detail = when {
-                !pixel -> "Requires a supported Google Pixel phone"
-                device.sdk < MIN_SUPPORTED_SDK -> "Requires Android 15 or newer"
-                !supportedModel -> "The 80% limit is officially supported on Pixel 6a and newer phones"
-                !device.isPhone -> "Pixel tablets are not supported"
-                !device.hasChargingOptimization -> "Google's charging-optimization controller is not available"
-                !BuildConfig.ENABLE_PIXEL_LAB_ADAPTER -> "Adapter disabled in this build"
-                else -> "Supported Pixel capability detected; charging hardware may take about 15 seconds to react"
+                !pixel -> R.string.adapter_detail_requires_pixel
+                device.sdk < MIN_SUPPORTED_SDK -> R.string.adapter_detail_requires_android15
+                !supportedModel -> R.string.adapter_detail_requires_model
+                !device.isPhone -> R.string.adapter_detail_no_tablet
+                !device.hasChargingOptimization -> R.string.adapter_detail_no_controller
+                !BuildConfig.ENABLE_PIXEL_LAB_ADAPTER -> R.string.adapter_detail_disabled_build
+                else -> R.string.adapter_detail_pixel_ready
             },
         )
     }
@@ -74,14 +76,18 @@ class PixelChargingAdapter @Inject constructor() : ChargingAdapter {
         val mode = backend.read(SettingNamespace.SECURE, KEY_MODE)
         val adaptive = backend.read(SettingNamespace.SECURE, KEY_ADAPTIVE)
         if (!mode.readable || !adaptive.readable) {
-            return ChargeObservation.Unknown(mode.error ?: adaptive.error ?: "Settings are not readable")
+            return ChargeObservation.Unknown(
+                mode.error ?: adaptive.error ?: R.string.charging_reason_settings_unreadable.toCaString(),
+            )
         }
         val policy = when {
             mode.value == "1" -> ChargePolicy.FixedLimit(80)
             mode.value == "0" && adaptive.value == "1" -> ChargePolicy.Adaptive
             mode.value == "0" -> ChargePolicy.Unrestricted
             else -> return ChargeObservation.Unknown(
-                "Unrecognized Pixel values: $KEY_MODE=${mode.value}, $KEY_ADAPTIVE=${adaptive.value}",
+                R.string.charging_reason_values_unrecognized.toCaString(
+                    KEY_MODE, mode.value, KEY_ADAPTIVE, adaptive.value,
+                ),
             )
         }
         return ChargeObservation.Verified(policy, backend.kind)
@@ -157,13 +163,13 @@ class PixelChargingAdapter @Inject constructor() : ChargingAdapter {
             if (!plugged) return null
             return when (chargingState) {
                 CHARGING_STATE_NORMAL -> ChargeObservation.Unknown(
-                    "Charging hardware is normal; without Shizuku, Amply cannot distinguish unrestricted from inactive adaptive charging",
+                    R.string.charging_reason_hw_normal.toCaString(),
                 )
                 CHARGING_STATE_TOO_COLD -> ChargeObservation.Unknown(
-                    "Charging is currently temperature-limited because the battery is too cold",
+                    R.string.charging_reason_hw_too_cold.toCaString(),
                 )
                 CHARGING_STATE_TOO_HOT -> ChargeObservation.Unknown(
-                    "Charging is currently temperature-limited because the battery is too hot",
+                    R.string.charging_reason_hw_too_hot.toCaString(),
                 )
                 CHARGING_STATE_LONG_LIFE -> ChargeObservation.Verified(
                     ChargePolicy.FixedLimit(80),
@@ -173,7 +179,7 @@ class PixelChargingAdapter @Inject constructor() : ChargingAdapter {
                     ChargePolicy.Adaptive,
                     BackendKind.BATTERY_HARDWARE,
                 )
-                else -> ChargeObservation.Unknown("Android did not report a recognized charging-hardware state")
+                else -> ChargeObservation.Unknown(R.string.charging_reason_hw_unrecognized.toCaString())
             }
         }
 

@@ -3,15 +3,17 @@ package eu.darken.amply.charging.core.adapter
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.annotation.StringRes
 import eu.darken.amply.charging.core.access.AccessBackend
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.DeviceInfo
+import eu.darken.amply.common.ca.CaString
 
 data class AdapterSupport(
     val matched: Boolean,
     val controlEnabled: Boolean,
-    val detail: String,
+    @param:StringRes val detail: Int,
     /**
      * Whether an unsupported device of this kind is a useful device-support contribution.
      * True for OEMs Amply wants to add (unknown manufacturers, diagnostics-only lab adapters);
@@ -22,7 +24,7 @@ data class AdapterSupport(
 
 interface ChargingAdapter {
     val id: String
-    val displayName: String
+    val displayName: CaString
     val supportedPolicies: List<ChargePolicy>
     val observedSettingUris: List<Uri> get() = emptyList()
 

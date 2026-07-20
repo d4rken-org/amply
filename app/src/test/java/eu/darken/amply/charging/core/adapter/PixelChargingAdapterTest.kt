@@ -5,13 +5,14 @@ import eu.darken.amply.charging.core.access.BackendStatus
 import eu.darken.amply.charging.core.access.SettingMutation
 import eu.darken.amply.charging.core.access.SettingNamespace
 import eu.darken.amply.charging.core.access.SettingRead
+import eu.darken.amply.R
 import eu.darken.amply.charging.core.BackendKind
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.DeviceInfo
+import eu.darken.amply.common.ca.toCaString
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
@@ -25,7 +26,7 @@ class PixelChargingAdapterTest {
 
         support.matched shouldBe true
         support.controlEnabled shouldBe true
-        support.detail shouldContain "Supported Pixel capability"
+        support.detail shouldBe R.string.adapter_detail_pixel_ready
     }
 
     @Test
@@ -184,9 +185,9 @@ class PixelChargingAdapterTest {
         override val kind = BackendKind.SHIZUKU
         val writes = mutableListOf<SettingMutation>()
 
-        override suspend fun status() = BackendStatus(true, true, "test")
+        override suspend fun status() = BackendStatus(true, true, "test".toCaString())
         override suspend fun read(namespace: SettingNamespace, key: String) =
-            SettingRead(readable, values[key], if (readable) null else "blocked")
+            SettingRead(readable, values[key], if (readable) null else "blocked".toCaString())
 
         override suspend fun write(mutation: SettingMutation): Boolean {
             writes += mutation

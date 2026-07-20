@@ -58,10 +58,15 @@ import eu.darken.amply.charging.core.DeviceInfo
 import eu.darken.amply.charging.core.SETTLING_WINDOW_MILLIS
 import eu.darken.amply.charging.core.isSettling
 import eu.darken.amply.charging.core.settlingTarget
+import eu.darken.amply.R
 import eu.darken.amply.charging.core.access.AccessSnapshot
 import eu.darken.amply.charging.core.access.BackendStatus
+import eu.darken.amply.common.ca.CaString
+import eu.darken.amply.common.ca.caString
+import eu.darken.amply.common.ca.toCaString
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
+import eu.darken.amply.common.compose.asComposable
 import eu.darken.amply.main.core.formatReport
 import eu.darken.amply.main.ui.setup.AccessSetupGuide
 import eu.darken.amply.main.ui.setup.UnsupportedDeviceCard
@@ -250,14 +255,14 @@ private fun StatusCard(state: DashboardUiState, onRefresh: () -> Unit) {
                     )
                 }
                 Text(
-                    if (settling) "Applying…" else observation.title(),
+                    if (settling) "Applying…" else observation.title().asComposable(),
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.weight(1f),
                 )
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                observation.detail(),
+                observation.detail().asComposable(),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -267,7 +272,7 @@ private fun StatusCard(state: DashboardUiState, onRefresh: () -> Unit) {
                 style = MaterialTheme.typography.labelMedium,
             )
             if (settling) {
-                val target = state.charging.settlingTarget()?.shortLabel() ?: "the new policy"
+                val target = state.charging.settlingTarget()?.shortLabel()?.asComposable() ?: "the new policy"
                 Spacer(Modifier.height(4.dp))
                 Text(
                     "Waiting for the system to switch to $target…",
@@ -278,7 +283,11 @@ private fun StatusCard(state: DashboardUiState, onRefresh: () -> Unit) {
                 // The repository's "may take ~15s" message duplicates the settling line, so only show it
                 // once settling has resolved.
                 state.charging.message?.let {
-                    Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    Text(
+                        it.asComposable(),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
                 }
             }
         }
@@ -458,34 +467,36 @@ private fun ChargeObservation.policyOrNull(): ChargePolicy? = when (this) {
     else -> null
 }
 
-private fun ChargeObservation.title(): String = when (this) {
+private fun ChargeObservation.title(): CaString = when (this) {
     is ChargeObservation.Verified -> if (backend == BackendKind.BATTERY_HARDWARE) {
-        "${policy.shortLabel()} active"
+        caString { it.getString(R.string.dashboard_status_verified_active, policy.shortLabel().get(it)) }
     } else {
         policy.shortLabel()
     }
     is ChargeObservation.LastRequested -> policy.shortLabel()
-    is ChargeObservation.NeedsSetup -> "Setup required"
-    is ChargeObservation.Unsupported -> "Unsupported device"
-    is ChargeObservation.Unknown -> "Policy not verified"
+    is ChargeObservation.NeedsSetup -> R.string.dashboard_status_setup_required.toCaString()
+    is ChargeObservation.Unsupported -> R.string.dashboard_status_unsupported.toCaString()
+    is ChargeObservation.Unknown -> R.string.dashboard_status_unknown.toCaString()
 }
 
-private fun ChargeObservation.detail(): String = when (this) {
+private fun ChargeObservation.detail(): CaString = when (this) {
     is ChargeObservation.Verified -> if (backend == BackendKind.BATTERY_HARDWARE) {
-        "Confirmed by Android's charging hardware"
+        R.string.dashboard_detail_hw_confirmed.toCaString()
     } else {
-        "Read back through ${backend.name.replace('_', ' ').lowercase()}"
+        caString {
+            it.getString(R.string.dashboard_detail_readback, backend.name.replace('_', ' ').lowercase())
+        }
     }
-    is ChargeObservation.LastRequested -> "Last requested by Amply; connect Shizuku for exact readback"
+    is ChargeObservation.LastRequested -> R.string.dashboard_detail_last_requested.toCaString()
     is ChargeObservation.NeedsSetup -> reason
     is ChargeObservation.Unsupported -> reason
     is ChargeObservation.Unknown -> reason
 }
 
-private fun ChargePolicy.shortLabel(): String = when (this) {
-    ChargePolicy.Adaptive -> "Adaptive charging"
-    ChargePolicy.Unrestricted -> "100% charging"
-    is ChargePolicy.FixedLimit -> "$percent% limit"
+private fun ChargePolicy.shortLabel(): CaString = when (this) {
+    ChargePolicy.Adaptive -> R.string.dashboard_policy_adaptive.toCaString()
+    ChargePolicy.Unrestricted -> R.string.dashboard_policy_full.toCaString()
+    is ChargePolicy.FixedLimit -> R.string.dashboard_policy_fixed.toCaString(percent)
 }
 
 @AmplyPreview
@@ -496,13 +507,16 @@ private fun DashboardScreenPreview() = PreviewWrapper {
             onboardingComplete = true,
             charging = ChargingState(
                 device = DeviceInfo("Google", "Pixel 8", 36, "preview"),
-                adapterName = "Pixel Charge Control",
+                adapterName = "Pixel Charge Control".toCaString(),
                 adapterId = "pixel",
-                adapterDetail = "Supported Pixel capability",
                 controlEnabled = true,
                 access = AccessSnapshot(
-                    direct = BackendStatus(available = true, granted = true, detail = "WRITE_SECURE_SETTINGS granted"),
-                    shizuku = BackendStatus(available = true, granted = true, detail = "Shizuku connected"),
+                    direct = BackendStatus(
+                        available = true,
+                        granted = true,
+                        detail = "WRITE_SECURE_SETTINGS granted".toCaString(),
+                    ),
+                    shizuku = BackendStatus(available = true, granted = true, detail = "Shizuku connected".toCaString()),
                 ),
                 observation = ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.SHIZUKU),
             ),
@@ -535,11 +549,10 @@ private fun DashboardScreenUnsupportedPreview() = PreviewWrapper {
             onboardingComplete = true,
             charging = ChargingState(
                 device = DeviceInfo("Samsung", "SM-S911B", 34, "preview", hasChargingOptimization = false),
-                adapterName = "Diagnostics only",
-                adapterDetail = "This device is not a supported Pixel",
+                adapterName = "Diagnostics only".toCaString(),
                 controlEnabled = false,
                 contributionWanted = true,
-                observation = ChargeObservation.Unsupported("This device is not a supported Pixel"),
+                observation = ChargeObservation.Unsupported("This device is not a supported Pixel".toCaString()),
             ),
         ),
         adbCommand = "adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS",

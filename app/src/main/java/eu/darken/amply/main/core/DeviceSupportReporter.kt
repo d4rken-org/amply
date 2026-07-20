@@ -36,7 +36,6 @@ data class DeviceSupportReport(
     val adapterMatched: Boolean,
     val adapterControlEnabled: Boolean,
     val contributionWanted: Boolean,
-    val adapterDetail: String,
     val batteryChargingStatus: Int,
     val batteryPlugged: Boolean,
     val appVersionName: String,
@@ -71,7 +70,6 @@ class DeviceSupportReporter @Inject constructor(
             adapterMatched = selection.support.matched,
             adapterControlEnabled = selection.support.controlEnabled,
             contributionWanted = selection.support.contributionWanted,
-            adapterDetail = sanitizeReportValue(selection.support.detail),
             batteryChargingStatus = battery?.getIntExtra(BatteryManager.EXTRA_CHARGING_STATUS, -1) ?: -1,
             batteryPlugged = (battery?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0,
             appVersionName = BuildConfig.VERSION_NAME,
@@ -99,7 +97,7 @@ internal fun sanitizeReportValue(value: String?, max: Int = 120): String {
 /** Deterministic, single stable schema. Keep field order fixed so reports are diff-friendly. */
 internal fun formatReport(report: DeviceSupportReport): String = buildString {
     appendLine("Amply device-support request")
-    appendLine("report_schema=1")
+    appendLine("report_schema=2")
     appendLine("app_version=${report.appVersionName} (${report.appVersionCode})")
     appendLine("distribution=${report.flavor}/${report.buildType}")
     appendLine("manufacturer=${report.manufacturer}")
@@ -117,8 +115,7 @@ internal fun formatReport(report: DeviceSupportReport): String = buildString {
     appendLine("adapter_control_enabled=${report.adapterControlEnabled}")
     appendLine("contribution_wanted=${report.contributionWanted}")
     appendLine("battery_charging_status=${report.batteryChargingStatus}")
-    appendLine("battery_plugged=${report.batteryPlugged}")
-    append("adapter_detail=${report.adapterDetail}")
+    append("battery_plugged=${report.batteryPlugged}")
 }
 
 internal fun issueTitle(report: DeviceSupportReport): String =

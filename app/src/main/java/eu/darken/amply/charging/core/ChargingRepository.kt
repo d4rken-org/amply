@@ -2,12 +2,16 @@ package eu.darken.amply.charging.core
 
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
+import eu.darken.amply.R
 import eu.darken.amply.charging.core.access.AccessResolver
 import eu.darken.amply.charging.core.access.AccessSnapshot
 import eu.darken.amply.charging.core.access.shizuku.ShizukuController
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
 import eu.darken.amply.charging.core.adapter.AdapterSelection
 import eu.darken.amply.charging.core.ChargingPreferences
+import eu.darken.amply.common.ca.CaString
+import eu.darken.amply.common.ca.caString
+import eu.darken.amply.common.ca.toCaString
 import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
@@ -24,16 +28,15 @@ import javax.inject.Singleton
 
 data class ChargingState(
     val device: DeviceInfo = DeviceInfo.current(),
-    val adapterName: String = "Detecting…",
+    val adapterName: CaString = R.string.adapter_name_detecting.toCaString(),
     val adapterId: String? = null,
-    val adapterDetail: String = "",
     val controlEnabled: Boolean = false,
     val contributionWanted: Boolean = false,
     val access: AccessSnapshot? = null,
-    val observation: ChargeObservation = ChargeObservation.Unknown("Loading"),
+    val observation: ChargeObservation = ChargeObservation.Unknown(R.string.charging_reason_loading.toCaString()),
     val pending: PendingRequest? = null,
     val busy: Boolean = false,
-    val message: String? = null,
+    val message: CaString? = null,
 )
 
 @Singleton
@@ -49,7 +52,7 @@ class ChargingRepository @Inject constructor(
     private val mutableState = MutableStateFlow(ChargingState())
     val state: StateFlow<ChargingState> = mutableState.asStateFlow()
 
-    suspend fun refresh(message: String? = null): ChargingState = operationMutex.withLock {
+    suspend fun refresh(message: CaString? = null): ChargingState = operationMutex.withLock {
         refreshLocked(message)
     }
 
@@ -68,13 +71,19 @@ class ChargingRepository @Inject constructor(
 
     suspend fun requestShizukuPermission(): Boolean {
         val result = runCatching { shizukuController.requestPermission() }.getOrDefault(false)
-        refresh(if (result) "Shizuku permission granted" else "Shizuku permission was not granted")
+        refresh(
+            (if (result) R.string.charging_message_shizuku_granted else R.string.charging_message_shizuku_denied)
+                .toCaString(),
+        )
         return result
     }
 
     suspend fun grantWriteSecureSettings(): Boolean {
         val result = runCatching { shizukuController.grantWriteSecureSettings() }.getOrDefault(false)
-        refresh(if (result) "WRITE_SECURE_SETTINGS granted" else "Could not grant WRITE_SECURE_SETTINGS")
+        refresh(
+            (if (result) R.string.charging_message_wss_granted else R.string.charging_message_wss_failed)
+                .toCaString(),
+        )
         return result
     }
 
@@ -93,22 +102,37 @@ class ChargingRepository @Inject constructor(
         val selection = registry.select()
         val adapter = selection.adapter
         if (adapter == null || !selection.support.controlEnabled) {
-            val observation = ChargeObservation.Unsupported(selection.support.detail)
-            mutableState.value = state.value.copy(observation = observation, message = selection.support.detail)
-            return ApplyResult(false, observation, selection.support.detail)
+            val detail = selection.support.detail.toCaString()
+            val observation = ChargeObservation.Unsupported(detail)
+            mutableState.value = state.value.copy(observation = observation, message = detail)
+            return ApplyResult(false, observation, context.getString(selection.support.detail))
         }
         if (policy !in adapter.supportedPolicies) {
-            val observation = ChargeObservation.Unsupported("${policy.label} is not supported by ${adapter.displayName}")
+            val observation = ChargeObservation.Unsupported(
+                caString {
+                    it.getString(
+                        R.string.charging_reason_policy_unsupported,
+                        policy.label.get(it),
+                        adapter.displayName.get(it),
+                    )
+                },
+            )
             return ApplyResult(false, observation, "Unsupported policy")
         }
         val backend = accessResolver.writeBackend()
         if (backend == null) {
-            val observation = ChargeObservation.NeedsSetup("Grant WSS or connect Shizuku")
-            mutableState.value = state.value.copy(observation = observation, message = "Setup required")
+            val observation = ChargeObservation.NeedsSetup(R.string.charging_reason_needs_setup.toCaString())
+            mutableState.value = state.value.copy(
+                observation = observation,
+                message = R.string.charging_message_setup_required.toCaString(),
+            )
             return ApplyResult(false, observation, "Setup required")
         }
 
-        mutableState.value = state.value.copy(busy = true, message = "Applying ${policy.label}…")
+        mutableState.value = state.value.copy(
+            busy = true,
+            message = caString { it.getString(R.string.charging_message_applying, policy.label.get(it)) },
+        )
         val written = try {
             if (forceNotify) adapter.reapply(policy, backend) else adapter.apply(policy, backend)
         } catch (e: CancellationException) {
@@ -119,13 +143,13 @@ class ChargingRepository @Inject constructor(
         }
         if (!written) {
             log(TAG, Logging.Priority.ERROR) { "Settings write failed for ${policy.stableId}" }
-            val observation = ChargeObservation.Unknown("The settings write failed")
+            val observation = ChargeObservation.Unknown(R.string.charging_reason_write_failed.toCaString())
             // Clear any stale pending so the failure is not masked by a prior request's "applying…" cue.
             mutableState.value = state.value.copy(
                 busy = false,
                 observation = observation,
                 pending = null,
-                message = "Write failed",
+                message = R.string.charging_message_write_failed.toCaString(),
             )
             return ApplyResult(false, observation, "Write failed")
         }
@@ -150,19 +174,21 @@ class ChargingRepository @Inject constructor(
                 it.backend == BackendKind.BATTERY_HARDWARE && it.policy == policy
             } ?: false
             val pending = if (hwConfirmsTarget) null else PendingRequest(policy, now)
+            val messageRes = if (observation is ChargeObservation.Verified) {
+                R.string.charging_message_verified
+            } else {
+                R.string.charging_message_requested_slow
+            }
+            val message = caString { it.getString(messageRes, policy.label.get(it)) }
             mutableState.value = state.value.copy(
                 busy = false,
                 access = access,
                 observation = observation,
                 pending = pending,
-                message = if (observation is ChargeObservation.Verified) {
-                    "${policy.label} setting verified; charging hardware may take about 15 seconds"
-                } else {
-                    "${policy.label} requested; charging hardware may take about 15 seconds"
-                },
+                message = message,
             )
             if (pending != null) settleScheduler.schedule(now)
-            ApplyResult(true, observation, mutableState.value.message.orEmpty())
+            ApplyResult(true, observation, message.get(context))
                 .also { log(TAG, Logging.Priority.INFO) { "Applied ${policy.stableId}: $observation" } }
         } catch (e: CancellationException) {
             // The write committed and is recorded; reflect it so the UI doesn't stay busy and the settle
@@ -179,7 +205,7 @@ class ChargingRepository @Inject constructor(
             // and guarantee busy is cleared.
             log(TAG, Logging.Priority.WARN) { "Post-write metadata failed for ${policy.stableId}: ${e.message}" }
             val observation = ChargeObservation.LastRequested(policy)
-            val message = "${policy.label} requested"
+            val message = caString { it.getString(R.string.charging_message_requested, policy.label.get(it)) }
             mutableState.value = state.value.copy(
                 busy = false,
                 observation = observation,
@@ -187,18 +213,18 @@ class ChargingRepository @Inject constructor(
                 message = message,
             )
             settleScheduler.schedule(now)
-            ApplyResult(true, observation, message)
+            ApplyResult(true, observation, message.get(context))
         }
     }
 
-    private suspend fun refreshLocked(message: String?): ChargingState {
+    private suspend fun refreshLocked(message: CaString?): ChargingState {
         val selection: AdapterSelection = registry.select()
         val access = accessResolver.snapshot()
         val adapter = selection.adapter
         val observation = when {
-            adapter == null -> ChargeObservation.Unsupported(selection.support.detail)
-            !selection.support.controlEnabled -> ChargeObservation.Unsupported(selection.support.detail)
-            !access.canControl -> ChargeObservation.NeedsSetup("Grant WSS or connect Shizuku")
+            adapter == null -> ChargeObservation.Unsupported(selection.support.detail.toCaString())
+            !selection.support.controlEnabled -> ChargeObservation.Unsupported(selection.support.detail.toCaString())
+            !access.canControl -> ChargeObservation.NeedsSetup(R.string.charging_reason_needs_setup.toCaString())
             else -> {
                 val backend = accessResolver.readBackend()
                 val read = if (backend != null) adapter.read(backend) else null
@@ -208,7 +234,7 @@ class ChargingRepository @Inject constructor(
                     adapter.readHardware(context)
                         ?: preferences.lastRequestedNow()?.let(ChargeObservation::LastRequested)
                         ?: read
-                        ?: ChargeObservation.Unknown("State unavailable")
+                        ?: ChargeObservation.Unknown(R.string.charging_reason_state_unavailable.toCaString())
                 }
             }
         }
@@ -224,9 +250,8 @@ class ChargingRepository @Inject constructor(
         )
         return ChargingState(
             device = DeviceInfo.current(context),
-            adapterName = adapter?.displayName ?: "Unsupported device",
+            adapterName = adapter?.displayName ?: R.string.adapter_name_unsupported.toCaString(),
             adapterId = adapter?.id,
-            adapterDetail = selection.support.detail,
             controlEnabled = selection.support.controlEnabled,
             contributionWanted = selection.support.contributionWanted,
             access = access,
@@ -237,7 +262,13 @@ class ChargingRepository @Inject constructor(
         ).also {
             mutableState.value = it
             log(TAG, Logging.Priority.VERBOSE) {
-                "refresh(adapter=${it.adapterId}, access=${it.access?.label}, observation=${it.observation})"
+                val access = it.access
+                val accessState = if (access == null) {
+                    "none"
+                } else {
+                    "direct=${access.direct.ready},shizuku=${access.shizuku.ready}"
+                }
+                "refresh(adapter=${it.adapterId}, access=$accessState, observation=${it.observation})"
             }
         }
     }

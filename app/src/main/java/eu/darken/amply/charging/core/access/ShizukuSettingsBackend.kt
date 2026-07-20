@@ -1,7 +1,9 @@
 package eu.darken.amply.charging.core.access
 
+import eu.darken.amply.R
 import eu.darken.amply.charging.core.access.shizuku.ShizukuController
 import eu.darken.amply.charging.core.BackendKind
+import eu.darken.amply.common.ca.toCaString
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -21,11 +23,11 @@ class ShizukuSettingsBackend @Inject constructor(
             granted = granted,
             installed = installed,
             detail = when {
-                !installed -> "Shizuku is not installed"
-                !available -> "Shizuku is installed but not running"
-                !granted -> "Shizuku permission not granted"
-                else -> "Shizuku ready"
-            },
+                !installed -> R.string.access_shizuku_not_installed
+                !available -> R.string.access_shizuku_not_running
+                !granted -> R.string.access_shizuku_not_granted
+                else -> R.string.access_shizuku_ready
+            }.toCaString(),
         )
     }
 
@@ -34,7 +36,7 @@ class ShizukuSettingsBackend @Inject constructor(
             readable = true,
             value = controller.service().readSetting(namespace.commandName, key),
         )
-    }.getOrElse { SettingRead(false, error = it.message ?: it.javaClass.simpleName) }
+    }.getOrElse { SettingRead(false, error = (it.message ?: it.javaClass.simpleName).toCaString()) }
 
     override suspend fun write(mutation: SettingMutation): Boolean = runCatching {
         controller.service().writeSetting(

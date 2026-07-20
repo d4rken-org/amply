@@ -41,7 +41,7 @@ class ChargeTileService : TileService() {
                     render(
                         active = sessionActive,
                         available = state.controlEnabled && state.access?.canControl == true,
-                        detail = state.access?.label ?: state.adapterName,
+                        detail = (state.access?.label ?: state.adapterName).get(this@ChargeTileService),
                     )
                 }
             }
@@ -112,7 +112,9 @@ class ChargeTileService : TileService() {
                 else -> Tile.STATE_UNAVAILABLE
             }
             label = getString(if (active) R.string.tile_active else R.string.tile_label)
-            if (Build.VERSION.SDK_INT >= 29) subtitle = if (active) "Temporary override active" else detail
+            if (Build.VERSION.SDK_INT >= 29) {
+                subtitle = if (active) getString(R.string.tile_override_active) else detail
+            }
             updateTile()
         }
     }

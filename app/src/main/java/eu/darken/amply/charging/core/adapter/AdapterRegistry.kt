@@ -2,6 +2,7 @@ package eu.darken.amply.charging.core.adapter
 
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
+import eu.darken.amply.R
 import eu.darken.amply.charging.core.DeviceInfo
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -29,7 +30,7 @@ class AdapterRegistry @Inject constructor(
             support = AdapterSupport(
                 matched = false,
                 controlEnabled = false,
-                detail = "No charging adapter is known for this device",
+                detail = R.string.adapter_detail_none,
                 contributionWanted = true,
             ),
         )

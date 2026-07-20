@@ -28,7 +28,6 @@ class DeviceSupportReporterTest {
         adapterMatched = adapterId != null,
         adapterControlEnabled = false,
         contributionWanted = true,
-        adapterDetail = "Detected for diagnostics only; no unverified writes are exposed",
         batteryChargingStatus = 1,
         batteryPlugged = true,
         appVersionName = "0.1.0-beta1",
@@ -41,7 +40,7 @@ class DeviceSupportReporterTest {
     fun `format is deterministic and schema-tagged`() {
         val text = formatReport(report())
         text shouldStartWith "Amply device-support request"
-        text shouldContain "report_schema=1"
+        text shouldContain "report_schema=2"
         text shouldContain "manufacturer=Samsung"
         text shouldContain "model=SM-S911B"
         text shouldContain "adapter=samsung-lab"
