@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import dagger.hilt.android.AndroidEntryPoint
+import eu.darken.amply.R
 import eu.darken.amply.common.AmplyLinks
 import eu.darken.amply.common.theming.AmplyTheme
 import eu.darken.amply.diagnostics.ui.DiagnosticsScreen
@@ -239,10 +240,10 @@ class MainActivity : ComponentActivity() {
             Intent.createChooser(
                 Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
-                    putExtra(Intent.EXTRA_SUBJECT, "Amply charging-settings discovery")
+                    putExtra(Intent.EXTRA_SUBJECT, getString(R.string.diagnostics_share_subject))
                     putExtra(Intent.EXTRA_TEXT, report)
                 },
-                "Share redacted report",
+                getString(R.string.diagnostics_share),
             ),
         )
     }

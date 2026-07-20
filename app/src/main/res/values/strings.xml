@@ -133,4 +133,166 @@
     <string name="diagnostics_status_capture_failed">Baseline capture failed</string>
     <string name="diagnostics_status_compare_complete">Comparison complete. Review the redacted changes below.</string>
     <string name="diagnostics_status_compare_failed">Comparison failed</string>
+
+    <!-- Shared actions -->
+    <string name="action_back">Back</string>
+    <string name="action_refresh">Refresh</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_settings">Settings</string>
+
+    <!-- General settings + theme enums -->
+    <string name="settings_general_title">General</string>
+    <string name="settings_general_appearance">Appearance</string>
+    <string name="settings_general_theme_mode">Theme mode</string>
+    <string name="settings_general_theme_style">Theme style</string>
+    <string name="settings_general_accent_color">Accent color</string>
+    <string name="settings_general_accent_material_you">Controlled by Material You</string>
+    <string name="theme_mode_system">Follow system</string>
+    <string name="theme_mode_dark">Dark</string>
+    <string name="theme_mode_light">Light</string>
+    <string name="theme_style_default">Default</string>
+    <string name="theme_style_material_you">Material You</string>
+    <string name="theme_style_medium_contrast">Medium contrast</string>
+    <string name="theme_style_high_contrast">High contrast</string>
+    <string name="theme_color_green">Amply green</string>
+    <string name="theme_color_blue">Blue</string>
+
+    <!-- Settings root -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_version">Amply %1$s</string>
+    <string name="settings_general_subtitle">Theme and appearance</string>
+    <string name="settings_category_advanced">Advanced</string>
+    <string name="settings_diagnostics_title">Diagnostics</string>
+    <string name="settings_diagnostics_subtitle_ready">Charging-setting discovery · Shizuku ready</string>
+    <string name="settings_diagnostics_subtitle_setup">Charging-setting discovery · Shizuku setup required</string>
+    <string name="settings_category_other">Other</string>
+    <string name="settings_support_title">Support</string>
+    <string name="settings_support_subtitle">Help, contact, and debug logs</string>
+    <string name="settings_changelog_title">Changelog</string>
+    <string name="settings_acknowledgements_title">Acknowledgements</string>
+    <string name="settings_acknowledgements_subtitle">Credits, licenses, and thanks</string>
+    <string name="settings_privacy_title">Privacy policy</string>
+    <string name="settings_privacy_subtitle">How Amply handles data</string>
+
+    <!-- Acknowledgements -->
+    <string name="settings_ack_thanks">Thank you</string>
+    <string name="settings_ack_fabian_title">Fabian</string>
+    <string name="settings_ack_fabian_subtitle">For the initial app idea</string>
+    <string name="settings_ack_aosp_title">Android open-source community</string>
+    <string name="settings_ack_aosp_subtitle">The platform and tools Amply is built on</string>
+    <string name="settings_ack_shizuku_title">Shizuku</string>
+    <string name="settings_ack_shizuku_subtitle">Privileged API and permission bridge · Apache 2.0</string>
+    <string name="settings_ack_libraries">Libraries</string>
+    <string name="settings_ack_kotlin_title">Kotlin</string>
+    <string name="settings_ack_kotlin_subtitle">JetBrains · Apache 2.0</string>
+    <string name="settings_ack_compose_title">Jetpack Compose and AndroidX</string>
+    <string name="settings_ack_compose_subtitle">Google · Apache 2.0</string>
+    <string name="settings_ack_dagger_title">Dagger and Hilt</string>
+    <string name="settings_ack_dagger_subtitle">Google · Apache 2.0</string>
+
+    <!-- Support screen -->
+    <string name="settings_support_documentation_title">Documentation</string>
+    <string name="settings_support_documentation_subtitle">Setup and usage guide</string>
+    <string name="settings_support_issue_title">Issue tracker</string>
+    <string name="settings_support_issue_subtitle">Report a reproducible problem</string>
+    <string name="settings_support_contact_title">Contact developer</string>
+    <string name="settings_support_contact_subtitle">support@darken.eu</string>
+    <string name="settings_support_debug_category">Debug</string>
+    <string name="settings_support_record_stop_title">Stop debug log</string>
+    <string name="settings_support_record_start_title">Record debug log</string>
+    <string name="settings_support_record_recording_subtitle">Recording app events · reproduce the issue now</string>
+    <string name="settings_support_record_idle_subtitle">Record detailed app events while reproducing a problem</string>
+    <string name="settings_support_share_title">Share latest debug log</string>
+    <string name="settings_support_share_none">No completed recordings</string>
+    <string name="settings_support_clear_title">Clear debug logs</string>
+    <string name="settings_support_clear_subtitle">Delete completed recordings from this device</string>
+    <string name="settings_support_consent_title">Record debug log?</string>
+    <string name="settings_support_consent_body">Amply will record app events, device model, Android version, and charging-control results. Logs stay on this device until you explicitly share or delete them.</string>
+    <string name="settings_support_consent_start">Start</string>
+    <string name="settings_support_clear_confirm_title">Delete debug logs?</string>
+    <string name="settings_support_clear_confirm_body">All completed Amply debug recordings will be removed.</string>
+    <string name="settings_support_clear_confirm_action">Delete</string>
+    <string name="settings_support_no_log">No completed debug log available</string>
+    <string name="settings_support_share_chooser">Share Amply debug log</string>
+    <string name="settings_no_browser">No browser available to open the link</string>
+    <string name="settings_support_email_subject">Amply support</string>
+    <string name="settings_no_email">No email app available</string>
+
+    <!-- Support: completed-recordings count (positive counts only; zero uses settings_support_share_none) -->
+    <plurals name="settings_support_recordings">
+        <item quantity="one">%1$d completed recording</item>
+        <item quantity="other">%1$d completed recordings</item>
+    </plurals>
+
+    <!-- Access setup guide -->
+    <string name="setup_access_ready_title">Control is ready</string>
+    <string name="setup_access_setup_title">Set up charge control</string>
+    <string name="setup_access_ready_body">WRITE_SECURE_SETTINGS is granted.</string>
+    <string name="setup_access_setup_body">Amply needs one durable Android permission to change the charge policy.</string>
+    <string name="setup_access_option_shizuku">Option 1 · Shizuku</string>
+    <string name="setup_access_shizuku_hint">Start Shizuku, allow Amply, then grant the durable permission.</string>
+    <string name="setup_access_grant_shizuku">Grant permission with Shizuku</string>
+    <string name="setup_access_allow_shizuku">Allow Amply in Shizuku</string>
+    <string name="setup_access_open_shizuku">Open Shizuku</string>
+    <string name="setup_access_option_computer">Option 2 · Computer</string>
+    <string name="setup_access_adb_hint">Connect with ADB and run:</string>
+    <string name="setup_access_copy_adb">Copy ADB command</string>
+
+    <!-- Diagnostics screen (static) -->
+    <string name="diagnostics_category_access">Access</string>
+    <string name="diagnostics_category_discovery">Setting discovery</string>
+    <string name="diagnostics_discovery_hint">Use this developer tool to discover which Android setting changes when you change a native Pixel option.</string>
+    <string name="diagnostics_step_capture_title">1. Capture baseline</string>
+    <string name="diagnostics_step_capture_subtitle">Snapshot secure, global, and system settings</string>
+    <string name="diagnostics_step_change_title">2. Change the Pixel setting</string>
+    <string name="diagnostics_step_change_subtitle">Open native charging settings and change one option</string>
+    <string name="diagnostics_step_compare_title">3. Compare changes</string>
+    <string name="diagnostics_step_compare_subtitle">Create a redacted difference from the baseline</string>
+    <string name="diagnostics_category_result">Result</string>
+    <string name="diagnostics_share">Share redacted report</string>
+    <string name="diagnostics_share_subject">Amply charging-settings discovery</string>
+    <string name="diagnostics_shizuku_ready_title">Shizuku ready</string>
+    <string name="diagnostics_shizuku_required_title">Shizuku required</string>
+    <string name="diagnostics_shizuku_checking">Checking Shizuku access…</string>
+    <string name="diagnostics_allow_shizuku">Allow Amply in Shizuku</string>
+    <string name="diagnostics_open_shizuku">Open Shizuku</string>
+
+    <!-- Dashboard (static UI) -->
+    <string name="dashboard_manufacturer_fallback">these</string>
+    <string name="dashboard_applying">Applying…</string>
+    <string name="dashboard_device_line">%1$s · Android API %2$d</string>
+    <string name="dashboard_waiting_target">Waiting for the system to switch to %1$s…</string>
+    <string name="dashboard_settling_fallback_target">the new policy</string>
+    <string name="dashboard_fullcharge_active_title">Charging fully once</string>
+    <string name="dashboard_fullcharge_idle_title">Need a full battery?</string>
+    <string name="dashboard_fullcharge_active_body" formatted="false">The protective policy returns at 100% or when you unplug.</string>
+    <string name="dashboard_fullcharge_idle_body" formatted="false">Temporarily allow 100%, then restore your protective policy automatically.</string>
+    <string name="dashboard_fullcharge_restore">Restore limit now</string>
+    <string name="dashboard_fullcharge_start" formatted="false">Charge to 100% once</string>
+    <string name="dashboard_policy_choice_80" formatted="false">80%</string>
+    <string name="dashboard_policy_choice_adaptive">Adaptive</string>
+    <string name="dashboard_policy_choice_100" formatted="false">100%</string>
+    <string name="dashboard_policy_card_title">Charging policy</string>
+    <string name="dashboard_pixel_settings">Pixel settings</string>
+    <string name="dashboard_reconnect_title" formatted="false">Reconnect for 100%</string>
+    <string name="dashboard_reconnect_body_on" formatted="false">At the 80% limit, unplug and reconnect within 10 seconds. An ongoing notification keeps the gesture reliable.</string>
+    <string name="dashboard_reconnect_body_off" formatted="false">Optionally use a quick unplug/replug at the 80% limit to charge fully once.</string>
+    <string name="dashboard_shizuku_title">Better with Shizuku</string>
+    <string name="dashboard_shizuku_body">Shizuku gives Amply exact policy readback instead of relying on hardware state and the last request.</string>
+    <string name="dashboard_shizuku_allow">Allow access</string>
+    <string name="dashboard_shizuku_open">Open Shizuku</string>
+    <string name="dashboard_adb_copied">ADB command copied</string>
+
+    <!-- Widget (in-widget text) -->
+    <string name="widget_brand_status">Amply · %1$s</string>
+    <string name="widget_button_protect" formatted="false">∞80%</string>
+    <string name="widget_button_always_full" formatted="false">∞100%</string>
+    <string name="widget_button_full_once" formatted="false">1×100%</string>
+    <string name="widget_status_charging_waiting" formatted="false">Charging to 100% · waiting…</string>
+    <string name="widget_status_charging_once" formatted="false">Charging to 100% once</string>
+    <string name="widget_status_waiting_suffix">%1$s · waiting for system…</string>
+    <string name="widget_label_limited">Limited to %1$d%%</string>
+    <string name="widget_label_unlimited" formatted="false">Unlimited (100%)</string>
+    <string name="widget_label_adaptive">Adaptive charging</string>
+    <string name="widget_label_tap">Tap to set a limit</string>
 </resources>

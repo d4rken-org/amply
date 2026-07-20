@@ -150,7 +150,7 @@ class DashboardViewModel @Inject constructor(
         context.getSystemService(ClipboardManager::class.java).setPrimaryClip(
             ClipData.newPlainText("Amply WSS command", adbGrantCommand),
         )
-        Toast.makeText(context, "ADB command copied", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, context.getString(R.string.dashboard_adb_copied), Toast.LENGTH_SHORT).show()
     }
 
     /** Build the device-support report so the confirmation dialog can preview exactly what will be shared. */

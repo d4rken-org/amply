@@ -11,6 +11,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import eu.darken.amply.R
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.common.settings.SettingsBaseItem
@@ -23,54 +25,54 @@ fun AcknowledgementsScreen(
     onOpenUrl: (String) -> Unit,
 ) {
     Scaffold(
-        topBar = { SettingsTopBar("Acknowledgements", onBack) },
+        topBar = { SettingsTopBar(stringResource(R.string.settings_acknowledgements_title), onBack) },
     ) { padding ->
         LazyColumn(Modifier.padding(padding)) {
-            item { SettingsCategoryHeader("Thank you") }
+            item { SettingsCategoryHeader(stringResource(R.string.settings_ack_thanks)) }
             item {
                 SettingsBaseItem(
-                    title = "Fabian",
-                    subtitle = "For the initial app idea",
+                    title = stringResource(R.string.settings_ack_fabian_title),
+                    subtitle = stringResource(R.string.settings_ack_fabian_subtitle),
                     onClick = { onOpenUrl("https://code-consulting.de/") },
                 )
             }
             item { SettingsDivider(hasIcon = false) }
             item {
                 SettingsBaseItem(
-                    title = "Android open-source community",
-                    subtitle = "The platform and tools Amply is built on",
+                    title = stringResource(R.string.settings_ack_aosp_title),
+                    subtitle = stringResource(R.string.settings_ack_aosp_subtitle),
                     onClick = { onOpenUrl("https://source.android.com") },
                 )
             }
             item { SettingsDivider(hasIcon = false) }
             item {
                 SettingsBaseItem(
-                    title = "Shizuku",
-                    subtitle = "Privileged API and permission bridge · Apache 2.0",
+                    title = stringResource(R.string.settings_ack_shizuku_title),
+                    subtitle = stringResource(R.string.settings_ack_shizuku_subtitle),
                     onClick = { onOpenUrl("https://github.com/RikkaApps/Shizuku") },
                 )
             }
-            item { SettingsCategoryHeader("Libraries") }
+            item { SettingsCategoryHeader(stringResource(R.string.settings_ack_libraries)) }
             item {
                 SettingsBaseItem(
-                    title = "Kotlin",
-                    subtitle = "JetBrains · Apache 2.0",
+                    title = stringResource(R.string.settings_ack_kotlin_title),
+                    subtitle = stringResource(R.string.settings_ack_kotlin_subtitle),
                     onClick = { onOpenUrl("https://github.com/JetBrains/kotlin") },
                 )
             }
             item { SettingsDivider(hasIcon = false) }
             item {
                 SettingsBaseItem(
-                    title = "Jetpack Compose and AndroidX",
-                    subtitle = "Google · Apache 2.0",
+                    title = stringResource(R.string.settings_ack_compose_title),
+                    subtitle = stringResource(R.string.settings_ack_compose_subtitle),
                     onClick = { onOpenUrl("https://github.com/androidx/androidx") },
                 )
             }
             item { SettingsDivider(hasIcon = false) }
             item {
                 SettingsBaseItem(
-                    title = "Dagger and Hilt",
-                    subtitle = "Google · Apache 2.0",
+                    title = stringResource(R.string.settings_ack_dagger_title),
+                    subtitle = stringResource(R.string.settings_ack_dagger_subtitle),
                     onClick = { onOpenUrl("https://github.com/google/dagger") },
                 )
             }
@@ -84,7 +86,10 @@ private fun SettingsTopBar(title: String, onBack: () -> Unit) {
         title = { Text(title) },
         navigationIcon = {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.TwoTone.ArrowBack, contentDescription = "Back")
+                Icon(
+                    Icons.AutoMirrored.TwoTone.ArrowBack,
+                    contentDescription = stringResource(R.string.action_back),
+                )
             }
         },
     )

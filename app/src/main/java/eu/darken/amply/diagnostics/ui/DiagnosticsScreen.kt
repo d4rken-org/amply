@@ -28,6 +28,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -58,22 +59,25 @@ fun DiagnosticsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Diagnostics") },
+                title = { Text(stringResource(R.string.settings_diagnostics_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.TwoTone.ArrowBack, contentDescription = "Back")
+                        Icon(
+                            Icons.AutoMirrored.TwoTone.ArrowBack,
+                            contentDescription = stringResource(R.string.action_back),
+                        )
                     }
                 },
                 actions = {
                     IconButton(onClick = onRefresh) {
-                        Icon(Icons.TwoTone.Refresh, contentDescription = "Refresh")
+                        Icon(Icons.TwoTone.Refresh, contentDescription = stringResource(R.string.action_refresh))
                     }
                 },
             )
         },
     ) { padding ->
         LazyColumn(Modifier.padding(padding)) {
-            item { SettingsCategoryHeader("Access") }
+            item { SettingsCategoryHeader(stringResource(R.string.diagnostics_category_access)) }
             item {
                 ShizukuAccessCard(
                     status = shizuku,
@@ -82,10 +86,10 @@ fun DiagnosticsScreen(
                 )
             }
 
-            item { SettingsCategoryHeader("Setting discovery") }
+            item { SettingsCategoryHeader(stringResource(R.string.diagnostics_category_discovery)) }
             item {
                 Text(
-                    text = "Use this developer tool to discover which Android setting changes when you change a native Pixel option.",
+                    text = stringResource(R.string.diagnostics_discovery_hint),
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -93,8 +97,8 @@ fun DiagnosticsScreen(
             }
             item {
                 SettingsBaseItem(
-                    title = "1. Capture baseline",
-                    subtitle = "Snapshot secure, global, and system settings",
+                    title = stringResource(R.string.diagnostics_step_capture_title),
+                    subtitle = stringResource(R.string.diagnostics_step_capture_subtitle),
                     icon = if (state.baselineCaptured) Icons.TwoTone.CheckCircle else Icons.TwoTone.Save,
                     enabled = ready && !state.busy,
                     onClick = onCapture,
@@ -103,8 +107,8 @@ fun DiagnosticsScreen(
             item { SettingsDivider() }
             item {
                 SettingsBaseItem(
-                    title = "2. Change the Pixel setting",
-                    subtitle = "Open native charging settings and change one option",
+                    title = stringResource(R.string.diagnostics_step_change_title),
+                    subtitle = stringResource(R.string.diagnostics_step_change_subtitle),
                     icon = Icons.AutoMirrored.TwoTone.OpenInNew,
                     enabled = ready && state.baselineCaptured && !state.busy,
                     onClick = onOpenNativeSettings,
@@ -113,8 +117,8 @@ fun DiagnosticsScreen(
             item { SettingsDivider() }
             item {
                 SettingsBaseItem(
-                    title = "3. Compare changes",
-                    subtitle = "Create a redacted difference from the baseline",
+                    title = stringResource(R.string.diagnostics_step_compare_title),
+                    subtitle = stringResource(R.string.diagnostics_step_compare_subtitle),
                     icon = Icons.AutoMirrored.TwoTone.CompareArrows,
                     enabled = ready && state.baselineCaptured && !state.busy,
                     onClick = onCompare,
@@ -138,7 +142,7 @@ fun DiagnosticsScreen(
             }
 
             state.report?.let { report ->
-                item { SettingsCategoryHeader("Result") }
+                item { SettingsCategoryHeader(stringResource(R.string.diagnostics_category_result)) }
                 item {
                     Card(
                         modifier = Modifier
@@ -166,7 +170,7 @@ fun DiagnosticsScreen(
                             .padding(16.dp),
                     ) {
                         Icon(Icons.TwoTone.Share, contentDescription = null)
-                        Text("Share redacted report", Modifier.padding(start = 8.dp))
+                        Text(stringResource(R.string.diagnostics_share), Modifier.padding(start = 8.dp))
                     }
                 }
             }
@@ -208,12 +212,16 @@ private fun ShizukuAccessCard(
                 )
                 Column(Modifier.weight(1f)) {
                     Text(
-                        if (ready) "Shizuku ready" else "Shizuku required",
+                        if (ready) {
+                            stringResource(R.string.diagnostics_shizuku_ready_title)
+                        } else {
+                            stringResource(R.string.diagnostics_shizuku_required_title)
+                        },
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        status?.detail?.asComposable() ?: "Checking Shizuku access…",
+                        status?.detail?.asComposable() ?: stringResource(R.string.diagnostics_shizuku_checking),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -225,13 +233,13 @@ private fun ShizukuAccessCard(
                     onClick = onAllowShizuku,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Allow Amply in Shizuku")
+                    Text(stringResource(R.string.diagnostics_allow_shizuku))
                 }
                 else -> Button(
                     onClick = onOpenShizuku,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Open Shizuku")
+                    Text(stringResource(R.string.diagnostics_open_shizuku))
                 }
             }
         }

@@ -81,7 +81,7 @@ class AmplyWidget : GlanceAppWidget() {
         val settling = state.isSettling(now)
         // "Constant" state = a plain resting policy, nothing in flight — the only time the brand is shown.
         val steady = !sessionActive && !settling
-        val status = statusLine(sessionActive, settling, state, requestedTarget)
+        val status = statusLine(context, sessionActive, settling, state, requestedTarget)
 
         provideContent {
             val showBrand = steady && LocalSize.current.width >= BRAND_MIN_WIDTH
@@ -110,7 +110,7 @@ class AmplyWidget : GlanceAppWidget() {
                         Spacer(GlanceModifier.width(6.dp))
                     }
                     Text(
-                        text = if (showBrand) "Amply · $status" else status,
+                        text = if (showBrand) context.getString(R.string.widget_brand_status, status) else status,
                         style = titleStyle,
                         maxLines = 1,
                     )
@@ -120,7 +120,7 @@ class AmplyWidget : GlanceAppWidget() {
                 val buttonText = TextStyle(fontSize = 12.sp)
                 Row(modifier = GlanceModifier.fillMaxWidth().padding(top = 10.dp)) {
                     Button(
-                        text = "∞80%",
+                        text = context.getString(R.string.widget_button_protect),
                         onClick = actionRunCallback<ProtectAction>(),
                         modifier = GlanceModifier.defaultWeight(),
                         style = buttonText,
@@ -128,7 +128,7 @@ class AmplyWidget : GlanceAppWidget() {
                     )
                     Spacer(GlanceModifier.width(6.dp))
                     Button(
-                        text = "∞100%",
+                        text = context.getString(R.string.widget_button_always_full),
                         onClick = actionRunCallback<AlwaysFullAction>(),
                         modifier = GlanceModifier.defaultWeight(),
                         style = buttonText,
@@ -136,7 +136,7 @@ class AmplyWidget : GlanceAppWidget() {
                     )
                     Spacer(GlanceModifier.width(6.dp))
                     Button(
-                        text = "1×100%",
+                        text = context.getString(R.string.widget_button_full_once),
                         onClick = actionRunCallback<FullChargeAction>(),
                         modifier = GlanceModifier.defaultWeight(),
                         style = buttonText,
@@ -155,21 +155,33 @@ class AmplyWidget : GlanceAppWidget() {
  * observation alone degrades to Unknown on WSS-only.
  */
 private fun statusLine(
+    context: Context,
     sessionActive: Boolean,
     settling: Boolean,
     state: ChargingState,
     requestedTarget: ChargePolicy?,
 ): String {
-    if (sessionActive) return if (settling) "Charging to 100% · waiting…" else "Charging to 100% once"
-    if (settling) return "${widgetLabel(state.settlingTarget() ?: requestedTarget)} · waiting for system…"
-    return widgetLabel(state.observation.policyOrNull() ?: requestedTarget)
+    if (sessionActive) {
+        return if (settling) {
+            context.getString(R.string.widget_status_charging_waiting)
+        } else {
+            context.getString(R.string.widget_status_charging_once)
+        }
+    }
+    if (settling) {
+        return context.getString(
+            R.string.widget_status_waiting_suffix,
+            widgetLabel(context, state.settlingTarget() ?: requestedTarget),
+        )
+    }
+    return widgetLabel(context, state.observation.policyOrNull() ?: requestedTarget)
 }
 
-private fun widgetLabel(policy: ChargePolicy?): String = when (policy) {
-    is ChargePolicy.FixedLimit -> "Limited to ${policy.percent}%"
-    ChargePolicy.Unrestricted -> "Unlimited (100%)"
-    ChargePolicy.Adaptive -> "Adaptive charging"
-    null -> "Tap to set a limit"
+private fun widgetLabel(context: Context, policy: ChargePolicy?): String = when (policy) {
+    is ChargePolicy.FixedLimit -> context.getString(R.string.widget_label_limited, policy.percent)
+    ChargePolicy.Unrestricted -> context.getString(R.string.widget_label_unlimited)
+    ChargePolicy.Adaptive -> context.getString(R.string.widget_label_adaptive)
+    null -> context.getString(R.string.widget_label_tap)
 }
 
 @Keep

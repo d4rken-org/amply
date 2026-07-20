@@ -48,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import eu.darken.amply.charging.core.BackendKind
@@ -96,13 +97,13 @@ fun DashboardScreen(
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Amply", fontWeight = FontWeight.SemiBold) },
+                title = { Text(stringResource(R.string.app_name), fontWeight = FontWeight.SemiBold) },
                 actions = {
                     IconButton(onClick = onRefresh) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                        Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.action_refresh))
                     }
                     IconButton(onClick = onSettings) {
-                        Icon(Icons.TwoTone.Settings, contentDescription = "Settings")
+                        Icon(Icons.TwoTone.Settings, contentDescription = stringResource(R.string.action_settings))
                     }
                 },
             )
@@ -153,7 +154,8 @@ fun DashboardScreen(
                 if (state.charging.contributionWanted) {
                     item {
                         UnsupportedDeviceCard(
-                            manufacturer = state.charging.device.manufacturer.ifBlank { "these" },
+                            manufacturer = state.charging.device.manufacturer
+                                .ifBlank { stringResource(R.string.dashboard_manufacturer_fallback) },
                             reportPreview = state.deviceReport?.let(::formatReport),
                             onPrepareReport = onPrepareSupportReport,
                             onCopyReport = onCopySupportReport,
@@ -255,7 +257,7 @@ private fun StatusCard(state: DashboardUiState, onRefresh: () -> Unit) {
                     )
                 }
                 Text(
-                    if (settling) "Applying…" else observation.title().asComposable(),
+                    if (settling) stringResource(R.string.dashboard_applying) else observation.title().asComposable(),
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.weight(1f),
                 )
@@ -268,14 +270,19 @@ private fun StatusCard(state: DashboardUiState, onRefresh: () -> Unit) {
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                "${state.charging.device.model} · Android API ${state.charging.device.sdk}",
+                stringResource(
+                    R.string.dashboard_device_line,
+                    state.charging.device.model,
+                    state.charging.device.sdk,
+                ),
                 style = MaterialTheme.typography.labelMedium,
             )
             if (settling) {
-                val target = state.charging.settlingTarget()?.shortLabel()?.asComposable() ?: "the new policy"
+                val target = state.charging.settlingTarget()?.shortLabel()?.asComposable()
+                    ?: stringResource(R.string.dashboard_settling_fallback_target)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Waiting for the system to switch to $target…",
+                    stringResource(R.string.dashboard_waiting_target, target),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.tertiary,
                 )
@@ -307,15 +314,19 @@ private fun FullChargeCard(
     ) {
         Column(Modifier.padding(20.dp)) {
             Text(
-                if (active) "Charging fully once" else "Need a full battery?",
+                if (active) {
+                    stringResource(R.string.dashboard_fullcharge_active_title)
+                } else {
+                    stringResource(R.string.dashboard_fullcharge_idle_title)
+                },
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
                 if (active) {
-                    "The protective policy returns at 100% or when you unplug."
+                    stringResource(R.string.dashboard_fullcharge_active_body)
                 } else {
-                    "Temporarily allow 100%, then restore your protective policy automatically."
+                    stringResource(R.string.dashboard_fullcharge_idle_body)
                 },
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -330,7 +341,11 @@ private fun FullChargeCard(
                     contentDescription = null,
                 )
                 Text(
-                    if (active) "Restore limit now" else "Charge to 100% once",
+                    if (active) {
+                        stringResource(R.string.dashboard_fullcharge_restore)
+                    } else {
+                        stringResource(R.string.dashboard_fullcharge_start)
+                    },
                     Modifier.padding(start = 8.dp),
                 )
             }
@@ -345,16 +360,16 @@ private fun PolicyCard(
     onNativeSettings: () -> Unit,
 ) {
     val choices = listOf(
-        ChargePolicy.FixedLimit(80) to "80%",
-        ChargePolicy.Adaptive to "Adaptive",
-        ChargePolicy.Unrestricted to "100%",
+        ChargePolicy.FixedLimit(80) to stringResource(R.string.dashboard_policy_choice_80),
+        ChargePolicy.Adaptive to stringResource(R.string.dashboard_policy_choice_adaptive),
+        ChargePolicy.Unrestricted to stringResource(R.string.dashboard_policy_choice_100),
     )
     val selectedPolicy = state.charging.observation.policyOrNull()
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "Charging policy",
+                    stringResource(R.string.dashboard_policy_card_title),
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f),
                 )
@@ -367,7 +382,11 @@ private fun PolicyCard(
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
                     )
-                    Text("Pixel settings", Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        stringResource(R.string.dashboard_pixel_settings),
+                        Modifier.padding(start = 4.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -411,7 +430,7 @@ private fun QuickFullChargeCard(
             ) {
                 Icon(Icons.Default.Bolt, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Text(
-                    "Reconnect for 100%",
+                    stringResource(R.string.dashboard_reconnect_title),
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f),
                 )
@@ -423,9 +442,9 @@ private fun QuickFullChargeCard(
             }
             Text(
                 if (enabled) {
-                    "At the 80% limit, unplug and reconnect within 10 seconds. An ongoing notification keeps the gesture reliable."
+                    stringResource(R.string.dashboard_reconnect_body_on)
                 } else {
-                    "Optionally use a quick unplug/replug at the 80% limit to charge fully once."
+                    stringResource(R.string.dashboard_reconnect_body_off)
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -445,9 +464,13 @@ private fun ShizukuBanner(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
     ) {
         Column(Modifier.padding(16.dp)) {
-            Text("Better with Shizuku", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             Text(
-                "Shizuku gives Amply exact policy readback instead of relying on hardware state and the last request.",
+                stringResource(R.string.dashboard_shizuku_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                stringResource(R.string.dashboard_shizuku_body),
                 style = MaterialTheme.typography.bodySmall,
             )
             Spacer(Modifier.height(8.dp))
@@ -455,7 +478,13 @@ private fun ShizukuBanner(
                 onClick = if (running) onAllow else onOpen,
                 modifier = Modifier.align(Alignment.End),
             ) {
-                Text(if (running) "Allow access" else "Open Shizuku")
+                Text(
+                    if (running) {
+                        stringResource(R.string.dashboard_shizuku_allow)
+                    } else {
+                        stringResource(R.string.dashboard_shizuku_open)
+                    },
+                )
             }
         }
     }

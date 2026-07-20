@@ -22,9 +22,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import eu.darken.amply.R
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
@@ -76,15 +78,19 @@ fun AccessSetupGuide(
                 )
                 Column {
                     Text(
-                        text = if (wssReady) "Control is ready" else "Set up charge control",
+                        text = if (wssReady) {
+                            stringResource(R.string.setup_access_ready_title)
+                        } else {
+                            stringResource(R.string.setup_access_setup_title)
+                        },
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
                         text = if (wssReady) {
-                            "WRITE_SECURE_SETTINGS is granted."
+                            stringResource(R.string.setup_access_ready_body)
                         } else {
-                            "Amply needs one durable Android permission to change the charge policy."
+                            stringResource(R.string.setup_access_setup_body)
                         },
                         style = MaterialTheme.typography.bodyMedium,
                     )
@@ -93,35 +99,35 @@ fun AccessSetupGuide(
 
             if (!wssReady) {
                 Spacer(Modifier.height(20.dp))
-                Text("Option 1 · Shizuku", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.setup_access_option_shizuku), style = MaterialTheme.typography.labelLarge)
                 Text(
-                    "Start Shizuku, allow Amply, then grant the durable permission.",
+                    stringResource(R.string.setup_access_shizuku_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(8.dp))
                 when {
                     shizukuReady -> Button(onClick = onGrantWss, modifier = Modifier.fillMaxWidth()) {
-                        Text("Grant permission with Shizuku")
+                        Text(stringResource(R.string.setup_access_grant_shizuku))
                     }
                     shizukuRunning -> FilledTonalButton(
                         onClick = onAllowShizuku,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text("Allow Amply in Shizuku")
+                        Text(stringResource(R.string.setup_access_allow_shizuku))
                     }
                     else -> FilledTonalButton(
                         onClick = onOpenShizuku,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text("Open Shizuku")
+                        Text(stringResource(R.string.setup_access_open_shizuku))
                     }
                 }
 
                 Spacer(Modifier.height(20.dp))
-                Text("Option 2 · Computer", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.setup_access_option_computer), style = MaterialTheme.typography.labelLarge)
                 Text(
-                    "Connect with ADB and run:",
+                    stringResource(R.string.setup_access_adb_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -138,7 +144,7 @@ fun AccessSetupGuide(
                 }
                 FilledTonalButton(onClick = onCopyAdb, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.ContentCopy, contentDescription = null)
-                    Text("Copy ADB command", Modifier.padding(start = 8.dp))
+                    Text(stringResource(R.string.setup_access_copy_adb), Modifier.padding(start = 8.dp))
                 }
             }
         }

@@ -19,7 +19,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import eu.darken.amply.BuildConfig
+import eu.darken.amply.R
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.common.settings.SettingsBaseItem
@@ -44,9 +46,9 @@ fun SettingsScreen(
             TopAppBar(
                 title = {
                     androidx.compose.foundation.layout.Column {
-                        Text("Settings")
+                        Text(stringResource(R.string.settings_title))
                         Text(
-                            "Amply ${BuildConfig.VERSION_NAME}",
+                            stringResource(R.string.settings_version, BuildConfig.VERSION_NAME),
                             style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
                             color = androidx.compose.material3.MaterialTheme.colorScheme.primary,
                         )
@@ -54,7 +56,10 @@ fun SettingsScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.TwoTone.ArrowBack, contentDescription = "Back")
+                        Icon(
+                            Icons.AutoMirrored.TwoTone.ArrowBack,
+                            contentDescription = stringResource(R.string.action_back),
+                        )
                     }
                 },
             )
@@ -63,22 +68,22 @@ fun SettingsScreen(
         LazyColumn(Modifier.padding(padding)) {
             item {
                 SettingsNavigationItem(
-                    title = "General",
-                    subtitle = "Theme and appearance",
+                    title = stringResource(R.string.settings_general_title),
+                    subtitle = stringResource(R.string.settings_general_subtitle),
                     icon = Icons.TwoTone.Settings,
                     onClick = onGeneral,
                 )
             }
             item { SettingsDivider() }
             if (showDiagnostics) {
-                item { SettingsCategoryHeader("Advanced") }
+                item { SettingsCategoryHeader(stringResource(R.string.settings_category_advanced)) }
                 item {
                     SettingsNavigationItem(
-                        title = "Diagnostics",
+                        title = stringResource(R.string.settings_diagnostics_title),
                         subtitle = if (diagnosticsReady) {
-                            "Charging-setting discovery · Shizuku ready"
+                            stringResource(R.string.settings_diagnostics_subtitle_ready)
                         } else {
-                            "Charging-setting discovery · Shizuku setup required"
+                            stringResource(R.string.settings_diagnostics_subtitle_setup)
                         },
                         icon = Icons.TwoTone.BugReport,
                         onClick = onDiagnostics,
@@ -86,11 +91,11 @@ fun SettingsScreen(
                 }
                 item { SettingsDivider() }
             }
-            item { SettingsCategoryHeader("Other") }
+            item { SettingsCategoryHeader(stringResource(R.string.settings_category_other)) }
             item {
                 SettingsNavigationItem(
-                    title = "Support",
-                    subtitle = "Help, contact, and debug logs",
+                    title = stringResource(R.string.settings_support_title),
+                    subtitle = stringResource(R.string.settings_support_subtitle),
                     icon = Icons.TwoTone.SupportAgent,
                     onClick = onSupport,
                 )
@@ -98,7 +103,7 @@ fun SettingsScreen(
             item { SettingsDivider() }
             item {
                 SettingsBaseItem(
-                    title = "Changelog",
+                    title = stringResource(R.string.settings_changelog_title),
                     subtitle = BuildConfig.VERSION_NAME,
                     icon = Icons.TwoTone.History,
                     onClick = onChangelog,
@@ -108,8 +113,8 @@ fun SettingsScreen(
             item { SettingsDivider() }
             item {
                 SettingsNavigationItem(
-                    title = "Acknowledgements",
-                    subtitle = "Credits, licenses, and thanks",
+                    title = stringResource(R.string.settings_acknowledgements_title),
+                    subtitle = stringResource(R.string.settings_acknowledgements_subtitle),
                     icon = Icons.TwoTone.Favorite,
                     onClick = onAcknowledgements,
                 )
@@ -117,8 +122,8 @@ fun SettingsScreen(
             item { SettingsDivider() }
             item {
                 SettingsBaseItem(
-                    title = "Privacy policy",
-                    subtitle = "How Amply handles data",
+                    title = stringResource(R.string.settings_privacy_title),
+                    subtitle = stringResource(R.string.settings_privacy_subtitle),
                     icon = Icons.TwoTone.Book,
                     onClick = onPrivacy,
                     trailingContent = { ExternalLinkIcon() },

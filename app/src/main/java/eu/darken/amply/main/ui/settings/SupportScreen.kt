@@ -24,6 +24,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import eu.darken.amply.R
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.common.debug.DebugLogState
@@ -48,10 +51,13 @@ fun SupportScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Support") },
+                title = { Text(stringResource(R.string.settings_support_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.TwoTone.ArrowBack, contentDescription = "Back")
+                        Icon(
+                            Icons.AutoMirrored.TwoTone.ArrowBack,
+                            contentDescription = stringResource(R.string.action_back),
+                        )
                     }
                 },
             )
@@ -60,8 +66,8 @@ fun SupportScreen(
         LazyColumn(Modifier.padding(padding)) {
             item {
                 SettingsBaseItem(
-                    title = "Documentation",
-                    subtitle = "Setup and usage guide",
+                    title = stringResource(R.string.settings_support_documentation_title),
+                    subtitle = stringResource(R.string.settings_support_documentation_subtitle),
                     icon = Icons.AutoMirrored.TwoTone.Article,
                     onClick = onDocumentation,
                 )
@@ -69,8 +75,8 @@ fun SupportScreen(
             item { SettingsDivider() }
             item {
                 SettingsBaseItem(
-                    title = "Issue tracker",
-                    subtitle = "Report a reproducible problem",
+                    title = stringResource(R.string.settings_support_issue_title),
+                    subtitle = stringResource(R.string.settings_support_issue_subtitle),
                     icon = Icons.TwoTone.Code,
                     onClick = onIssueTracker,
                 )
@@ -78,20 +84,26 @@ fun SupportScreen(
             item { SettingsDivider() }
             item {
                 SettingsBaseItem(
-                    title = "Contact developer",
-                    subtitle = "support@darken.eu",
+                    title = stringResource(R.string.settings_support_contact_title),
+                    subtitle = stringResource(R.string.settings_support_contact_subtitle),
                     icon = Icons.AutoMirrored.TwoTone.ContactSupport,
                     onClick = onContact,
                 )
             }
-            item { SettingsCategoryHeader("Debug") }
+            item { SettingsCategoryHeader(stringResource(R.string.settings_support_debug_category)) }
             item {
                 SettingsBaseItem(
-                    title = if (state.recording) "Stop debug log" else "Record debug log",
+                    title = stringResource(
+                        if (state.recording) {
+                            R.string.settings_support_record_stop_title
+                        } else {
+                            R.string.settings_support_record_start_title
+                        },
+                    ),
                     subtitle = if (state.recording) {
-                        "Recording app events · reproduce the issue now"
+                        stringResource(R.string.settings_support_record_recording_subtitle)
                     } else {
-                        "Record detailed app events while reproducing a problem"
+                        stringResource(R.string.settings_support_record_idle_subtitle)
                     },
                     icon = if (state.recording) Icons.TwoTone.StopCircle else Icons.TwoTone.BugReport,
                     onClick = {
@@ -102,11 +114,15 @@ fun SupportScreen(
             item { SettingsDivider() }
             item {
                 SettingsBaseItem(
-                    title = "Share latest debug log",
+                    title = stringResource(R.string.settings_support_share_title),
                     subtitle = if (state.sessions.isEmpty()) {
-                        "No completed recordings"
+                        stringResource(R.string.settings_support_share_none)
                     } else {
-                        "${state.sessions.size} completed recording${if (state.sessions.size == 1) "" else "s"}"
+                        pluralStringResource(
+                            R.plurals.settings_support_recordings,
+                            state.sessions.size,
+                            state.sessions.size,
+                        )
                     },
                     icon = Icons.TwoTone.Share,
                     onClick = onShareDebugLog,
@@ -115,8 +131,8 @@ fun SupportScreen(
             item { SettingsDivider() }
             item {
                 SettingsBaseItem(
-                    title = "Clear debug logs",
-                    subtitle = "Delete completed recordings from this device",
+                    title = stringResource(R.string.settings_support_clear_title),
+                    subtitle = stringResource(R.string.settings_support_clear_subtitle),
                     icon = Icons.TwoTone.DeleteSweep,
                     onClick = { if (state.sessions.isNotEmpty()) showClearConfirmation = true },
                 )
@@ -127,18 +143,17 @@ fun SupportScreen(
     if (showConsent) {
         AlertDialog(
             onDismissRequest = { showConsent = false },
-            title = { Text("Record debug log?") },
+            title = { Text(stringResource(R.string.settings_support_consent_title)) },
             text = {
-                Text(
-                    "Amply will record app events, device model, Android version, and charging-control results. " +
-                        "Logs stay on this device until you explicitly share or delete them.",
-                )
+                Text(stringResource(R.string.settings_support_consent_body))
             },
             confirmButton = {
-                TextButton(onClick = { showConsent = false; onStartDebugLog() }) { Text("Start") }
+                TextButton(onClick = { showConsent = false; onStartDebugLog() }) {
+                    Text(stringResource(R.string.settings_support_consent_start))
+                }
             },
             dismissButton = {
-                TextButton(onClick = { showConsent = false }) { Text("Cancel") }
+                TextButton(onClick = { showConsent = false }) { Text(stringResource(R.string.action_cancel)) }
             },
         )
     }
@@ -146,13 +161,15 @@ fun SupportScreen(
     if (showClearConfirmation) {
         AlertDialog(
             onDismissRequest = { showClearConfirmation = false },
-            title = { Text("Delete debug logs?") },
-            text = { Text("All completed Amply debug recordings will be removed.") },
+            title = { Text(stringResource(R.string.settings_support_clear_confirm_title)) },
+            text = { Text(stringResource(R.string.settings_support_clear_confirm_body)) },
             confirmButton = {
-                TextButton(onClick = { showClearConfirmation = false; onClearDebugLogs() }) { Text("Delete") }
+                TextButton(onClick = { showClearConfirmation = false; onClearDebugLogs() }) {
+                    Text(stringResource(R.string.settings_support_clear_confirm_action))
+                }
             },
             dismissButton = {
-                TextButton(onClick = { showClearConfirmation = false }) { Text("Cancel") }
+                TextButton(onClick = { showClearConfirmation = false }) { Text(stringResource(R.string.action_cancel)) }
             },
         )
     }

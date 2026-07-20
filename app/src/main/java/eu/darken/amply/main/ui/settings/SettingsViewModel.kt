@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import eu.darken.amply.R
 import eu.darken.amply.common.debug.DebugLogManager
 import eu.darken.amply.common.debug.DebugLogState
 import eu.darken.amply.common.debug.logging.Logging
@@ -67,7 +68,7 @@ class SettingsViewModel @Inject constructor(
     fun shareLatestDebugLog() = viewModelScope.launch {
         val uri = debugLogManager.latestShareUri()
         if (uri == null) {
-            Toast.makeText(context, "No completed debug log available", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.settings_support_no_log), Toast.LENGTH_SHORT).show()
             return@launch
         }
         context.startActivity(
@@ -77,7 +78,7 @@ class SettingsViewModel @Inject constructor(
                     putExtra(Intent.EXTRA_STREAM, uri)
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
                 },
-                "Share Amply debug log",
+                context.getString(R.string.settings_support_share_chooser),
             ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
         )
     }
@@ -89,7 +90,7 @@ class SettingsViewModel @Inject constructor(
             )
         }.onFailure {
             log(TAG, Logging.Priority.WARN) { "Could not open $url: ${it.message}" }
-            Toast.makeText(context, "No browser available to open the link", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.settings_no_browser), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -97,12 +98,12 @@ class SettingsViewModel @Inject constructor(
         runCatching {
             context.startActivity(
                 Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:support@darken.eu")).apply {
-                    putExtra(Intent.EXTRA_SUBJECT, "Amply support")
+                    putExtra(Intent.EXTRA_SUBJECT, context.getString(R.string.settings_support_email_subject))
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 },
             )
         }.onFailure {
-            Toast.makeText(context, "No email app available", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.settings_no_email), Toast.LENGTH_SHORT).show()
         }
     }
 
