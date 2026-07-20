@@ -34,5 +34,21 @@
     <string name="setup_unsupported_email_action">Contact support by email</string>
     <string name="setup_unsupported_email_body">Hi! I\'d love for Amply to support charge control on my device. I\'ve attached the details Amply collected — hopefully they help you add support. Thanks!</string>
     <string name="setup_unsupported_no_email">No email app available</string>
-    <string name="setup_unsupported_onboarding_caveat">Charge control is added device by device, so not every device is supported yet. A friendly email to the developer — you can send one from the dashboard — often helps us add more.</string>
+
+    <string name="onboarding_welcome_title">Welcome to Amply</string>
+    <string name="onboarding_welcome_subtitle">Protect your battery every day. Charge fully only when you choose.</string>
+    <string name="onboarding_feature_protection_title">Keep the 80% protection</string>
+    <string name="onboarding_feature_protection_body">Switch policies without digging through Android Settings.</string>
+    <string name="onboarding_feature_fullcharge_title">Charge fully once</string>
+    <string name="onboarding_feature_fullcharge_body">Protection returns automatically at full or when unplugged.</string>
+    <string name="onboarding_feature_shortcut_title">Optional cable shortcut</string>
+    <string name="onboarding_feature_shortcut_body" formatted="false">Reconnect at the 80% hold to request one full charge.</string>
+    <string name="onboarding_next_action">Next</string>
+    <string name="onboarding_back_action">Back</string>
+    <string name="onboarding_continue_action">Get started</string>
+    <string name="onboarding_caveats_title">Before you start</string>
+    <string name="onboarding_caveat_support_title">Support grows device by device</string>
+    <string name="onboarding_caveat_support_body">Charge control is added one phone at a time, so not every device is supported yet. Amply shows where yours stands and, when it can, how to help add support.</string>
+    <string name="onboarding_caveat_setup_title">One-time setup on supported devices</string>
+    <string name="onboarding_caveat_setup_body">To change the charge policy, Amply needs elevated access granted once — either by running a command from a computer over ADB, or on-device with Shizuku. If your device is supported, the dashboard walks you through it.</string>
 </resources>

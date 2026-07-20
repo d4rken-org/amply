@@ -40,7 +40,7 @@ import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
 
 /**
- * Shown on the dashboard and during onboarding when a device is unsupported but a useful support
+ * Shown on the dashboard when a device is unsupported but a useful support
  * contribution (see [eu.darken.amply.charging.core.adapter.AdapterSupport.contributionWanted]).
  * Explains the situation in plain language and offers two low-friction contribution paths: a
  * prefilled public GitHub issue, or a prefilled email (lower barrier, no account needed).

@@ -154,15 +154,7 @@ class MainActivity : ComponentActivity() {
                     null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
-                    false -> OnboardingScreen(
-                        state = state,
-                        adbCommand = viewModel.adbGrantCommand,
-                        onOpenShizuku = viewModel::openShizuku,
-                        onAllowShizuku = viewModel::requestShizukuPermission,
-                        onGrantWss = viewModel::grantWriteSecureSettings,
-                        onCopyAdb = viewModel::copyAdbCommand,
-                        onContinue = viewModel::completeOnboarding,
-                    )
+                    false -> OnboardingScreen(onContinue = viewModel::completeOnboarding)
                     true -> when (destination) {
                         SettingsDestination.DASHBOARD -> DashboardScreen(
                             state = state,

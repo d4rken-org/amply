@@ -8,7 +8,7 @@ The first control adapter targets Pixel charging optimization. Direct control is
 
 - App dashboard with truthful verified/requested/unknown state
 - Branded light/dark themes, opt-in Material You, and contrast choices
-- First-run product/setup guide that returns whenever durable WSS access is missing
+- First-run welcome and caveat pages; the interactive setup guide lives on the dashboard and returns whenever durable WSS access is missing
 - Hierarchical General, Support, and acknowledgements settings; changelog and privacy policy link to the project website
 - Explicitly consented local debug-log recording and sharing
 - Optional “reconnect for 100%” gesture at the active 80% hardware limit
