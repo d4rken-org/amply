@@ -12,6 +12,12 @@ data class AdapterSupport(
     val matched: Boolean,
     val controlEnabled: Boolean,
     val detail: String,
+    /**
+     * Whether an unsupported device of this kind is a useful device-support contribution.
+     * True for OEMs Amply wants to add (unknown manufacturers, diagnostics-only lab adapters);
+     * false for the live Pixel line, whose gate failures are known device-class limitations.
+     */
+    val contributionWanted: Boolean = false,
 )
 
 interface ChargingAdapter {

@@ -1,5 +1,6 @@
 package eu.darken.amply.main.ui.dashboard
 
+import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -12,6 +13,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import eu.darken.amply.R
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingRepository
 import eu.darken.amply.charging.core.ChargingState
@@ -22,7 +24,12 @@ import eu.darken.amply.fullcharge.core.ChargeSessionManager
 import eu.darken.amply.fullcharge.core.ChargeSessionRecord
 import eu.darken.amply.fullcharge.core.ChargeSessionService
 import eu.darken.amply.fullcharge.core.FullChargeStore
+import eu.darken.amply.main.core.DeviceSupportReport
+import eu.darken.amply.main.core.DeviceSupportReporter
 import eu.darken.amply.main.core.OnboardingSettings
+import eu.darken.amply.main.core.formatReport
+import eu.darken.amply.main.core.issueUrl
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
@@ -34,6 +41,7 @@ data class DashboardUiState(
     val session: ChargeSessionRecord? = null,
     val onboardingComplete: Boolean? = null,
     val quickFullChargeEnabled: Boolean = false,
+    val deviceReport: DeviceSupportReport? = null,
 )
 
 @HiltViewModel
@@ -43,18 +51,23 @@ class DashboardViewModel @Inject constructor(
     private val fullChargeStore: FullChargeStore,
     private val sessionManager: ChargeSessionManager,
     private val onboardingSettings: OnboardingSettings,
+    private val deviceSupportReporter: DeviceSupportReporter,
 ) : ViewModel() {
+    private val deviceReport = MutableStateFlow<DeviceSupportReport?>(null)
+
     val state = combine(
         repository.state,
         fullChargeStore.session,
         onboardingSettings.isComplete,
         fullChargeStore.quickFullChargeEnabled,
-    ) { charging, session, onboardingComplete, quickFullChargeEnabled ->
+        deviceReport,
+    ) { charging, session, onboardingComplete, quickFullChargeEnabled, report ->
         DashboardUiState(
             charging = charging,
             session = session,
             onboardingComplete = onboardingComplete,
             quickFullChargeEnabled = quickFullChargeEnabled,
+            deviceReport = report,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
 
@@ -133,6 +146,38 @@ class DashboardViewModel @Inject constructor(
             ClipData.newPlainText("Amply WSS command", adbGrantCommand),
         )
         Toast.makeText(context, "ADB command copied", Toast.LENGTH_SHORT).show()
+    }
+
+    /** Build the device-support report so the confirmation dialog can preview exactly what will be shared. */
+    fun prepareDeviceSupportReport() = viewModelScope.launch {
+        // Clear first so the dialog shows a loading placeholder and its Copy/Open buttons stay
+        // disabled until this specific snapshot is ready — copy/open then reuse this exact value.
+        deviceReport.value = null
+        deviceReport.value = deviceSupportReporter.collect()
+    }
+
+    fun copyDeviceSupportReport() {
+        val report = deviceReport.value ?: return
+        context.getSystemService(ClipboardManager::class.java).setPrimaryClip(
+            ClipData.newPlainText("Amply device report", formatReport(report)),
+        )
+        Toast.makeText(context, context.getString(R.string.setup_unsupported_report_copied), Toast.LENGTH_SHORT).show()
+    }
+
+    fun openDeviceSupportIssue() {
+        val report = deviceReport.value ?: return
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(issueUrl(report)))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { context.startActivity(intent) }.onFailure {
+            when (it) {
+                is ActivityNotFoundException -> Toast.makeText(
+                    context,
+                    context.getString(R.string.setup_unsupported_no_browser),
+                    Toast.LENGTH_LONG,
+                ).show()
+                else -> log(TAG, Logging.Priority.WARN) { "Could not open issue URL: ${it.message}" }
+            }
+        }
     }
 
     private companion object {

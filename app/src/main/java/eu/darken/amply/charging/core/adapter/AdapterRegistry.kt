@@ -26,7 +26,12 @@ class AdapterRegistry @Inject constructor(
         }
         return match?.let { AdapterSelection(it.first, it.second) } ?: AdapterSelection(
             adapter = null,
-            support = AdapterSupport(false, false, "No charging adapter is known for this device"),
+            support = AdapterSupport(
+                matched = false,
+                controlEnabled = false,
+                detail = "No charging adapter is known for this device",
+                contributionWanted = true,
+            ),
         )
     }
 }

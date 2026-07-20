@@ -33,8 +33,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import eu.darken.amply.charging.core.ChargeObservation
+import eu.darken.amply.main.core.formatReport
 import eu.darken.amply.main.ui.dashboard.DashboardUiState
 import eu.darken.amply.main.ui.setup.AccessSetupGuide
+import eu.darken.amply.main.ui.setup.UnsupportedDeviceCard
 
 @Composable
 fun OnboardingScreen(
@@ -44,6 +46,10 @@ fun OnboardingScreen(
     onAllowShizuku: () -> Unit,
     onGrantWss: () -> Unit,
     onCopyAdb: () -> Unit,
+    onPrepareSupportReport: () -> Unit,
+    onCopySupportReport: () -> Unit,
+    onOpenSupportIssue: () -> Unit,
+    onHelp: () -> Unit,
     onContinue: () -> Unit,
 ) {
     val canControl = state.charging.controlEnabled && state.charging.access?.canControl == true
@@ -128,14 +134,27 @@ fun OnboardingScreen(
         }
 
         item {
-            AccessSetupGuide(
-                state = state,
-                adbCommand = adbCommand,
-                onOpenShizuku = onOpenShizuku,
-                onAllowShizuku = onAllowShizuku,
-                onGrantWss = onGrantWss,
-                onCopyAdb = onCopyAdb,
-            )
+            if (state.charging.observation is ChargeObservation.Unsupported) {
+                if (state.charging.contributionWanted) {
+                    UnsupportedDeviceCard(
+                        manufacturer = state.charging.device.manufacturer.ifBlank { "these" },
+                        reportPreview = state.deviceReport?.let(::formatReport),
+                        onPrepareReport = onPrepareSupportReport,
+                        onCopyReport = onCopySupportReport,
+                        onOpenIssue = onOpenSupportIssue,
+                        onHelp = onHelp,
+                    )
+                }
+            } else {
+                AccessSetupGuide(
+                    state = state,
+                    adbCommand = adbCommand,
+                    onOpenShizuku = onOpenShizuku,
+                    onAllowShizuku = onAllowShizuku,
+                    onGrantWss = onGrantWss,
+                    onCopyAdb = onCopyAdb,
+                )
+            }
         }
 
         item {

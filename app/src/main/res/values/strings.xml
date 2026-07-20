@@ -18,4 +18,16 @@
     <string name="recovery_notification_body_convergence">The protective policy was rewritten, but the charging hardware has not confirmed it yet. Open Amply to check.</string>
     <string name="recovering_notification_title">Restoring charge limit</string>
     <string name="recovering_notification_body">Confirming the protective policy with the charging hardware.</string>
+    <string name="setup_unsupported_title">This device isn\'t supported yet</string>
+    <string name="setup_unsupported_body">Amply works by switching your phone\'s built-in battery-protection setting. It hasn\'t been mapped for %1$s devices yet — you can help us add it.</string>
+    <string name="setup_unsupported_shares_note">Shares your device model, Android version, and Amply\'s compatibility check. No personal data.</string>
+    <string name="setup_unsupported_request_action">Request support on GitHub</string>
+    <string name="setup_unsupported_help_action">More help &amp; contact</string>
+    <string name="setup_unsupported_dialog_title">Send device details?</string>
+    <string name="setup_unsupported_dialog_body">This opens a public GitHub page with the details below filled in. They are sent to GitHub as soon as the page opens; nothing is posted until you submit the issue.</string>
+    <string name="setup_unsupported_dialog_open">Open GitHub</string>
+    <string name="setup_unsupported_dialog_copy">Copy report</string>
+    <string name="setup_unsupported_dialog_cancel">Cancel</string>
+    <string name="setup_unsupported_report_copied">Device report copied</string>
+    <string name="setup_unsupported_no_browser">No browser available — copy the report and open GitHub manually</string>
 </resources>
