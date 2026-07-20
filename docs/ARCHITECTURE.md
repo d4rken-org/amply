@@ -21,7 +21,7 @@ Feature-specific preference facades live with their owning feature while sharing
 
 The root theme uses explicit paired light/dark brand schemes so every foreground color has a matching surface color. Material You is an opt-in theme style rather than an implicit device-dependent default. Theme mode, style, and accent are persisted in DataStore and exposed from General settings.
 
-First run presents the product intent and the complete WSS/Shizuku setup guide. The same guide is rendered on the dashboard whenever durable WSS is absent. Settings use an index plus focused General, Support, Changelog, Acknowledgements, and Privacy sub-screens; translation and project-help destinations remain external. The developer-facing setting-discovery workflow lives in a Diagnostics sub-screen and is only listed when an installed package declares Shizuku's API permission.
+First run presents the product intent and the complete WSS/Shizuku setup guide. The same guide is rendered on the dashboard whenever durable WSS is absent. Settings use an index plus focused General, Support, and Acknowledgements sub-screens; the changelog, privacy policy, and project-help destinations are external links (`AmplyLinks` holds the project URLs). The developer-facing setting-discovery workflow lives in a Diagnostics sub-screen and is only listed when an installed package declares Shizuku's API permission.
 
 Shizuku installation detection intentionally resolves the owner of `ShizukuProvider.PERMISSION` rather than checking a fixed package name. Permissions use a global namespace, so this recognizes renamed forks and Shizuku's hidden-package mode without broad installed-package visibility.
 

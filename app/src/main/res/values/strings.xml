@@ -20,7 +20,7 @@
     <string name="recovering_notification_body">Confirming the protective policy with the charging hardware.</string>
     <string name="setup_unsupported_title">This device isn\'t supported yet</string>
     <string name="setup_unsupported_body">Amply works by switching your phone\'s built-in battery-protection setting. It hasn\'t been mapped for %1$s devices yet — you can help us add it.</string>
-    <string name="setup_unsupported_shares_note">Shares your device model, Android version, and Amply\'s compatibility check. No personal data.</string>
+    <string name="setup_unsupported_shares_note">Shares your device\'s model and build details, Android version, battery state, and Amply\'s version and compatibility check. No personal identifiers.</string>
     <string name="setup_unsupported_request_action">Request support on GitHub</string>
     <string name="setup_unsupported_help_action">More help &amp; contact</string>
     <string name="setup_unsupported_dialog_title">Send device details?</string>

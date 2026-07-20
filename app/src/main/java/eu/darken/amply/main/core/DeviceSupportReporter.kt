@@ -9,6 +9,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import eu.darken.amply.BuildConfig
 import eu.darken.amply.charging.core.DeviceInfo
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
+import eu.darken.amply.common.AmplyLinks
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URLEncoder
@@ -81,7 +82,7 @@ class DeviceSupportReporter @Inject constructor(
     }
 
     companion object {
-        const val ISSUE_BASE_URL = "https://github.com/d4rken-org/amply/issues/new"
+        const val ISSUE_BASE_URL = "${AmplyLinks.ISSUES}/new"
         private const val MAX_VALUE = 120
         private const val MAX_FINGERPRINT = 200
     }

@@ -7,6 +7,4 @@ enum class SettingsDestination {
     DIAGNOSTICS,
     SUPPORT,
     ACKNOWLEDGEMENTS,
-    CHANGELOG,
-    PRIVACY,
 }

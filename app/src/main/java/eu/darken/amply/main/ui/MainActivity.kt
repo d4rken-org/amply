@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import dagger.hilt.android.AndroidEntryPoint
+import eu.darken.amply.common.AmplyLinks
 import eu.darken.amply.common.theming.AmplyTheme
 import eu.darken.amply.diagnostics.ui.DiagnosticsScreen
 import eu.darken.amply.diagnostics.ui.DiagnosticsViewModel
@@ -40,9 +41,7 @@ import eu.darken.amply.main.ui.dashboard.DashboardScreen
 import eu.darken.amply.main.ui.dashboard.DashboardViewModel
 import eu.darken.amply.main.ui.onboarding.OnboardingScreen
 import eu.darken.amply.main.ui.settings.AcknowledgementsScreen
-import eu.darken.amply.main.ui.settings.ChangelogScreen
 import eu.darken.amply.main.ui.settings.GeneralSettingsScreen
-import eu.darken.amply.main.ui.settings.PrivacyScreen
 import eu.darken.amply.main.ui.settings.SettingsDestination
 import eu.darken.amply.main.ui.settings.SettingsScreen
 import eu.darken.amply.main.ui.settings.SettingsViewModel
@@ -198,10 +197,9 @@ class MainActivity : ComponentActivity() {
                             diagnosticsReady = state.charging.access?.shizuku?.ready == true,
                             onDiagnostics = { destination = SettingsDestination.DIAGNOSTICS },
                             onSupport = { destination = SettingsDestination.SUPPORT },
-                            onChangelog = { destination = SettingsDestination.CHANGELOG },
+                            onChangelog = { settingsViewModel.openUrl(AmplyLinks.CHANGELOG) },
                             onAcknowledgements = { destination = SettingsDestination.ACKNOWLEDGEMENTS },
-                            onPrivacy = { destination = SettingsDestination.PRIVACY },
-                            onTranslation = { settingsViewModel.openUrl("https://crowdin.com/project/amply") },
+                            onPrivacy = { settingsViewModel.openUrl(AmplyLinks.PRIVACY_POLICY) },
                         )
                         SettingsDestination.GENERAL -> GeneralSettingsScreen(
                             state = themeState,
@@ -225,8 +223,8 @@ class MainActivity : ComponentActivity() {
                         SettingsDestination.SUPPORT -> SupportScreen(
                             state = debugState,
                             onBack = { destination = SettingsDestination.SETTINGS },
-                            onDocumentation = { settingsViewModel.openUrl("https://github.com/d4rken-org/amply") },
-                            onIssueTracker = { settingsViewModel.openUrl("https://github.com/d4rken-org/amply/issues") },
+                            onDocumentation = { settingsViewModel.openUrl(AmplyLinks.GITHUB) },
+                            onIssueTracker = { settingsViewModel.openUrl(AmplyLinks.ISSUES) },
                             onContact = settingsViewModel::contactSupport,
                             onStartDebugLog = settingsViewModel::startDebugLog,
                             onStopDebugLog = settingsViewModel::stopDebugLog,
@@ -236,12 +234,6 @@ class MainActivity : ComponentActivity() {
                         SettingsDestination.ACKNOWLEDGEMENTS -> AcknowledgementsScreen(
                             onBack = { destination = SettingsDestination.SETTINGS },
                             onOpenUrl = settingsViewModel::openUrl,
-                        )
-                        SettingsDestination.CHANGELOG -> ChangelogScreen(
-                            onBack = { destination = SettingsDestination.SETTINGS },
-                        )
-                        SettingsDestination.PRIVACY -> PrivacyScreen(
-                            onBack = { destination = SettingsDestination.SETTINGS },
                         )
                     }
                 }

@@ -4,21 +4,23 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.twotone.ArrowBack
+import androidx.compose.material.icons.automirrored.twotone.OpenInNew
 import androidx.compose.material.icons.twotone.Book
 import androidx.compose.material.icons.twotone.BugReport
 import androidx.compose.material.icons.twotone.Favorite
 import androidx.compose.material.icons.twotone.History
 import androidx.compose.material.icons.twotone.Settings
 import androidx.compose.material.icons.twotone.SupportAgent
-import androidx.compose.material.icons.twotone.Translate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import eu.darken.amply.BuildConfig
+import eu.darken.amply.common.settings.SettingsBaseItem
 import eu.darken.amply.common.settings.SettingsCategoryHeader
 import eu.darken.amply.common.settings.SettingsDivider
 import eu.darken.amply.common.settings.SettingsNavigationItem
@@ -34,7 +36,6 @@ fun SettingsScreen(
     onChangelog: () -> Unit,
     onAcknowledgements: () -> Unit,
     onPrivacy: () -> Unit,
-    onTranslation: () -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -94,11 +95,12 @@ fun SettingsScreen(
             }
             item { SettingsDivider() }
             item {
-                SettingsNavigationItem(
+                SettingsBaseItem(
                     title = "Changelog",
                     subtitle = BuildConfig.VERSION_NAME,
                     icon = Icons.TwoTone.History,
                     onClick = onChangelog,
+                    trailingContent = { ExternalLinkIcon() },
                 )
             }
             item { SettingsDivider() }
@@ -112,22 +114,23 @@ fun SettingsScreen(
             }
             item { SettingsDivider() }
             item {
-                SettingsNavigationItem(
+                SettingsBaseItem(
                     title = "Privacy policy",
                     subtitle = "How Amply handles data",
                     icon = Icons.TwoTone.Book,
                     onClick = onPrivacy,
-                )
-            }
-            item { SettingsDivider() }
-            item {
-                SettingsNavigationItem(
-                    title = "Translation",
-                    subtitle = "Help make Amply available in more languages",
-                    icon = Icons.TwoTone.Translate,
-                    onClick = onTranslation,
+                    trailingContent = { ExternalLinkIcon() },
                 )
             }
         }
     }
+}
+
+@Composable
+private fun ExternalLinkIcon() {
+    Icon(
+        Icons.AutoMirrored.TwoTone.OpenInNew,
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }

@@ -89,6 +89,7 @@ class SettingsViewModel @Inject constructor(
             )
         }.onFailure {
             log(TAG, Logging.Priority.WARN) { "Could not open $url: ${it.message}" }
+            Toast.makeText(context, "No browser available to open the link", Toast.LENGTH_SHORT).show()
         }
     }
 
