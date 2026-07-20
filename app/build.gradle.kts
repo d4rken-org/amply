@@ -22,6 +22,7 @@ fun SigningConfig.loadAmplySigning(path: File): Boolean {
 }
 
 plugins {
+    id("projectConfig")
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
@@ -29,22 +30,22 @@ plugins {
 }
 
 android {
-    namespace = "eu.darken.amply"
-    compileSdk = 36
+    namespace = projectConfig.packageName
+    compileSdk = projectConfig.compileSdk
 
     defaultConfig {
-        applicationId = "eu.darken.amply"
-        minSdk = 26
-        targetSdk = 36
-        versionCode = 10
-        versionName = "0.1.0-spike1"
+        applicationId = projectConfig.packageName
+        minSdk = projectConfig.minSdk
+        targetSdk = projectConfig.targetSdk
+        versionCode = projectConfig.version.code.toInt()
+        versionName = projectConfig.version.name
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         buildConfigField("boolean", "ENABLE_PIXEL_LAB_ADAPTER", "true")
     }
 
-    val signingBase = File(System.getProperty("user.home"), ".config/projects/eu.darken.amply")
+    val signingBase = File(System.getProperty("user.home"), ".config/projects/${projectConfig.packageName}")
     var fossSigningReady = false
     var gplaySigningReady = false
     signingConfigs {

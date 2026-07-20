@@ -43,7 +43,9 @@ AIDL boundary: `app/src/main/aidl/eu/darken/amply/charging/core/access/shizuku/I
 
 ## Important File Locations
 
-- `app/build.gradle.kts` — version (`versionCode`/`versionName`), flavors, build types, signing, dependencies
+- `version.properties` — versioning source of truth (parsed by the buildSrc `ProjectConfigPlugin`)
+- `buildSrc/` — `ProjectConfig` (packageName/SDKs/version) plus shared build helpers
+- `app/build.gradle.kts` — flavors, build types, signing wiring, dependencies
 - `build.gradle.kts` (root) — plugin versions (AGP, KSP, Kotlin Compose, Hilt)
 - `.github/workflows/code-checks.yml` — CI (builds + tests + lint for both flavors)
 - `app/src/main/res/values/strings.xml` — extracted user-facing strings (system-surfaced text)

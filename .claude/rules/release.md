@@ -2,14 +2,19 @@
 
 ## Current state (honest)
 
-Amply is **pre-launch** (`versionName = "0.1.0-spike1"`, `versionCode = 10`). There is **no release automation** — no
-`tools/release/` scripts, no version-bump tooling, no publish lanes. Versioning is manual, edited directly in
-`app/build.gradle.kts`. Fastlane exists only as **store-listing metadata** (`fastlane/metadata/android/en-US/*.txt`),
-not as build/deploy lanes. Update this file when real release tooling lands.
+Amply is **pre-launch** (`0.1.0-spike1`). There is **no release automation** — no `tools/release/` scripts, no
+version-bump tooling, no publish lanes. Versioning is manual, edited directly in `version.properties`. Fastlane
+exists only as **store-listing metadata** (`fastlane/metadata/android/en-US/*.txt`), not as build/deploy lanes.
+Update this file when real release tooling (CAPod-style `bump.sh` + `VERSION` file) lands.
 
 ## Versioning
 
-- Single source: `defaultConfig` in `app/build.gradle.kts` (`versionCode`, `versionName`).
+- Single source: `version.properties` at the repo root, parsed at configuration time by the buildSrc
+  `ProjectConfigPlugin` (CAPod's scheme): `versionName = "major.minor.patch-type{build}"`,
+  `versionCode = major*10000000 + minor*100000 + patch*1000 + build*10`.
+- Constraints (nothing enforces these until bump tooling lands): keep `minor`, `patch`, `build` ≤ 99 — overflow
+  collides with the next-higher field (e.g. `patch=0,build=100` equals `patch=1,build=0`). Changing only `type` does
+  **not** change the versionCode, so a store update needs another field bumped. Keep versionCode monotonic.
 - No build-type or flavor suffixes: every variant installs as `eu.darken.amply` with the same versionName. Because
   signing certificates differ (debug key vs foss key vs gplay upload key), installed variants are mutually exclusive
   on a device — switching requires an uninstall.
