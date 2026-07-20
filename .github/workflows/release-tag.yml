@@ -1,0 +1,137 @@
+name: Tagged releases
+
+# Adapted from CAPod's release-tag.yml, scoped to what Amply currently supports:
+#   * FOSS GitHub release only.
+#   * NO Google Play upload job — Amply has no fastlane deploy lanes, and Play
+#     publication must stay gated on approval of the declared specialUse
+#     foreground-service use case (see .claude/rules/privileged-access.md).
+#   * NO Pages deployment — the project website is deferred.
+# Fires only on a deliberate v* tag (cut via release-prepare.yml), so it never
+# runs by accident. Requires SIGNING_KEYSTORE_BASE64 + STORE_PASSWORD/KEY_ALIAS/
+# KEY_PASSWORD secrets to produce a signed APK; absent those it still builds,
+# but the artifact is unsigned (filename carries an -UNSIGNED marker).
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Build only, skip release/upload'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  validate-tag:
+    name: Validate tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check tag-name format
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${REF_NAME}" =~ ^v[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,2}-(rc|beta)[0-9]{1,2}$ ]]; then
+            echo "Tag '${REF_NAME}' does not match v<M.m.p-(rc|beta)n>" >&2
+            echo "Releases must be cut via the 'Release prepare' workflow." >&2
+            exit 1
+          fi
+
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify version.properties matches tag
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          tag_name="${REF_NAME#v}"
+          parsed=$(./tools/release/bump.sh --mode=check)
+          current_name=$(echo "$parsed" | grep -E '^current_name=' | cut -d= -f2)
+          if [[ "$current_name" != "$tag_name" ]]; then
+            echo "Tag '${REF_NAME}' does not match version.properties name '$current_name'" >&2
+            echo "version.properties + VERSION must equal the tag — releases must be cut via 'Release prepare'." >&2
+            exit 1
+          fi
+
+  release-github:
+    needs: validate-tag
+    name: Create GitHub release (FOSS)
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Decode keystore
+        env:
+          SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SIGNING_KEYSTORE_BASE64}" ]]; then
+            echo "No SIGNING_KEYSTORE_BASE64 secret — the release APK will be unsigned." >&2
+            exit 0
+          fi
+          TMP_KEYSTORE_DIR_PATH="${RUNNER_TEMP}"/keystore
+          mkdir -p "${TMP_KEYSTORE_DIR_PATH}"
+          TMP_KEYSTORE_FILE_PATH="${TMP_KEYSTORE_DIR_PATH}"/keystore.jks
+          echo "$SIGNING_KEYSTORE_BASE64" | base64 -di > "${TMP_KEYSTORE_FILE_PATH}"
+          echo "STORE_PATH=${TMP_KEYSTORE_FILE_PATH}" >> "$GITHUB_ENV"
+
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup project and build environment
+        uses: ./.github/actions/common-setup
+
+      - name: Assemble beta APK
+        if: contains(github.ref_name, '-beta')
+        run: ./gradlew assembleFossBeta
+        env:
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Assemble release APK
+        if: "!contains(github.ref_name, '-beta')"
+        run: ./gradlew assembleFossRelease
+        env:
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Create pre-release (beta)
+        if: contains(github.ref_name, '-beta') && !(github.event_name == 'workflow_dispatch' && inputs.dry_run)
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: app/build/outputs/apk/foss/beta/eu.darken.amply-*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create release
+        if: "!contains(github.ref_name, '-beta') && !(github.event_name == 'workflow_dispatch' && inputs.dry_run)"
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: false
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: app/build/outputs/apk/foss/release/eu.darken.amply-*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

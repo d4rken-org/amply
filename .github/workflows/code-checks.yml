@@ -3,6 +3,10 @@ name: Code checks
 on:
   push:
     branches: [main]
+    # A version-bump commit touches only these; no need to re-run the build matrix.
+    paths-ignore:
+      - VERSION
+      - version.properties
   pull_request:
 
 permissions:
@@ -68,3 +72,24 @@ jobs:
         uses: actions/checkout@v4
       - name: Validate metadata lengths
         run: bash fastlane/check_metadata_length.sh
+
+  check-release-tooling:
+    name: Release tooling
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Install bats and shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats shellcheck
+
+      - name: Shellcheck bump.sh
+        run: shellcheck tools/release/bump.sh
+
+      - name: Run bump.sh unit tests
+        run: bats tools/release/bump.bats
+
+      - name: Verify version.properties + VERSION are consistent
+        run: ./tools/release/bump.sh --mode=check
