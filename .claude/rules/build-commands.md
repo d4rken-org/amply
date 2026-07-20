@@ -48,8 +48,8 @@ adb install app/build/outputs/apk/foss/debug/app-foss-debug.apk
 # Amply logs use the AMP: tag prefix
 adb logcat | grep AMP:
 
-# Debug build's applicationId is suffixed with .debug
-adb shell pm clear eu.darken.amply.debug
+# All variants share the single applicationId (variants are mutually exclusive on a device)
+adb shell pm clear eu.darken.amply
 ```
 
 ## Context Management

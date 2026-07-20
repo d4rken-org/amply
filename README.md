@@ -24,7 +24,7 @@ The first control adapter targets Pixel charging optimization. Direct control is
 Build and install a debug flavor, then choose one access path:
 
 ```text
-adb shell pm grant eu.darken.amply.debug android.permission.WRITE_SECURE_SETTINGS
+adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS
 ```
 
 Alternatively, start Shizuku, grant Amply access, and optionally use Amply's setup card to grant durable WSS. WSS-only control can write Pixel's hidden values but Android blocks direct third-party reads. Amply therefore also watches Android's public charging-hardware state: the active Pixel 80% profile is reported live, while a normal profile is left unknown because it could mean unrestricted or currently inactive adaptive charging. Shizuku provides exact configured-setting readback while it is running. On tested Pixels, Google's policy worker takes roughly 10–15 seconds to propagate a setting change to the charging HAL.

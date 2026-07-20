@@ -10,8 +10,9 @@ not as build/deploy lanes. Update this file when real release tooling lands.
 ## Versioning
 
 - Single source: `defaultConfig` in `app/build.gradle.kts` (`versionCode`, `versionName`).
-- Build-type suffixes: `debug` → `applicationIdSuffix = ".debug"` + `versionNameSuffix = "-debug"`; `beta` →
-  `-beta`. `release` has no suffix.
+- No build-type or flavor suffixes: every variant installs as `eu.darken.amply` with the same versionName. Because
+  signing certificates differ (debug key vs foss key vs gplay upload key), installed variants are mutually exclusive
+  on a device — switching requires an uninstall.
 
 ## Signing
 

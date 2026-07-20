@@ -18,7 +18,8 @@ Package: `eu.darken.amply`. License: GPL-3.0-or-later. Status: pre-launch (`0.1.
 
 - **Single Gradle module**: `:app` (declared in `settings.gradle.kts`). This is *not* a multi-module project.
 - **Product flavors** (`distribution` dimension): `foss` and `gplay`.
-- **Build types**: `debug` (applicationId suffix `.debug`), `beta` (minified), `release` (minified).
+- **Build types**: `debug`, `beta` (minified), `release` (minified). Every variant shares the single applicationId
+  `eu.darken.amply` — no build-type suffixes; installed variants are mutually exclusive (different signing keys).
 - **SDKs**: `compileSdk`/`targetSdk` 36, `minSdk` 26. Core-library desugaring enabled.
 - **Java**: build/test toolchain needs **JDK 21** (Robolectric requires it to emulate Android SDK 36); compiled
   bytecode still targets **Java 17** (`compileOptions`/`jvmTarget` in `app/build.gradle.kts`).

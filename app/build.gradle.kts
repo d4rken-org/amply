@@ -75,19 +75,24 @@ android {
     buildTypes {
         debug {
             isMinifyEnabled = false
-            applicationIdSuffix = ".debug"
-            versionNameSuffix = "-debug"
         }
         create("beta") {
+            lint {
+                abortOnError = true
+                fatal.add("StopShip")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            versionNameSuffix = "-beta"
         }
         release {
+            lint {
+                abortOnError = true
+                fatal.add("StopShip")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

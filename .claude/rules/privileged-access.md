@@ -17,11 +17,11 @@ app. Read this before modifying anything under `charging/core/access/`, the AIDL
 Granting WSS in development:
 
 ```bash
-adb shell pm grant eu.darken.amply.debug android.permission.WRITE_SECURE_SETTINGS
+adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS
 ```
 
-(Use the `.debug` suffix for debug builds.) Alternatively start Shizuku, grant Amply access, and optionally use the
-setup card to grant durable WSS.
+(All variants share the applicationId `eu.darken.amply`.) Alternatively start Shizuku, grant Amply access, and
+optionally use the setup card to grant durable WSS.
 
 ## No Arbitrary Shell API
 
