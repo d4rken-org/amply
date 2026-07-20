@@ -26,6 +26,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import eu.darken.amply.common.compose.AmplyPreview
+import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.common.settings.SettingsCategoryHeader
 import eu.darken.amply.common.settings.SettingsDivider
 import eu.darken.amply.common.settings.SettingsPreferenceItem
@@ -139,3 +141,15 @@ private fun ChoiceDialog(
 }
 
 private enum class ThemeDialog { MODE, STYLE, COLOR }
+
+@AmplyPreview
+@Composable
+private fun GeneralSettingsScreenPreview() = PreviewWrapper {
+    GeneralSettingsScreen(
+        state = ThemeState(),
+        onBack = {},
+        onModeChange = {},
+        onStyleChange = {},
+        onColorChange = {},
+    )
+}

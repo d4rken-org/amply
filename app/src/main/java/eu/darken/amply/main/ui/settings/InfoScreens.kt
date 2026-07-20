@@ -11,6 +11,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import eu.darken.amply.common.compose.AmplyPreview
+import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.common.settings.SettingsBaseItem
 import eu.darken.amply.common.settings.SettingsCategoryHeader
 import eu.darken.amply.common.settings.SettingsDivider
@@ -86,4 +88,10 @@ private fun SettingsTopBar(title: String, onBack: () -> Unit) {
             }
         },
     )
+}
+
+@AmplyPreview
+@Composable
+private fun AcknowledgementsScreenPreview() = PreviewWrapper {
+    AcknowledgementsScreen(onBack = {}, onOpenUrl = {})
 }

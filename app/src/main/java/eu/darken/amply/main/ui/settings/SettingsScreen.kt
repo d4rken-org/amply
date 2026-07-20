@@ -20,6 +20,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import eu.darken.amply.BuildConfig
+import eu.darken.amply.common.compose.AmplyPreview
+import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.common.settings.SettingsBaseItem
 import eu.darken.amply.common.settings.SettingsCategoryHeader
 import eu.darken.amply.common.settings.SettingsDivider
@@ -132,5 +134,21 @@ private fun ExternalLinkIcon() {
         Icons.AutoMirrored.TwoTone.OpenInNew,
         contentDescription = null,
         tint = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@AmplyPreview
+@Composable
+private fun SettingsScreenPreview() = PreviewWrapper {
+    SettingsScreen(
+        onBack = {},
+        onGeneral = {},
+        showDiagnostics = true,
+        diagnosticsReady = true,
+        onDiagnostics = {},
+        onSupport = {},
+        onChangelog = {},
+        onAcknowledgements = {},
+        onPrivacy = {},
     )
 }

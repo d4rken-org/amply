@@ -24,6 +24,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import eu.darken.amply.common.compose.AmplyPreview
+import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.common.debug.DebugLogState
 import eu.darken.amply.common.settings.SettingsBaseItem
 import eu.darken.amply.common.settings.SettingsCategoryHeader
@@ -154,4 +156,20 @@ fun SupportScreen(
             },
         )
     }
+}
+
+@AmplyPreview
+@Composable
+private fun SupportScreenPreview() = PreviewWrapper {
+    SupportScreen(
+        state = DebugLogState(recording = true, currentPath = "debug/logs/session-1.log"),
+        onBack = {},
+        onDocumentation = {},
+        onIssueTracker = {},
+        onContact = {},
+        onStartDebugLog = {},
+        onStopDebugLog = {},
+        onShareDebugLog = {},
+        onClearDebugLogs = {},
+    )
 }

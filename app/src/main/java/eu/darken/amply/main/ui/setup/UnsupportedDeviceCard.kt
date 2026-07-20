@@ -34,12 +34,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import eu.darken.amply.R
-import eu.darken.amply.common.theming.AmplyTheme
-import eu.darken.amply.common.theming.ThemeMode
-import eu.darken.amply.common.theming.ThemeState
+import eu.darken.amply.common.compose.AmplyPreview
+import eu.darken.amply.common.compose.PreviewWrapper
 
 /**
  * Shown on the dashboard and during onboarding when a device is unsupported but a useful support
@@ -192,36 +190,17 @@ fun UnsupportedDeviceCard(
 
 private const val PREVIEW_REPORT = "manufacturer=Samsung\nmodel=SM-S911B\nandroid_sdk=34\nadapter=samsung-lab"
 
-@Preview(name = "Unsupported card · light")
+@AmplyPreview
 @Composable
-private fun UnsupportedDeviceCardPreview() {
-    AmplyTheme(state = ThemeState(mode = ThemeMode.LIGHT)) {
-        UnsupportedDeviceCard(
-            modifier = Modifier.padding(16.dp),
-            manufacturer = "Samsung",
-            reportPreview = PREVIEW_REPORT,
-            onPrepareReport = {},
-            onCopyReport = {},
-            onOpenIssue = {},
-            onEmail = {},
-            onHelp = {},
-        )
-    }
-}
-
-@Preview(name = "Unsupported card · dark")
-@Composable
-private fun UnsupportedDeviceCardDarkPreview() {
-    AmplyTheme(state = ThemeState(mode = ThemeMode.DARK)) {
-        UnsupportedDeviceCard(
-            modifier = Modifier.padding(16.dp),
-            manufacturer = "Xiaomi",
-            reportPreview = PREVIEW_REPORT,
-            onPrepareReport = {},
-            onCopyReport = {},
-            onOpenIssue = {},
-            onEmail = {},
-            onHelp = {},
-        )
-    }
+private fun UnsupportedDeviceCardPreview() = PreviewWrapper {
+    UnsupportedDeviceCard(
+        modifier = Modifier.padding(16.dp),
+        manufacturer = "Samsung",
+        reportPreview = PREVIEW_REPORT,
+        onPrepareReport = {},
+        onCopyReport = {},
+        onOpenIssue = {},
+        onEmail = {},
+        onHelp = {},
+    )
 }

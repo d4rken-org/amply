@@ -40,6 +40,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import eu.darken.amply.R
 import eu.darken.amply.charging.core.ChargeObservation
+import eu.darken.amply.charging.core.ChargingState
+import eu.darken.amply.charging.core.DeviceInfo
+import eu.darken.amply.common.compose.AmplyPreview
+import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.main.ui.dashboard.DashboardUiState
 import eu.darken.amply.main.ui.setup.AccessSetupGuide
 
@@ -191,4 +195,25 @@ private fun FeatureRow(icon: ImageVector, title: String, body: String) {
             Text(body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+}
+
+@AmplyPreview
+@Composable
+private fun OnboardingScreenPreview() = PreviewWrapper {
+    OnboardingScreen(
+        state = DashboardUiState(
+            onboardingComplete = false,
+            charging = ChargingState(
+                device = DeviceInfo("Google", "Pixel 8", 36, "preview"),
+                adapterName = "Pixel Charge Control",
+                adapterDetail = "Supported Pixel capability",
+            ),
+        ),
+        adbCommand = "adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS",
+        onOpenShizuku = {},
+        onAllowShizuku = {},
+        onGrantWss = {},
+        onCopyAdb = {},
+        onContinue = {},
+    )
 }

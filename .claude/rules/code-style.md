@@ -35,43 +35,45 @@ class DashboardViewModel @Inject constructor(
 - Extract a composable into its own file when it grows large (~200 lines). Reusable composables belong in a shared
   `common` compose location, not next to a single feature.
 
-### Host/Page pattern (mandatory for all Compose screens)
+### State-hoisted screens (previewable)
 
-Every screen splits into two composables:
-
-**`<Feature>ScreenHost`** — ViewModel wiring + side effects. The only place that calls `hiltViewModel()`, collects
-one-shot events, launches activity results, and starts intents. It reads the ViewModel's state and hands it down.
-
-**`<Feature>Screen`** — Pure presentation. Accepts a `Flow<State>` (or plain state) plus callbacks, is marked
-`internal`, and is previewable with mock `flowOf(...)` data.
+Screens are **pure and state-hoisted**: a screen composable takes a state object plus callbacks, and never calls
+`hiltViewModel()`, holds a ViewModel reference, or collects a `Flow` itself. All ViewModel wiring — state collection,
+one-shot events, permission launchers, activity results, navigation — lives at the **composition root**
+(`MainActivity`), which passes concrete state and callbacks down. That separation is what keeps every screen
+renderable from mock state, which is what makes the mandatory previews below possible.
 
 ```kotlin
+// Pure screen — no ViewModel/Hilt, fully previewable.
 @Composable
-fun DashboardScreenHost(vm: DashboardViewModel = hiltViewModel()) {
-    val state by vm.state.collectAsStateWithLifecycle()
-    DashboardScreen(
-        state = state,
-        onApply = vm::apply,
-        onStartFull = vm::startFull,
-    )
-}
-
-@Composable
-internal fun DashboardScreen(
-    modifier: Modifier = Modifier,
+fun DashboardScreen(
     state: DashboardUiState,
-    onApply: (ChargePolicy) -> Unit = {},
-    onStartFull: () -> Unit = {},
+    onApply: (ChargePolicy) -> Unit,
+    onStartFull: () -> Unit,
+    // …
 ) { … }
+
+// Wiring lives at the root (MainActivity), not inside the screen:
+DashboardScreen(
+    state = state,
+    onApply = viewModel::applyPolicy,
+    onStartFull = { runWithNotifications(START_FULL_CHARGE) },
+)
 ```
 
-Wire only the `Host` into `MainActivity`'s navigation, never the raw `Screen`.
+A named `<Feature>ScreenHost` that pre-collects a ViewModel is **optional** — add one only if a screen's root wiring
+grows large enough to be worth isolating. It isn't required here, because the screens are already pure. (ViewModels
+own their side effects, including starting intents; that's the established convention — see the ViewModels section.)
 
 ### Previews (mandatory)
 
-Every screen/component composable has a `@Preview` (light + dark) wrapped in the shared themed preview wrapper.
-Preview functions are `private`, named `<Component>Preview()`, and placed directly below the composable they preview.
-Drive them with mock state via `flowOf(...)` / a constructed `UiState`, never a real ViewModel.
+Every **screen and every reusable/public component** has previews via **`@AmplyPreview`** (the light + dark
+multipreview annotation) wrapped in **`PreviewWrapper`** — both in `common/compose/Preview.kt`, which renders against
+the branded `AmplyTheme`. Preview functions are `private`, named `<Component>Preview()`, placed at the end of the
+file, and driven by a **constructed state fixture** — never a real ViewModel. Use a *meaningful* fixture that
+exercises the real UI (e.g. a ready dashboard plus an unsupported-device variant), not bare `State()` defaults, which
+mostly render loading/empty. Private one-off leaf helpers don't need their own preview — they're covered by their
+screen's preview.
 
 ## Widget & Tile
 

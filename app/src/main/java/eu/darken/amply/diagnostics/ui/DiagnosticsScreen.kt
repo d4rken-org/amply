@@ -32,6 +32,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import eu.darken.amply.charging.core.access.BackendStatus
+import eu.darken.amply.common.compose.AmplyPreview
+import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.common.settings.SettingsBaseItem
 import eu.darken.amply.common.settings.SettingsCategoryHeader
 import eu.darken.amply.common.settings.SettingsDivider
@@ -231,4 +233,25 @@ private fun ShizukuAccessCard(
             }
         }
     }
+}
+
+@AmplyPreview
+@Composable
+private fun DiagnosticsScreenPreview() = PreviewWrapper {
+    DiagnosticsScreen(
+        state = DiagnosticsUiState(
+            baselineCaptured = true,
+            status = "Comparison complete. Review the redacted changes below.",
+            report = "secure/charge_optimization_mode: 0 → 1\nsecure/adaptive_charging_enabled: 1 → 0",
+        ),
+        shizuku = BackendStatus(available = true, granted = true, detail = "Shizuku connected"),
+        onBack = {},
+        onRefresh = {},
+        onOpenShizuku = {},
+        onAllowShizuku = {},
+        onCapture = {},
+        onOpenNativeSettings = {},
+        onCompare = {},
+        onShare = {},
+    )
 }

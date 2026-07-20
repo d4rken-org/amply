@@ -26,6 +26,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import eu.darken.amply.charging.core.ChargeObservation
+import eu.darken.amply.common.compose.AmplyPreview
+import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.main.ui.dashboard.DashboardUiState
 
 @Composable
@@ -141,4 +143,17 @@ fun AccessSetupGuide(
             }
         }
     }
+}
+
+@AmplyPreview
+@Composable
+private fun AccessSetupGuidePreview() = PreviewWrapper {
+    AccessSetupGuide(
+        state = DashboardUiState(onboardingComplete = false),
+        adbCommand = "adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS",
+        onOpenShizuku = {},
+        onAllowShizuku = {},
+        onGrantWss = {},
+        onCopyAdb = {},
+    )
 }

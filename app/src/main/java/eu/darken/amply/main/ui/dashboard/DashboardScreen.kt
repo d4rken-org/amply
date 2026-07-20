@@ -53,9 +53,15 @@ import androidx.compose.ui.unit.dp
 import eu.darken.amply.charging.core.BackendKind
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
+import eu.darken.amply.charging.core.ChargingState
+import eu.darken.amply.charging.core.DeviceInfo
 import eu.darken.amply.charging.core.SETTLING_WINDOW_MILLIS
 import eu.darken.amply.charging.core.isSettling
 import eu.darken.amply.charging.core.settlingTarget
+import eu.darken.amply.charging.core.access.AccessSnapshot
+import eu.darken.amply.charging.core.access.BackendStatus
+import eu.darken.amply.common.compose.AmplyPreview
+import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.main.core.formatReport
 import eu.darken.amply.main.ui.setup.AccessSetupGuide
 import eu.darken.amply.main.ui.setup.UnsupportedDeviceCard
@@ -480,4 +486,78 @@ private fun ChargePolicy.shortLabel(): String = when (this) {
     ChargePolicy.Adaptive -> "Adaptive charging"
     ChargePolicy.Unrestricted -> "100% charging"
     is ChargePolicy.FixedLimit -> "$percent% limit"
+}
+
+@AmplyPreview
+@Composable
+private fun DashboardScreenPreview() = PreviewWrapper {
+    DashboardScreen(
+        state = DashboardUiState(
+            onboardingComplete = true,
+            charging = ChargingState(
+                device = DeviceInfo("Google", "Pixel 8", 36, "preview"),
+                adapterName = "Pixel Charge Control",
+                adapterId = "pixel",
+                adapterDetail = "Supported Pixel capability",
+                controlEnabled = true,
+                access = AccessSnapshot(
+                    direct = BackendStatus(available = true, granted = true, detail = "WRITE_SECURE_SETTINGS granted"),
+                    shizuku = BackendStatus(available = true, granted = true, detail = "Shizuku connected"),
+                ),
+                observation = ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.SHIZUKU),
+            ),
+        ),
+        adbCommand = "adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS",
+        onRefresh = {},
+        onSettings = {},
+        onStartFull = {},
+        onRestore = {},
+        onApply = {},
+        onQuickFullChargeChange = {},
+        onNativeSettings = {},
+        onOpenShizuku = {},
+        onAllowShizuku = {},
+        onGrantWss = {},
+        onCopyAdb = {},
+        onPrepareSupportReport = {},
+        onCopySupportReport = {},
+        onOpenSupportIssue = {},
+        onEmailSupport = {},
+        onHelp = {},
+    )
+}
+
+@AmplyPreview
+@Composable
+private fun DashboardScreenUnsupportedPreview() = PreviewWrapper {
+    DashboardScreen(
+        state = DashboardUiState(
+            onboardingComplete = true,
+            charging = ChargingState(
+                device = DeviceInfo("Samsung", "SM-S911B", 34, "preview", hasChargingOptimization = false),
+                adapterName = "Diagnostics only",
+                adapterDetail = "This device is not a supported Pixel",
+                controlEnabled = false,
+                contributionWanted = true,
+                observation = ChargeObservation.Unsupported("This device is not a supported Pixel"),
+            ),
+        ),
+        adbCommand = "adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS",
+        onRefresh = {},
+        onSettings = {},
+        onStartFull = {},
+        onRestore = {},
+        onApply = {},
+        onQuickFullChargeChange = {},
+        onNativeSettings = {},
+        onOpenShizuku = {},
+        onAllowShizuku = {},
+        onGrantWss = {},
+        onCopyAdb = {},
+        onPrepareSupportReport = {},
+        onCopySupportReport = {},
+        onOpenSupportIssue = {},
+        onEmailSupport = {},
+        onHelp = {},
+    )
 }

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.twotone.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -20,6 +21,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import eu.darken.amply.common.compose.AmplyPreview
+import eu.darken.amply.common.compose.PreviewWrapper
 
 @Composable
 fun SettingsBaseItem(
@@ -128,4 +131,33 @@ fun SettingsDivider(hasIcon: Boolean = true) {
         modifier = Modifier.padding(start = if (hasIcon) 56.dp else 16.dp),
         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
     )
+}
+
+@AmplyPreview
+@Composable
+private fun SettingsComponentsPreview() = PreviewWrapper {
+    Column {
+        SettingsCategoryHeader("Appearance")
+        SettingsNavigationItem(
+            title = "Theme",
+            subtitle = "Branded green",
+            icon = Icons.Default.Palette,
+            onClick = {},
+        )
+        SettingsDivider()
+        SettingsPreferenceItem(
+            title = "Contrast",
+            value = "Standard",
+            icon = Icons.Default.Palette,
+            onClick = {},
+        )
+        SettingsDivider()
+        SettingsSwitchItem(
+            title = "Quick full charge",
+            subtitle = "Reconnect at 80% to charge fully once",
+            checked = true,
+            onCheckedChange = {},
+            icon = Icons.Default.Palette,
+        )
+    }
 }
