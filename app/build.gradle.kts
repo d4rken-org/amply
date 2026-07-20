@@ -134,6 +134,42 @@ android {
     }
 }
 
+androidComponents {
+    onVariants { variant ->
+        val buildType = variant.buildType ?: return@onVariants
+        if (buildType != "release" && buildType != "beta") return@onVariants
+
+        val formattedVariantName = variant.name
+            .replace(Regex("([a-z])([A-Z])"), "$1-$2")
+            .uppercase()
+
+        val apkFolder = variant.artifacts.get(com.android.build.api.artifact.SingleArtifact.APK)
+        val loader = variant.artifacts.getBuiltArtifactsLoader()
+        val packageName = projectConfig.packageName
+
+        val renameTask = tasks.register("rename${variant.name.replaceFirstChar { it.uppercase() }}Apk") {
+            inputs.files(apkFolder)
+            outputs.upToDateWhen { false }
+
+            doLast {
+                val builtArtifacts = loader.load(apkFolder.get()) ?: return@doLast
+
+                builtArtifacts.elements.forEach { element ->
+                    val apkFile = File(element.outputFile)
+                    val outputFileName = "$packageName-v${element.versionName}-${element.versionCode}-$formattedVariantName.apk"
+                    if (apkFile.exists() && apkFile.name != outputFileName) {
+                        apkFile.copyTo(File(apkFile.parentFile, outputFileName), overwrite = true)
+                    }
+                }
+            }
+        }
+
+        tasks.matching { it.name == "assemble${variant.name.replaceFirstChar { it.uppercase() }}" }.configureEach {
+            finalizedBy(renameTask)
+        }
+    }
+}
+
 tasks.withType<KotlinCompile>().configureEach {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
