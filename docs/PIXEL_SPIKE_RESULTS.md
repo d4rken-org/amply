@@ -120,9 +120,13 @@ Tested on 2026-07-19 with the same build:
 - Google Pixel 3a (`sargo`), Android 12 / API 32
 - Google Pixel 2 (`walleye`), Android 9 / API 28
 
-On both devices the capability gate correctly reported "Requires Android 15 or newer", the one-time-charge button and policy selector were disabled, tapping them wrote nothing, the Quick Settings tile did not start a session, all settings screens opened, the Diagnostics entry stayed hidden without a Shizuku installation, and no crashes occurred down to API 28. No permissions were granted and no device settings were modified.
+- Google Pixel XL (`marlin`), Android 10 / API 29 (added 2026-07-20)
 
-One presentational gap surfaced and was fixed the same day: the onboarding and dashboard showed the full "Set up charge control" card and the Shizuku readback banner on unsupported devices, inviting a setup that can never enable control there. Both surfaces and the onboarding continue-button label now key off the confirmed unsupported observation (not the pre-refresh default), so supported devices see no flash of unsupported UI during startup. Re-verified on the Pixel 3a (clean gated UI) and the Pixel 7a (unchanged). A Pixel XL / Android 10 pass is still outstanding (device was offline during the sweep).
+On all three the capability gate correctly reported "Requires Android 15 or newer", the one-time-charge button and policy selector were disabled, tapping them wrote nothing, the Quick Settings tile did not start a session, all settings screens opened, the Diagnostics entry stayed hidden without a Shizuku installation, and no crashes occurred down to API 28. No permissions were granted and no device settings were modified. (On the Pixel XL the `charge_optimization_mode` secure key happens to pre-exist with value `0`; Amply neither reads it for the gate nor writes it — no WSS grant and no `apply` in logs — so it is irrelevant to the model/SDK-based gate.)
+
+A minor cosmetic gap remains on unsupported devices: the one-time-charge button and policy chips are correctly disabled, but the "Reconnect for 100%" card still renders with an enabled toggle. It should be hidden or disabled like the other control surfaces (enabling it would only run an idle monitor that never arms).
+
+One presentational gap surfaced and was fixed the same day: the onboarding and dashboard showed the full "Set up charge control" card and the Shizuku readback banner on unsupported devices, inviting a setup that can never enable control there. Both surfaces and the onboarding continue-button label now key off the confirmed unsupported observation (not the pre-refresh default), so supported devices see no flash of unsupported UI during startup. Re-verified on the Pixel 3a (clean gated UI) and the Pixel 7a (unchanged), and on 2026-07-20 on the Pixel XL / Android 10 (onboarding showed "Continue" with no setup card).
 
 ## Pixel 7a manual/physical coverage
 
@@ -142,4 +146,4 @@ Continued on 2026-07-20 after the battery drifted below the limit overnight:
 - **At-threshold below-80 % approach.** From 74 %, plugged with the limit active, the battery charged up and stopped at **exactly 80 %** — `status` flipped from charging to not-charging at 80 with no overshoot (confirmed stable 20 s later), the policy (sysfs `4`) active throughout. This exercises the limit engaging at the threshold from below, not just holding an already-limited battery.
 - **24-hour safety timeout (via the debug-shortened toggle).** With the debug-only "Shorten session timeouts" option on (safety 120 s), a session started plugged at 80 % auto-restored 2 min 1 s later. At restore the phone was still plugged and below full, so by elimination it was the safety-timeout path (not full, disconnect, or arm); the policy restored (mode `1`, sysfs `4`) and the session record cleared. This validates the 24 h safety-restore path that is impractical to test at real duration.
 
-Still outstanding for a full physical matrix: the at-threshold hold/charge-past specifically on *wireless* (wired confirmed; shares the mechanism), the widget under Shizuku-only, and the Pixel XL / Android 10 unsupported pass.
+Still outstanding for a full physical matrix: the at-threshold hold/charge-past specifically on *wireless* (wired confirmed; shares the mechanism) and the widget under Shizuku-only.
