@@ -1,10 +1,12 @@
 package eu.darken.amply.main.ui.dashboard
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -77,6 +79,7 @@ fun DashboardScreen(
     onPrepareSupportReport: () -> Unit,
     onCopySupportReport: () -> Unit,
     onOpenSupportIssue: () -> Unit,
+    onEmailSupport: () -> Unit,
     onHelp: () -> Unit,
 ) {
     Scaffold(
@@ -94,12 +97,19 @@ fun DashboardScreen(
             )
         },
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier.padding(padding),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+        // Centre and cap the content width so cards don't stretch edge-to-edge on tablets.
+        BoxWithConstraints(
+            Modifier
+                .padding(padding)
+                .fillMaxSize(),
         ) {
-            item { StatusCard(state, onRefresh) }
+            val sidePadding = ((maxWidth - DASHBOARD_MAX_WIDTH) / 2).coerceAtLeast(16.dp)
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = sidePadding, end = sidePadding, top = 8.dp, bottom = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                item { StatusCard(state, onRefresh) }
 
             if (state.charging.observation is ChargeObservation.Unsupported) {
                 // Unsupported devices cannot use the Pixel policy/charge controls; showing them
@@ -137,6 +147,7 @@ fun DashboardScreen(
                             onPrepareReport = onPrepareSupportReport,
                             onCopyReport = onCopySupportReport,
                             onOpenIssue = onOpenSupportIssue,
+                            onEmail = onEmailSupport,
                             onHelp = onHelp,
                         )
                     }
@@ -181,9 +192,12 @@ fun DashboardScreen(
                     }
                 }
             }
+            }
         }
     }
 }
+
+private val DASHBOARD_MAX_WIDTH = 600.dp
 
 @Composable
 private fun StatusCard(state: DashboardUiState, onRefresh: () -> Unit) {

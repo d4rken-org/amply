@@ -9,6 +9,7 @@ import android.net.Uri
 import android.provider.Settings
 import android.widget.Toast
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -28,12 +29,16 @@ import eu.darken.amply.main.core.DeviceSupportReport
 import eu.darken.amply.main.core.DeviceSupportReporter
 import eu.darken.amply.main.core.OnboardingSettings
 import eu.darken.amply.main.core.formatReport
+import eu.darken.amply.main.core.issueTitle
 import eu.darken.amply.main.core.issueUrl
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import javax.inject.Inject
 
 data class DashboardUiState(
@@ -177,6 +182,36 @@ class DashboardViewModel @Inject constructor(
                 ).show()
                 else -> log(TAG, Logging.Priority.WARN) { "Could not open issue URL: ${it.message}" }
             }
+        }
+    }
+
+    /**
+     * Lower-barrier alternative to GitHub: open the user's mail app with a short friendly message and
+     * the device report attached as a .txt (not pasted raw into the body).
+     */
+    fun emailDeviceSupport() = viewModelScope.launch {
+        val report = deviceReport.value ?: deviceSupportReporter.collect().also { deviceReport.value = it }
+        val attachment = runCatching {
+            withContext(Dispatchers.IO) {
+                val dir = File(context.cacheDir, "support").apply { mkdirs() }
+                val file = File(dir, "amply-device-report.txt")
+                file.writeText(formatReport(report))
+                FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+            }
+        }.getOrNull()
+
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_EMAIL, arrayOf("support@darken.eu"))
+            putExtra(Intent.EXTRA_SUBJECT, issueTitle(report))
+            putExtra(Intent.EXTRA_TEXT, context.getString(R.string.setup_unsupported_email_body))
+            attachment?.let { putExtra(Intent.EXTRA_STREAM, it) }
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val chooser = Intent.createChooser(intent, context.getString(R.string.setup_unsupported_email_action))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { context.startActivity(chooser) }.onFailure {
+            Toast.makeText(context, context.getString(R.string.setup_unsupported_no_email), Toast.LENGTH_SHORT).show()
         }
     }
 

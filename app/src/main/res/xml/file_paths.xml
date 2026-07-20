@@ -2,4 +2,7 @@
     <cache-path
         name="debug_logs"
         path="debug/logs/" />
+    <cache-path
+        name="support_reports"
+        path="support/" />
 </paths>

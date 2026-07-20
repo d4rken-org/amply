@@ -1,16 +1,21 @@
 package eu.darken.amply.main.ui.onboarding
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatterySaver
 import androidx.compose.material.icons.twotone.BatteryChargingFull
@@ -27,16 +32,16 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import eu.darken.amply.R
 import eu.darken.amply.charging.core.ChargeObservation
-import eu.darken.amply.main.core.formatReport
 import eu.darken.amply.main.ui.dashboard.DashboardUiState
 import eu.darken.amply.main.ui.setup.AccessSetupGuide
-import eu.darken.amply.main.ui.setup.UnsupportedDeviceCard
 
 @Composable
 fun OnboardingScreen(
@@ -46,20 +51,23 @@ fun OnboardingScreen(
     onAllowShizuku: () -> Unit,
     onGrantWss: () -> Unit,
     onCopyAdb: () -> Unit,
-    onPrepareSupportReport: () -> Unit,
-    onCopySupportReport: () -> Unit,
-    onOpenSupportIssue: () -> Unit,
-    onHelp: () -> Unit,
     onContinue: () -> Unit,
 ) {
     val canControl = state.charging.controlEnabled && state.charging.access?.canControl == true
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 28.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        item {
+    // Centre and cap the width so the flow doesn't stretch edge-to-edge on tablets, and consume the
+    // system-bar insets (this screen has no Scaffold) so the Continue button clears the gesture nav bar.
+    Box(Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .widthIn(max = ONBOARDING_MAX_WIDTH)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .windowInsetsPadding(WindowInsets.systemBars)
+                .padding(horizontal = 20.dp, vertical = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(28.dp),
@@ -95,9 +103,7 @@ fun OnboardingScreen(
                     )
                 }
             }
-        }
 
-        item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
@@ -120,44 +126,40 @@ fun OnboardingScreen(
                     )
                 }
             }
-        }
 
-        item {
-            Column(Modifier.padding(horizontal = 4.dp)) {
-                Text("This device", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            if (state.charging.observation is ChargeObservation.Unsupported &&
+                state.charging.contributionWanted
+            ) {
+                // Keep onboarding generic and reassuring — don't single out this device as
+                // incompatible. The specific device details and the request/email actions live on
+                // the dashboard.
                 Text(
-                    text = "${state.charging.device.manufacturer} ${state.charging.device.model} · ${state.charging.adapterDetail}",
-                    style = MaterialTheme.typography.bodySmall,
+                    text = stringResource(R.string.setup_unsupported_onboarding_caveat),
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 4.dp),
                 )
-            }
-        }
-
-        item {
-            if (state.charging.observation is ChargeObservation.Unsupported) {
-                if (state.charging.contributionWanted) {
-                    UnsupportedDeviceCard(
-                        manufacturer = state.charging.device.manufacturer.ifBlank { "these" },
-                        reportPreview = state.deviceReport?.let(::formatReport),
-                        onPrepareReport = onPrepareSupportReport,
-                        onCopyReport = onCopySupportReport,
-                        onOpenIssue = onOpenSupportIssue,
-                        onHelp = onHelp,
+            } else {
+                Column(Modifier.padding(horizontal = 4.dp)) {
+                    Text("This device", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    Text(
+                        text = "${state.charging.device.manufacturer} ${state.charging.device.model} · ${state.charging.adapterDetail}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-            } else {
-                AccessSetupGuide(
-                    state = state,
-                    adbCommand = adbCommand,
-                    onOpenShizuku = onOpenShizuku,
-                    onAllowShizuku = onAllowShizuku,
-                    onGrantWss = onGrantWss,
-                    onCopyAdb = onCopyAdb,
-                )
+                if (state.charging.observation !is ChargeObservation.Unsupported) {
+                    AccessSetupGuide(
+                        state = state,
+                        adbCommand = adbCommand,
+                        onOpenShizuku = onOpenShizuku,
+                        onAllowShizuku = onAllowShizuku,
+                        onGrantWss = onGrantWss,
+                        onCopyAdb = onCopyAdb,
+                    )
+                }
             }
-        }
 
-        item {
             if (canControl) {
                 Button(onClick = onContinue, modifier = Modifier.fillMaxWidth()) {
                     Text("Continue to Amply")
@@ -173,6 +175,8 @@ fun OnboardingScreen(
         }
     }
 }
+
+private val ONBOARDING_MAX_WIDTH = 560.dp
 
 @Composable
 private fun FeatureRow(icon: ImageVector, title: String, body: String) {

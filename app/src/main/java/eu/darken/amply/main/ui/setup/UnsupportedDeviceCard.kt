@@ -12,13 +12,16 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.twotone.OpenInNew
 import androidx.compose.material.icons.twotone.ContentCopy
+import androidx.compose.material.icons.twotone.Email
 import androidx.compose.material.icons.twotone.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -41,7 +44,8 @@ import eu.darken.amply.common.theming.ThemeState
 /**
  * Shown on the dashboard and during onboarding when a device is unsupported but a useful support
  * contribution (see [eu.darken.amply.charging.core.adapter.AdapterSupport.contributionWanted]).
- * Explains the situation in plain language and offers a one-tap prefilled GitHub issue.
+ * Explains the situation in plain language and offers two low-friction contribution paths: a
+ * prefilled public GitHub issue, or a prefilled email (lower barrier, no account needed).
  */
 @Composable
 fun UnsupportedDeviceCard(
@@ -51,6 +55,7 @@ fun UnsupportedDeviceCard(
     onPrepareReport: () -> Unit,
     onCopyReport: () -> Unit,
     onOpenIssue: () -> Unit,
+    onEmail: () -> Unit,
     onHelp: () -> Unit,
 ) {
     var showDialog by remember { mutableStateOf(false) }
@@ -99,6 +104,24 @@ fun UnsupportedDeviceCard(
                 Icon(Icons.AutoMirrored.TwoTone.OpenInNew, contentDescription = null)
                 Text(
                     stringResource(R.string.setup_unsupported_request_action),
+                    Modifier.padding(start = 8.dp),
+                )
+            }
+
+            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+
+            Text(
+                text = stringResource(R.string.setup_unsupported_email_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(
+                onClick = onEmail,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.TwoTone.Email, contentDescription = null)
+                Text(
+                    stringResource(R.string.setup_unsupported_email_action),
                     Modifier.padding(start = 8.dp),
                 )
             }
@@ -180,6 +203,7 @@ private fun UnsupportedDeviceCardPreview() {
             onPrepareReport = {},
             onCopyReport = {},
             onOpenIssue = {},
+            onEmail = {},
             onHelp = {},
         )
     }
@@ -196,6 +220,7 @@ private fun UnsupportedDeviceCardDarkPreview() {
             onPrepareReport = {},
             onCopyReport = {},
             onOpenIssue = {},
+            onEmail = {},
             onHelp = {},
         )
     }

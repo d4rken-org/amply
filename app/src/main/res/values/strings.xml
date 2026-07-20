@@ -30,4 +30,9 @@
     <string name="setup_unsupported_dialog_cancel">Cancel</string>
     <string name="setup_unsupported_report_copied">Device report copied</string>
     <string name="setup_unsupported_no_browser">No browser available — copy the report and open GitHub manually</string>
+    <string name="setup_unsupported_email_note">Prefer email? We\'ll attach the same device details.</string>
+    <string name="setup_unsupported_email_action">Contact support by email</string>
+    <string name="setup_unsupported_email_body">Hi! I\'d love for Amply to support charge control on my device. I\'ve attached the details Amply collected — hopefully they help you add support. Thanks!</string>
+    <string name="setup_unsupported_no_email">No email app available</string>
+    <string name="setup_unsupported_onboarding_caveat">Charge control is added device by device, so not every device is supported yet. A friendly email to the developer — you can send one from the dashboard — often helps us add more.</string>
 </resources>
