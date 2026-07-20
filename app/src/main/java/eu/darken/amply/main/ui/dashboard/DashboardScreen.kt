@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
@@ -22,6 +23,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,6 +37,11 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -44,7 +51,11 @@ import androidx.compose.ui.unit.dp
 import eu.darken.amply.charging.core.BackendKind
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
+import eu.darken.amply.charging.core.SETTLING_WINDOW_MILLIS
+import eu.darken.amply.charging.core.isSettling
+import eu.darken.amply.charging.core.settlingTarget
 import eu.darken.amply.main.ui.setup.AccessSetupGuide
+import kotlinx.coroutines.delay
 
 @Composable
 fun DashboardScreen(
@@ -82,7 +93,7 @@ fun DashboardScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item { StatusCard(state) }
+            item { StatusCard(state, onRefresh) }
 
             if (state.charging.access?.direct?.ready != true) {
                 item {
@@ -129,42 +140,77 @@ fun DashboardScreen(
 }
 
 @Composable
-private fun StatusCard(state: DashboardUiState) {
+private fun StatusCard(state: DashboardUiState, onRefresh: () -> Unit) {
     val observation = state.charging.observation
+    val pending = state.charging.pending
+
+    // Drive a live clock so the "applying…" cue and its spinner clear promptly at the end of the window,
+    // independent of WorkManager's (possibly slightly late) durable clear.
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(pending) {
+        if (pending != null) {
+            val end = pending.requestedAt + SETTLING_WINDOW_MILLIS
+            while (System.currentTimeMillis() < end) {
+                now = System.currentTimeMillis()
+                delay(500)
+            }
+            now = System.currentTimeMillis()
+            onRefresh() // re-read hardware to promote to Verified / clear the pending marker
+        }
+    }
+    val settling = state.charging.isSettling(now)
+    val verified = observation is ChargeObservation.Verified
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
     ) {
-        Row(
-            modifier = Modifier.padding(20.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = if (observation is ChargeObservation.Verified) {
-                    Icons.Default.CheckCircle
+        Column(Modifier.padding(20.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (settling) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.tertiary,
+                    )
                 } else {
-                    Icons.Default.Security
-                },
-                contentDescription = null,
-                tint = if (observation is ChargeObservation.Verified) {
-                    Color(0xFF1A7F5A)
-                } else {
-                    MaterialTheme.colorScheme.tertiary
-                },
-            )
-            Column(Modifier.weight(1f)) {
-                Text(observation.title(), style = MaterialTheme.typography.titleLarge)
+                    Icon(
+                        imageVector = if (verified) Icons.Default.CheckCircle else Icons.Default.Security,
+                        contentDescription = null,
+                        tint = if (verified) Color(0xFF1A7F5A) else MaterialTheme.colorScheme.tertiary,
+                    )
+                }
                 Text(
-                    observation.detail(),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    if (settling) "Applying…" else observation.title(),
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.weight(1f),
                 )
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                observation.detail(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "${state.charging.device.model} · Android API ${state.charging.device.sdk}",
+                style = MaterialTheme.typography.labelMedium,
+            )
+            if (settling) {
+                val target = state.charging.settlingTarget()?.shortLabel() ?: "the new policy"
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "${state.charging.device.model} · Android API ${state.charging.device.sdk}",
+                    "Waiting for the system to switch to $target…",
                     style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.tertiary,
                 )
+            } else {
+                // The repository's "may take ~15s" message duplicates the settling line, so only show it
+                // once settling has resolved.
                 state.charging.message?.let {
                     Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 }
@@ -231,7 +277,24 @@ private fun PolicyCard(
     val selectedPolicy = state.charging.observation.policyOrNull()
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(20.dp)) {
-            Text("Charging policy", style = MaterialTheme.typography.titleMedium)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Charging policy",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    onClick = onNativeSettings,
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.OpenInNew,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text("Pixel settings", Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelLarge)
+                }
+            }
             Spacer(Modifier.height(12.dp))
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 choices.forEachIndexed { index, (policy, label) ->
@@ -247,13 +310,6 @@ private fun PolicyCard(
                     }
                 }
             }
-            TextButton(
-                onClick = onNativeSettings,
-                modifier = Modifier.align(Alignment.End),
-            ) {
-                Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
-                Text("Pixel settings", Modifier.padding(start = 8.dp))
-            }
         }
     }
 }
@@ -268,30 +324,36 @@ private fun QuickFullChargeCard(
     // disabled like the other controls, instead of showing a full-colour but inert toggle.
     val interactive = enabled || canControl
     Card(modifier = Modifier.fillMaxWidth()) {
-        Row(
+        Column(
             modifier = Modifier
                 .padding(20.dp)
                 .alpha(if (interactive) 1f else 0.38f),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Icon(Icons.Default.Bolt, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-            Column(Modifier.weight(1f)) {
-                Text("Reconnect for 100%", style = MaterialTheme.typography.titleMedium)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Default.Bolt, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Text(
-                    if (enabled) {
-                        "At the 80% limit, unplug and reconnect within 10 seconds. An ongoing notification keeps the gesture reliable."
-                    } else {
-                        "Optionally use a quick unplug/replug at the 80% limit to charge fully once."
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    "Reconnect for 100%",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = onEnabledChange,
+                    enabled = enabled || canControl,
                 )
             }
-            Switch(
-                checked = enabled,
-                onCheckedChange = onEnabledChange,
-                enabled = enabled || canControl,
+            Text(
+                if (enabled) {
+                    "At the 80% limit, unplug and reconnect within 10 seconds. An ongoing notification keeps the gesture reliable."
+                } else {
+                    "Optionally use a quick unplug/replug at the 80% limit to charge fully once."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

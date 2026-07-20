@@ -12,11 +12,13 @@ import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -28,6 +30,7 @@ data class ChargingState(
     val controlEnabled: Boolean = false,
     val access: AccessSnapshot? = null,
     val observation: ChargeObservation = ChargeObservation.Unknown("Loading"),
+    val pending: PendingRequest? = null,
     val busy: Boolean = false,
     val message: String? = null,
 )
@@ -39,6 +42,7 @@ class ChargingRepository @Inject constructor(
     private val accessResolver: AccessResolver,
     private val preferences: ChargingPreferences,
     private val shizukuController: ShizukuController,
+    private val settleScheduler: SettleScheduler,
 ) {
     private val operationMutex = Mutex()
     private val mutableState = MutableStateFlow(ChargingState())
@@ -115,33 +119,75 @@ class ChargingRepository @Inject constructor(
         if (!written) {
             log(TAG, Logging.Priority.ERROR) { "Settings write failed for ${policy.stableId}" }
             val observation = ChargeObservation.Unknown("The settings write failed")
-            mutableState.value = state.value.copy(busy = false, observation = observation, message = "Write failed")
+            // Clear any stale pending so the failure is not masked by a prior request's "applying…" cue.
+            mutableState.value = state.value.copy(
+                busy = false,
+                observation = observation,
+                pending = null,
+                message = "Write failed",
+            )
             return ApplyResult(false, observation, "Write failed")
         }
-        preferences.recordRequested(policy, updateProtective)
 
-        val access = accessResolver.snapshot()
-        val observation = if (access.shizuku.ready) {
-            val read = adapter.read(accessResolver.shizuku)
-            when (read) {
-                is ChargeObservation.Verified -> read
-                else -> ChargeObservation.LastRequested(policy)
-            }
-        } else {
-            ChargeObservation.LastRequested(policy)
-        }
-        mutableState.value = state.value.copy(
-            busy = false,
-            access = access,
-            observation = observation,
-            message = if (observation is ChargeObservation.Verified) {
-                "${policy.label} setting verified; charging hardware may take about 15 seconds"
+        // The physical write committed. Record it durably even under cancellation (the setting already
+        // changed), and never strand busy=true nor lose the fact that the write landed.
+        val now = System.currentTimeMillis()
+        withContext(NonCancellable) { preferences.recordRequested(policy, updateProtective, now) }
+        return try {
+            val access = accessResolver.snapshot()
+            val observation = if (access.shizuku.ready) {
+                when (val read = adapter.read(accessResolver.shizuku)) {
+                    is ChargeObservation.Verified -> read
+                    else -> ChargeObservation.LastRequested(policy)
+                }
             } else {
-                "${policy.label} requested; charging hardware may take about 15 seconds"
-            },
-        )
-        return ApplyResult(true, observation, mutableState.value.message.orEmpty())
-            .also { log(TAG, Logging.Priority.INFO) { "Applied ${policy.stableId}: $observation" } }
+                ChargeObservation.LastRequested(policy)
+            }
+            // Suppress the settling cue for a no-op re-apply (e.g. re-selecting 80% while it is already
+            // holding): the hardware already reports the target, so there is no transition to wait for.
+            val hwConfirmsTarget = (adapter.readHardware(context) as? ChargeObservation.Verified)?.let {
+                it.backend == BackendKind.BATTERY_HARDWARE && it.policy == policy
+            } ?: false
+            val pending = if (hwConfirmsTarget) null else PendingRequest(policy, now)
+            mutableState.value = state.value.copy(
+                busy = false,
+                access = access,
+                observation = observation,
+                pending = pending,
+                message = if (observation is ChargeObservation.Verified) {
+                    "${policy.label} setting verified; charging hardware may take about 15 seconds"
+                } else {
+                    "${policy.label} requested; charging hardware may take about 15 seconds"
+                },
+            )
+            if (pending != null) settleScheduler.schedule(now)
+            ApplyResult(true, observation, mutableState.value.message.orEmpty())
+                .also { log(TAG, Logging.Priority.INFO) { "Applied ${policy.stableId}: $observation" } }
+        } catch (e: CancellationException) {
+            // The write committed and is recorded; reflect it so the UI doesn't stay busy and the settle
+            // clear still fires, then honour cancellation.
+            mutableState.value = state.value.copy(
+                busy = false,
+                observation = ChargeObservation.LastRequested(policy),
+                pending = PendingRequest(policy, now),
+            )
+            settleScheduler.schedule(now)
+            throw e
+        } catch (e: Exception) {
+            // Write landed but metadata failed: report a truthful degraded success, keep the pending cue,
+            // and guarantee busy is cleared.
+            log(TAG, Logging.Priority.WARN) { "Post-write metadata failed for ${policy.stableId}: ${e.message}" }
+            val observation = ChargeObservation.LastRequested(policy)
+            val message = "${policy.label} requested"
+            mutableState.value = state.value.copy(
+                busy = false,
+                observation = observation,
+                pending = PendingRequest(policy, now),
+                message = message,
+            )
+            settleScheduler.schedule(now)
+            ApplyResult(true, observation, message)
+        }
     }
 
     private suspend fun refreshLocked(message: String?): ChargingState {
@@ -165,6 +211,16 @@ class ChargingRepository @Inject constructor(
                 }
             }
         }
+        // Confirmation must come from the hardware, not the settings-level `observation` above: with Shizuku
+        // or WSS the settings readback is `Verified` while the HAL is still converging, so pending would
+        // otherwise never clear until the window expired.
+        val pending = computeRefreshPending(
+            reqPolicy = preferences.lastRequestedNow(),
+            reqAt = preferences.lastRequestedAtNow(),
+            now = System.currentTimeMillis(),
+            observation = observation,
+            hardware = adapter?.readHardware(context),
+        )
         return ChargingState(
             device = DeviceInfo.current(context),
             adapterName = adapter?.displayName ?: "Unsupported device",
@@ -173,6 +229,7 @@ class ChargingRepository @Inject constructor(
             controlEnabled = selection.support.controlEnabled,
             access = access,
             observation = observation,
+            pending = pending,
             busy = false,
             message = message,
         ).also {
@@ -181,6 +238,30 @@ class ChargingRepository @Inject constructor(
                 "refresh(adapter=${it.adapterId}, access=${it.access?.label}, observation=${it.observation})"
             }
         }
+    }
+
+    /**
+     * Reconstruct the pending settling request from the persisted target+timestamp, clearing it once the
+     * window elapses, the hardware confirms the target, or access is lost. Deliberately does NOT clear on
+     * "hardware reports a different policy": mid-transition the hardware legitimately still shows the old
+     * policy, so that is not evidence of a native change. A genuine native change within the window shows a
+     * stale cue for at most one window before expiry corrects it.
+     */
+    private fun computeRefreshPending(
+        reqPolicy: ChargePolicy?,
+        reqAt: Long,
+        now: Long,
+        observation: ChargeObservation,
+        hardware: ChargeObservation?,
+    ): PendingRequest? {
+        if (reqPolicy == null || reqAt <= 0L) return null
+        if (now - reqAt !in 0 until SETTLING_WINDOW_MILLIS) return null
+        if (observation is ChargeObservation.Unsupported || observation is ChargeObservation.NeedsSetup) return null
+        val confirmed = hardware is ChargeObservation.Verified &&
+            hardware.backend == BackendKind.BATTERY_HARDWARE &&
+            hardware.policy == reqPolicy
+        if (confirmed) return null
+        return PendingRequest(reqPolicy, reqAt)
     }
 
     private companion object {

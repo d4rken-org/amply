@@ -2,7 +2,7 @@
     <string name="app_name">Amply</string>
     <string name="tile_label" formatted="false">100% once</string>
     <string name="tile_active">Restore limit</string>
-    <string name="widget_description">Quick controls for battery charge protection</string>
+    <string name="widget_description">Amply charge controls</string>
     <string name="session_channel_name">Temporary full charge</string>
     <string name="session_notification_title" formatted="false">Charging to 100% once</string>
     <string name="session_notification_armed">Waiting for a charger</string>

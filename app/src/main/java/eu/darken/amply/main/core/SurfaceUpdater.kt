@@ -18,4 +18,10 @@ object SurfaceUpdater {
             runCatching { AmplyWidget().updateAll(context) }
         }
     }
+
+    /** Awaits the widget update in the caller's scope — use from a worker so it can't die before the push lands. */
+    suspend fun updateNow(context: Context) {
+        TileService.requestListeningState(context, ComponentName(context, ChargeTileService::class.java))
+        AmplyWidget().updateAll(context)
+    }
 }

@@ -147,3 +147,13 @@ Continued on 2026-07-20 after the battery drifted below the limit overnight:
 - **24-hour safety timeout (via the debug-shortened toggle).** With the debug-only "Shorten session timeouts" option on (safety 120 s), a session started plugged at 80 % auto-restored 2 min 1 s later. At restore the phone was still plugged and below full, so by elimination it was the safety-timeout path (not full, disconnect, or arm); the policy restored (mode `1`, sysfs `4`) and the session record cleared. This validates the 24 h safety-restore path that is impractical to test at real duration.
 
 Still outstanding for a full physical matrix: the at-threshold hold/charge-past specifically on *wireless* (wired confirmed; shares the mechanism) and the widget under Shizuku-only.
+
+## Dashboard + widget revamp and the settling state (2026-07-20)
+
+UX pass on top of the qualified build:
+
+- **Settling ("applying…") state.** A successful write now records `PendingRequest(target, requestedAt)`; `ChargingState.isSettling(now)` reports "applying" for a 15 s window unless a `BATTERY_HARDWARE` verification *for that exact target* arrives first (a settings-level Shizuku readback or a hardware reading for a different policy does not clear it — the old policy legitimately still reads during the 11–12 s HAL transition). A WorkManager `SettleScheduler` (unique-replaceable) fires one refresh at the window's end so the static widget and tile clear across process death; the dashboard hero card runs a local clock for a prompt countdown and shows a spinner + "waiting for the system…" that takes precedence over the green check.
+- **Widget.** Rebuilt to three compact buttons — "∞ 80%", "∞ 100%" (both persistent, via a new serialized `ACTION_SET_PERSISTENT_POLICY` service command that cancels any session without restoring and force-writes), and "1× 100%" (the existing once-session, no-op when already permanently unrestricted). Tapping the widget background opens the app. The status line reads the last-requested target (so WSS-only "Unlimited" no longer degrades to a blank) and shows the settling cue. Min size raised to fit the row.
+- **Dashboard.** Pixel-settings link moved to the policy card's top-right; hero and reconnect cards now place the icon in the title row with text spanning the full width beneath.
+- **Debug "Shorten session timeouts" toggle removed** now that the safety path is verified (the 2026-07-20 test above used it before removal). The pure `SessionDecisionEngine.decide(armTimeoutMillis, safetyTimeoutMillis)` overload is retained for unit tests.
+- **`onNewIntent` fix.** The widget's notification-permission fallback now works when `MainActivity` is already running (the extra was previously only read once in `LaunchedEffect(Unit)`).

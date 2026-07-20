@@ -156,6 +156,7 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.2.0")
     implementation("androidx.glance:glance-appwidget:1.2.0-rc01")
     implementation("androidx.glance:glance-material3:1.2.0-rc01")
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 

@@ -15,7 +15,6 @@ import android.os.SystemClock
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
-import eu.darken.amply.BuildConfig
 import eu.darken.amply.R
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingPreferences
@@ -30,6 +29,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -46,6 +46,9 @@ class ChargeSessionService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val commandMutex = Mutex()
+    // A single-consumer FIFO queue: onStartCommand enqueues on the main thread in arrival order, so rapid
+    // taps (e.g. "∞ 80%" then "∞ 100%") can never be reordered by the dispatcher and finish on the wrong one.
+    private val commandChannel = Channel<Command>(Channel.UNLIMITED)
     private val quickGesture = QuickFullChargeGesture()
     private var monitorJob: Job? = null
     private var recoveryJob: Job? = null
@@ -63,11 +66,17 @@ class ChargeSessionService : Service() {
         override fun onChange(selfChange: Boolean) {
             if (restoring) return
             scope.launch {
-                // Respect a native Settings change instead of restoring over the user's choice.
-                manager.cancelWithoutRestore()
-                unregisterSettingObserver()
-                SurfaceUpdater.update(this@ChargeSessionService)
-                continueGestureOrStop()
+                commandMutex.withLock {
+                    // Re-check under the lock: a persistent-policy command can set `restoring` after the
+                    // fast-path check above but before we acquire the lock, so its own write must not be
+                    // mistaken for a native change and cancelled.
+                    if (restoring) return@withLock
+                    // Respect a native Settings change instead of restoring over the user's choice.
+                    manager.cancelWithoutRestore()
+                    unregisterSettingObserver()
+                    SurfaceUpdater.update(this@ChargeSessionService)
+                    continueGestureOrStop()
+                }
             }
         }
     }
@@ -82,11 +91,18 @@ class ChargeSessionService : Service() {
             IntentFilter(Intent.ACTION_BATTERY_CHANGED),
             ContextCompat.RECEIVER_EXPORTED,
         )
+        // Drain commands one at a time, in the order they were enqueued.
+        scope.launch {
+            for (command in commandChannel) {
+                commandMutex.withLock { handleCommand(command.action, command.target) }
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         log(TAG) { "Start command: action=${intent?.action ?: "<restart>"}" }
-        scope.launch { commandMutex.withLock { handleCommand(intent?.action) } }
+        val target = intent?.getStringExtra(EXTRA_TARGET_POLICY)?.let(ChargePolicy::fromStableId)
+        commandChannel.trySend(Command(intent?.action, target))
         return START_STICKY
     }
 
@@ -98,6 +114,7 @@ class ChargeSessionService : Service() {
         monitorJob?.cancel()
         runCatching { unregisterReceiver(batteryReceiver) }
         unregisterSettingObserver()
+        commandChannel.close()
         scope.cancel()
         super.onDestroy()
     }
@@ -163,16 +180,11 @@ class ChargeSessionService : Service() {
         val session = fullChargeStore.currentSession()
         if (session != null) {
             val full = status == BatteryManager.BATTERY_STATUS_FULL || percent >= 100
-            val shortTimeouts = BuildConfig.DEBUG && fullChargeStore.isTestShortTimeouts()
             val decision = SessionDecisionEngine.decide(
                 session = session,
                 nowMillis = System.currentTimeMillis(),
                 plugged = plugged,
                 full = full,
-                armTimeoutMillis = if (shortTimeouts) DEBUG_ARM_TIMEOUT_MILLIS
-                else SessionDecisionEngine.ARM_TIMEOUT_MILLIS,
-                safetyTimeoutMillis = if (shortTimeouts) DEBUG_SAFETY_TIMEOUT_MILLIS
-                else SessionDecisionEngine.SAFETY_TIMEOUT_MILLIS,
             )
             when (decision) {
                 SessionDecision.MARK_CONNECTED -> {
@@ -224,7 +236,7 @@ class ChargeSessionService : Service() {
     // All command handling is serialized by commandMutex; recoveryJob is only touched
     // while holding it, except for the recovery job's own tail, which re-acquires the
     // mutex (a cancelled job aborts at that acquisition instead of blocking a canceller).
-    private suspend fun handleCommand(action: String?) {
+    private suspend fun handleCommand(action: String?, target: ChargePolicy?) {
         when (action) {
             ACTION_RESTORE -> if (recoveryJob?.isActive != true) restoreAndContinue()
             ACTION_MONITOR -> if (recoveryJob?.isActive != true) continueGestureOrStop()
@@ -235,6 +247,13 @@ class ChargeSessionService : Service() {
                 recoveryJob?.let { it.cancel(); it.join() }
                 fullChargeStore.clearPendingRecoveryTarget()
                 beginOrResume()
+            }
+            ACTION_SET_PERSISTENT_POLICY -> {
+                // An explicit persistent-policy choice (widget ∞80% / ∞100%) supersedes both any running
+                // one-time session and boot recovery; it is the desired end state. setPersistentPolicy
+                // manages the recovery target itself, so do not pre-clear it here.
+                recoveryJob?.let { it.cancel(); it.join() }
+                target?.let { setPersistentPolicy(it) } ?: continueGestureOrStop()
             }
             ACTION_RECOVER -> startRecovery()
             null -> when {
@@ -314,6 +333,37 @@ class ChargeSessionService : Service() {
         continueGestureOrStop()
     }
 
+    private suspend fun setPersistentPolicy(policy: ChargePolicy) {
+        log(TAG) { "Setting persistent policy: ${policy.stableId}" }
+        // Persist the intended end state as the recovery target BEFORE the risky write and before dropping
+        // the session, so a failed write or a mid-write process death still converges here on next boot
+        // instead of leaving charging in whatever transient state the session had.
+        fullChargeStore.setPendingRecoveryTarget(policy)
+        restoring = true
+        monitorReady = false
+        try {
+            // Suppress our own settings write from tripping the native-change observer, and end any one-time
+            // session without restoring — the new persistent policy IS the intended end state.
+            unregisterSettingObserver()
+            manager.cancelWithoutRestore()
+            // Force a real settings mutation so a same-value write (e.g. ∞100% while a session already lifted
+            // the limit) still re-triggers the charging HAL — see PixelChargingAdapter.reapply().
+            val result = repository.reapplyPersistent(policy)
+            if (result.success) {
+                fullChargeStore.clearPendingRecoveryTarget()
+            } else {
+                log(TAG, Logging.Priority.ERROR) { "Persistent policy write failed: ${result.message}" }
+                SessionNotifications.showRecovery(this)
+            }
+        } finally {
+            // Always release suppression, even on cancellation, so native changes aren't ignored forever.
+            restoring = false
+        }
+        quickGesture.reset()
+        SurfaceUpdater.update(this)
+        continueGestureOrStop()
+    }
+
     private fun stopMonitoring() {
         monitorReady = false
         monitorJob?.cancel()
@@ -349,15 +399,15 @@ class ChargeSessionService : Service() {
         settingObserverRegistered = false
     }
 
+    private data class Command(val action: String?, val target: ChargePolicy?)
+
     companion object {
         private val TAG = logTag("ChargeSessionService")
         const val ACTION_START = "eu.darken.amply.action.START_FULL_CHARGE"
         const val ACTION_RESTORE = "eu.darken.amply.action.RESTORE_CHARGE_LIMIT"
         const val ACTION_MONITOR = "eu.darken.amply.action.MONITOR_QUICK_FULL_CHARGE"
         const val ACTION_RECOVER = "eu.darken.amply.action.RECOVER_CHARGE_LIMIT"
-
-        // Debug-only shortened timeouts (see FullChargeStore.testShortTimeouts); never used in release.
-        private const val DEBUG_ARM_TIMEOUT_MILLIS = 60_000L
-        private const val DEBUG_SAFETY_TIMEOUT_MILLIS = 120_000L
+        const val ACTION_SET_PERSISTENT_POLICY = "eu.darken.amply.action.SET_PERSISTENT_POLICY"
+        const val EXTRA_TARGET_POLICY = "eu.darken.amply.extra.TARGET_POLICY"
     }
 }

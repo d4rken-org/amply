@@ -18,7 +18,6 @@ import eu.darken.amply.common.theming.ThemeMode
 import eu.darken.amply.common.theming.ThemeSettings
 import eu.darken.amply.common.theming.ThemeState
 import eu.darken.amply.common.theming.ThemeStyle
-import eu.darken.amply.fullcharge.core.FullChargeStore
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -30,7 +29,6 @@ class SettingsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val themeSettings: ThemeSettings,
     private val debugLogManager: DebugLogManager,
-    private val fullChargeStore: FullChargeStore,
 ) : ViewModel() {
     val themeState: StateFlow<ThemeState> = themeSettings.state.stateIn(
         viewModelScope,
@@ -38,16 +36,6 @@ class SettingsViewModel @Inject constructor(
         ThemeState(),
     )
     val debugState: StateFlow<DebugLogState> = debugLogManager.state
-    val testShortTimeouts: StateFlow<Boolean> = fullChargeStore.testShortTimeouts.stateIn(
-        viewModelScope,
-        SharingStarted.Eagerly,
-        false,
-    )
-
-    fun setTestShortTimeouts(enabled: Boolean) = viewModelScope.launch {
-        log(TAG) { "Test short timeouts: $enabled" }
-        fullChargeStore.setTestShortTimeouts(enabled)
-    }
 
     fun setThemeMode(value: ThemeMode) = viewModelScope.launch {
         log(TAG) { "Theme mode: $value" }

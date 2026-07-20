@@ -11,7 +11,6 @@ import androidx.compose.material.icons.twotone.Code
 import androidx.compose.material.icons.twotone.DeleteSweep
 import androidx.compose.material.icons.twotone.Share
 import androidx.compose.material.icons.twotone.StopCircle
-import androidx.compose.material.icons.twotone.Timer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -25,12 +24,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import eu.darken.amply.BuildConfig
 import eu.darken.amply.common.debug.DebugLogState
 import eu.darken.amply.common.settings.SettingsBaseItem
 import eu.darken.amply.common.settings.SettingsCategoryHeader
 import eu.darken.amply.common.settings.SettingsDivider
-import eu.darken.amply.common.settings.SettingsSwitchItem
 
 @Composable
 fun SupportScreen(
@@ -43,8 +40,6 @@ fun SupportScreen(
     onStopDebugLog: () -> Unit,
     onShareDebugLog: () -> Unit,
     onClearDebugLogs: () -> Unit,
-    testShortTimeouts: Boolean = false,
-    onTestShortTimeoutsChange: (Boolean) -> Unit = {},
 ) {
     var showConsent by remember { mutableStateOf(false) }
     var showClearConfirmation by remember { mutableStateOf(false) }
@@ -123,18 +118,6 @@ fun SupportScreen(
                     icon = Icons.TwoTone.DeleteSweep,
                     onClick = { if (state.sessions.isNotEmpty()) showClearConfirmation = true },
                 )
-            }
-            if (BuildConfig.DEBUG) {
-                item { SettingsDivider() }
-                item {
-                    SettingsSwitchItem(
-                        title = "Shorten session timeouts",
-                        subtitle = "Testing only: arm timeout 1 min, safety timeout 2 min",
-                        checked = testShortTimeouts,
-                        onCheckedChange = onTestShortTimeoutsChange,
-                        icon = Icons.TwoTone.Timer,
-                    )
-                }
             }
         }
     }

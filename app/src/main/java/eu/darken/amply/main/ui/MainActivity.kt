@@ -54,8 +54,27 @@ class MainActivity : ComponentActivity() {
     private val settingsViewModel: SettingsViewModel by viewModels()
     private val diagnosticsViewModel: DiagnosticsViewModel by viewModels()
 
+    // Compose-observable so a widget launch that reuses an already-running activity (SINGLE_TOP →
+    // onNewIntent, which does not re-run LaunchedEffect(Unit)) still triggers the permission flow.
+    private val pendingNotificationRequest = mutableStateOf(false)
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        consumeNotificationRequest(intent)
+        setIntent(intent)
+    }
+
+    // Read the request flag once and strip it, so a later recreation (config change) can't replay it.
+    private fun consumeNotificationRequest(intent: Intent) {
+        if (intent.getBooleanExtra(EXTRA_REQUEST_NOTIFICATIONS, false)) {
+            intent.removeExtra(EXTRA_REQUEST_NOTIFICATIONS)
+            pendingNotificationRequest.value = true
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        consumeNotificationRequest(intent)
         enableEdgeToEdge()
         setContent {
             val themeState by settingsViewModel.themeState.collectAsState()
@@ -66,7 +85,6 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val state by viewModel.state.collectAsState()
                     val debugState by settingsViewModel.debugState.collectAsState()
-                    val testShortTimeouts by settingsViewModel.testShortTimeouts.collectAsState()
                     val diagnosticsState by diagnosticsViewModel.state.collectAsState()
                     var destination by rememberSaveable { mutableStateOf(SettingsDestination.DASHBOARD) }
                 var notificationAction by remember { mutableStateOf<NotificationAction?>(null) }
@@ -99,8 +117,9 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                LaunchedEffect(Unit) {
-                    if (intent.getBooleanExtra(EXTRA_REQUEST_NOTIFICATIONS, false)) {
+                LaunchedEffect(pendingNotificationRequest.value) {
+                    if (pendingNotificationRequest.value) {
+                        pendingNotificationRequest.value = false
                         runWithNotifications(NotificationAction.START_FULL_CHARGE)
                     }
                 }
@@ -208,8 +227,6 @@ class MainActivity : ComponentActivity() {
                             onStopDebugLog = settingsViewModel::stopDebugLog,
                             onShareDebugLog = settingsViewModel::shareLatestDebugLog,
                             onClearDebugLogs = settingsViewModel::clearDebugLogs,
-                            testShortTimeouts = testShortTimeouts,
-                            onTestShortTimeoutsChange = settingsViewModel::setTestShortTimeouts,
                         )
                         SettingsDestination.ACKNOWLEDGEMENTS -> AcknowledgementsScreen(
                             onBack = { destination = SettingsDestination.SETTINGS },
