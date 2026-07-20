@@ -1,0 +1,4 @@
+settings.local.json
+tmp/
+worktrees/
+scheduled_tasks.lock

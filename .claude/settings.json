@@ -1,0 +1,6 @@
+{
+  "enabledPlugins": {
+    "debugbadger@claude-code-cafe": true,
+    "jvm-tools@claude-code-cafe": true
+  }
+}
