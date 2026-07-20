@@ -54,7 +54,9 @@ import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.SETTLING_WINDOW_MILLIS
 import eu.darken.amply.charging.core.isSettling
 import eu.darken.amply.charging.core.settlingTarget
+import eu.darken.amply.main.core.formatReport
 import eu.darken.amply.main.ui.setup.AccessSetupGuide
+import eu.darken.amply.main.ui.setup.UnsupportedDeviceCard
 import kotlinx.coroutines.delay
 
 @Composable
@@ -72,6 +74,10 @@ fun DashboardScreen(
     onAllowShizuku: () -> Unit,
     onGrantWss: () -> Unit,
     onCopyAdb: () -> Unit,
+    onPrepareSupportReport: () -> Unit,
+    onCopySupportReport: () -> Unit,
+    onOpenSupportIssue: () -> Unit,
+    onHelp: () -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -95,44 +101,84 @@ fun DashboardScreen(
         ) {
             item { StatusCard(state, onRefresh) }
 
-            if (state.charging.access?.direct?.ready != true) {
+            if (state.charging.observation is ChargeObservation.Unsupported) {
+                // Unsupported devices cannot use the Pixel policy/charge controls; showing them
+                // greyed-out (and a "Pixel settings" action) only confuses non-Pixel users. Offer
+                // a contribution path instead, and keep only the restore card if a session lingers.
+                if (state.session != null) {
+                    item {
+                        FullChargeCard(
+                            active = true,
+                            canControl = state.charging.controlEnabled &&
+                                state.charging.access?.canControl == true,
+                            onStart = onStartFull,
+                            onRestore = onRestore,
+                        )
+                    }
+                }
+                // If the reconnect gesture is still switched on (e.g. the device became unsupported
+                // after it was enabled), keep the card so the user can turn it — and its foreground
+                // service — off. The card renders as disable-only when control isn't available.
+                if (state.quickFullChargeEnabled) {
+                    item {
+                        QuickFullChargeCard(
+                            enabled = true,
+                            canControl = state.charging.controlEnabled &&
+                                state.charging.access?.canControl == true,
+                            onEnabledChange = onQuickFullChargeChange,
+                        )
+                    }
+                }
+                if (state.charging.contributionWanted) {
+                    item {
+                        UnsupportedDeviceCard(
+                            manufacturer = state.charging.device.manufacturer.ifBlank { "these" },
+                            reportPreview = state.deviceReport?.let(::formatReport),
+                            onPrepareReport = onPrepareSupportReport,
+                            onCopyReport = onCopySupportReport,
+                            onOpenIssue = onOpenSupportIssue,
+                            onHelp = onHelp,
+                        )
+                    }
+                }
+            } else {
+                if (state.charging.access?.direct?.ready != true) {
+                    item {
+                        AccessSetupGuide(
+                            state = state,
+                            adbCommand = adbCommand,
+                            onOpenShizuku = onOpenShizuku,
+                            onAllowShizuku = onAllowShizuku,
+                            onGrantWss = onGrantWss,
+                            onCopyAdb = onCopyAdb,
+                        )
+                    }
+                }
+
                 item {
-                    AccessSetupGuide(
-                        state = state,
-                        adbCommand = adbCommand,
-                        onOpenShizuku = onOpenShizuku,
-                        onAllowShizuku = onAllowShizuku,
-                        onGrantWss = onGrantWss,
-                        onCopyAdb = onCopyAdb,
+                    FullChargeCard(
+                        active = state.session != null,
+                        canControl = state.charging.controlEnabled && state.charging.access?.canControl == true,
+                        onStart = onStartFull,
+                        onRestore = onRestore,
                     )
                 }
-            }
-
-            item {
-                FullChargeCard(
-                    active = state.session != null,
-                    canControl = state.charging.controlEnabled && state.charging.access?.canControl == true,
-                    onStart = onStartFull,
-                    onRestore = onRestore,
-                )
-            }
-            item { PolicyCard(state, onApply, onNativeSettings) }
-            item {
-                QuickFullChargeCard(
-                    enabled = state.quickFullChargeEnabled,
-                    canControl = state.charging.controlEnabled && state.charging.access?.canControl == true,
-                    onEnabledChange = onQuickFullChargeChange,
-                )
-            }
-            if (state.charging.observation !is ChargeObservation.Unsupported &&
-                state.charging.access?.shizuku?.ready != true
-            ) {
+                item { PolicyCard(state, onApply, onNativeSettings) }
                 item {
-                    ShizukuBanner(
-                        running = state.charging.access?.shizuku?.available == true,
-                        onOpen = onOpenShizuku,
-                        onAllow = onAllowShizuku,
+                    QuickFullChargeCard(
+                        enabled = state.quickFullChargeEnabled,
+                        canControl = state.charging.controlEnabled && state.charging.access?.canControl == true,
+                        onEnabledChange = onQuickFullChargeChange,
                     )
+                }
+                if (state.charging.access?.shizuku?.ready != true) {
+                    item {
+                        ShizukuBanner(
+                            running = state.charging.access?.shizuku?.available == true,
+                            onOpen = onOpenShizuku,
+                            onAllow = onAllowShizuku,
+                        )
+                    }
                 }
             }
         }

@@ -19,6 +19,7 @@ abstract class DisabledLabAdapter : ChargingAdapter {
         matched = matches(device),
         controlEnabled = false,
         detail = "Detected for diagnostics only; no unverified writes are exposed",
+        contributionWanted = true,
     )
 
     override suspend fun read(backend: AccessBackend) =

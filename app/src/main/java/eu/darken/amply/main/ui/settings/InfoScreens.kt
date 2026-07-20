@@ -55,7 +55,12 @@ fun PrivacyScreen(onBack: () -> Unit) = InfoScreen(title = "Privacy policy", onB
         "The foreground service observes battery and cable state only for one-time full charging, automatic restoration, " +
             "and the optional reconnect gesture.",
     )
-    Text("Last updated: 2026-07-17", style = MaterialTheme.typography.labelLarge)
+    Text(
+        "On unsupported devices you can request charge-control support. This is opt-in: it opens a prefilled public " +
+            "GitHub issue with your device model, Android version, and Amply's compatibility check — no personal data — " +
+            "and nothing is sent until you open or submit it.",
+    )
+    Text("Last updated: 2026-07-20", style = MaterialTheme.typography.labelLarge)
 }
 
 @Composable

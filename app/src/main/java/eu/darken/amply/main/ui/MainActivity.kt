@@ -162,6 +162,10 @@ class MainActivity : ComponentActivity() {
                         onAllowShizuku = viewModel::requestShizukuPermission,
                         onGrantWss = viewModel::grantWriteSecureSettings,
                         onCopyAdb = viewModel::copyAdbCommand,
+                        onPrepareSupportReport = viewModel::prepareDeviceSupportReport,
+                        onCopySupportReport = viewModel::copyDeviceSupportReport,
+                        onOpenSupportIssue = viewModel::openDeviceSupportIssue,
+                        onHelp = { settingsViewModel.openUrl("https://github.com/d4rken-org/amply") },
                         onContinue = viewModel::completeOnboarding,
                     )
                     true -> when (destination) {
@@ -185,6 +189,10 @@ class MainActivity : ComponentActivity() {
                             onAllowShizuku = viewModel::requestShizukuPermission,
                             onGrantWss = viewModel::grantWriteSecureSettings,
                             onCopyAdb = viewModel::copyAdbCommand,
+                            onPrepareSupportReport = viewModel::prepareDeviceSupportReport,
+                            onCopySupportReport = viewModel::copyDeviceSupportReport,
+                            onOpenSupportIssue = viewModel::openDeviceSupportIssue,
+                            onHelp = { destination = SettingsDestination.SUPPORT },
                         )
                         SettingsDestination.SETTINGS -> SettingsScreen(
                             onBack = { destination = SettingsDestination.DASHBOARD },
