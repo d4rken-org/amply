@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.annotation.Keep
 import androidx.core.content.ContextCompat
 import androidx.glance.GlanceId
@@ -86,23 +87,32 @@ class AmplyWidget : GlanceAppWidget() {
                         fontWeight = FontWeight.Bold,
                     ),
                 )
+                // Compact single-line labels: slightly smaller text, and maxLines=1 so the worst case
+                // ellipsizes on one line instead of wrapping/clipping inside the button.
+                val buttonText = TextStyle(fontSize = 12.sp)
                 Row(modifier = GlanceModifier.fillMaxWidth().padding(top = 10.dp)) {
                     Button(
-                        text = "∞ 80%",
+                        text = "∞80%",
                         onClick = actionRunCallback<ProtectAction>(),
                         modifier = GlanceModifier.defaultWeight(),
+                        style = buttonText,
+                        maxLines = 1,
                     )
-                    Spacer(GlanceModifier.width(8.dp))
+                    Spacer(GlanceModifier.width(6.dp))
                     Button(
-                        text = "∞ 100%",
+                        text = "∞100%",
                         onClick = actionRunCallback<AlwaysFullAction>(),
                         modifier = GlanceModifier.defaultWeight(),
+                        style = buttonText,
+                        maxLines = 1,
                     )
-                    Spacer(GlanceModifier.width(8.dp))
+                    Spacer(GlanceModifier.width(6.dp))
                     Button(
-                        text = "1× 100%",
+                        text = "1×100%",
                         onClick = actionRunCallback<FullChargeAction>(),
                         modifier = GlanceModifier.defaultWeight(),
+                        style = buttonText,
+                        maxLines = 1,
                     )
                 }
             }
