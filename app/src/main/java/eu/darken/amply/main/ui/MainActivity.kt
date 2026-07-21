@@ -126,6 +126,8 @@ class MainActivity : ComponentActivity() {
                 }
                 LifecycleResumeEffect(Unit) {
                     viewModel.refresh()
+                    // Also re-checks widget placement after returning from the launcher's pin dialog.
+                    viewModel.refreshQuickAccessPresence()
                     val nudge = viewModel.nudgeChargeService()
                     onPauseOrDispose { nudge.cancel() }
                 }
@@ -179,6 +181,9 @@ class MainActivity : ComponentActivity() {
                             onOpenReconnectSettings = {
                                 destination = SettingsDestination.RECONNECT_GESTURE
                             },
+                            onPinWidget = viewModel::requestPinWidget,
+                            onAddTile = viewModel::requestAddTile,
+                            onDismissQuickAccess = viewModel::dismissQuickAccess,
                             onNativeSettings = viewModel::openNativeSettings,
                             onOpenShizuku = viewModel::openShizuku,
                             onAllowShizuku = viewModel::requestShizukuPermission,

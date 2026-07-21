@@ -12,8 +12,12 @@ import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
 import eu.darken.amply.R
 import eu.darken.amply.charging.core.ChargingRepository
+import eu.darken.amply.common.debug.logging.Logging
+import eu.darken.amply.common.debug.logging.log
+import eu.darken.amply.common.debug.logging.logTag
 import eu.darken.amply.fullcharge.core.FullChargeStore
 import eu.darken.amply.fullcharge.core.ChargeSessionService
+import eu.darken.amply.main.core.QuickAccessStore
 import eu.darken.amply.main.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,8 +31,18 @@ import javax.inject.Inject
 class ChargeTileService : TileService() {
     @Inject lateinit var repository: ChargingRepository
     @Inject lateinit var sessionStore: FullChargeStore
+    @Inject lateinit var quickAccessStore: QuickAccessStore
 
     private var scope: CoroutineScope? = null
+
+    // Deliberately the only tile-side discovery signal: onStartListening also fires when SystemUI
+    // merely previews the tile in the QS edit sheet, so marking there would permanently hide the
+    // dashboard promotion for users who only browsed. Installs that added the tile before this
+    // marker existed self-heal through the add request's TILE_ALREADY_ADDED result.
+    override fun onTileAdded() {
+        super.onTileAdded()
+        markTileDiscovered()
+    }
 
     override fun onStartListening() {
         super.onStartListening()
@@ -69,6 +83,17 @@ class ChargeTileService : TileService() {
                     withContext(Dispatchers.Main) { openApp(requestNotifications = false) }
                 }
             }
+        }
+    }
+
+    // Fire-and-forget on a throwaway scope (same pattern as onClick): the system may deliver
+    // onTileAdded outside any listening window and tear the service down right after, so the write
+    // must not hang off a service-lifecycle scope — and a DataStore failure on this optional promo
+    // marker must never crash the functioning tile.
+    private fun markTileDiscovered() {
+        CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+            runCatching { quickAccessStore.markTileAdded() }
+                .onFailure { log(TAG, Logging.Priority.WARN) { "markTileAdded failed: ${it.message}" } }
         }
     }
 
@@ -117,5 +142,9 @@ class ChargeTileService : TileService() {
             }
             updateTile()
         }
+    }
+
+    private companion object {
+        val TAG = logTag("Tile", "ChargeTileService")
     }
 }
