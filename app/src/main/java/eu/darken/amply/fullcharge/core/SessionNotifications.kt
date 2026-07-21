@@ -21,6 +21,7 @@ object SessionNotifications {
     private const val SESSION_CHANNEL = "temporary_full_charge"
     private const val GESTURE_CHANNEL = "reconnect_gesture"
     private const val RECOVERY_CHANNEL = "charge_policy_recovery"
+    private const val MONITOR_CHANNEL = "background_monitor"
 
     fun ensureChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
@@ -53,6 +54,38 @@ object SessionNotifications {
                 NotificationManager.IMPORTANCE_DEFAULT,
             ),
         )
+        // Quiet channel for the "alive only to observe battery" case (e.g. charge alarm). LOW so the
+        // background foreground-service notification doesn't draw attention like the gesture cue.
+        manager.createNotificationChannel(
+            NotificationChannel(
+                MONITOR_CHANNEL,
+                context.getString(R.string.monitor_channel_name),
+                NotificationManager.IMPORTANCE_LOW,
+            ).apply {
+                description = context.getString(R.string.monitor_channel_description)
+                setShowBadge(false)
+            },
+        )
+    }
+
+    /** Ongoing, quiet notification shown while the service stays alive only for a watcher. */
+    fun monitoring(context: Context): Notification {
+        ensureChannels(context)
+        val openPendingIntent = PendingIntent.getActivity(
+            context,
+            7,
+            Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        return NotificationCompat.Builder(context, MONITOR_CHANNEL)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
+            .setContentTitle(context.getString(R.string.monitor_notification_title))
+            .setContentText(context.getString(R.string.monitor_notification_body))
+            .setContentIntent(openPendingIntent)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .build()
     }
 
     fun session(context: Context, connected: Boolean): Notification {
@@ -143,6 +176,9 @@ object SessionNotifications {
             .build()
     }
 
+    // TODO known gap: this notification (RECOVERY_ID) is not cancelled when a later restore succeeds;
+    // it lingers until swiped. Should cancel on successful restore. See "Known gaps" in
+    // .claude/rules/privileged-access.md.
     fun showRecovery(context: Context, bodyRes: Int = R.string.recovery_notification_body) {
         ensureChannels(context)
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(

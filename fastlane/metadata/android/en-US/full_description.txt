@@ -1,1 +1,9 @@
 Amply provides quick access to supported Android battery charge-protection modes. On validated devices it can temporarily allow one full charge and restore the protective limit automatically. Direct control requires user-authorized WRITE_SECURE_SETTINGS or Shizuku access.
+
+Even without that setup, Amply is useful on any device:
+
+- Charge alarm: pick a level and Amply reminds you to unplug when charging reaches it, so you can protect your battery manually.
+- Battery details: a live view of level, temperature, voltage, current, charge cycles, and health.
+- Protection guide: on devices Amply can't control directly, it points you to your phone's own built-in battery-protection setting.
+
+These extra features need no ADB or Shizuku, and no special permissions beyond notifications for the alarm.

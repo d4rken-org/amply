@@ -51,7 +51,7 @@
     <string name="onboarding_continue_action">Get started</string>
     <string name="onboarding_caveats_title">Before you start</string>
     <string name="onboarding_caveat_support_title">Support grows device by device</string>
-    <string name="onboarding_caveat_support_body">Charge control is mapped one device at a time. Right now, direct control works on Pixel 6a and newer phones running Android 15 or later, on Samsung devices with verified One UI versions, and on verified Xiaomi devices. On other devices, Amply explains why control is unavailable, and where a device report can help expand support, the dashboard lets you send one.</string>
+    <string name="onboarding_caveat_support_body">Charge control is mapped one device at a time. Right now, direct control works on Pixel 6a and newer phones running Android 15 or later, on Samsung devices with verified One UI versions, on verified Xiaomi devices, and on OnePlus, Oppo, and Realme devices on ColorOS 15. On other devices, Amply explains why control is unavailable, and where a device report can help expand support, the dashboard lets you send one.</string>
     <string name="onboarding_caveat_setup_title">One-time setup on supported devices</string>
     <string name="onboarding_caveat_setup_body">Changing the charge policy requires a permission that apps cannot grant themselves. You grant it once: either run a single command from a computer over ADB, or use the Shizuku app on this phone. If your device is supported, the dashboard walks you through both options.</string>
     <string name="onboarding_caveat_restore_title">Protection returns on its own</string>
@@ -82,7 +82,7 @@
     <string name="charging_reason_needs_setup">Grant charge-control access or connect Shizuku</string>
     <string name="charging_reason_policy_unsupported">%1$s is not supported by %2$s</string>
     <string name="charging_reason_settings_unreadable">Settings are not readable</string>
-    <string name="charging_reason_values_unrecognized">Unrecognized Pixel values: %1$s=%2$s, %3$s=%4$s</string>
+    <string name="charging_reason_values_unrecognized">Unrecognized values: %1$s=%2$s, %3$s=%4$s</string>
     <string name="charging_reason_value_unrecognized">Unrecognized value: %1$s=%2$s</string>
     <string name="charging_reason_hw_normal">Charging hardware is normal; without Shizuku, Amply cannot distinguish unrestricted from inactive adaptive charging</string>
     <string name="charging_reason_hw_too_cold">Charging is currently temperature-limited because the battery is too cold</string>
@@ -98,7 +98,8 @@
     <string name="adapter_name_samsung_protection">Samsung battery protection</string>
     <string name="adapter_name_xiaomi">Xiaomi (diagnostics)</string>
     <string name="adapter_name_xiaomi_protection">Xiaomi charging protection</string>
-    <string name="adapter_name_oneplus">OnePlus/Oppo (diagnostics)</string>
+    <string name="adapter_name_oneplus">OnePlus/Oppo/Realme (diagnostics)</string>
+    <string name="adapter_name_oplus_protection">ColorOS charging protection</string>
 
     <!-- Adapter support detail (why a device is or isn\'t controllable) -->
     <string name="adapter_detail_requires_pixel">Requires a supported Google Pixel phone</string>
@@ -115,6 +116,8 @@
     <string name="adapter_detail_samsung_ready">Samsung battery protection detected; changes apply immediately</string>
     <string name="adapter_detail_requires_xiaomi">Requires a verified Xiaomi device on HyperOS 2</string>
     <string name="adapter_detail_xiaomi_ready">Xiaomi charging protection detected; changes apply immediately</string>
+    <string name="adapter_detail_requires_oplus">Requires a OnePlus, Oppo, or Realme device on ColorOS 15</string>
+    <string name="adapter_detail_oplus_ready">ColorOS charging protection detected; control requires Shizuku</string>
     <string name="adapter_detail_none">No charging adapter is known for this device</string>
 
     <!-- Access backend detail + summary labels -->
@@ -246,7 +249,7 @@
     <string name="setup_access_ready_body">Charge-control access is granted.</string>
     <string name="setup_access_setup_body">Amply needs one durable Android permission to change the charge policy.</string>
     <string name="setup_access_option_shizuku">Option 1 · Shizuku (recommended)</string>
-    <string name="setup_access_shizuku_hint">With Shizuku, Amply can confirm the configured policy and run diagnostics — not just write it. Start or install Shizuku, allow Amply, then use it to grant the durable permission below.</string>
+    <string name="setup_access_shizuku_hint">With Shizuku, Amply can confirm the configured policy and run diagnostics — not just write it. Start or install Shizuku and allow Amply; the durable permission is then granted automatically. The button below is a manual fallback if that fails.</string>
     <string name="setup_access_grant_shizuku">Grant permission with Shizuku</string>
     <string name="setup_access_granting_shizuku">Granting…</string>
     <string name="setup_access_allow_shizuku">Allow Amply in Shizuku</string>
@@ -365,6 +368,8 @@
     <string name="settings_reconnect_any_level_hint">More sensitive: any unplug/replug of 2–10 seconds starts a full charge, e.g. also below 80%. Momentary power cuts shorter than 2 seconds, like a car cutting USB power while starting, never trigger.</string>
     <string name="dashboard_shizuku_title">Better with Shizuku</string>
     <string name="dashboard_shizuku_body">Shizuku gives Amply exact policy readback instead of relying on hardware state and the last request.</string>
+    <string name="dashboard_shizuku_required_title">Shizuku required to change charging</string>
+    <string name="dashboard_shizuku_required_body">This device stores its charging setting where only Shizuku can change it. Connect Shizuku to switch policies; without it Amply can still show the current state.</string>
     <string name="dashboard_shizuku_allow">Allow access</string>
     <string name="dashboard_shizuku_open">Open Shizuku</string>
     <string name="dashboard_adb_copied">ADB command copied</string>
@@ -377,6 +382,70 @@
     <string name="dashboard_quickaccess_dismiss">Dismiss</string>
     <string name="dashboard_quickaccess_widget_manual">Widget pinning isn\'t available here. Long-press your home screen and add the Amply widget from the widget picker.</string>
     <string name="dashboard_quickaccess_tile_manual">Open Quick Settings, tap the edit button, and drag the Amply tile into place.</string>
+
+    <!-- Charge alarm (dashboard card + notification) -->
+    <string name="dashboard_alarm_title">Charge alarm</string>
+    <string name="dashboard_alarm_body_on">Amply will alert you to unplug when charging reaches your target. Works without any special setup.</string>
+    <string name="dashboard_alarm_body_off">Get a reminder to unplug at a chosen level, even without ADB or Shizuku.</string>
+    <string name="dashboard_alarm_target_label">Alert at %1$d%%</string>
+    <string name="dashboard_alarm_notifications_blocked">Notifications are off, so the alarm can\'t alert you.</string>
+    <string name="dashboard_alarm_notifications_fix_action">Turn on</string>
+    <string name="alarm_channel_name">Charge alarm</string>
+    <string name="alarm_channel_description">Alerts you to unplug when the battery reaches your chosen level</string>
+    <string name="alarm_notification_title">Time to unplug</string>
+    <string name="alarm_notification_body">Battery reached %1$d%%. Unplug to protect it.</string>
+
+    <!-- Background monitor (quiet foreground-service notification) -->
+    <string name="monitor_channel_name">Background monitor</string>
+    <string name="monitor_channel_description">Shows while Amply watches the battery in the background</string>
+    <string name="monitor_notification_title">Amply is watching the battery</string>
+    <string name="monitor_notification_body">Keeping an eye on your charge level.</string>
+
+    <!-- Battery info card + detail screen -->
+    <string name="battery_info_title">Battery</string>
+    <string name="battery_info_details_action">Details</string>
+    <string name="battery_info_summary">%1$s · %2$s · %3$s</string>
+    <string name="battery_value_not_reported">Not reported</string>
+    <string name="battery_value_unknown">Unknown</string>
+    <string name="battery_detail_title">Battery details</string>
+    <string name="battery_detail_section_charging">Charging</string>
+    <string name="battery_detail_section_health">Health</string>
+    <string name="battery_detail_section_electrical">Electrical</string>
+    <string name="battery_detail_section_thermal">Thermal</string>
+    <string name="battery_detail_level">Level</string>
+    <string name="battery_detail_status">Status</string>
+    <string name="battery_detail_power_source">Power source</string>
+    <string name="battery_detail_technology">Technology</string>
+    <string name="battery_detail_health">Health</string>
+    <string name="battery_detail_cycle_count">Charge cycles</string>
+    <string name="battery_detail_voltage">Voltage</string>
+    <string name="battery_detail_current">Current now</string>
+    <string name="battery_detail_charge_counter">Charge counter</string>
+    <string name="battery_detail_temperature">Temperature</string>
+    <string name="battery_status_charging">Charging</string>
+    <string name="battery_status_discharging">Discharging</string>
+    <string name="battery_status_not_charging">Not charging</string>
+    <string name="battery_status_full">Full</string>
+    <string name="battery_health_good">Good</string>
+    <string name="battery_health_overheat">Overheating</string>
+    <string name="battery_health_dead">Dead</string>
+    <string name="battery_health_over_voltage">Over voltage</string>
+    <string name="battery_health_failure">Unspecified failure</string>
+    <string name="battery_health_cold">Cold</string>
+    <string name="battery_plug_unplugged">Not plugged in</string>
+    <string name="battery_plug_ac">AC charger</string>
+    <string name="battery_plug_usb">USB</string>
+    <string name="battery_plug_wireless">Wireless</string>
+    <string name="battery_plug_other">Plugged in</string>
+
+    <!-- OEM protection guide (unsupported devices) -->
+    <string name="setup_oem_guide_title">Protect your battery in system settings</string>
+    <string name="setup_oem_guide_open_action">Open battery settings</string>
+    <string name="setup_oem_guide_samsung">Samsung phones include battery protection under Settings → Battery → Battery protection. Amply can\'t control it directly on this device, but you can turn it on there.</string>
+    <string name="setup_oem_guide_oneplus">OnePlus and Oppo phones offer charge limiting under Settings → Battery → Battery health (or Smart charging). Amply can\'t control it directly on this device, but you can enable it there.</string>
+    <string name="setup_oem_guide_xiaomi">Xiaomi, Redmi, and POCO phones may offer charge limiting or protection under Settings → Battery → Battery protection. Amply can\'t control it directly on this device, but you can look for it there.</string>
+    <string name="setup_oem_guide_google">Look for charging optimization under Settings → Battery. Amply can\'t control it directly on this device.</string>
+    <string name="setup_oem_guide_generic">Your phone may offer a built-in battery-protection or charge-limit option in its battery settings. Amply can\'t control it directly on this device, but it\'s worth a look.</string>
 
     <!-- Widget (in-widget text) -->
     <string name="widget_brand_status">Amply · %1$s</string>

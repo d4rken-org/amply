@@ -44,6 +44,12 @@ import eu.darken.amply.main.ui.widget.AmplyWidgetReceiver
 import eu.darken.amply.main.core.formatReport
 import eu.darken.amply.main.core.issueTitle
 import eu.darken.amply.main.core.issueUrl
+import eu.darken.amply.alarm.core.ChargeAlarmConfig
+import eu.darken.amply.alarm.core.ChargeAlarmNotifications
+import eu.darken.amply.alarm.core.ChargeAlarmStore
+import eu.darken.amply.battery.core.BatteryReadout
+import eu.darken.amply.battery.core.BatteryReadoutSource
+import eu.darken.amply.monitor.core.ChargeMonitorWatcher
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -57,6 +63,7 @@ import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import javax.inject.Inject
 
@@ -71,6 +78,10 @@ data class DashboardUiState(
     /** True once the initial widget-presence check has completed; the promo card hides until then. */
     val quickAccessChecked: Boolean = false,
     val tileRequestPending: Boolean = false,
+    val batteryReadout: BatteryReadout? = null,
+    val alarm: ChargeAlarmConfig = ChargeAlarmConfig(),
+    /** True when the OS/channel would suppress the charge-alarm alert (permission off or blocked). */
+    val notificationsBlocked: Boolean = false,
 )
 
 @HiltViewModel
@@ -82,10 +93,14 @@ class DashboardViewModel @Inject constructor(
     private val onboardingSettings: OnboardingSettings,
     private val deviceSupportReporter: DeviceSupportReporter,
     private val quickAccessStore: QuickAccessStore,
+    private val batteryReadoutSource: BatteryReadoutSource,
+    private val chargeAlarmStore: ChargeAlarmStore,
+    private val watchers: Set<@JvmSuppressWildcards ChargeMonitorWatcher>,
 ) : ViewModel() {
     private val deviceReport = MutableStateFlow<DeviceSupportReport?>(null)
     private val quickAccessChecked = MutableStateFlow(false)
     private val tileRequestPending = MutableStateFlow(false)
+    private val notificationsBlocked = MutableStateFlow(false)
     private var lastPinRequestAt = 0L
 
     // The typed combine overloads stop at five flows; the two gesture booleans are pre-combined.
@@ -93,6 +108,14 @@ class DashboardViewModel @Inject constructor(
         fullChargeStore.quickFullChargeEnabled,
         fullChargeStore.quickFullChargeAnyLevel,
     ) { enabled, anyLevel -> enabled to anyLevel }
+
+    // Same five-flow ceiling: the live battery readout, the alarm config, and the notifications-
+    // blocked flag are pre-combined so the outer combine stays within the typed overloads.
+    private val unprivilegedExtras = combine(
+        batteryReadoutSource.readouts(),
+        chargeAlarmStore.config,
+        notificationsBlocked,
+    ) { readout, alarm, blocked -> Triple(readout, alarm, blocked) }
 
     val state = combine(
         combine(
@@ -114,11 +137,15 @@ class DashboardViewModel @Inject constructor(
         quickAccessStore.state,
         quickAccessChecked,
         tileRequestPending,
-    ) { base, quickAccess, checked, tilePending ->
+        unprivilegedExtras,
+    ) { base, quickAccess, checked, tilePending, (readout, alarm, blocked) ->
         base.copy(
             quickAccess = quickAccess,
             quickAccessChecked = checked,
             tileRequestPending = tilePending,
+            batteryReadout = readout,
+            alarm = alarm,
+            notificationsBlocked = blocked,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
 
@@ -129,7 +156,16 @@ class DashboardViewModel @Inject constructor(
         refresh()
     }
 
-    fun refresh() = viewModelScope.launch { repository.refresh() }
+    fun refresh() = viewModelScope.launch {
+        refreshNotificationsBlocked()
+        repository.refresh()
+    }
+
+    /** Re-read whether alarm alerts would actually reach the user (permission, global toggle, and
+     * the alarm channel not being muted to IMPORTANCE_NONE). */
+    private fun refreshNotificationsBlocked() {
+        notificationsBlocked.value = !ChargeAlarmNotifications.canDeliver(context)
+    }
 
     /**
      * Runs while the access-setup card is on screen and the activity is resumed (see [shouldMonitorAccess];
@@ -180,11 +216,18 @@ class DashboardViewModel @Inject constructor(
                 currentBootCount = bootCount,
                 lastSeenBootCount = fullChargeStore.lastSeenBootCount(),
             )
+            // Consult optional watcher state only when nothing mandatory already requires the
+            // service, so a slow/hung watcher can never delay a session/recovery nudge.
+            val sessionExists = fullChargeStore.currentSession() != null
+            val pendingRecovery = fullChargeStore.pendingRecoveryTarget() != null
+            val gestureEnabled = fullChargeStore.isQuickFullChargeEnabled()
+            val mandatory = sessionExists || pendingRecovery || gestureEnabled
             val action = ServiceDispatch.startAction(
                 trigger = trigger,
-                sessionExists = fullChargeStore.currentSession() != null,
-                pendingRecovery = fullChargeStore.pendingRecoveryTarget() != null,
-                gestureEnabled = fullChargeStore.isQuickFullChargeEnabled(),
+                sessionExists = sessionExists,
+                pendingRecovery = pendingRecovery,
+                gestureEnabled = gestureEnabled,
+                watcherEnabled = if (mandatory) false else anyWatcherEnabled(),
             )
             if (action != null) {
                 log(TAG) { "Foreground nudge (trigger=$trigger): starting service with $action" }
@@ -241,6 +284,56 @@ class DashboardViewModel @Inject constructor(
             context,
             Intent(context, ChargeSessionService::class.java).setAction(ChargeSessionService.ACTION_MONITOR),
         )
+    }
+
+    fun setChargeAlarmEnabled(enabled: Boolean) = viewModelScope.launch {
+        log(TAG, Logging.Priority.INFO) { "setChargeAlarmEnabled($enabled)" }
+        chargeAlarmStore.setEnabled(enabled)
+        if (!enabled) {
+            // Disabling ends the alarm's claim on the service and clears any shown alert; the next
+            // enable starts a fresh cycle.
+            chargeAlarmStore.setFiredCycle(false)
+            ChargeAlarmNotifications.cancel(context)
+        }
+        // Nudge the service to (re)evaluate whether it should stay alive for a watcher.
+        ContextCompat.startForegroundService(
+            context,
+            Intent(context, ChargeSessionService::class.java).setAction(ChargeSessionService.ACTION_MONITOR),
+        )
+    }
+
+    fun setChargeAlarmTarget(percent: Int) = viewModelScope.launch {
+        chargeAlarmStore.setTargetPercent(percent)
+    }
+
+    /** Open the app's system notification settings so the user can re-enable alarm alerts. */
+    fun openNotificationSettings() {
+        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { context.startActivity(intent) }.onFailure {
+            runCatching {
+                context.startActivity(
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                        .setData(Uri.fromParts("package", context.packageName, null))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }
+        }
+    }
+
+    /**
+     * Watcher enablement for dispatch; a throwing or slow optional watcher must never gate recovery,
+     * so each query is bounded and failure/timeout reads as false. Only reached when nothing
+     * mandatory already requires the service.
+     */
+    private suspend fun anyWatcherEnabled(): Boolean = watchers.any { watcher ->
+        runCatching {
+            withTimeoutOrNull(WATCHER_QUERY_BUDGET_MILLIS) { watcher.isEnabled() } ?: false
+        }.getOrElse {
+            log(TAG, Logging.Priority.WARN) { "Watcher ${watcher.id} isEnabled failed: ${it.message}" }
+            false
+        }
     }
 
     fun setQuickFullChargeAnyLevel(enabled: Boolean) = viewModelScope.launch {
@@ -482,6 +575,7 @@ class DashboardViewModel @Inject constructor(
         // Slow on purpose: the merged Shizuku events make the Shizuku path near-instant, so this only
         // backstops the ADB-grant path (no OS callback exists for it) while the user is on the setup card.
         const val ACCESS_POLL_INTERVAL_MS = 2_000L
+        const val WATCHER_QUERY_BUDGET_MILLIS = 2_000L
     }
 }
 

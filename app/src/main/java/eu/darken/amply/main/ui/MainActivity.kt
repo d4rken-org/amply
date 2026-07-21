@@ -44,6 +44,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import eu.darken.amply.R
 import eu.darken.amply.common.AmplyLinks
 import eu.darken.amply.common.theming.AmplyTheme
+import eu.darken.amply.battery.ui.BatteryDetailScreen
 import eu.darken.amply.charging.core.DeviceInfo
 import eu.darken.amply.charging.core.adapter.OemChargingShortcuts
 import eu.darken.amply.diagnostics.ui.ContributionWizardScreen
@@ -117,9 +118,13 @@ class MainActivity : ComponentActivity() {
                         when (notificationAction) {
                             NotificationAction.START_FULL_CHARGE -> viewModel.startFullCharge()
                             NotificationAction.ENABLE_QUICK_GESTURE -> viewModel.setQuickFullChargeEnabled(true)
+                            NotificationAction.ENABLE_CHARGE_ALARM -> viewModel.setChargeAlarmEnabled(true)
                             null -> Unit
                         }
                     }
+                    // A refused permission leaves the alarm switch off (an alarm that can't alert
+                    // is worse than a silent one); the user can retry from the card, and the blocked
+                    // warning appears once the alarm is enabled while delivery is still off.
                     notificationAction = null
                 }
 
@@ -135,6 +140,7 @@ class MainActivity : ComponentActivity() {
                         when (action) {
                             NotificationAction.START_FULL_CHARGE -> viewModel.startFullCharge()
                             NotificationAction.ENABLE_QUICK_GESTURE -> viewModel.setQuickFullChargeEnabled(true)
+                            NotificationAction.ENABLE_CHARGE_ALARM -> viewModel.setChargeAlarmEnabled(true)
                         }
                     }
                 }
@@ -186,9 +192,10 @@ class MainActivity : ComponentActivity() {
                         when (destination) {
                             // The wizard clears its raw session and returns to whichever surface opened it.
                             SettingsDestination.DIAGNOSTICS -> leaveWizard()
-                            // RECONNECT_GESTURE is entered from the dashboard card, not the settings hub.
+                            // These are entered from the dashboard, not the settings hub.
                             SettingsDestination.SETTINGS,
-                            SettingsDestination.RECONNECT_GESTURE -> destination = SettingsDestination.DASHBOARD
+                            SettingsDestination.RECONNECT_GESTURE,
+                            SettingsDestination.BATTERY_DETAIL -> destination = SettingsDestination.DASHBOARD
                             else -> destination = SettingsDestination.SETTINGS
                         }
                     }
@@ -217,6 +224,16 @@ class MainActivity : ComponentActivity() {
                             onOpenReconnectSettings = {
                                 destination = SettingsDestination.RECONNECT_GESTURE
                             },
+                            onAlarmEnabledChange = { enabled ->
+                                if (enabled) {
+                                    runWithNotifications(NotificationAction.ENABLE_CHARGE_ALARM)
+                                } else {
+                                    viewModel.setChargeAlarmEnabled(false)
+                                }
+                            },
+                            onAlarmTargetChange = viewModel::setChargeAlarmTarget,
+                            onFixNotifications = viewModel::openNotificationSettings,
+                            onOpenBatteryDetail = { destination = SettingsDestination.BATTERY_DETAIL },
                             onPinWidget = viewModel::requestPinWidget,
                             onAddTile = viewModel::requestAddTile,
                             onDismissQuickAccess = viewModel::dismissQuickAccess,
@@ -299,6 +316,10 @@ class MainActivity : ComponentActivity() {
                             onBack = { destination = SettingsDestination.DASHBOARD },
                             onAnyLevelChange = viewModel::setQuickFullChargeAnyLevel,
                         )
+                        SettingsDestination.BATTERY_DETAIL -> BatteryDetailScreen(
+                            readout = state.batteryReadout,
+                            onBack = { destination = SettingsDestination.DASHBOARD },
+                        )
                     }
                 }
                 }
@@ -358,6 +379,7 @@ class MainActivity : ComponentActivity() {
     private enum class NotificationAction {
         START_FULL_CHARGE,
         ENABLE_QUICK_GESTURE,
+        ENABLE_CHARGE_ALARM,
     }
 
     companion object {
