@@ -75,7 +75,10 @@ import eu.darken.amply.common.compose.asComposable
 import eu.darken.amply.fullcharge.core.ChargeSessionRecord
 import eu.darken.amply.fullcharge.core.policyOrNull
 import eu.darken.amply.main.core.formatReport
+import eu.darken.amply.battery.core.BatteryReadout
+import eu.darken.amply.battery.ui.BatteryInfoCard
 import eu.darken.amply.main.ui.setup.AccessSetupGuide
+import eu.darken.amply.main.ui.setup.OemGuideCard
 import eu.darken.amply.main.ui.setup.UnsupportedDeviceCard
 import kotlinx.coroutines.delay
 
@@ -90,6 +93,10 @@ fun DashboardScreen(
     onApply: (ChargePolicy) -> Unit,
     onQuickFullChargeChange: (Boolean) -> Unit,
     onOpenReconnectSettings: () -> Unit,
+    onAlarmEnabledChange: (Boolean) -> Unit,
+    onAlarmTargetChange: (Int) -> Unit,
+    onFixNotifications: () -> Unit,
+    onOpenBatteryDetail: () -> Unit,
     onPinWidget: () -> Unit,
     onAddTile: () -> Unit,
     onDismissQuickAccess: () -> Unit,
@@ -167,6 +174,29 @@ fun DashboardScreen(
                             )
                         }
                     }
+                    // Point unsupported devices at their OEM's own charge-protection setting.
+                    item {
+                        OemGuideCard(
+                            manufacturer = state.charging.device.manufacturer
+                                .ifBlank { stringResource(R.string.dashboard_manufacturer_fallback) },
+                            onOpenSettings = onNativeSettings,
+                        )
+                    }
+                    item {
+                        ChargeAlarmCard(
+                            config = state.alarm,
+                            notificationsBlocked = state.notificationsBlocked,
+                            onEnabledChange = onAlarmEnabledChange,
+                            onTargetChange = onAlarmTargetChange,
+                            onFixNotifications = onFixNotifications,
+                        )
+                    }
+                    item {
+                        BatteryInfoCard(
+                            readout = state.batteryReadout ?: BatteryReadout.UNKNOWN,
+                            onOpenDetail = onOpenBatteryDetail,
+                        )
+                    }
                     if (state.charging.contributionWanted) {
                         item {
                             UnsupportedDeviceCard(
@@ -182,7 +212,10 @@ fun DashboardScreen(
                         }
                     }
                 } else {
-                    if (state.charging.access?.direct?.ready != true) {
+                    // Shizuku-only adapters (OnePlus/ColorOS) can't use WSS at all, so the WSS/ADB
+                    // setup guide would ask for an ineffective grant — the dedicated
+                    // "Shizuku required" banner below covers their setup instead.
+                    if (!state.charging.writeRequiresShizuku && state.charging.access?.direct?.ready != true) {
                         item {
                             AccessSetupGuide(
                                 state = state,
@@ -199,7 +232,7 @@ fun DashboardScreen(
                     item {
                         FullChargeCard(
                             presentation = sessionPresentation,
-                            canControl = state.charging.controlEnabled && state.charging.access?.canControl == true,
+                            canControl = state.charging.canApply,
                             onStart = onStartFull,
                             onRestore = onRestore,
                         )
@@ -212,18 +245,33 @@ fun DashboardScreen(
                             QuickFullChargeCard(
                                 enabled = state.quickFullChargeEnabled,
                                 anyLevel = state.quickFullChargeAnyLevel,
-                                canControl = state.charging.reconnectSupported &&
-                                    state.charging.controlEnabled &&
-                                    state.charging.access?.canControl == true,
+                                canControl = state.charging.reconnectSupported && state.charging.canApply,
                                 onEnabledChange = onQuickFullChargeChange,
                                 onOpenSettings = onOpenReconnectSettings,
                             )
                         }
                     }
+                    item {
+                        ChargeAlarmCard(
+                            config = state.alarm,
+                            notificationsBlocked = state.notificationsBlocked,
+                            onEnabledChange = onAlarmEnabledChange,
+                            onTargetChange = onAlarmTargetChange,
+                            onFixNotifications = onFixNotifications,
+                        )
+                    }
+                    item {
+                        BatteryInfoCard(
+                            readout = state.batteryReadout ?: BatteryReadout.UNKNOWN,
+                            onOpenDetail = onOpenBatteryDetail,
+                        )
+                    }
                     // Promote the widget/tile shortcuts only once setup is done (the setup guide above
                     // has disappeared) and while at least one shortcut is still undiscovered.
                     if (shouldShowQuickAccess(
-                            directReady = state.charging.access?.direct?.ready == true,
+                            // Promote the shortcuts only once they'd actually work — for Shizuku-only
+                            // adapters WSS alone isn't enough, so gate on canApply, not just WSS.
+                            canApply = state.charging.canApply,
                             presenceChecked = state.quickAccessChecked,
                             quickAccess = state.quickAccess,
                         )
@@ -239,15 +287,29 @@ fun DashboardScreen(
                             )
                         }
                     }
-                    // Only nudge toward Shizuku once the user is already on the WSS-only (computer) path:
-                    // durable control is present but Shizuku isn't, so exact readback/diagnostics are
-                    // missing. Sync-readback adapters verify through any backend, so the banner's
-                    // readback pitch would be wrong there. Before any setup, stay quiet.
                     val access = state.charging.access
-                    if (access?.direct?.ready == true && !access.canVerify && !state.charging.syncVerification) {
-                        item {
+                    when {
+                        // System-namespace adapters (OnePlus/ColorOS): writes need Shizuku even
+                        // when WSS is granted, so nudge toward it and the controls above are
+                        // disabled until it is connected.
+                        state.charging.controlEnabled &&
+                            state.charging.writeRequiresShizuku &&
+                            access?.shizuku?.ready != true -> item {
+                            ShizukuBanner(
+                                running = access?.shizuku?.available == true,
+                                requiredForControl = true,
+                                onOpen = onOpenShizuku,
+                                onAllow = onAllowShizuku,
+                            )
+                        }
+                        // Only nudge toward Shizuku once the user is already on the WSS-only
+                        // (computer) path: durable control is present but Shizuku isn't, so exact
+                        // readback/diagnostics are missing. Sync-readback adapters verify through
+                        // any backend, so the readback pitch would be wrong there.
+                        access?.direct?.ready == true && !access.canVerify && !state.charging.syncVerification -> item {
                             ShizukuBanner(
                                 running = access.shizuku.available,
+                                requiredForControl = false,
                                 onOpen = onOpenShizuku,
                                 onAllow = onAllowShizuku,
                             )
@@ -418,7 +480,10 @@ private fun FullChargeCard(
             Spacer(Modifier.height(8.dp))
             Button(
                 onClick = if (active) onRestore else onStart,
-                enabled = active || canControl,
+                // Restore also writes, so it needs a working backend too — gating only on `active`
+                // would keep it enabled after Shizuku drops mid-session on a Shizuku-only adapter,
+                // where tapping it just fails. The Shizuku-required banner guides reconnection.
+                enabled = canControl,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(
@@ -478,9 +543,7 @@ private fun PolicyCard(
                 }
             }
             Spacer(Modifier.height(8.dp))
-            val choiceEnabled = state.charging.controlEnabled &&
-                state.charging.access?.canControl == true &&
-                !state.charging.busy
+            val choiceEnabled = state.charging.canApply && !state.charging.busy
             if (choices.size <= 4) {
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     choices.forEachIndexed { index, (policy, label) ->
@@ -603,6 +666,7 @@ private fun QuickFullChargeCardLargeFontPreview() = PreviewWrapper {
 @Composable
 private fun ShizukuBanner(
     running: Boolean,
+    requiredForControl: Boolean,
     onOpen: () -> Unit,
     onAllow: () -> Unit,
 ) {
@@ -612,12 +676,18 @@ private fun ShizukuBanner(
     ) {
         Column(Modifier.padding(16.dp)) {
             Text(
-                stringResource(R.string.dashboard_shizuku_title),
+                stringResource(
+                    if (requiredForControl) R.string.dashboard_shizuku_required_title
+                    else R.string.dashboard_shizuku_title,
+                ),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                stringResource(R.string.dashboard_shizuku_body),
+                stringResource(
+                    if (requiredForControl) R.string.dashboard_shizuku_required_body
+                    else R.string.dashboard_shizuku_body,
+                ),
                 style = MaterialTheme.typography.bodySmall,
             )
             Spacer(Modifier.height(8.dp))
@@ -733,6 +803,10 @@ private fun DashboardScreenPreview() = PreviewWrapper {
         onApply = {},
         onQuickFullChargeChange = {},
         onOpenReconnectSettings = {},
+        onAlarmEnabledChange = {},
+        onAlarmTargetChange = {},
+        onFixNotifications = {},
+        onOpenBatteryDetail = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -794,6 +868,10 @@ private fun DashboardScreenApplyingPreview() = PreviewWrapper {
         onApply = {},
         onQuickFullChargeChange = {},
         onOpenReconnectSettings = {},
+        onAlarmEnabledChange = {},
+        onAlarmTargetChange = {},
+        onFixNotifications = {},
+        onOpenBatteryDetail = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -857,6 +935,10 @@ private fun DashboardScreenSessionActivePreview() = PreviewWrapper {
         onApply = {},
         onQuickFullChargeChange = {},
         onOpenReconnectSettings = {},
+        onAlarmEnabledChange = {},
+        onAlarmTargetChange = {},
+        onFixNotifications = {},
+        onOpenBatteryDetail = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -922,6 +1004,10 @@ private fun DashboardScreenSessionRecordedPreview() = PreviewWrapper {
         onApply = {},
         onQuickFullChargeChange = {},
         onOpenReconnectSettings = {},
+        onAlarmEnabledChange = {},
+        onAlarmTargetChange = {},
+        onFixNotifications = {},
+        onOpenBatteryDetail = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -975,6 +1061,10 @@ private fun DashboardScreenWssOnlyPreview() = PreviewWrapper {
         onApply = {},
         onQuickFullChargeChange = {},
         onOpenReconnectSettings = {},
+        onAlarmEnabledChange = {},
+        onAlarmTargetChange = {},
+        onFixNotifications = {},
+        onOpenBatteryDetail = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -1035,6 +1125,71 @@ private fun DashboardScreenSamsungPreview() = PreviewWrapper {
         onApply = {},
         onQuickFullChargeChange = {},
         onOpenReconnectSettings = {},
+        onAlarmEnabledChange = {},
+        onAlarmTargetChange = {},
+        onFixNotifications = {},
+        onOpenBatteryDetail = {},
+        onPinWidget = {},
+        onAddTile = {},
+        onDismissQuickAccess = {},
+        onNativeSettings = {},
+        onOpenShizuku = {},
+        onAllowShizuku = {},
+        onGrantWss = {},
+        onCopyAdb = {},
+        onCopyWebUsbLink = {},
+        onPrepareSupportReport = {},
+        onCopySupportReport = {},
+        onOpenSupportIssue = {},
+        onEmailSupport = {},
+        onHelp = {},
+    )
+}
+
+@AmplyPreview
+@Composable
+private fun DashboardScreenOnePlusNeedsShizukuPreview() = PreviewWrapper {
+    // OnePlus/ColorOS: state is readable via WSS, but writes need Shizuku (not connected here),
+    // so the controls are disabled and the Shizuku-required banner shows.
+    DashboardScreen(
+        state = DashboardUiState(
+            onboardingComplete = true,
+            charging = ChargingState(
+                device = DeviceInfo("OnePlus", "CPH2621", 35, "preview", oplusRomVersion = 15),
+                adapterName = "ColorOS charging protection".toCaString(),
+                adapterId = "oplus-coloros15-v1",
+                supportedPolicies = listOf(
+                    ChargePolicy.FixedLimit(80),
+                    ChargePolicy.Adaptive,
+                    ChargePolicy.Unrestricted,
+                ),
+                reconnectSupported = false,
+                syncVerification = true,
+                writeRequiresShizuku = true,
+                controlEnabled = true,
+                access = AccessSnapshot(
+                    direct = BackendStatus(
+                        available = true,
+                        granted = true,
+                        detail = "WRITE_SECURE_SETTINGS granted".toCaString(),
+                    ),
+                    shizuku = BackendStatus(
+                        available = false,
+                        granted = false,
+                        detail = "Shizuku not connected".toCaString(),
+                    ),
+                ),
+                observation = ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.DIRECT_WSS),
+            ),
+        ),
+        adbCommand = "adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS",
+        onRefresh = {},
+        onSettings = {},
+        onStartFull = {},
+        onRestore = {},
+        onApply = {},
+        onQuickFullChargeChange = {},
+        onOpenReconnectSettings = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -1074,6 +1229,10 @@ private fun DashboardScreenUnsupportedPreview() = PreviewWrapper {
         onApply = {},
         onQuickFullChargeChange = {},
         onOpenReconnectSettings = {},
+        onAlarmEnabledChange = {},
+        onAlarmTargetChange = {},
+        onFixNotifications = {},
+        onOpenBatteryDetail = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},

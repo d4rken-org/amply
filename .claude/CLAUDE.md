@@ -12,9 +12,12 @@ Three control adapters exist. **Pixel charging optimization** is capability-gate
 Android 15+ when Google's charging-optimization controller is present. **Samsung battery protection** (global
 `protect_battery` keys) is gated to verified One UI generations — One UI 8 multi-mode, and the legacy One UI 4/5
 toggle — on the system user. **Xiaomi charging protection** (secure `security_pc_secure_protect_mode_key`,
-binary Adaptive/Unrestricted) is gated to the HyperOS 2.x ROM (`ro.mi.os.version.code == 2`) on Xiaomi devices. Other Pixels, Samsung on
-unverified One UI versions (6/7, 9+), non-HyperOS-2 Xiaomi devices, and OnePlus/Oppo remain diagnostics-only. See
-the qualification ledger in `.claude/rules/privileged-access.md` for the verified devices and mappings.
+binary Adaptive/Unrestricted) is gated to the HyperOS 2.x ROM (`ro.mi.os.version.code == 2`) on Xiaomi devices.
+**OnePlus/ColorOS charging protection** (mutually-exclusive `system` keys `regular_/smart_charge_protection_switch_state`
+= FixedLimit(80)/Adaptive) is gated to ColorOS 15 (`ro.build.version.oplusrom == 15`) across the Oplus family
+(OnePlus/Oppo/Realme) — **writes require Shizuku** (system namespace). Other Pixels, Samsung on unverified One UI
+versions (6/7, 9+), non-HyperOS-2 Xiaomi devices, and non-ColorOS-15 Oplus devices remain diagnostics-only. See the
+qualification ledger in `.claude/rules/privileged-access.md` for the verified devices and mappings.
 
 Package: `eu.darken.amply`. License: GPL-3.0-or-later. Status: pre-launch (`0.1.0-beta1`).
 

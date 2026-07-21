@@ -8,4 +8,5 @@ enum class SettingsDestination {
     SUPPORT,
     ACKNOWLEDGEMENTS,
     RECONNECT_GESTURE,
+    BATTERY_DETAIL,
 }

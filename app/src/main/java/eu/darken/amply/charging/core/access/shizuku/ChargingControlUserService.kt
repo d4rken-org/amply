@@ -96,8 +96,10 @@ internal object SettingWritePolicy {
             "battery_protection_threshold" to setOf("80", "85", "90", "95"),
         ),
         "system" to mapOf(
-            // OnePlus/Oppo candidate — allowlisted for future lab work, never written in production.
+            // ColorOS/OxygenOS (Oplus) charging protection (qualification ledger in .claude/rules/privileged-access.md).
+            // System namespace: writable only via Shizuku (shell UID), not direct WRITE_SECURE_SETTINGS.
             "regular_charge_protection_switch_state" to setOf("0", "1"),
+            "smart_charge_protection_switch_state" to setOf("0", "1"),
         ),
     )
 

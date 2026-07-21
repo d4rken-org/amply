@@ -54,7 +54,7 @@ class ChargeTileService : TileService() {
                 withContext(Dispatchers.Main) {
                     render(
                         active = sessionActive,
-                        available = state.controlEnabled && state.access?.canControl == true,
+                        available = state.canApply,
                         detail = (state.access?.label ?: state.adapterName).get(this@ChargeTileService),
                     )
                 }
@@ -77,7 +77,7 @@ class ChargeTileService : TileService() {
                 withContext(Dispatchers.Main) { openApp(requestNotifications = true) }
             } else {
                 val state = repository.refresh()
-                if (state.controlEnabled && state.access?.canControl == true) {
+                if (state.canApply) {
                     startChargeService(ChargeSessionService.ACTION_START)
                 } else {
                     withContext(Dispatchers.Main) { openApp(requestNotifications = false) }

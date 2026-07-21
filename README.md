@@ -13,6 +13,8 @@
 [![Crowdin](https://badges.crowdin.net/amply/localized.svg)](https://crowdin.com/project/amply)
 -->
 
+
+
 > _**Amply is experimental and pre-launch. Direct control is verified on a limited set of devices — device reports and feedback are welcome!**_
 
 [Amply](https://github.com/d4rken-org/amply) is an Android controller for OEM battery charge-protection modes. Its
@@ -27,6 +29,7 @@ Features include:
 * Quick Settings tile and a home-screen widget for protect / full-charge actions
 * A persisted temporary-session monitor that survives reboots
 * Diagnostics workflow (Shizuku) for before/after setting discovery, with redacted reports
+* Works without ADB/Shizuku too — a charge alarm to remind you to unplug at a chosen level, a live battery-info card, and an OEM battery-protection guide on unsupported devices
 * Branded light/dark themes, optional Material You, and contrast choices
 * Works via `WRITE_SECURE_SETTINGS` or Shizuku
 * No ads, no tracking, open-source (`foss` and `gplay` flavors)
@@ -37,9 +40,10 @@ Currently supported for direct control:
 * Samsung One UI 8 (multi-mode battery protection)
 * Samsung One UI 4 / 5 (legacy battery-protection toggle)
 * Xiaomi / Redmi / POCO on HyperOS 2 (charging protection)
+* OnePlus / Oppo / Realme on ColorOS 15 (charging protection; requires Shizuku)
 
-Other devices — other Pixels, Samsung One UI 6/7 and 9+, non-HyperOS-2 Xiaomi, and OnePlus/Oppo — are
-diagnostics-only for now.
+Other devices — other Pixels, Samsung One UI 6/7 and 9+, non-HyperOS-2 Xiaomi, and non-ColorOS-15
+OnePlus/Oppo/Realme — are diagnostics-only for now.
 
 ## Download
 

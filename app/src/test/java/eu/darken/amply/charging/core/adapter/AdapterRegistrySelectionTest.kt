@@ -24,7 +24,8 @@ class AdapterRegistrySelectionTest {
         samsungLab = SamsungLabAdapter(),
         xiaomi = XiaomiChargingAdapter(),
         xiaomiLab = XiaomiLabAdapter(),
-        onePlus = OnePlusLabAdapter(),
+        onePlus = OnePlusChargingAdapter(),
+        onePlusLab = OnePlusLabAdapter(),
     )
 
     private fun samsung(oneUi: Int?) = DeviceInfo(
@@ -95,9 +96,27 @@ class AdapterRegistrySelectionTest {
     }
 
     @Test
-    fun `oneplus falls through to its lab adapter`() {
+    fun `ColorOS 15 oplus devices select the live adapter across the family`() {
+        listOf("OnePlus", "OPPO", "realme").forEach { manufacturer ->
+            val selection = registry.select(
+                DeviceInfo(manufacturer, "CPH2621", 35, "test", oplusRomVersion = 15, isSystemUser = true),
+            )
+            selection.adapter?.id shouldBe "oplus-coloros15-v1"
+            selection.support.controlEnabled shouldBe true
+        }
+    }
+
+    @Test
+    fun `unqualified oplus devices fall through to the oneplus lab adapter`() {
+        registry.select(
+            DeviceInfo("OnePlus", "CPH2621", 35, "test", oplusRomVersion = 14),
+        ).adapter?.id shouldBe "oneplus-lab"
+        // No oplus ROM property (older device / non-Oplus that still reports the brand) → lab.
         registry.select(
             DeviceInfo("OnePlus", "CPH2621", 34, "test"),
+        ).adapter?.id shouldBe "oneplus-lab"
+        registry.select(
+            DeviceInfo("realme", "RMX3999", 34, "test"),
         ).adapter?.id shouldBe "oneplus-lab"
     }
 }

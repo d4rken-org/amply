@@ -33,9 +33,10 @@ for get / put / WSS grant / diagnostic snapshots. Hard rules:
 - Writes require a valid **namespace**, valid key/value **syntax**, and an explicit **key allowlist**. Do not widen
   the allowlist without an explicit, reviewed reason.
 - Every writable key carries an explicit **per-key value domain** (`SettingWritePolicy`) — the boundary itself
-  rejects out-of-domain values. The Samsung keys (`global protect_battery`, `global battery_protection_threshold`)
-  and the Xiaomi key (`secure security_pc_secure_protect_mode_key`) are **live** on gated devices (see Capability
-  Gates). OnePlus candidate keys remain present but **must not** be invoked by production code.
+  rejects out-of-domain values. The Samsung keys (`global protect_battery`, `global battery_protection_threshold`),
+  the Xiaomi key (`secure security_pc_secure_protect_mode_key`), and the Oplus keys (`system
+  regular_charge_protection_switch_state`, `system smart_charge_protection_switch_state`) are all **live** on gated
+  devices (see Capability Gates).
 
 ## Capability Gates
 
@@ -64,6 +65,14 @@ without a qualified device; record results in the qualification ledger below.
 Unlike Pixel's hidden secure settings, Samsung's `global` keys are world-readable: configured-state verification
 works without Shizuku, and writes apply synchronously (no Settings-Intelligence-style async middleman).
 
+### OnePlus / ColorOS (Oplus)
+
+Oplus control requires **all** of: `ro.build.version.oplusrom == 15` (ColorOS/OxygenOS 15 — the property is
+Oplus-exclusive and covers OnePlus/Oppo/Realme) and the system user. **Writes require Shizuku**: the two keys are in
+the `system` namespace, which `WRITE_SECURE_SETTINGS` cannot write (reads are unprivileged). The adapter sets
+`preferShizukuForWrites` and read-back-verifies, so a WSS-only write fails honestly. Do not widen to ColorOS 16+
+without a qualified device; record results in the qualification ledger below.
+
 ### Xiaomi
 
 Xiaomi control requires **all** of: Xiaomi manufacturer (covers Redmi/POCO, which report Xiaomi as
@@ -72,7 +81,7 @@ model-scoped), and the system user. Use `ro.mi.os.version.code`, NOT the frozen 
 `ro.miui.ui.version.code`. Do not widen to HyperOS 3+ without qualifying a device; record results in the qualification ledger below. The single key is per-user `secure`, applied synchronously. Two deliberate
 assumptions: the feature is treated as present on any HyperOS 2 device (a device lacking it reads the key
 absent → a harmless false claim of control), and daemon-level enforcement of external writes is pending
-long-term observation (see the spike doc).
+long-term observation (see Known gaps below).
 
 ## Foreground Service Requirement
 
@@ -124,6 +133,7 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
 | Pixel | Pixel 8 `shiba` A17/API37; Pixel 9 Pro `caiman` A16/API36; Pixel 7a `lynx` A16/API36 | Full — sysfs `charging_policy` follows writes (~11–12s) | Access tiers, sessions, boot recovery, wireless hold, at-threshold, reconnect gesture, natural 100% | 2026-07-15/-19/-20 |
 | Samsung | Galaxy Tab A9+ SM-X210 One UI 8.0; Galaxy S20 FE SM-G781B One UI 4.1 | Full — sync readback + HAL enforcement | Modern multi-mode + legacy toggle, session E2E, native-change cancel, reboot recovery, R8 beta | 2026-07-21 |
 | Xiaomi | Xiaomi 13T `2306EPN60G` HyperOS 2.0 (`ro.mi.os.version.code=2`) | **Partial** — mapping/readback/session verified; the adaptive 80% hold could not be triggered, so daemon-level hardware enforcement is **not yet demonstrated** | Read matrix, both-direction writes, session at 100%, unknown-value refusal, R8 beta | 2026-07-21 |
+| OnePlus (Oplus) | OnePlus Nord CE4 Lite `CPH2621` ColorOS 15 (`ro.build.version.oplusrom=V15.0.0`) | Full — enforcement directly observable (device holds at 80%); external writes stick | Two mutually-exclusive `system` keys (Charging limit / Smart charging), WSS-only write rejected + Shizuku write succeeds for all three policies, WSS-only UX (controls disabled + Shizuku-required banner) | 2026-07-21 |
 
 ## Known gaps
 

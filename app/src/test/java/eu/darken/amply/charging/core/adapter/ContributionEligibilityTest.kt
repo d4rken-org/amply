@@ -20,7 +20,8 @@ class ContributionEligibilityTest {
         samsungLab = SamsungLabAdapter(),
         xiaomi = XiaomiChargingAdapter(),
         xiaomiLab = XiaomiLabAdapter(),
-        onePlus = OnePlusLabAdapter(),
+        onePlus = OnePlusChargingAdapter(),
+        onePlusLab = OnePlusLabAdapter(),
     )
 
     private fun device(manufacturer: String, model: String = "X", sdk: Int = 35) = DeviceInfo(
@@ -47,11 +48,12 @@ class ContributionEligibilityTest {
     }
 
     @Test
-    fun `samsung and oneplus diagnostics-only adapters want contributions`() {
-        // No oneUiVersion → the live Samsung adapters don't match; the lab adapter handles it.
+    fun `samsung and oplus family diagnostics-only adapters want contributions`() {
+        // No version signal → the live adapters don't match; the lab adapters handle these.
         registry.select(device("Samsung")).support.contributionWanted shouldBe true
         registry.select(device("OnePlus")).support.contributionWanted shouldBe true
         registry.select(device("Oppo")).support.contributionWanted shouldBe true
+        registry.select(device("realme")).support.contributionWanted shouldBe true
     }
 
     @Test

@@ -53,6 +53,8 @@ data class ChargingState(
     val reconnectSupported: Boolean = false,
     /** True when the adapter's configured state is directly readable — Shizuku adds nothing for verification. */
     val syncVerification: Boolean = false,
+    /** True when applying a policy needs Shizuku (system-namespace adapter WSS can't write). */
+    val writeRequiresShizuku: Boolean = false,
     val controlEnabled: Boolean = false,
     val contributionWanted: Boolean = false,
     val access: AccessSnapshot? = null,
@@ -63,7 +65,18 @@ data class ChargingState(
     // show a progress cue on that specific action without conflating it with a policy apply (both busy).
     val grantingWss: Boolean = false,
     val message: CaString? = null,
-)
+) {
+    /**
+     * Whether a policy write can currently land. For system-namespace adapters (OnePlus/ColorOS)
+     * Shizuku specifically is required — WSS can read the state but cannot write it — so controls
+     * across every surface (dashboard, widget, tile) must gate on this, not on `access.canControl`.
+     */
+    val canApply: Boolean
+        get() = controlEnabled && when {
+            writeRequiresShizuku -> access?.shizuku?.ready == true
+            else -> access?.canControl == true
+        }
+}
 
 @Singleton
 class ChargingRepository @Inject constructor(
@@ -230,7 +243,7 @@ class ChargingRepository @Inject constructor(
             )
             return ApplyResult(false, observation, "Unsupported policy")
         }
-        val backend = accessResolver.writeBackend()
+        val backend = accessResolver.writeBackend(preferShizuku = adapter.preferShizukuForWrites)
         if (backend == null) {
             val observation = ChargeObservation.NeedsSetup(R.string.charging_reason_needs_setup.toCaString())
             mutableState.value = state.value.copy(
@@ -344,10 +357,12 @@ class ChargingRepository @Inject constructor(
             else -> {
                 val backend = accessResolver.readBackend()
                 val read = if (backend != null) adapter.read(backend) else null
-                if (read is ChargeObservation.Verified) {
-                    read
-                } else {
-                    adapter.readHardware(context)
+                when {
+                    read is ChargeObservation.Verified -> read
+                    // A readable-but-unrecognized OEM value must not be masked by a stale last
+                    // request — the state is genuinely unknown, and a session start refuses on it.
+                    read is ChargeObservation.Unknown && read.unrecognizedValue -> read
+                    else -> adapter.readHardware(context)
                         ?: preferences.lastRequestedNow()?.let(ChargeObservation::LastRequested)
                         ?: read
                         ?: ChargeObservation.Unknown(R.string.charging_reason_state_unavailable.toCaString())
@@ -372,6 +387,7 @@ class ChargingRepository @Inject constructor(
             supportedPolicies = adapter?.supportedPolicies.orEmpty(),
             reconnectSupported = adapter?.reconnectGestureSupported == true,
             syncVerification = adapter?.verification == VerificationStrategy.SYNC_READBACK,
+            writeRequiresShizuku = adapter?.preferShizukuForWrites == true,
             controlEnabled = selection.support.controlEnabled,
             contributionWanted = selection.support.contributionWanted,
             access = access,

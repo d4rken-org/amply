@@ -7,11 +7,11 @@ import org.junit.jupiter.api.Test
 
 class ServiceDispatchTest {
 
-    private fun boot(session: Boolean, pending: Boolean, gesture: Boolean) =
-        ServiceDispatch.startAction(Trigger.BOOT, session, pending, gesture)
+    private fun boot(session: Boolean, pending: Boolean, gesture: Boolean, watcher: Boolean = false) =
+        ServiceDispatch.startAction(Trigger.BOOT, session, pending, gesture, watcher)
 
-    private fun foreground(session: Boolean, pending: Boolean, gesture: Boolean) =
-        ServiceDispatch.startAction(Trigger.FOREGROUND, session, pending, gesture)
+    private fun foreground(session: Boolean, pending: Boolean, gesture: Boolean, watcher: Boolean = false) =
+        ServiceDispatch.startAction(Trigger.FOREGROUND, session, pending, gesture, watcher)
 
     @Test
     fun `a boot-completed delivery within an already-seen boot reconciles instead of restoring`() {
@@ -40,6 +40,18 @@ class ServiceDispatchTest {
         foreground(session = false, pending = true, gesture = false) shouldBe ChargeSessionService.ACTION_CHECK
         foreground(session = false, pending = false, gesture = true) shouldBe ChargeSessionService.ACTION_CHECK
         foreground(session = true, pending = true, gesture = true) shouldBe ChargeSessionService.ACTION_CHECK
+    }
+
+    @Test
+    fun `an enabled watcher keeps the monitor alive at boot and foreground`() {
+        // A charge-alarm (or other watcher) with no session/gesture still needs the service.
+        boot(session = false, pending = false, gesture = false, watcher = true) shouldBe
+            ChargeSessionService.ACTION_MONITOR
+        foreground(session = false, pending = false, gesture = false, watcher = true) shouldBe
+            ChargeSessionService.ACTION_CHECK
+        // No work at all, including no watcher, still starts nothing.
+        boot(session = false, pending = false, gesture = false, watcher = false) shouldBe null
+        foreground(session = false, pending = false, gesture = false, watcher = false) shouldBe null
     }
 
     @Test
