@@ -142,6 +142,24 @@ class BootRecoveryEngineTest {
         ) shouldBe RecoveryDecision.REWRITE
     }
 
+    @Test
+    fun `sync settings confirmation converges immediately without a nudge`() {
+        // Samsung: readable global settings confirm convergence on the spot, even unplugged
+        // or below the limit where the hardware tracks provide no evidence.
+        decide(settingsConfirmsTarget = true, plugged = false, percent = 30) shouldBe RecoveryDecision.DONE_OK
+        decide(settingsConfirmsTarget = true, sinceLastWrite = 0) shouldBe RecoveryDecision.DONE_OK
+    }
+
+    @Test
+    fun `without sync confirmation the nudge track still applies`() {
+        decide(
+            settingsConfirmsTarget = false,
+            plugged = false,
+            percent = 30,
+            sinceLastWrite = BootRecoveryEngine.NUDGE_DELAY_MILLIS,
+        ) shouldBe RecoveryDecision.REWRITE
+    }
+
     private fun decide(
         target: ChargePolicy = fixedLimit,
         plugged: Boolean = true,
@@ -150,6 +168,7 @@ class BootRecoveryEngineTest {
         sinceLastWrite: Long = 0,
         totalElapsed: Long = sinceLastWrite,
         rewriteCount: Int = 0,
+        settingsConfirmsTarget: Boolean = false,
     ) = BootRecoveryEngine.decide(
         target = target,
         plugged = plugged,
@@ -158,5 +177,6 @@ class BootRecoveryEngineTest {
         sinceLastWriteMillis = sinceLastWrite,
         totalElapsedMillis = totalElapsed,
         rewriteCount = rewriteCount,
+        settingsConfirmsTarget = settingsConfirmsTarget,
     )
 }

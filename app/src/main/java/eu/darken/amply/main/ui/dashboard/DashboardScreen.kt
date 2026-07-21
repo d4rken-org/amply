@@ -3,6 +3,8 @@ package eu.darken.amply.main.ui.dashboard
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -27,6 +29,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -187,12 +190,18 @@ fun DashboardScreen(
                         )
                     }
                     item { PolicyCard(state, onApply, onNativeSettings) }
-                    item {
-                        QuickFullChargeCard(
-                            enabled = state.quickFullChargeEnabled,
-                            canControl = state.charging.controlEnabled && state.charging.access?.canControl == true,
-                            onEnabledChange = onQuickFullChargeChange,
-                        )
+                    // Hidden where the adapter lacks the gesture's hardware signal (non-Pixel) —
+                    // unless it is still switched on and needs a way to be turned off.
+                    if (state.charging.reconnectSupported || state.quickFullChargeEnabled) {
+                        item {
+                            QuickFullChargeCard(
+                                enabled = state.quickFullChargeEnabled,
+                                canControl = state.charging.reconnectSupported &&
+                                    state.charging.controlEnabled &&
+                                    state.charging.access?.canControl == true,
+                                onEnabledChange = onQuickFullChargeChange,
+                            )
+                        }
                     }
                     if (state.charging.access?.shizuku?.ready != true) {
                         item {
@@ -352,17 +361,20 @@ private fun FullChargeCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PolicyCard(
     state: DashboardUiState,
     onApply: (ChargePolicy) -> Unit,
     onNativeSettings: () -> Unit,
 ) {
-    val choices = listOf(
-        ChargePolicy.FixedLimit(80) to stringResource(R.string.dashboard_policy_choice_80),
-        ChargePolicy.Adaptive to stringResource(R.string.dashboard_policy_choice_adaptive),
-        ChargePolicy.Unrestricted to stringResource(R.string.dashboard_policy_choice_100),
-    )
+    val choices = state.charging.supportedPolicies
+        .ifEmpty {
+            // Adapter not resolved yet (detecting/preview default): show the classic layout instead
+            // of an empty card.
+            listOf(ChargePolicy.FixedLimit(80), ChargePolicy.Adaptive, ChargePolicy.Unrestricted)
+        }
+        .map { it to it.choiceLabel() }
     val selectedPolicy = state.charging.observation.policyOrNull()
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 20.dp)) {
@@ -382,24 +394,39 @@ private fun PolicyCard(
                         modifier = Modifier.size(18.dp),
                     )
                     Text(
-                        stringResource(R.string.dashboard_pixel_settings),
+                        stringResource(R.string.dashboard_native_settings),
                         Modifier.padding(start = 4.dp),
                         style = MaterialTheme.typography.labelLarge,
                     )
                 }
             }
             Spacer(Modifier.height(8.dp))
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                choices.forEachIndexed { index, (policy, label) ->
-                    SegmentedButton(
-                        selected = selectedPolicy == policy,
-                        onClick = { onApply(policy) },
-                        enabled = state.charging.controlEnabled &&
-                            state.charging.access?.canControl == true &&
-                            !state.charging.busy,
-                        shape = SegmentedButtonDefaults.itemShape(index, choices.size),
-                    ) {
-                        Text(label)
+            val choiceEnabled = state.charging.controlEnabled &&
+                state.charging.access?.canControl == true &&
+                !state.charging.busy
+            if (choices.size <= 4) {
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    choices.forEachIndexed { index, (policy, label) ->
+                        SegmentedButton(
+                            selected = selectedPolicy == policy,
+                            onClick = { onApply(policy) },
+                            enabled = choiceEnabled,
+                            shape = SegmentedButtonDefaults.itemShape(index, choices.size),
+                        ) {
+                            Text(label)
+                        }
+                    }
+                }
+            } else {
+                // More options than a segmented row can fit legibly (Samsung: four limits + two modes).
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    choices.forEach { (policy, label) ->
+                        FilterChip(
+                            selected = selectedPolicy == policy,
+                            onClick = { onApply(policy) },
+                            enabled = choiceEnabled,
+                            label = { Text(label) },
+                        )
                     }
                 }
             }
@@ -521,9 +548,18 @@ private fun ChargeObservation.detail(): CaString = when (this) {
     is ChargeObservation.Unknown -> reason
 }
 
+@Composable
+private fun ChargePolicy.choiceLabel(): String = when (this) {
+    is ChargePolicy.FixedLimit -> stringResource(R.string.dashboard_policy_choice_fixed, percent)
+    ChargePolicy.Adaptive -> stringResource(R.string.dashboard_policy_choice_adaptive)
+    ChargePolicy.Unrestricted -> stringResource(R.string.dashboard_policy_choice_100)
+    ChargePolicy.PauseAtFull -> stringResource(R.string.dashboard_policy_choice_pause)
+}
+
 private fun ChargePolicy.shortLabel(): CaString = when (this) {
     ChargePolicy.Adaptive -> R.string.dashboard_policy_adaptive.toCaString()
     ChargePolicy.Unrestricted -> R.string.dashboard_policy_full.toCaString()
+    ChargePolicy.PauseAtFull -> R.string.dashboard_policy_pause_at_full.toCaString()
     is ChargePolicy.FixedLimit -> R.string.dashboard_policy_fixed.toCaString(percent)
 }
 
@@ -537,6 +573,12 @@ private fun DashboardScreenPreview() = PreviewWrapper {
                 device = DeviceInfo("Google", "Pixel 8", 36, "preview"),
                 adapterName = "Pixel Charge Control".toCaString(),
                 adapterId = "pixel",
+                supportedPolicies = listOf(
+                    ChargePolicy.FixedLimit(80),
+                    ChargePolicy.Adaptive,
+                    ChargePolicy.Unrestricted,
+                ),
+                reconnectSupported = true,
                 controlEnabled = true,
                 access = AccessSnapshot(
                     direct = BackendStatus(
@@ -551,6 +593,61 @@ private fun DashboardScreenPreview() = PreviewWrapper {
                     ),
                 ),
                 observation = ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.SHIZUKU),
+            ),
+        ),
+        adbCommand = "adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS",
+        onRefresh = {},
+        onSettings = {},
+        onStartFull = {},
+        onRestore = {},
+        onApply = {},
+        onQuickFullChargeChange = {},
+        onNativeSettings = {},
+        onOpenShizuku = {},
+        onAllowShizuku = {},
+        onGrantWss = {},
+        onCopyAdb = {},
+        onPrepareSupportReport = {},
+        onCopySupportReport = {},
+        onOpenSupportIssue = {},
+        onEmailSupport = {},
+        onHelp = {},
+    )
+}
+
+@AmplyPreview
+@Composable
+private fun DashboardScreenSamsungPreview() = PreviewWrapper {
+    DashboardScreen(
+        state = DashboardUiState(
+            onboardingComplete = true,
+            charging = ChargingState(
+                device = DeviceInfo("samsung", "SM-X210", 36, "preview", oneUiVersion = 80000, hasProtectBattery = true),
+                adapterName = "Samsung battery protection".toCaString(),
+                adapterId = "samsung-oneui8-v1",
+                supportedPolicies = listOf(
+                    ChargePolicy.FixedLimit(80),
+                    ChargePolicy.FixedLimit(85),
+                    ChargePolicy.FixedLimit(90),
+                    ChargePolicy.FixedLimit(95),
+                    ChargePolicy.PauseAtFull,
+                    ChargePolicy.Unrestricted,
+                ),
+                reconnectSupported = false,
+                controlEnabled = true,
+                access = AccessSnapshot(
+                    direct = BackendStatus(
+                        available = true,
+                        granted = true,
+                        detail = "WRITE_SECURE_SETTINGS granted".toCaString(),
+                    ),
+                    shizuku = BackendStatus(
+                        available = false,
+                        granted = false,
+                        detail = "Shizuku not installed".toCaString(),
+                    ),
+                ),
+                observation = ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.DIRECT_WSS),
             ),
         ),
         adbCommand = "adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS",

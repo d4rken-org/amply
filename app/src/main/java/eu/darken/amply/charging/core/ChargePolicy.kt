@@ -8,6 +8,9 @@ sealed interface ChargePolicy {
     val stableId: String
     val label: CaString
 
+    /** Whether the battery reaches 100% under this policy (no cap below full). */
+    val allowsFullCharge: Boolean get() = this == Unrestricted || this == PauseAtFull
+
     data object Unrestricted : ChargePolicy {
         override val stableId = "unrestricted"
         override val label = R.string.charging_policy_unrestricted_label.toCaString()
@@ -16,6 +19,12 @@ sealed interface ChargePolicy {
     data object Adaptive : ChargePolicy {
         override val stableId = "adaptive"
         override val label = R.string.charging_policy_adaptive_label.toCaString()
+    }
+
+    /** Charges to 100%, then the OEM pauses charging and tops up in a hysteresis band (e.g. Samsung "Standard"). */
+    data object PauseAtFull : ChargePolicy {
+        override val stableId = "pause_at_full"
+        override val label = R.string.charging_policy_pause_at_full_label.toCaString()
     }
 
     data class FixedLimit(val percent: Int) : ChargePolicy {
@@ -31,6 +40,7 @@ sealed interface ChargePolicy {
         fun fromStableId(value: String?): ChargePolicy? = when {
             value == Unrestricted.stableId -> Unrestricted
             value == Adaptive.stableId -> Adaptive
+            value == PauseAtFull.stableId -> PauseAtFull
             value?.startsWith("fixed:") == true -> value.substringAfter(':').toIntOrNull()?.let {
                 runCatching { FixedLimit(it) }.getOrNull()
             }

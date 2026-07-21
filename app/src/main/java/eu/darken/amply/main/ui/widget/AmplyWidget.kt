@@ -120,7 +120,7 @@ class AmplyWidget : GlanceAppWidget() {
                 val buttonText = TextStyle(fontSize = 12.sp)
                 Row(modifier = GlanceModifier.fillMaxWidth().padding(top = 10.dp)) {
                     Button(
-                        text = context.getString(R.string.widget_button_protect),
+                        text = protectButtonLabel(context, repo.currentAdapter()?.defaultProtectivePolicy),
                         onClick = actionRunCallback<ProtectAction>(),
                         modifier = GlanceModifier.defaultWeight(),
                         style = buttonText,
@@ -177,10 +177,17 @@ private fun statusLine(
     return widgetLabel(context, state.observation.policyOrNull() ?: requestedTarget)
 }
 
+/** "∞ <limit>" — the adapter's protective default, e.g. ∞80% on Pixel, ∞85% on legacy Samsung. */
+private fun protectButtonLabel(context: Context, policy: ChargePolicy?): String = when (policy) {
+    is ChargePolicy.FixedLimit -> context.getString(R.string.widget_button_protect_fixed, policy.percent)
+    else -> context.getString(R.string.widget_button_protect)
+}
+
 private fun widgetLabel(context: Context, policy: ChargePolicy?): String = when (policy) {
     is ChargePolicy.FixedLimit -> context.getString(R.string.widget_label_limited, policy.percent)
     ChargePolicy.Unrestricted -> context.getString(R.string.widget_label_unlimited)
     ChargePolicy.Adaptive -> context.getString(R.string.widget_label_adaptive)
+    ChargePolicy.PauseAtFull -> context.getString(R.string.widget_label_pause_at_full)
     null -> context.getString(R.string.widget_label_tap)
 }
 
@@ -197,11 +204,17 @@ interface AmplyWidgetEntryPoint {
     fun chargingPreferences(): ChargingPreferences
 }
 
-/** "∞ 80%" — set a persistent 80% limit (ends any one-time session and applies 80% atomically). */
+/** "∞ <limit>" — set the adapter's default protective limit persistently (ends any one-time session). */
 @Keep
 class ProtectAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
-        setPersistentOrOpen(context, ChargePolicy.FixedLimit(80))
+        val entryPoint = EntryPointAccessors.fromApplication(
+            context.applicationContext,
+            AmplyWidgetEntryPoint::class.java,
+        )
+        val policy = entryPoint.chargingRepository().currentAdapter()?.defaultProtectivePolicy
+            ?: ChargePolicy.FixedLimit(80)
+        setPersistentOrOpen(context, policy)
     }
 }
 
@@ -232,13 +245,13 @@ class FullChargeAction : ActionCallback {
                 openApp(context, false)
                 return
             }
-            // A once-session is meaningless when the persistent policy is already Unrestricted (it would
-            // later "restore" down to the protective baseline). Prefer the current observation and only fall
-            // back to the last request when nothing can be observed, so a native change away from unrestricted
-            // still lets the once-session start.
+            // A once-session is meaningless when the battery already reaches 100% (Unrestricted, or a
+            // pause-at-full mode). Prefer the current observation and only fall back to the last request
+            // when nothing can be observed, so a native change away from full-charging still lets the
+            // once-session start. The manager re-checks this centrally; here it just avoids a service start.
             val currentPolicy = state.observation.policyOrNull()
                 ?: entryPoint.chargingPreferences().lastRequestedNow()
-            if (currentPolicy == ChargePolicy.Unrestricted) {
+            if (currentPolicy?.allowsFullCharge == true) {
                 openApp(context, false)
                 return
             }

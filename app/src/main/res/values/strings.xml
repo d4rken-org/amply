@@ -48,7 +48,7 @@
     <string name="onboarding_continue_action">Get started</string>
     <string name="onboarding_caveats_title">Before you start</string>
     <string name="onboarding_caveat_support_title">Support grows device by device</string>
-    <string name="onboarding_caveat_support_body">Charge control is mapped one device at a time. Right now, direct control works on Pixel 6a and newer phones running Android 15 or later. On other devices, Amply explains why control is unavailable, and where a device report can help expand support, the dashboard lets you send one.</string>
+    <string name="onboarding_caveat_support_body">Charge control is mapped one device at a time. Right now, direct control works on Pixel 6a and newer phones running Android 15 or later, and on Samsung devices with verified One UI versions. On other devices, Amply explains why control is unavailable, and where a device report can help expand support, the dashboard lets you send one.</string>
     <string name="onboarding_caveat_setup_title">One-time setup on supported devices</string>
     <string name="onboarding_caveat_setup_body">Changing the charge policy requires a permission that apps cannot grant themselves. You grant it once: either run a single command from a computer over ADB, or use the Shizuku app on this phone. If your device is supported, the dashboard walks you through both options.</string>
     <string name="onboarding_caveat_restore_title">Protection returns on its own</string>
@@ -59,6 +59,7 @@
     <string name="charging_policy_unrestricted_label">Unrestricted (100%)</string>
     <string name="charging_policy_adaptive_label">Adaptive charging</string>
     <string name="charging_policy_fixed_label">Limit to %1$d%%</string>
+    <string name="charging_policy_pause_at_full_label">Pause at full charge</string>
 
     <!-- Charging state messages (dashboard status line) -->
     <string name="charging_message_setup_required">Setup required</string>
@@ -80,6 +81,7 @@
     <string name="charging_reason_policy_unsupported">%1$s is not supported by %2$s</string>
     <string name="charging_reason_settings_unreadable">Settings are not readable</string>
     <string name="charging_reason_values_unrecognized">Unrecognized Pixel values: %1$s=%2$s, %3$s=%4$s</string>
+    <string name="charging_reason_value_unrecognized">Unrecognized value: %1$s=%2$s</string>
     <string name="charging_reason_hw_normal">Charging hardware is normal; without Shizuku, Amply cannot distinguish unrestricted from inactive adaptive charging</string>
     <string name="charging_reason_hw_too_cold">Charging is currently temperature-limited because the battery is too cold</string>
     <string name="charging_reason_hw_too_hot">Charging is currently temperature-limited because the battery is too hot</string>
@@ -91,6 +93,7 @@
     <string name="adapter_name_unsupported">Unsupported device</string>
     <string name="adapter_name_pixel">Google Pixel charging optimization</string>
     <string name="adapter_name_samsung">Samsung (diagnostics)</string>
+    <string name="adapter_name_samsung_protection">Samsung battery protection</string>
     <string name="adapter_name_oneplus">OnePlus/Oppo (diagnostics)</string>
 
     <!-- Adapter support detail (why a device is or isn\'t controllable) -->
@@ -102,6 +105,10 @@
     <string name="adapter_detail_disabled_build">Adapter disabled in this build</string>
     <string name="adapter_detail_pixel_ready">Supported Pixel capability detected; charging hardware may take about 15 seconds to react</string>
     <string name="adapter_detail_lab_diagnostics">Detected for diagnostics only; no unverified writes are exposed</string>
+    <string name="adapter_detail_requires_samsung">Requires a Samsung device on a verified One UI version</string>
+    <string name="adapter_detail_samsung_no_key">The battery-protection setting is not present on this device</string>
+    <string name="adapter_detail_samsung_secondary_user">Battery protection is device-wide; control is limited to the main user</string>
+    <string name="adapter_detail_samsung_ready">Samsung battery protection detected; changes apply immediately</string>
     <string name="adapter_detail_none">No charging adapter is known for this device</string>
 
     <!-- Access backend detail + summary labels -->
@@ -128,10 +135,11 @@
     <string name="dashboard_policy_adaptive">Adaptive charging</string>
     <string name="dashboard_policy_full">100% charging</string>
     <string name="dashboard_policy_fixed">%1$d%% limit</string>
+    <string name="dashboard_policy_pause_at_full">Pause at full</string>
 
     <!-- Diagnostics status line -->
     <string name="diagnostics_status_ready">Ready to capture a baseline.</string>
-    <string name="diagnostics_status_baseline_captured">Baseline captured (%1$d settings). Change one Pixel setting, then compare.</string>
+    <string name="diagnostics_status_baseline_captured">Baseline captured (%1$d settings). Change one native setting, then compare.</string>
     <string name="diagnostics_status_capture_failed">Baseline capture failed</string>
     <string name="diagnostics_status_compare_complete">Comparison complete. Review the redacted changes below.</string>
     <string name="diagnostics_status_compare_failed">Comparison failed</string>
@@ -243,10 +251,10 @@
     <!-- Diagnostics screen (static) -->
     <string name="diagnostics_category_access">Access</string>
     <string name="diagnostics_category_discovery">Setting discovery</string>
-    <string name="diagnostics_discovery_hint">Use this developer tool to discover which Android setting changes when you change a native Pixel option.</string>
+    <string name="diagnostics_discovery_hint">Use this developer tool to discover which Android setting changes when you change a native OEM option.</string>
     <string name="diagnostics_step_capture_title">1. Capture baseline</string>
     <string name="diagnostics_step_capture_subtitle">Snapshot secure, global, and system settings</string>
-    <string name="diagnostics_step_change_title">2. Change the Pixel setting</string>
+    <string name="diagnostics_step_change_title">2. Change the native setting</string>
     <string name="diagnostics_step_change_subtitle">Open native charging settings and change one option</string>
     <string name="diagnostics_step_compare_title">3. Compare changes</string>
     <string name="diagnostics_step_compare_subtitle">Create a redacted difference from the baseline</string>
@@ -271,11 +279,12 @@
     <string name="dashboard_fullcharge_idle_body" formatted="false">Temporarily allow 100%, then restore your protective policy automatically.</string>
     <string name="dashboard_fullcharge_restore">Restore limit now</string>
     <string name="dashboard_fullcharge_start" formatted="false">Charge to 100% once</string>
-    <string name="dashboard_policy_choice_80" formatted="false">80%</string>
+    <string name="dashboard_policy_choice_fixed">%1$d%%</string>
     <string name="dashboard_policy_choice_adaptive">Adaptive</string>
     <string name="dashboard_policy_choice_100" formatted="false">100%</string>
+    <string name="dashboard_policy_choice_pause">Pause</string>
     <string name="dashboard_policy_card_title">Charging policy</string>
-    <string name="dashboard_pixel_settings">Pixel settings</string>
+    <string name="dashboard_native_settings">System settings</string>
     <string name="dashboard_reconnect_title" formatted="false">Reconnect for 100%</string>
     <string name="dashboard_reconnect_body_on" formatted="false">At the 80% limit, unplug and reconnect within 10 seconds. An ongoing notification keeps the gesture reliable.</string>
     <string name="dashboard_reconnect_body_off" formatted="false">Optionally use a quick unplug/replug at the 80% limit to charge fully once.</string>
@@ -288,6 +297,7 @@
     <!-- Widget (in-widget text) -->
     <string name="widget_brand_status">Amply · %1$s</string>
     <string name="widget_button_protect" formatted="false">∞80%</string>
+    <string name="widget_button_protect_fixed">∞%1$d%%</string>
     <string name="widget_button_always_full" formatted="false">∞100%</string>
     <string name="widget_button_full_once" formatted="false">1×100%</string>
     <string name="widget_status_charging_waiting" formatted="false">Charging to 100% · waiting…</string>
@@ -296,5 +306,6 @@
     <string name="widget_label_limited">Limited to %1$d%%</string>
     <string name="widget_label_unlimited" formatted="false">Unlimited (100%)</string>
     <string name="widget_label_adaptive">Adaptive charging</string>
+    <string name="widget_label_pause_at_full">Pause at full charge</string>
     <string name="widget_label_tap">Tap to set a limit</string>
 </resources>

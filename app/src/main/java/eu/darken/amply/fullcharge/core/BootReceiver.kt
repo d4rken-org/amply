@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.ContextCompat
+import eu.darken.amply.charging.core.adapter.AdapterRegistry
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,6 +15,7 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class BootReceiver : BroadcastReceiver() {
     @Inject lateinit var sessionStore: FullChargeStore
+    @Inject lateinit var adapterRegistry: AdapterRegistry
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
@@ -25,7 +27,8 @@ class BootReceiver : BroadcastReceiver() {
                 val action = BootRecoveryFlow.bootAction(
                     sessionExists = sessionStore.currentSession() != null,
                     pendingRecovery = sessionStore.pendingRecoveryTarget() != null,
-                    gestureEnabled = sessionStore.isQuickFullChargeEnabled(),
+                    gestureEnabled = sessionStore.isQuickFullChargeEnabled() &&
+                        adapterRegistry.select().adapter?.reconnectGestureSupported == true,
                 )
                 if (action != null) {
                     ContextCompat.startForegroundService(

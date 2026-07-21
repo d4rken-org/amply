@@ -15,7 +15,9 @@ class ContributionEligibilityTest {
     private val registry = AdapterRegistry(
         context = context,
         pixel = PixelChargingAdapter(),
-        samsung = SamsungLabAdapter(),
+        samsungModern = SamsungModernChargingAdapter(),
+        samsungLegacy = SamsungLegacyChargingAdapter(),
+        samsungLab = SamsungLabAdapter(),
         onePlus = OnePlusLabAdapter(),
     )
 
@@ -37,6 +39,7 @@ class ContributionEligibilityTest {
 
     @Test
     fun `samsung and oneplus diagnostics-only adapters want contributions`() {
+        // No oneUiVersion → the live Samsung adapters don't match; the lab adapter handles it.
         registry.select(device("Samsung")).support.contributionWanted shouldBe true
         registry.select(device("OnePlus")).support.contributionWanted shouldBe true
         registry.select(device("Oppo")).support.contributionWanted shouldBe true

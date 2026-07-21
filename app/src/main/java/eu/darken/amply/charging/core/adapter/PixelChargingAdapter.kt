@@ -28,6 +28,7 @@ class PixelChargingAdapter @Inject constructor() : ChargingAdapter {
         ChargePolicy.Adaptive,
         ChargePolicy.Unrestricted,
     )
+    override val reconnectGestureSupported = true
     override val observedSettingUris
         get() = listOf(
             Settings.Secure.getUriFor(KEY_MODE),
@@ -110,6 +111,7 @@ class PixelChargingAdapter @Inject constructor() : ChargingAdapter {
                 SettingMutation(SettingNamespace.SECURE, KEY_MODE, "0"),
                 SettingMutation(SettingNamespace.SECURE, KEY_ADAPTIVE, "1"),
             )
+            ChargePolicy.PauseAtFull -> return false
         }
         return changes.all { backend.write(it) }
     }

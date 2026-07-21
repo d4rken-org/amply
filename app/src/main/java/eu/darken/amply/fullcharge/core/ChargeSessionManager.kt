@@ -27,14 +27,28 @@ class ChargeSessionManager @Inject constructor(
                 message = "Temporary session already active",
             )
         }
+        val adapter = repository.currentAdapter()
+        val overridePolicy = adapter?.sessionOverridePolicy ?: ChargePolicy.Unrestricted
         val current = repository.refresh().observation.policyOrNull()
-        val restorePolicy = current
-            ?.takeUnless { it == ChargePolicy.Unrestricted }
-            ?: preferences.protectivePolicyNow()
+        val decision = SessionStartDecider.decide(
+            current = current,
+            overridePolicy = overridePolicy,
+            storedProtective = preferences.protectivePolicyNow(),
+            supportedPolicies = adapter?.supportedPolicies.orEmpty(),
+            defaultProtective = adapter?.defaultProtectivePolicy ?: ChargePolicy.FixedLimit(80),
+        )
+        if (decision is SessionStartDecision.AlreadyChargesFull) {
+            return@withLock ApplyResult(
+                success = false,
+                observation = repository.state.value.observation,
+                message = "Charging already reaches 100%; no temporary session needed",
+            )
+        }
+        val restorePolicy = (decision as SessionStartDecision.Start).restorePolicy
 
         // Persist recovery state before removing the limit.
         sessionStore.startSession(restorePolicy, nowMillis)
-        val result = repository.applyTemporary(ChargePolicy.Unrestricted)
+        val result = repository.applyTemporary(overridePolicy)
         if (result.success) {
             result
         } else {

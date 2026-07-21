@@ -8,6 +8,8 @@ import eu.darken.amply.charging.core.access.AccessSnapshot
 import eu.darken.amply.charging.core.access.shizuku.ShizukuController
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
 import eu.darken.amply.charging.core.adapter.AdapterSelection
+import eu.darken.amply.charging.core.adapter.ChargingAdapter
+import eu.darken.amply.charging.core.adapter.VerificationStrategy
 import eu.darken.amply.charging.core.ChargingPreferences
 import eu.darken.amply.common.ca.CaString
 import eu.darken.amply.common.ca.caString
@@ -30,6 +32,8 @@ data class ChargingState(
     val device: DeviceInfo = DeviceInfo.current(),
     val adapterName: CaString = R.string.adapter_name_detecting.toCaString(),
     val adapterId: String? = null,
+    val supportedPolicies: List<ChargePolicy> = emptyList(),
+    val reconnectSupported: Boolean = false,
     val controlEnabled: Boolean = false,
     val contributionWanted: Boolean = false,
     val access: AccessSnapshot? = null,
@@ -88,6 +92,16 @@ class ChargingRepository @Inject constructor(
     }
 
     fun nativeSettingsIntent() = registry.select().adapter?.nativeSettingsIntent(context)
+
+    fun currentAdapter(): ChargingAdapter? = registry.select().adapter
+
+    /** Configured-settings readback, only for adapters whose writes are synchronously verifiable. */
+    suspend fun syncReadback(): ChargeObservation? {
+        val adapter = registry.select().adapter ?: return null
+        if (adapter.verification != VerificationStrategy.SYNC_READBACK) return null
+        val backend = accessResolver.readBackend() ?: return null
+        return runCatching { adapter.read(backend) }.getOrNull()
+    }
 
     fun shizukuManagerPackage(): String? = shizukuController.managerPackage()
 
@@ -160,20 +174,24 @@ class ChargingRepository @Inject constructor(
         withContext(NonCancellable) { preferences.recordRequested(policy, updateProtective, now) }
         return try {
             val access = accessResolver.snapshot()
-            val observation = if (access.shizuku.ready) {
-                when (val read = adapter.read(accessResolver.shizuku)) {
-                    is ChargeObservation.Verified -> read
-                    else -> ChargeObservation.LastRequested(policy)
-                }
-            } else {
-                ChargeObservation.LastRequested(policy)
+            val verifyBackend = when (adapter.verification) {
+                // The configured values are directly readable; any read backend verifies.
+                VerificationStrategy.SYNC_READBACK -> accessResolver.readBackend()
+                VerificationStrategy.ASYNC_HARDWARE -> if (access.shizuku.ready) accessResolver.shizuku else null
             }
-            // Suppress the settling cue for a no-op re-apply (e.g. re-selecting 80% while it is already
-            // holding): the hardware already reports the target, so there is no transition to wait for.
-            val hwConfirmsTarget = (adapter.readHardware(context) as? ChargeObservation.Verified)?.let {
-                it.backend == BackendKind.BATTERY_HARDWARE && it.policy == policy
-            } ?: false
-            val pending = if (hwConfirmsTarget) null else PendingRequest(policy, now)
+            val observation = verifyBackend?.let { adapter.read(it) } as? ChargeObservation.Verified
+                ?: ChargeObservation.LastRequested(policy)
+            // Suppress the settling cue when there is no transition to wait for: sync-readback adapters
+            // apply immediately, and async hardware may already report the target on a no-op re-apply.
+            val settled = when (adapter.verification) {
+                VerificationStrategy.SYNC_READBACK ->
+                    (observation as? ChargeObservation.Verified)?.policy == policy
+                VerificationStrategy.ASYNC_HARDWARE ->
+                    (adapter.readHardware(context) as? ChargeObservation.Verified)?.let {
+                        it.backend == BackendKind.BATTERY_HARDWARE && it.policy == policy
+                    } ?: false
+            }
+            val pending = if (settled) null else PendingRequest(policy, now)
             val messageRes = if (observation is ChargeObservation.Verified) {
                 R.string.charging_message_verified
             } else {
@@ -247,11 +265,14 @@ class ChargingRepository @Inject constructor(
             now = System.currentTimeMillis(),
             observation = observation,
             hardware = adapter?.readHardware(context),
+            verification = adapter?.verification ?: VerificationStrategy.ASYNC_HARDWARE,
         )
         return ChargingState(
             device = DeviceInfo.current(context),
             adapterName = adapter?.displayName ?: R.string.adapter_name_unsupported.toCaString(),
             adapterId = adapter?.id,
+            supportedPolicies = adapter?.supportedPolicies.orEmpty(),
+            reconnectSupported = adapter?.reconnectGestureSupported == true,
             controlEnabled = selection.support.controlEnabled,
             contributionWanted = selection.support.contributionWanted,
             access = access,
@@ -286,13 +307,20 @@ class ChargingRepository @Inject constructor(
         now: Long,
         observation: ChargeObservation,
         hardware: ChargeObservation?,
+        verification: VerificationStrategy,
     ): PendingRequest? {
         if (reqPolicy == null || reqAt <= 0L) return null
         if (now - reqAt !in 0 until SETTLING_WINDOW_MILLIS) return null
         if (observation is ChargeObservation.Unsupported || observation is ChargeObservation.NeedsSetup) return null
-        val confirmed = hardware is ChargeObservation.Verified &&
-            hardware.backend == BackendKind.BATTERY_HARDWARE &&
-            hardware.policy == reqPolicy
+        val confirmed = when (verification) {
+            // Settings readback IS confirmation when writes apply synchronously.
+            VerificationStrategy.SYNC_READBACK ->
+                observation is ChargeObservation.Verified && observation.policy == reqPolicy
+            VerificationStrategy.ASYNC_HARDWARE ->
+                hardware is ChargeObservation.Verified &&
+                    hardware.backend == BackendKind.BATTERY_HARDWARE &&
+                    hardware.policy == reqPolicy
+        }
         if (confirmed) return null
         return PendingRequest(reqPolicy, reqAt)
     }

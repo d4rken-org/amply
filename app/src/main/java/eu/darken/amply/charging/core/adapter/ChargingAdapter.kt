@@ -22,11 +22,31 @@ data class AdapterSupport(
     val contributionWanted: Boolean = false,
 )
 
+/** How an adapter's applied configuration can be confirmed. */
+enum class VerificationStrategy {
+    /** Writes take effect asynchronously; only a hardware signal proves the target is active (Pixel). */
+    ASYNC_HARDWARE,
+
+    /** Writes apply immediately and the configured values can be read back directly (Samsung global keys). */
+    SYNC_READBACK,
+}
+
 interface ChargingAdapter {
     val id: String
     val displayName: CaString
     val supportedPolicies: List<ChargePolicy>
     val observedSettingUris: List<Uri> get() = emptyList()
+
+    /** Policy a temporary full-charge session writes while it is active. */
+    val sessionOverridePolicy: ChargePolicy get() = ChargePolicy.Unrestricted
+
+    /** Protective fallback when no restorable policy can be observed or the stored one is unsupported. */
+    val defaultProtectivePolicy: ChargePolicy get() = ChargePolicy.FixedLimit(80)
+
+    val verification: VerificationStrategy get() = VerificationStrategy.ASYNC_HARDWARE
+
+    /** Whether the powered→unpowered reconnect gesture's hardware preconditions exist on this adapter. */
+    val reconnectGestureSupported: Boolean get() = false
 
     fun probe(device: DeviceInfo): AdapterSupport
     fun readHardware(context: Context): ChargeObservation? = null

@@ -15,6 +15,9 @@
         <intent>
             <action android:name="android.settings.BATTERY_SAVER_SETTINGS" />
         </intent>
+        <intent>
+            <action android:name="com.samsung.android.sm.ACTION_BATTERY_PROTECTION" />
+        </intent>
     </queries>
 
     <application

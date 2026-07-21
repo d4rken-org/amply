@@ -32,9 +32,13 @@ for get / put / WSS grant / diagnostic snapshots. Hard rules:
   string and pass it to a shell.
 - Writes require a valid **namespace**, valid key/value **syntax**, and an explicit **key allowlist**. Do not widen
   the allowlist without an explicit, reviewed reason.
-- Samsung / OnePlus candidate keys are present but **must not** be invoked by production code.
+- The Samsung keys (`global protect_battery`, `global battery_protection_threshold`) are **live**: the Samsung
+  adapters invoke them on gated devices (see Capability Gates). OnePlus candidate keys remain present but **must
+  not** be invoked by production code.
 
-## Capability Gate
+## Capability Gates
+
+### Pixel
 
 Direct Pixel control requires **all** of:
 
@@ -47,6 +51,17 @@ Direct Pixel control requires **all** of:
 This runtime gate deliberately avoids both a brittle exact-model allowlist and an unsafe version-only match. Devices
 that fail the gate remain **diagnostics-only**. Do not loosen or short-circuit the gate to "make it work" on an
 unqualified device — record the device in `docs/PIXEL_SPIKE_RESULTS.md` instead.
+
+### Samsung
+
+Samsung control requires **all** of: Samsung manufacturer, a **verified One UI range** (One UI 8.x for the
+multi-mode adapter; One UI 4.x/5.x for the legacy toggle adapter — read from `ro.build.version.oneui`), a present
+`global protect_battery` key, and the **system user** (the keys are device-wide; sessions are per-user). One UI
+6.x/7.x and 9.x+ are unverified and fall through to the diagnostics-only lab adapter — do not widen the ranges
+without a qualified device; record results in `docs/SAMSUNG_SPIKE_RESULTS.md`.
+
+Unlike Pixel's hidden secure settings, Samsung's `global` keys are world-readable: configured-state verification
+works without Shizuku, and writes apply synchronously (no Settings-Intelligence-style async middleman).
 
 ## Foreground Service Requirement
 

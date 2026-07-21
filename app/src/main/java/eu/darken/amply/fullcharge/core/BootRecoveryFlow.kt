@@ -33,6 +33,9 @@ class BootRecoveryFlow(private val hooks: Hooks) {
         fun batterySnapshot(): BatterySnapshot?
         fun hardwareObservation(snapshot: BatterySnapshot): ChargeObservation?
 
+        /** Configured-settings readback, non-null only for synchronously verifiable adapters. */
+        suspend fun settingsObservation(): ChargeObservation? = null
+
         /** [writeFailed] is true when a settings write failed (access problem), false when the hardware never confirmed. */
         fun notifyFailure(writeFailed: Boolean)
         suspend fun tick()
@@ -79,6 +82,7 @@ class BootRecoveryFlow(private val hooks: Hooks) {
             val now = hooks.elapsedRealtime()
             val snapshot = hooks.batterySnapshot()
             val observation = snapshot?.let { hooks.hardwareObservation(it) }
+            val settingsRead = hooks.settingsObservation()
             val decision = BootRecoveryEngine.decide(
                 target = target,
                 plugged = snapshot?.plugged ?: false,
@@ -87,6 +91,7 @@ class BootRecoveryFlow(private val hooks: Hooks) {
                 sinceLastWriteMillis = now - lastWriteAt,
                 totalElapsedMillis = now - startedAt,
                 rewriteCount = rewrites,
+                settingsConfirmsTarget = (settingsRead as? ChargeObservation.Verified)?.policy == target,
             )
             when (decision) {
                 RecoveryDecision.WAIT -> Unit

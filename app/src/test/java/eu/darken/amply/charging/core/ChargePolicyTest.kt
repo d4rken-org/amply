@@ -10,9 +10,18 @@ class ChargePolicyTest {
             ChargePolicy.FixedLimit(80),
             ChargePolicy.Adaptive,
             ChargePolicy.Unrestricted,
+            ChargePolicy.PauseAtFull,
         ).forEach { policy ->
             ChargePolicy.fromStableId(policy.stableId) shouldBe policy
         }
+    }
+
+    @Test
+    fun `only full-reaching policies allow a full charge`() {
+        ChargePolicy.Unrestricted.allowsFullCharge shouldBe true
+        ChargePolicy.PauseAtFull.allowsFullCharge shouldBe true
+        ChargePolicy.Adaptive.allowsFullCharge shouldBe false
+        ChargePolicy.FixedLimit(95).allowsFullCharge shouldBe false
     }
 
     @Test

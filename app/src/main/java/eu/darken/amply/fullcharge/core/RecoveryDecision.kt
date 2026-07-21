@@ -39,7 +39,11 @@ object BootRecoveryEngine {
         sinceLastWriteMillis: Long,
         totalElapsedMillis: Long,
         rewriteCount: Int,
+        settingsConfirmsTarget: Boolean = false,
     ): RecoveryDecision {
+        // Sync-readback adapters (Samsung): a matching configured-settings readback IS convergence,
+        // no observer race exists and no hardware signal or nudge re-write is needed.
+        if (settingsConfirmsTarget) return RecoveryDecision.DONE_OK
         val hardwareRead = (observation as? ChargeObservation.Verified)
             ?.takeIf { it.backend == BackendKind.BATTERY_HARDWARE }
         if (hardwareRead?.policy == target) return RecoveryDecision.DONE_OK

@@ -152,8 +152,8 @@ class ChargeSessionService : Service() {
             beginOrResume()
             return
         }
-        if (!fullChargeStore.isQuickFullChargeEnabled()) {
-            log(TAG) { "Reconnect gesture disabled; stopping monitor" }
+        if (!fullChargeStore.isQuickFullChargeEnabled() || !reconnectGestureAvailable()) {
+            log(TAG) { "Reconnect gesture disabled or unsupported; stopping monitor" }
             stopMonitoring()
             return
         }
@@ -210,7 +210,7 @@ class ChargeSessionService : Service() {
             return
         }
 
-        if (!fullChargeStore.isQuickFullChargeEnabled()) {
+        if (!fullChargeStore.isQuickFullChargeEnabled() || !reconnectGestureAvailable()) {
             stopMonitoring()
             return
         }
@@ -315,6 +315,8 @@ class ChargeSessionService : Service() {
         override fun hardwareObservation(snapshot: BatterySnapshot) =
             adapterRegistry.select().adapter?.decodeHardware(snapshot.chargingState, snapshot.plugged)
 
+        override suspend fun settingsObservation() = repository.syncReadback()
+
         override fun notifyFailure(writeFailed: Boolean) = SessionNotifications.showRecovery(
             this@ChargeSessionService,
             if (writeFailed) R.string.recovery_notification_body
@@ -371,6 +373,11 @@ class ChargeSessionService : Service() {
         SurfaceUpdater.updateNow(this)
         continueGestureOrStop()
     }
+
+    // The gesture's arming preconditions (hardware charging-state 4) are Pixel-specific; on
+    // adapters without that signal the monitor would never arm and must not run.
+    private fun reconnectGestureAvailable() =
+        adapterRegistry.select().adapter?.reconnectGestureSupported == true
 
     private fun stopMonitoring() {
         monitorReady = false

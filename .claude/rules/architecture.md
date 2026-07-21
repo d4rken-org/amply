@@ -31,7 +31,9 @@ Feature-specific preference facades live with their owning feature but share the
 
 ## Data Flow
 
-- `AdapterRegistry` selects an OEM adapter from **immutable device information**.
+- `AdapterRegistry` selects an OEM adapter from **immutable device information**. Live adapters declare a
+  capability surface (`sessionOverridePolicy`, `defaultProtectivePolicy`, `verification`,
+  `reconnectGestureSupported`) that the session/recovery/UI layers consume instead of hardcoding Pixel behavior.
 - `AccessResolver` independently probes direct WSS and Shizuku.
 - `ChargingRepository` selects the strongest backend per operation: **Shizuku for reads, direct WSS for durable
   writes, then Shizuku for verification** when both are available.
@@ -46,6 +48,23 @@ long-life (`4`) verifies the fixed limit is active, adaptive (`5`) verifies an a
 sticky broadcast keeps its last powered value, so hardware state is never treated as verification — display falls back
 to the last request. Normal (`1`) stays unknown without Shizuku (inactive adaptive vs. unrestricted are
 indistinguishable).
+
+## Samsung Adapters
+
+Two live adapters, gated by `ro.build.version.oneui` ranges plus `protect_battery` presence plus system user
+(all in world-readable `global` namespace; only writes need WSS):
+
+- **Modern (One UI 8.x)**: `protect_battery` 0=off / 1=Maximum / 3=Standard(pause at 100%, resume 95%), plus
+  `battery_protection_threshold` 80|85|90|95 (absent = 80, only valid ticks decode; malformed → Unknown).
+  Policies: FixedLimit(80/85/90/95), PauseAtFull, Unrestricted. Session override = **PauseAtFull** (reaches 100%
+  while keeping Samsung's own safety net). Threshold is written before mode.
+- **Legacy (One UI 4.x/5.x)**: `protect_battery` 0/1 toggle, fixed 85% cap. Policies: FixedLimit(85),
+  Unrestricted. Session override = Unrestricted.
+
+Writes apply **synchronously** (`VerificationStrategy.SYNC_READBACK`): `apply()` requires read-back equality, no
+pending-settle window, boot recovery converges on settings readback, and no reapply-inversion trick is needed.
+The reconnect gesture is Pixel-only (`reconnectGestureSupported`). One UI 6/7 and 9+ fall through to the
+diagnostics-only lab adapter. Ground truth: `docs/SAMSUNG_SPIKE_RESULTS.md`.
 
 ## Pixel Adapter
 
@@ -93,5 +112,5 @@ persistent low-priority notification is required because Android does not delive
   replace this runtime gate with an exact-model allowlist or a version-only check.
 - Shizuku installation is detected by resolving the owner of `ShizukuProvider.PERMISSION`, **not** a fixed package
   name — this recognizes renamed forks and hidden-package mode. Don't hardcode a package name.
-- Samsung / OnePlus candidate keys exist in the privileged layer for future lab adapters but **no production code
-  invokes them**. Don't wire them into shipping paths.
+- OnePlus candidate keys exist in the privileged layer for a future lab adapter but **no production code invokes
+  them**. Don't wire them into shipping paths. (Samsung keys are live — see Samsung Adapters.)

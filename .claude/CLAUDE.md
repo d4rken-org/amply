@@ -8,9 +8,11 @@ Amply is an **experimental Android controller for OEM battery charge-protection 
 temporarily allows a full charge, then restores the user's protective policy at 100%, on unplug, or at a safety
 timeout.
 
-The first control adapter targets **Pixel charging optimization**. Direct control is capability-gated to Pixel 6a and
-newer phones on Android 15+ when Google's charging-optimization controller is present. Other Pixels, Samsung, and
-OnePlus/Oppo remain diagnostics-only.
+Two control adapters exist. **Pixel charging optimization** is capability-gated to Pixel 6a and newer phones on
+Android 15+ when Google's charging-optimization controller is present. **Samsung battery protection** (global
+`protect_battery` keys) is gated to verified One UI generations — One UI 8 multi-mode, and the legacy One UI 4/5
+toggle — on the system user. Other Pixels, Samsung on unverified One UI versions (6/7, 9+), and OnePlus/Oppo remain
+diagnostics-only. See `docs/SAMSUNG_SPIKE_RESULTS.md` for the verified Samsung mapping.
 
 Package: `eu.darken.amply`. License: GPL-3.0-or-later. Status: pre-launch (`0.1.0-beta1`).
 
