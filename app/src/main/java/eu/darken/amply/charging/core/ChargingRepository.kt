@@ -18,6 +18,7 @@ import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -40,6 +41,9 @@ data class ChargingState(
     val observation: ChargeObservation = ChargeObservation.Unknown(R.string.charging_reason_loading.toCaString()),
     val pending: PendingRequest? = null,
     val busy: Boolean = false,
+    // Set only while a Shizuku-driven WRITE_SECURE_SETTINGS grant is in flight, so the setup card can
+    // show a progress cue on that specific action without conflating it with a policy apply (both busy).
+    val grantingWss: Boolean = false,
     val message: CaString? = null,
 )
 
@@ -83,12 +87,35 @@ class ChargingRepository @Inject constructor(
     }
 
     suspend fun grantWriteSecureSettings(): Boolean {
-        val result = runCatching { shizukuController.grantWriteSecureSettings() }.getOrDefault(false)
-        refresh(
-            (if (result) R.string.charging_message_wss_granted else R.string.charging_message_wss_failed)
-                .toCaString(),
-        )
-        return result
+        // Show the in-progress cue immediately, but deliberately WITHOUT holding operationMutex: the grant
+        // is a ~10s blocking pm grant and must not serialize ahead of a concurrent protective-policy
+        // restore/apply. The trailing refresh() still takes the lock to reconcile state.
+        mutableState.value = state.value.copy(busy = true, grantingWss = true, message = null)
+        try {
+            try {
+                // The AIDL grant is a blocking Binder transaction; keep it off the main thread to avoid an ANR.
+                withContext(Dispatchers.IO) { shizukuController.grantWriteSecureSettings() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Ignored: success is judged by the refreshed permission state below, not this call's
+                // boolean — pm grant can commit while its reply is lost.
+                log(TAG, Logging.Priority.WARN) { "Shizuku WSS grant call failed: ${e.message}" }
+            }
+            val granted = refresh().access?.direct?.ready == true
+            mutableState.value = state.value.copy(
+                message = (if (granted) R.string.charging_message_wss_granted else R.string.charging_message_wss_failed)
+                    .toCaString(),
+            )
+            return granted
+        } finally {
+            // refresh() clears these on the normal path; guarantee they never stick on this singleton under
+            // cancellation or a failed refresh. Non-suspending, so it is safe during coroutine teardown.
+            val current = state.value
+            if (current.busy || current.grantingWss) {
+                mutableState.value = current.copy(busy = false, grantingWss = false)
+            }
+        }
     }
 
     fun nativeSettingsIntent() = registry.select().adapter?.nativeSettingsIntent(context)

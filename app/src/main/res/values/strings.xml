@@ -52,7 +52,7 @@
     <string name="onboarding_caveat_setup_title">One-time setup on supported devices</string>
     <string name="onboarding_caveat_setup_body">Changing the charge policy requires a permission that apps cannot grant themselves. You grant it once: either run a single command from a computer over ADB, or use the Shizuku app on this phone. If your device is supported, the dashboard walks you through both options.</string>
     <string name="onboarding_caveat_restore_title">Protection returns on its own</string>
-    <string name="onboarding_caveat_restore_body">When you allow a one-time full charge, Amply restores your protective limit as soon as the battery is full, when you unplug, or after a safety timeout. This relies on Amply staying alive in the background. If the app gets force-stopped during a session, open it and restore the limit from the dashboard.</string>
+    <string name="onboarding_caveat_restore_body">When you allow a one-time full charge, Amply restores your protective limit as soon as the battery is full, when you unplug, or after a safety timeout. This relies on Amply staying alive in the background. If the app gets force-stopped during a session, opening Amply again resumes monitoring and restores the limit once it is due.</string>
     <string name="onboarding_page_progress">Page %1$d of %2$d</string>
 
     <!-- Charging policy labels -->
@@ -239,14 +239,16 @@
     <string name="setup_access_setup_title">Set up charge control</string>
     <string name="setup_access_ready_body">WRITE_SECURE_SETTINGS is granted.</string>
     <string name="setup_access_setup_body">Amply needs one durable Android permission to change the charge policy.</string>
-    <string name="setup_access_option_shizuku">Option 1 · Shizuku</string>
-    <string name="setup_access_shizuku_hint">Start Shizuku, allow Amply, then grant the durable permission.</string>
+    <string name="setup_access_option_shizuku">Option 1 · Shizuku (recommended)</string>
+    <string name="setup_access_shizuku_hint">With Shizuku, Amply can confirm the configured policy and run diagnostics — not just write it. Start or install Shizuku, allow Amply, then use it to grant the durable permission below.</string>
     <string name="setup_access_grant_shizuku">Grant permission with Shizuku</string>
+    <string name="setup_access_granting_shizuku">Granting…</string>
     <string name="setup_access_allow_shizuku">Allow Amply in Shizuku</string>
     <string name="setup_access_open_shizuku">Open Shizuku</string>
     <string name="setup_access_option_computer">Option 2 · Computer</string>
-    <string name="setup_access_adb_hint">Connect with ADB and run:</string>
+    <string name="setup_access_adb_hint">Grants durable control from a computer. Shizuku is still needed for diagnostics and reliable readback. Connect with ADB and run:</string>
     <string name="setup_access_copy_adb">Copy ADB command</string>
+    <string name="setup_access_adb_refresh_note">After it runs, tap Refresh in the top bar so Amply detects the permission.</string>
 
     <!-- Diagnostics screen (static) -->
     <string name="diagnostics_category_access">Access</string>
@@ -293,6 +295,7 @@
     <string name="dashboard_shizuku_allow">Allow access</string>
     <string name="dashboard_shizuku_open">Open Shizuku</string>
     <string name="dashboard_adb_copied">ADB command copied</string>
+    <string name="dashboard_wss_grant_failed_toast">Couldn\'t grant the permission via Shizuku. Make sure Amply is allowed in Shizuku.</string>
 
     <!-- Widget (in-widget text) -->
     <string name="widget_brand_status">Amply · %1$s</string>

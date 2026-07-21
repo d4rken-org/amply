@@ -52,7 +52,8 @@ class ChargeSessionService : Service() {
     private val commandChannel = Channel<Command>(Channel.UNLIMITED)
     private val quickGesture = QuickFullChargeGesture()
     private var monitorJob: Job? = null
-    private var recoveryJob: Job? = null
+    // Written under commandMutex, but read by the battery receiver/monitor loop outside it.
+    @Volatile private var recoveryJob: Job? = null
     @Volatile private var monitorReady = false
     private var settingObserverRegistered = false
     @Volatile private var restoring = false
@@ -175,6 +176,8 @@ class ChargeSessionService : Service() {
     }
 
     private suspend fun evaluateBattery(intent: Intent? = null) {
+        // An in-flight evaluation can outlive the quiesce in startRecovery; never race recovery.
+        if (recoveryJob?.isActive == true) return
         val battery = intent ?: registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val plugged = (battery?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
         val status = battery?.getIntExtra(
@@ -271,11 +274,19 @@ class ChargeSessionService : Service() {
                 target?.let { setPersistentPolicy(it) } ?: continueGestureOrStop()
             }
             ACTION_RECOVER -> startRecovery()
-            null -> when {
-                recoveryJob?.isActive == true -> Unit
-                fullChargeStore.pendingRecoveryTarget() != null -> startRecovery()
-                fullChargeStore.currentSession() != null -> beginOrResume()
-                else -> continueGestureOrStop()
+            // ACTION_CHECK (a foreground-launch nudge) shares the sticky-restart reconciliation:
+            // unlike ACTION_RECOVER it must never restore over a live, healthy session.
+            ACTION_CHECK, null -> when (
+                ServiceDispatch.resolveCheck(
+                    recoveryActive = recoveryJob?.isActive == true,
+                    pendingRecovery = fullChargeStore.pendingRecoveryTarget() != null,
+                    sessionExists = fullChargeStore.currentSession() != null,
+                )
+            ) {
+                ServiceDispatch.CheckResolution.ALREADY_RECOVERING -> Unit
+                ServiceDispatch.CheckResolution.START_RECOVERY -> startRecovery()
+                ServiceDispatch.CheckResolution.RESUME_SESSION -> beginOrResume()
+                ServiceDispatch.CheckResolution.MONITOR_OR_STOP -> continueGestureOrStop()
             }
             else -> continueGestureOrStop()
         }
@@ -283,6 +294,13 @@ class ChargeSessionService : Service() {
 
     private fun startRecovery() {
         if (recoveryJob?.isActive == true) return
+        // Quiesce monitoring before recovery writes: with ACTION_CHECK the service can already be
+        // alive in gesture-monitor mode, and the monitor loop / battery receiver run outside the
+        // command mutex — they could replace the recovering notification or begin a session that
+        // races the recovery re-writes.
+        monitorReady = false
+        monitorJob?.cancel()
+        unregisterSettingObserver()
         startAsForeground(SessionNotifications.recovering(this))
         recoveryJob = scope.launch {
             val outcome = BootRecoveryFlow(recoveryHooks).run()
@@ -302,6 +320,7 @@ class ChargeSessionService : Service() {
 
         override suspend fun clearPendingTarget() = fullChargeStore.clearPendingRecoveryTarget()
         override suspend fun restoreSession() = manager.restore().success
+        override suspend fun dropStaleSession() = manager.cancelWithoutRestore()
         override suspend fun rewrite(policy: ChargePolicy) =
             repository.reapplyPersistent(policy).success
 
@@ -339,12 +358,27 @@ class ChargeSessionService : Service() {
         restoring = true
         monitorReady = false
         unregisterSettingObserver()
-        val result = manager.restore()
+        val result = try {
+            manager.restore()
+        } finally {
+            // Always release suppression, even if the restore throws, so native changes aren't
+            // ignored forever.
+            restoring = false
+        }
         if (!result.success) {
             log(TAG, Logging.Priority.ERROR) { "Charging-policy restoration failed: ${result.message}" }
-            SessionNotifications.showRecovery(this)
+            // The session stays persisted for a retry on the next start (foreground nudge, manual
+            // restore, boot). Resuming monitoring here would immediately re-evaluate the same
+            // restore condition and loop on the failing write, so stop instead — in a finally, so
+            // a throwing surface update can't leave the 30s monitor loop retrying the failed write.
+            try {
+                SessionNotifications.showRecovery(this)
+                SurfaceUpdater.updateNow(this)
+            } finally {
+                stopMonitoring()
+            }
+            return
         }
-        restoring = false
         quickGesture.reset()
         SurfaceUpdater.updateNow(this)
         continueGestureOrStop()
@@ -429,6 +463,7 @@ class ChargeSessionService : Service() {
         const val ACTION_RESTORE = "eu.darken.amply.action.RESTORE_CHARGE_LIMIT"
         const val ACTION_MONITOR = "eu.darken.amply.action.MONITOR_QUICK_FULL_CHARGE"
         const val ACTION_RECOVER = "eu.darken.amply.action.RECOVER_CHARGE_LIMIT"
+        const val ACTION_CHECK = "eu.darken.amply.action.CHECK_CHARGE_STATE"
         const val ACTION_SET_PERSISTENT_POLICY = "eu.darken.amply.action.SET_PERSISTENT_POLICY"
         const val EXTRA_TARGET_POLICY = "eu.darken.amply.extra.TARGET_POLICY"
     }

@@ -102,7 +102,7 @@ class AmplyWidget : GlanceAppWidget() {
                 Row(verticalAlignment = Alignment.Vertical.CenterVertically) {
                     if (showBrand) {
                         Image(
-                            provider = ImageProvider(R.drawable.ic_amply),
+                            provider = ImageProvider(R.drawable.ic_launcher_monochrome),
                             contentDescription = null,
                             modifier = GlanceModifier.size(16.dp),
                             colorFilter = ColorFilter.tint(TITLE_COLOR),

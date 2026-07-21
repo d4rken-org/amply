@@ -13,7 +13,8 @@ data class BatterySnapshot(
 )
 
 /**
- * Boot-time restore orchestration: restore the persisted protective policy, then drive
+ * Restore orchestration for service starts without a live session (boot, and foreground-launch
+ * checks after a force-stop): restore the persisted protective policy, then drive
  * [BootRecoveryEngine] until the charging hardware confirms it, a nudge re-write was sent,
  * or the budget runs out. The pending target persists across process death so a killed
  * service resumes the check instead of losing it.
@@ -26,6 +27,9 @@ class BootRecoveryFlow(private val hooks: Hooks) {
         suspend fun setPendingTarget(policy: ChargePolicy)
         suspend fun clearPendingTarget()
         suspend fun restoreSession(): Boolean
+
+        /** Drops a session record that a newer pending target has made stale, without restoring it. */
+        suspend fun dropStaleSession()
         suspend fun rewrite(policy: ChargePolicy): Boolean
 
         /** The policy Amply itself was most recently asked to configure, if any. */
@@ -52,18 +56,32 @@ class BootRecoveryFlow(private val hooks: Hooks) {
 
     suspend fun run(): Outcome {
         val sessionTarget = hooks.currentSessionTarget()
-        val target = sessionTarget ?: hooks.pendingTarget() ?: return Outcome.NOTHING_TO_DO
-        hooks.setPendingTarget(target)
-        if (sessionTarget != null) {
-            log(TAG) { "Boot recovery: restoring ${target.stableId}" }
+        val pendingTarget = hooks.pendingTarget()
+        val target = pendingTarget ?: sessionTarget ?: return Outcome.NOTHING_TO_DO
+        var staleIntended: ChargePolicy? = null
+        if (pendingTarget != null) {
+            // The pending target is always the newest intent: setPersistentPolicy persists it
+            // before superseding any session, and this flow only seeds it from the session it is
+            // already recovering. A session record that coexists with it is stale — drop it
+            // without restoring, so its older policy can never overwrite the newer choice.
+            if (sessionTarget != null) {
+                log(TAG) { "Recovery: dropping stale session; pending ${target.stableId} is newer" }
+                hooks.dropStaleSession()
+            }
+            // The last-requested policy can predate the pending target when the process died
+            // before the persistent write landed. Remember the stale value so the supersede
+            // check below doesn't mistake it for a newer user choice and abandon recovery.
+            staleIntended = hooks.intendedTarget()
+            log(TAG) { "Recovery: resuming convergence check for ${target.stableId}" }
+        } else {
+            hooks.setPendingTarget(target)
+            log(TAG) { "Recovery: restoring ${target.stableId}" }
             if (!hooks.restoreSession()) {
-                log(TAG, Logging.Priority.ERROR) { "Boot restore failed; session remains persisted" }
+                log(TAG, Logging.Priority.ERROR) { "Restore failed; session remains persisted" }
                 hooks.notifyFailure(writeFailed = true)
                 hooks.clearPendingTarget()
                 return Outcome.RESTORE_FAILED
             }
-        } else {
-            log(TAG) { "Boot recovery: resuming convergence check for ${target.stableId}" }
         }
 
         val startedAt = hooks.elapsedRealtime()
@@ -72,7 +90,7 @@ class BootRecoveryFlow(private val hooks: Hooks) {
         while (true) {
             hooks.tick()
             val intended = hooks.intendedTarget()
-            if (intended != null && intended != target) {
+            if (intended != null && intended != target && intended != staleIntended) {
                 // The user (or another Amply entry point) chose a different policy while we
                 // were converging; never write the boot target over a newer choice.
                 log(TAG) { "Boot recovery superseded by ${intended.stableId}" }
@@ -126,11 +144,5 @@ class BootRecoveryFlow(private val hooks: Hooks) {
 
     companion object {
         val TAG = logTag("BootRecoveryFlow")
-
-        fun bootAction(sessionExists: Boolean, pendingRecovery: Boolean, gestureEnabled: Boolean): String? = when {
-            sessionExists || pendingRecovery -> ChargeSessionService.ACTION_RECOVER
-            gestureEnabled -> ChargeSessionService.ACTION_MONITOR
-            else -> null
-        }
     }
 }

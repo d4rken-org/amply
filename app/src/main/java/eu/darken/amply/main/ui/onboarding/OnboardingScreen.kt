@@ -17,11 +17,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BatterySaver
 import androidx.compose.material.icons.twotone.BatteryChargingFull
 import androidx.compose.material.icons.twotone.Bolt
 import androidx.compose.material.icons.twotone.Restore
@@ -39,7 +39,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -155,17 +157,13 @@ private fun OnboardingWelcomePage(onNext: () -> Unit) = OnboardingScaffold(
             modifier = Modifier.padding(horizontal = 24.dp, vertical = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                contentColor = MaterialTheme.colorScheme.primary,
-            ) {
-                Icon(
-                    imageVector = Icons.Default.BatterySaver,
-                    contentDescription = null,
-                    modifier = Modifier.padding(14.dp).size(42.dp),
-                )
-            }
+            Image(
+                painter = painterResource(R.drawable.ic_launcher_full),
+                contentDescription = null,
+                modifier = Modifier
+                    .size(72.dp)
+                    .clip(RoundedCornerShape(18.dp)),
+            )
             Spacer(Modifier.height(18.dp))
             Text(
                 text = stringResource(R.string.onboarding_welcome_title),

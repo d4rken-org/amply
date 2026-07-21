@@ -25,13 +25,16 @@ import eu.darken.amply.fullcharge.core.ChargeSessionManager
 import eu.darken.amply.fullcharge.core.ChargeSessionRecord
 import eu.darken.amply.fullcharge.core.ChargeSessionService
 import eu.darken.amply.fullcharge.core.FullChargeStore
+import eu.darken.amply.fullcharge.core.ServiceDispatch
 import eu.darken.amply.main.core.DeviceSupportReport
 import eu.darken.amply.main.core.DeviceSupportReporter
 import eu.darken.amply.main.core.OnboardingSettings
 import eu.darken.amply.main.core.formatReport
 import eu.darken.amply.main.core.issueTitle
 import eu.darken.amply.main.core.issueUrl
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
@@ -85,6 +88,32 @@ class DashboardViewModel @Inject constructor(
 
     fun refresh() = viewModelScope.launch { repository.refresh() }
 
+    /**
+     * Foreground-entry nudge: after a force-stop, no receiver or sticky restart revives the
+     * session service, so each resume checks for leftover work (persisted session, pending
+     * recovery, enabled gesture) and pokes the service with ACTION_CHECK. The returned job is
+     * cancelled on pause so the store reads can't complete after backgrounding and trigger a
+     * foreground-service start from the background.
+     */
+    fun nudgeChargeService(): Job = viewModelScope.launch {
+        try {
+            val action = ServiceDispatch.startAction(
+                trigger = ServiceDispatch.Trigger.FOREGROUND,
+                sessionExists = fullChargeStore.currentSession() != null,
+                pendingRecovery = fullChargeStore.pendingRecoveryTarget() != null,
+                gestureEnabled = fullChargeStore.isQuickFullChargeEnabled(),
+            ) ?: return@launch
+            log(TAG) { "Foreground nudge: starting service with $action" }
+            ContextCompat.startForegroundService(context, ServiceDispatch.startIntent(context, action))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Pause-cancellation is a best effort; if backgrounding still races the start
+            // (ForegroundServiceStartNotAllowedException), the next resume retries.
+            log(TAG, Logging.Priority.WARN) { "Foreground nudge failed: ${e.message}" }
+        }
+    }
+
     fun completeOnboarding() = viewModelScope.launch { onboardingSettings.complete() }
 
     fun applyPolicy(policy: ChargePolicy) = viewModelScope.launch {
@@ -122,7 +151,17 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun grantWriteSecureSettings() = viewModelScope.launch {
-        repository.grantWriteSecureSettings()
+        // The status card's result message can be scrolled off-screen while the user watches the setup
+        // card, so surface a failure locally too. The repository returns the refreshed permission state
+        // (WSS actually granted), so false is a real failure — not a lost pm-grant reply.
+        val granted = repository.grantWriteSecureSettings()
+        if (!granted) {
+            Toast.makeText(
+                context,
+                context.getString(R.string.dashboard_wss_grant_failed_toast),
+                Toast.LENGTH_LONG,
+            ).show()
+        }
     }
 
     fun openNativeSettings() {

@@ -24,7 +24,8 @@ class BootReceiver : BroadcastReceiver() {
             try {
                 // A single intent: the service sequences recovery before gesture monitoring,
                 // so their policy writes cannot interleave.
-                val action = BootRecoveryFlow.bootAction(
+                val action = ServiceDispatch.startAction(
+                    trigger = ServiceDispatch.Trigger.BOOT,
                     sessionExists = sessionStore.currentSession() != null,
                     pendingRecovery = sessionStore.pendingRecoveryTarget() != null,
                     gestureEnabled = sessionStore.isQuickFullChargeEnabled() &&
@@ -33,7 +34,7 @@ class BootReceiver : BroadcastReceiver() {
                 if (action != null) {
                     ContextCompat.startForegroundService(
                         context,
-                        Intent(context, ChargeSessionService::class.java).setAction(action),
+                        ServiceDispatch.startIntent(context, action),
                     )
                 }
             } finally {

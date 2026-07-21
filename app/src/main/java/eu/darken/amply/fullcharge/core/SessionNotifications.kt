@@ -73,7 +73,7 @@ object SessionNotifications {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Builder(context, SESSION_CHANNEL)
-            .setSmallIcon(R.drawable.ic_amply)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
             .setContentTitle(context.getString(R.string.session_notification_title))
             .setContentText(
                 context.getString(
@@ -86,7 +86,7 @@ object SessionNotifications {
             .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .addAction(
-                R.drawable.ic_amply,
+                R.drawable.ic_launcher_monochrome,
                 context.getString(R.string.session_notification_restore),
                 restorePendingIntent,
             )
@@ -102,7 +102,7 @@ object SessionNotifications {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Builder(context, GESTURE_CHANNEL)
-            .setSmallIcon(R.drawable.ic_amply)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
             .setContentTitle(context.getString(R.string.gesture_notification_title))
             .setContentText(
                 context.getString(
@@ -129,7 +129,7 @@ object SessionNotifications {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Builder(context, SESSION_CHANNEL)
-            .setSmallIcon(R.drawable.ic_amply)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
             .setContentTitle(context.getString(R.string.recovering_notification_title))
             .setContentText(context.getString(R.string.recovering_notification_body))
             .setContentIntent(openPendingIntent)
@@ -156,7 +156,7 @@ object SessionNotifications {
             NotificationManagerCompat.from(context).notify(
                 RECOVERY_ID,
                 NotificationCompat.Builder(context, RECOVERY_CHANNEL)
-                    .setSmallIcon(R.drawable.ic_amply)
+                    .setSmallIcon(R.drawable.ic_launcher_monochrome)
                     .setContentTitle(context.getString(R.string.recovery_notification_title))
                     .setContentText(context.getString(bodyRes))
                     .setContentIntent(openIntent)

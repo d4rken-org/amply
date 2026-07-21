@@ -203,10 +203,14 @@ fun DashboardScreen(
                             )
                         }
                     }
-                    if (state.charging.access?.shizuku?.ready != true) {
+                    // Only nudge toward Shizuku once the user is already on the WSS-only (computer) path:
+                    // durable control is present but Shizuku isn't, so exact readback/diagnostics are
+                    // missing. Before any setup, the setup guide already covers Shizuku, so stay quiet.
+                    val access = state.charging.access
+                    if (access?.direct?.ready == true && !access.canVerify) {
                         item {
                             ShizukuBanner(
-                                running = state.charging.access?.shizuku?.available == true,
+                                running = access.shizuku.available,
                                 onOpen = onOpenShizuku,
                                 onAllow = onAllowShizuku,
                             )
@@ -593,6 +597,54 @@ private fun DashboardScreenPreview() = PreviewWrapper {
                     ),
                 ),
                 observation = ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.SHIZUKU),
+            ),
+        ),
+        adbCommand = "adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS",
+        onRefresh = {},
+        onSettings = {},
+        onStartFull = {},
+        onRestore = {},
+        onApply = {},
+        onQuickFullChargeChange = {},
+        onNativeSettings = {},
+        onOpenShizuku = {},
+        onAllowShizuku = {},
+        onGrantWss = {},
+        onCopyAdb = {},
+        onPrepareSupportReport = {},
+        onCopySupportReport = {},
+        onOpenSupportIssue = {},
+        onEmailSupport = {},
+        onHelp = {},
+    )
+}
+
+// WSS granted via the computer path but Shizuku absent: no setup guide, and the "Better with Shizuku"
+// banner appears to offer exact readback/diagnostics.
+@AmplyPreview
+@Composable
+private fun DashboardScreenWssOnlyPreview() = PreviewWrapper {
+    DashboardScreen(
+        state = DashboardUiState(
+            onboardingComplete = true,
+            charging = ChargingState(
+                device = DeviceInfo("Google", "Pixel 8", 36, "preview"),
+                adapterName = "Pixel Charge Control".toCaString(),
+                adapterId = "pixel",
+                controlEnabled = true,
+                access = AccessSnapshot(
+                    direct = BackendStatus(
+                        available = true,
+                        granted = true,
+                        detail = "WRITE_SECURE_SETTINGS granted".toCaString(),
+                    ),
+                    shizuku = BackendStatus(
+                        available = false,
+                        granted = false,
+                        detail = "Shizuku not running".toCaString(),
+                    ),
+                ),
+                observation = ChargeObservation.LastRequested(ChargePolicy.FixedLimit(80)),
             ),
         ),
         adbCommand = "adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS",
