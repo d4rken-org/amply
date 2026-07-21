@@ -49,6 +49,7 @@ data class DashboardUiState(
     val session: ChargeSessionRecord? = null,
     val onboardingComplete: Boolean? = null,
     val quickFullChargeEnabled: Boolean = false,
+    val quickFullChargeAnyLevel: Boolean = false,
     val deviceReport: DeviceSupportReport? = null,
 )
 
@@ -63,18 +64,25 @@ class DashboardViewModel @Inject constructor(
 ) : ViewModel() {
     private val deviceReport = MutableStateFlow<DeviceSupportReport?>(null)
 
+    // The typed combine overloads stop at five flows; the two gesture booleans are pre-combined.
+    private val gestureFlags = combine(
+        fullChargeStore.quickFullChargeEnabled,
+        fullChargeStore.quickFullChargeAnyLevel,
+    ) { enabled, anyLevel -> enabled to anyLevel }
+
     val state = combine(
         repository.state,
         fullChargeStore.session,
         onboardingSettings.isComplete,
-        fullChargeStore.quickFullChargeEnabled,
+        gestureFlags,
         deviceReport,
-    ) { charging, session, onboardingComplete, quickFullChargeEnabled, report ->
+    ) { charging, session, onboardingComplete, (quickFullChargeEnabled, quickFullChargeAnyLevel), report ->
         DashboardUiState(
             charging = charging,
             session = session,
             onboardingComplete = onboardingComplete,
             quickFullChargeEnabled = quickFullChargeEnabled,
+            quickFullChargeAnyLevel = quickFullChargeAnyLevel,
             deviceReport = report,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
@@ -134,6 +142,15 @@ class DashboardViewModel @Inject constructor(
         log(TAG, Logging.Priority.INFO) { "applyPolicy(${policy.stableId})" }
         if (fullChargeStore.currentSession() != null) sessionManager.cancelWithoutRestore()
         repository.applyPersistent(policy)
+        // The persistent policy is an any-level arming input; nudge a running gesture monitor so
+        // arming and notification copy react now instead of on the next broadcast/30s poll.
+        if (fullChargeStore.isQuickFullChargeEnabled()) {
+            ContextCompat.startForegroundService(
+                context,
+                Intent(context, ChargeSessionService::class.java)
+                    .setAction(ChargeSessionService.ACTION_MONITOR),
+            )
+        }
     }
 
     fun startFullCharge() {
@@ -154,6 +171,17 @@ class DashboardViewModel @Inject constructor(
     fun setQuickFullChargeEnabled(enabled: Boolean) = viewModelScope.launch {
         log(TAG, Logging.Priority.INFO) { "setQuickFullChargeEnabled($enabled)" }
         fullChargeStore.setQuickFullChargeEnabled(enabled)
+        ContextCompat.startForegroundService(
+            context,
+            Intent(context, ChargeSessionService::class.java).setAction(ChargeSessionService.ACTION_MONITOR),
+        )
+    }
+
+    fun setQuickFullChargeAnyLevel(enabled: Boolean) = viewModelScope.launch {
+        log(TAG, Logging.Priority.INFO) { "setQuickFullChargeAnyLevel($enabled)" }
+        fullChargeStore.setQuickFullChargeAnyLevel(enabled)
+        // Nudge a running monitor so the notification copy and arming reflect the change now
+        // instead of on the next broadcast; a stopped/ineligible service just stops itself again.
         ContextCompat.startForegroundService(
             context,
             Intent(context, ChargeSessionService::class.java).setAction(ChargeSessionService.ACTION_MONITOR),

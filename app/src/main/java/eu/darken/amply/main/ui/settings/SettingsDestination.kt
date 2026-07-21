@@ -7,4 +7,5 @@ enum class SettingsDestination {
     DIAGNOSTICS,
     SUPPORT,
     ACKNOWLEDGEMENTS,
+    RECONNECT_GESTURE,
 }

@@ -65,16 +65,16 @@ class ChargingRepository @Inject constructor(
     }
 
     suspend fun applyPersistent(policy: ChargePolicy): ApplyResult = operationMutex.withLock {
-        applyLocked(policy, updateProtective = policy != ChargePolicy.Unrestricted)
+        applyLocked(policy, persistent = true)
     }
 
     suspend fun applyTemporary(policy: ChargePolicy): ApplyResult = operationMutex.withLock {
-        applyLocked(policy, updateProtective = false)
+        applyLocked(policy, persistent = false)
     }
 
     /** Re-write that forces a real settings change so a missed observer registration is re-triggered. */
     suspend fun reapplyPersistent(policy: ChargePolicy): ApplyResult = operationMutex.withLock {
-        applyLocked(policy, updateProtective = policy != ChargePolicy.Unrestricted, forceNotify = true)
+        applyLocked(policy, persistent = true, forceNotify = true)
     }
 
     suspend fun requestShizukuPermission(): Boolean {
@@ -146,11 +146,11 @@ class ChargingRepository @Inject constructor(
 
     private suspend fun applyLocked(
         policy: ChargePolicy,
-        updateProtective: Boolean,
+        persistent: Boolean,
         forceNotify: Boolean = false,
     ): ApplyResult {
         log(TAG, Logging.Priority.INFO) {
-            "apply(policy=${policy.stableId}, persistent=$updateProtective, forceNotify=$forceNotify)"
+            "apply(policy=${policy.stableId}, persistent=$persistent, forceNotify=$forceNotify)"
         }
         val selection = registry.select()
         val adapter = selection.adapter
@@ -210,7 +210,7 @@ class ChargingRepository @Inject constructor(
         // The physical write committed. Record it durably even under cancellation (the setting already
         // changed), and never strand busy=true nor lose the fact that the write landed.
         val now = System.currentTimeMillis()
-        withContext(NonCancellable) { preferences.recordRequested(policy, updateProtective, now) }
+        withContext(NonCancellable) { preferences.recordRequested(policy, persistent, now) }
         return try {
             val access = accessResolver.snapshot()
             val observation = when (adapter.verification) {

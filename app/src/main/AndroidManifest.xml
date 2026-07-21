@@ -66,7 +66,7 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="User-enabled charging monitor that restores temporary policy overrides and detects a deliberate unplug/replug gesture at the 80 percent charging limit" />
+                android:value="User-enabled charging monitor that restores temporary policy overrides and detects a deliberate unplug/replug gesture while a charge-protection policy is active" />
         </service>
 
         <service

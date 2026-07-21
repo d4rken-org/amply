@@ -90,6 +90,9 @@ fun DependencyHandlerScope.addTesting() {
     testImplementation("junit:junit:4.13.2")
     testImplementation("androidx.test:core-ktx:1.7.0")
     testImplementation("org.robolectric:robolectric:4.16.1")
+    // Compose UI tests run locally via Robolectric (JUnit 4 + vintage, like other Robolectric tests).
+    testImplementation(platform("androidx.compose:compose-bom:${Versions.Compose.bom}"))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
 
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:rules:1.7.0")

@@ -50,8 +50,18 @@ class ChargeSessionService : Service() {
     // A single-consumer FIFO queue: onStartCommand enqueues on the main thread in arrival order, so rapid
     // taps (e.g. "∞ 80%" then "∞ 100%") can never be reordered by the dispatcher and finish on the wrong one.
     private val commandChannel = Channel<Command>(Channel.UNLIMITED)
+    // Battery evaluations are serialized the same way: the receiver, the 30s poll, and the gesture
+    // expiry nudge all enqueue here and a single consumer drains under commandMutex. Concurrent
+    // evaluations could otherwise observe plug edges out of order and corrupt the gesture state
+    // machine (its per-tick preference reads suspend, widening the reorder window). Each entry
+    // carries the time it was OBSERVED — queue latency under a busy mutex must not distort the
+    // gesture's 2-10s reconnect window — and the monitoring generation it belongs to, so events
+    // queued before a monitor stop/restart can never replay into freshly reset gesture state.
+    private val evaluationChannel = Channel<Evaluation>(Channel.UNLIMITED)
     private val quickGesture = QuickFullChargeGesture()
     private var monitorJob: Job? = null
+    private var gestureExpiryJob: Job? = null
+    @Volatile private var monitorGeneration = 0
     // Written under commandMutex, but read by the battery receiver/monitor loop outside it.
     @Volatile private var recoveryJob: Job? = null
     @Volatile private var monitorReady = false
@@ -60,7 +70,11 @@ class ChargeSessionService : Service() {
 
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (monitorReady) scope.launch { evaluateBattery(intent) }
+            if (monitorReady) {
+                evaluationChannel.trySend(
+                    Evaluation(intent, SystemClock.elapsedRealtime(), monitorGeneration),
+                )
+            }
         }
     }
 
@@ -106,6 +120,23 @@ class ChargeSessionService : Service() {
                 }
             }
         }
+        scope.launch {
+            for (evaluation in evaluationChannel) {
+                if (evaluation.generation != monitorGeneration) continue
+                try {
+                    commandMutex.withLock {
+                        // Re-check under the lock: a command can restart monitoring between the
+                        // fast-path check above and the mutex acquisition.
+                        if (evaluation.generation != monitorGeneration) return@withLock
+                        evaluateBattery(evaluation.intent, evaluation.observedAtElapsed)
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    log(TAG, Logging.Priority.ERROR) { "Battery evaluation failed: ${e.message}" }
+                }
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -124,6 +155,7 @@ class ChargeSessionService : Service() {
         runCatching { unregisterReceiver(batteryReceiver) }
         unregisterSettingObserver()
         commandChannel.close()
+        evaluationChannel.close()
         scope.cancel()
         super.onDestroy()
     }
@@ -166,16 +198,26 @@ class ChargeSessionService : Service() {
     }
 
     private fun startMonitoringLoop() {
+        // New monitoring run: evaluations queued for the previous run are stale and must be dropped
+        // (the gesture state machine was or will be reset relative to them).
+        monitorGeneration++
         monitorJob?.cancel()
         monitorJob = scope.launch {
             while (true) {
                 delay(30_000)
-                evaluateBattery()
+                evaluationChannel.trySend(
+                    Evaluation(null, SystemClock.elapsedRealtime(), monitorGeneration),
+                )
             }
         }
     }
 
-    private suspend fun evaluateBattery(intent: Intent? = null) {
+    // Callers must hold commandMutex — either via the evaluation consumer or a command handler.
+    // observedAtElapsed is when the underlying battery state was seen, not when we process it.
+    private suspend fun evaluateBattery(
+        intent: Intent? = null,
+        observedAtElapsed: Long = SystemClock.elapsedRealtime(),
+    ) {
         // An in-flight evaluation can outlive the quiesce in startRecovery; never race recovery.
         if (recoveryJob?.isActive == true) return
         val battery = intent ?: registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
@@ -218,29 +260,63 @@ class ChargeSessionService : Service() {
             return
         }
 
-        val decision = quickGesture.update(
-            nowMillis = System.currentTimeMillis(),
-            plugged = plugged,
-            percent = percent,
-            batteryStatus = status,
-            chargingStatus = battery?.getIntExtra(BatteryManager.EXTRA_CHARGING_STATUS, 0) ?: 0,
+        val anyLevel = fullChargeStore.isQuickFullChargeAnyLevel()
+        // "Protective" means Amply's own persistent configuration, freshly read on every tick — the
+        // engine revokes an any-level arming/window the moment this goes false, so a trigger can
+        // never rest on a belief older than its own evaluation. (A change made in native Settings
+        // stays invisible without Shizuku; ChargeSessionManager.begin() re-verifies live state and
+        // refuses when readback proves charging is already unrestricted.)
+        val policyProtective = anyLevel && preferences.lastPersistentPolicyNow()
+            .let { it != null && it != ChargePolicy.Unrestricted }
+        val output = quickGesture.update(
+            QuickFullChargeGesture.Input(
+                nowMillis = observedAtElapsed,
+                plugged = plugged,
+                percent = percent,
+                batteryStatus = status,
+                chargingStatus = battery?.getIntExtra(BatteryManager.EXTRA_CHARGING_STATUS, 0) ?: 0,
+                anyLevelEnabled = anyLevel,
+                policyProtective = policyProtective,
+            ),
         )
+        val decision = output.decision
         if (decision != QuickFullChargeDecision.IDLE) {
             log(TAG) {
-                "Reconnect gesture: decision=$decision plugged=$plugged percent=$percent status=$status"
+                "Reconnect gesture: decision=$decision anyLevelBasis=${output.anyLevelBasis} " +
+                    "plugged=$plugged percent=$percent status=$status"
             }
         }
         if (decision == QuickFullChargeDecision.TRIGGER) {
+            gestureExpiryJob?.cancel()
             log(TAG) { "Reconnect gesture triggered one-time full charging" }
             beginOrResume()
         } else {
+            val armed = decision == QuickFullChargeDecision.ARMED ||
+                decision == QuickFullChargeDecision.WAITING_FOR_RECONNECT
             startAsForeground(
                 SessionNotifications.gesture(
                     this,
-                    armed = decision == QuickFullChargeDecision.ARMED ||
-                        decision == QuickFullChargeDecision.WAITING_FOR_RECONNECT,
+                    armed = armed,
+                    // Armed copy reflects what actually armed; idle copy explains the enabled mode.
+                    anyLevel = if (armed) output.anyLevelBasis else anyLevel,
                 ),
             )
+            // Expiry isn't broadcast-driven: without a nudge the "reconnect now" copy could linger
+            // up to a 30s poll past the window. Scheduled once when the window opens — repeated
+            // waiting evaluations must not push the deadline out — and dropped when it resolves.
+            if (decision == QuickFullChargeDecision.WAITING_FOR_RECONNECT) {
+                if (gestureExpiryJob?.isActive != true) {
+                    val generation = monitorGeneration
+                    gestureExpiryJob = scope.launch {
+                        delay(QuickFullChargeGesture.MAX_RECONNECT_MILLIS + 500)
+                        evaluationChannel.trySend(
+                            Evaluation(null, SystemClock.elapsedRealtime(), generation),
+                        )
+                    }
+                }
+            } else {
+                gestureExpiryJob?.cancel()
+            }
         }
     }
 
@@ -300,6 +376,7 @@ class ChargeSessionService : Service() {
         // races the recovery re-writes.
         monitorReady = false
         monitorJob?.cancel()
+        gestureExpiryJob?.cancel()
         unregisterSettingObserver()
         startAsForeground(SessionNotifications.recovering(this))
         recoveryJob = scope.launch {
@@ -422,7 +499,13 @@ class ChargeSessionService : Service() {
 
     private fun stopMonitoring() {
         monitorReady = false
+        // A rapid disable/re-enable can reuse this service instance; neither stale gesture state
+        // (an old reconnect window) nor already-queued evaluations from this run may survive into
+        // the next monitoring run.
+        monitorGeneration++
         monitorJob?.cancel()
+        gestureExpiryJob?.cancel()
+        quickGesture.reset()
         unregisterSettingObserver()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -456,6 +539,12 @@ class ChargeSessionService : Service() {
     }
 
     private data class Command(val action: String?, val target: ChargePolicy?)
+
+    private data class Evaluation(
+        val intent: Intent?,
+        val observedAtElapsed: Long,
+        val generation: Int,
+    )
 
     companion object {
         private val TAG = logTag("ChargeSessionService")

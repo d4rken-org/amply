@@ -52,6 +52,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import eu.darken.amply.R
 import eu.darken.amply.charging.core.BackendKind
@@ -88,6 +89,7 @@ fun DashboardScreen(
     onRestore: () -> Unit,
     onApply: (ChargePolicy) -> Unit,
     onQuickFullChargeChange: (Boolean) -> Unit,
+    onOpenReconnectSettings: () -> Unit,
     onNativeSettings: () -> Unit,
     onOpenShizuku: () -> Unit,
     onAllowShizuku: () -> Unit,
@@ -153,9 +155,11 @@ fun DashboardScreen(
                         item {
                             QuickFullChargeCard(
                                 enabled = true,
+                                anyLevel = state.quickFullChargeAnyLevel,
                                 canControl = state.charging.controlEnabled &&
                                     state.charging.access?.canControl == true,
                                 onEnabledChange = onQuickFullChargeChange,
+                                onOpenSettings = onOpenReconnectSettings,
                             )
                         }
                     }
@@ -202,10 +206,12 @@ fun DashboardScreen(
                         item {
                             QuickFullChargeCard(
                                 enabled = state.quickFullChargeEnabled,
+                                anyLevel = state.quickFullChargeAnyLevel,
                                 canControl = state.charging.reconnectSupported &&
                                     state.charging.controlEnabled &&
                                     state.charging.access?.canControl == true,
                                 onEnabledChange = onQuickFullChargeChange,
+                                onOpenSettings = onOpenReconnectSettings,
                             )
                         }
                     }
@@ -483,8 +489,10 @@ private fun PolicyCard(
 @Composable
 private fun QuickFullChargeCard(
     enabled: Boolean,
+    anyLevel: Boolean,
     canControl: Boolean,
     onEnabledChange: (Boolean) -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     // When the gesture can neither be used nor turned off, dim the whole card so it reads as
     // disabled like the other controls, instead of showing a full-colour but inert toggle.
@@ -506,6 +514,14 @@ private fun QuickFullChargeCard(
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f),
                 )
+                if (enabled) {
+                    IconButton(onClick = onOpenSettings, enabled = interactive) {
+                        Icon(
+                            Icons.TwoTone.Settings,
+                            contentDescription = stringResource(R.string.dashboard_reconnect_settings_action),
+                        )
+                    }
+                }
                 Switch(
                     checked = enabled,
                     onCheckedChange = onEnabledChange,
@@ -513,16 +529,50 @@ private fun QuickFullChargeCard(
                 )
             }
             Text(
-                if (enabled) {
-                    stringResource(R.string.dashboard_reconnect_body_on)
-                } else {
-                    stringResource(R.string.dashboard_reconnect_body_off)
+                when {
+                    enabled && anyLevel -> stringResource(R.string.dashboard_reconnect_body_on_any_level)
+                    enabled -> stringResource(R.string.dashboard_reconnect_body_on)
+                    else -> stringResource(R.string.dashboard_reconnect_body_off)
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
+}
+
+@AmplyPreview
+@Composable
+private fun QuickFullChargeCardPreview() = PreviewWrapper {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        QuickFullChargeCard(
+            enabled = true,
+            anyLevel = false,
+            canControl = true,
+            onEnabledChange = {},
+            onOpenSettings = {},
+        )
+        QuickFullChargeCard(
+            enabled = true,
+            anyLevel = true,
+            canControl = true,
+            onEnabledChange = {},
+            onOpenSettings = {},
+        )
+    }
+}
+
+// Gear + switch share the title row; make sure it degrades gracefully at large font scales.
+@Preview(name = "Large font", showBackground = true, fontScale = 1.5f)
+@Composable
+private fun QuickFullChargeCardLargeFontPreview() = PreviewWrapper {
+    QuickFullChargeCard(
+        enabled = true,
+        anyLevel = true,
+        canControl = true,
+        onEnabledChange = {},
+        onOpenSettings = {},
+    )
 }
 
 @Composable
@@ -621,6 +671,7 @@ private fun DashboardScreenPreview() = PreviewWrapper {
     DashboardScreen(
         state = DashboardUiState(
             onboardingComplete = true,
+            quickFullChargeEnabled = true,
             charging = ChargingState(
                 device = DeviceInfo("Google", "Pixel 8", 36, "preview"),
                 adapterName = "Pixel Charge Control".toCaString(),
@@ -654,6 +705,7 @@ private fun DashboardScreenPreview() = PreviewWrapper {
         onRestore = {},
         onApply = {},
         onQuickFullChargeChange = {},
+        onOpenReconnectSettings = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
@@ -710,6 +762,7 @@ private fun DashboardScreenApplyingPreview() = PreviewWrapper {
         onRestore = {},
         onApply = {},
         onQuickFullChargeChange = {},
+        onOpenReconnectSettings = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
@@ -768,6 +821,7 @@ private fun DashboardScreenSessionActivePreview() = PreviewWrapper {
         onRestore = {},
         onApply = {},
         onQuickFullChargeChange = {},
+        onOpenReconnectSettings = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
@@ -828,6 +882,7 @@ private fun DashboardScreenSessionRecordedPreview() = PreviewWrapper {
         onRestore = {},
         onApply = {},
         onQuickFullChargeChange = {},
+        onOpenReconnectSettings = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
@@ -876,6 +931,7 @@ private fun DashboardScreenWssOnlyPreview() = PreviewWrapper {
         onRestore = {},
         onApply = {},
         onQuickFullChargeChange = {},
+        onOpenReconnectSettings = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
@@ -931,6 +987,7 @@ private fun DashboardScreenSamsungPreview() = PreviewWrapper {
         onRestore = {},
         onApply = {},
         onQuickFullChargeChange = {},
+        onOpenReconnectSettings = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
@@ -965,6 +1022,7 @@ private fun DashboardScreenUnsupportedPreview() = PreviewWrapper {
         onRestore = {},
         onApply = {},
         onQuickFullChargeChange = {},
+        onOpenReconnectSettings = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
