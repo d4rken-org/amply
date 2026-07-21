@@ -36,6 +36,7 @@ import eu.darken.amply.charging.core.ChargingState
 import eu.darken.amply.charging.core.DeviceInfo
 import eu.darken.amply.charging.core.access.AccessSnapshot
 import eu.darken.amply.charging.core.access.BackendStatus
+import eu.darken.amply.common.AmplyLinks
 import eu.darken.amply.common.ca.toCaString
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
@@ -49,6 +50,7 @@ fun AccessSetupGuide(
     onAllowShizuku: () -> Unit,
     onGrantWss: () -> Unit,
     onCopyAdb: () -> Unit,
+    onCopyWebUsbLink: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // A device that fails the adapter gate can never gain control; offering the
@@ -154,6 +156,35 @@ fun AccessSetupGuide(
 
                 Spacer(Modifier.height(20.dp))
                 Text(stringResource(R.string.setup_access_option_computer), style = MaterialTheme.typography.labelLarge)
+
+                // Primary computer path: the browser (WebUSB) helper, which grants over USB
+                // without a local ADB install. The link is opened on the *computer* the phone is
+                // plugged into — a phone cannot host itself — so we surface a copyable link, not
+                // an "open" action that would launch the phone's own browser.
+                Text(
+                    stringResource(R.string.setup_access_webusb_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                    SelectionContainer {
+                        Text(
+                            text = AmplyLinks.WEB_ADB,
+                            modifier = Modifier.padding(12.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                FilledTonalButton(onClick = onCopyWebUsbLink, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = null)
+                    Text(stringResource(R.string.setup_access_copy_webusb), Modifier.padding(start = 8.dp))
+                }
+
+                // Fallback for users who already have ADB set up on that computer.
+                Spacer(Modifier.height(12.dp))
                 Text(
                     stringResource(R.string.setup_access_adb_hint),
                     style = MaterialTheme.typography.bodySmall,
@@ -199,6 +230,7 @@ private fun AccessSetupGuidePreview() = PreviewWrapper {
         onAllowShizuku = {},
         onGrantWss = {},
         onCopyAdb = {},
+        onCopyWebUsbLink = {},
     )
 }
 
@@ -223,5 +255,6 @@ private fun AccessSetupGuideGrantingPreview() = PreviewWrapper {
         onAllowShizuku = {},
         onGrantWss = {},
         onCopyAdb = {},
+        onCopyWebUsbLink = {},
     )
 }

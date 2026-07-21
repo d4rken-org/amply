@@ -206,6 +206,7 @@ class MainActivity : ComponentActivity() {
                             onAllowShizuku = viewModel::requestShizukuPermission,
                             onGrantWss = viewModel::grantWriteSecureSettings,
                             onCopyAdb = viewModel::copyAdbCommand,
+                            onCopyWebUsbLink = viewModel::copyWebUsbLink,
                             onPrepareSupportReport = viewModel::prepareDeviceSupportReport,
                             onCopySupportReport = viewModel::copyDeviceSupportReport,
                             onOpenSupportIssue = viewModel::openDeviceSupportIssue,

@@ -251,7 +251,9 @@
     <string name="setup_access_allow_shizuku">Allow Amply in Shizuku</string>
     <string name="setup_access_open_shizuku">Open Shizuku</string>
     <string name="setup_access_option_computer">Option 2 · Computer</string>
-    <string name="setup_access_adb_hint">Grants durable control from a computer. Shizuku is still needed for diagnostics and reliable readback. Connect with ADB and run:</string>
+    <string name="setup_access_webusb_hint">Easiest — no ADB install needed. On the computer your phone is plugged into, open this link in Chrome or Edge to grant control over USB. Shizuku is still needed for diagnostics and reliable readback.</string>
+    <string name="setup_access_copy_webusb">Copy web helper link</string>
+    <string name="setup_access_adb_hint">Or, if you already have ADB set up on that computer, run:</string>
     <string name="setup_access_copy_adb">Copy ADB command</string>
     <string name="setup_access_adb_refresh_note">Amply detects the permission automatically once it runs — or tap Refresh in the top bar.</string>
 
@@ -314,6 +316,7 @@
     <string name="dashboard_shizuku_allow">Allow access</string>
     <string name="dashboard_shizuku_open">Open Shizuku</string>
     <string name="dashboard_adb_copied">ADB command copied</string>
+    <string name="dashboard_weblink_copied">Web helper link copied</string>
     <string name="dashboard_wss_grant_failed_toast">Couldn\'t grant the permission via Shizuku. Make sure Amply is allowed in Shizuku.</string>
     <string name="dashboard_quickaccess_title">Quick access</string>
     <string name="dashboard_quickaccess_body" formatted="false">Start a full charge without opening the app: add the Amply widget to your home screen, or the “100% once” tile to Quick Settings.</string>
