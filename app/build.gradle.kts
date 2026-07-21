@@ -32,6 +32,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
     id("com.google.dagger.hilt.android")
+    id("com.android.compose.screenshot")
 }
 
 android {
@@ -107,6 +108,10 @@ android {
             )
         }
     }
+
+    // Enables the Compose screenshot test source set. The plugin requires BOTH this module-level flag
+    // and the matching android.experimental.enableScreenshotTest property in gradle.properties.
+    experimentalProperties["android.experimental.enableScreenshotTest"] = true
 
     buildFeatures {
         aidl = true
@@ -201,4 +206,11 @@ dependencies {
     addShizuku()
 
     addTesting()
+
+    // Compose Preview Screenshot Testing — renders the Play Store screenshot composables
+    // (app/src/screenshotTest) to PNGs on the JVM. Enabled via the experimental flag in
+    // gradle.properties. Keep this version aligned with the plugin version in the root build script.
+    "screenshotTestImplementation"(platform("androidx.compose:compose-bom:${Versions.Compose.bom}"))
+    "screenshotTestImplementation"("com.android.tools.screenshot:screenshot-validation-api:0.0.1-alpha15")
+    "screenshotTestImplementation"("androidx.compose.ui:ui-tooling")
 }

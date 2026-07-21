@@ -4,9 +4,21 @@
 
 Amply is **pre-launch** (`0.1.0-beta1`). It uses CAPod's versioning system: a `version.properties` source of truth,
 a `VERSION` mirror, a `tools/release/bump.sh` bump/validate tool, and `release-prepare` / `release-tag` workflows. The
-tooling exists but no release has been cut. Fastlane exists only as **store-listing metadata**
-(`fastlane/metadata/android/en-US/*.txt`) — there are **no** fastlane build/deploy lanes, so `release-tag.yml`
-publishes a **FOSS GitHub release only** (see CI below).
+tooling exists but no release has been cut. Fastlane provides **store-listing metadata + screenshots**
+(`fastlane/metadata/android/en-US/`) plus manual `supply` lanes in `fastlane/Fastfile`. Those lanes are **not** wired
+into CI and are gated (see below), so `release-tag.yml` still publishes a **FOSS GitHub release only** (see CI below).
+
+## Store listing & screenshots
+
+- **Metadata**: `fastlane/metadata/android/en-US/{title,short_description,full_description}.txt` + `changelogs/default.txt`,
+  validated in CI by `check_metadata_length.sh` (title 30 / short 80 / full 3800 / changelog 500 chars).
+- **Screenshots**: generated from `@Preview` composables on the JVM — see `build-commands.md` for the
+  `generate_screenshots.sh` → `copy_screenshots.sh` workflow. Committed under `.../images/phoneScreenshots/`.
+  Regenerate before a store update; CI compiles but never renders them.
+- **`supply` lanes** (`beta` / `production` / `listing_only` / `screenshots_only`): every lane that mutates Play state
+  refuses to run unless `AMPLY_PLAY_PUBLISH_APPROVED=1`, keeping publication behind the `specialUse` gate below.
+  Prerequisites (all manual, none automated): an existing Play app for `eu.darken.amply`, a service-account JSON at the
+  `Appfile` path (or `AMPLY_SUPPLY_JSON_KEY`), gplay signing material, and the `specialUse` review passed.
 
 ## Versioning
 
@@ -57,7 +69,8 @@ run `./gradlew assembleFossRelease assembleGplayRelease` locally before tagging 
   (for `-beta` tags) or `assembleFossRelease`, and attaches the versioned APK to a GitHub (pre-)release. Signed only
   when `SIGNING_KEYSTORE_BASE64` + `STORE_PASSWORD`/`KEY_ALIAS`/`KEY_PASSWORD` secrets are present; otherwise the APK
   is unsigned (its filename carries an `-UNSIGNED` marker).
-- **Deliberately omitted vs. CAPod**: no Google Play upload job (Amply has no fastlane deploy lanes, and Play
+- **Deliberately omitted vs. CAPod**: no Google Play upload job (the manual `supply` lanes exist but are gated on
+  `AMPLY_PLAY_PUBLISH_APPROVED` and never wired into CI, and Play
   publication must stay gated — see below) and no Pages deploy (the project website is deferred).
 
 ## Google Play gate

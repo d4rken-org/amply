@@ -1,1 +1,27 @@
-Amply provides quick access to supported Android battery charge-protection modes. On validated devices it can temporarily allow one full charge and restore the protective limit automatically. Direct control requires user-authorized WRITE_SECURE_SETTINGS or Shizuku access.
+Amply gives you one-tap control over your phone's built-in battery charge-protection modes — and can run a single full charge on demand without losing your protective limit.
+
+Modern phones can cap charging (often around 80%) to slow battery ageing. That's great day to day, but annoying right before a long trip. Amply lets you switch modes instantly, and its "full charge once" restores your protective limit automatically as soon as you're topped up.
+
+Features:
+
+* Switch charge-protection modes with one tap — from the app, a home-screen widget, or a Quick Settings tile.
+* Full charge once: temporarily lifts the limit, then automatically restores your protective policy at 100%, on unplug, or after a safety timeout.
+* Optional reconnect gesture: unplug and replug within a few seconds to start a full charge, no app needed.
+* Honest status: Amply tells you when a setting is verified, only last-requested, or unknown — it never fakes certainty.
+* Runs entirely on-device. No account, no ads, no tracking.
+
+Supported control (support is added device by device as it's verified):
+
+* Pixel 6a and newer on Android 15+ — charging optimization.
+* Samsung Galaxy on verified One UI versions — battery protection.
+* Xiaomi, Redmi and POCO on HyperOS 2 — charging protection.
+
+Other devices are diagnostics-only for now. Amply still shows what it finds and lets you contribute your device data to help expand support.
+
+Direct control needs a one-time setup: grant WRITE_SECURE_SETTINGS via Shizuku, or from a computer over ADB. Amply walks you through each step in the app.
+
+Amply is experimental, free, and open source (GPL-3.0).
+
+Changelog: https://amply.darken.eu/changelog
+
+It's just me building this — thanks for your patience if a reply takes a while. ¯\_(ツ)_/¯
