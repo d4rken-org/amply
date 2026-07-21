@@ -20,7 +20,7 @@
     <string name="recovering_notification_title">Restoring charge limit</string>
     <string name="recovering_notification_body">Confirming the protective policy with the charging hardware.</string>
     <string name="setup_unsupported_title">This device isn\'t supported yet</string>
-    <string name="setup_unsupported_body">Amply works by switching your phone\'s built-in battery-protection setting. It hasn\'t been mapped for %1$s devices yet — you can help me add it.</string>
+    <string name="setup_unsupported_body">Amply works by switching your phone\'s built-in battery-protection setting. It hasn\'t been mapped for %1$s devices yet, but you can help me add it.</string>
     <string name="setup_unsupported_shares_note">Shares your device\'s model and build details, Android version, battery state, and Amply\'s version and compatibility check. No personal identifiers.</string>
     <string name="setup_unsupported_request_action">Request support on GitHub</string>
     <string name="setup_unsupported_help_action">More help &amp; contact</string>
@@ -30,10 +30,10 @@
     <string name="setup_unsupported_dialog_copy">Copy report</string>
     <string name="setup_unsupported_dialog_cancel">Cancel</string>
     <string name="setup_unsupported_report_copied">Device report copied</string>
-    <string name="setup_unsupported_no_browser">No browser available — copy the report and open GitHub manually</string>
+    <string name="setup_unsupported_no_browser">No browser available. Copy the report and open GitHub manually.</string>
     <string name="setup_unsupported_email_note">Prefer email? I\'ll attach the same device details.</string>
     <string name="setup_unsupported_email_action">Contact support by email</string>
-    <string name="setup_unsupported_email_body">Hi! I\'d love for Amply to support charge control on my device. I\'ve attached the details Amply collected — hopefully they help you add support. Thanks!</string>
+    <string name="setup_unsupported_email_body">Hi! I\'d love for Amply to support charge control on my device. I\'ve attached the details Amply collected. I hope they help you add support. Thanks!</string>
     <string name="setup_unsupported_no_email">No email app available</string>
 
     <string name="onboarding_welcome_title">Welcome to Amply</string>
@@ -45,13 +45,15 @@
     <string name="onboarding_feature_shortcut_title">Optional cable shortcut</string>
     <string name="onboarding_feature_shortcut_body" formatted="false">Reconnect at the 80% hold to request one full charge.</string>
     <string name="onboarding_next_action">Next</string>
-    <string name="onboarding_back_action">Back</string>
     <string name="onboarding_continue_action">Get started</string>
     <string name="onboarding_caveats_title">Before you start</string>
     <string name="onboarding_caveat_support_title">Support grows device by device</string>
-    <string name="onboarding_caveat_support_body">Charge control is added one phone at a time, so not every device is supported yet. Amply shows where yours stands and, when it can, how to help add support.</string>
+    <string name="onboarding_caveat_support_body">Charge control is mapped one device at a time. Right now, direct control works on Pixel 6a and newer phones running Android 15 or later. On other devices, Amply explains why control is unavailable, and where a device report can help expand support, the dashboard lets you send one.</string>
     <string name="onboarding_caveat_setup_title">One-time setup on supported devices</string>
-    <string name="onboarding_caveat_setup_body">To change the charge policy, Amply needs elevated access granted once — either by running a command from a computer over ADB, or on-device with Shizuku. If your device is supported, the dashboard walks you through it.</string>
+    <string name="onboarding_caveat_setup_body">Changing the charge policy requires a permission that apps cannot grant themselves. You grant it once: either run a single command from a computer over ADB, or use the Shizuku app on this phone. If your device is supported, the dashboard walks you through both options.</string>
+    <string name="onboarding_caveat_restore_title">Protection returns on its own</string>
+    <string name="onboarding_caveat_restore_body">When you allow a one-time full charge, Amply restores your protective limit as soon as the battery is full, when you unplug, or after a safety timeout. This relies on Amply staying alive in the background. If the app gets force-stopped during a session, open it and restore the limit from the dashboard.</string>
+    <string name="onboarding_page_progress">Page %1$d of %2$d</string>
 
     <!-- Charging policy labels -->
     <string name="charging_policy_unrestricted_label">Unrestricted (100%)</string>
