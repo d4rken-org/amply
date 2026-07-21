@@ -32,9 +32,10 @@ for get / put / WSS grant / diagnostic snapshots. Hard rules:
   string and pass it to a shell.
 - Writes require a valid **namespace**, valid key/value **syntax**, and an explicit **key allowlist**. Do not widen
   the allowlist without an explicit, reviewed reason.
-- The Samsung keys (`global protect_battery`, `global battery_protection_threshold`) are **live**: the Samsung
-  adapters invoke them on gated devices (see Capability Gates). OnePlus candidate keys remain present but **must
-  not** be invoked by production code.
+- Every writable key carries an explicit **per-key value domain** (`SettingWritePolicy`) — the boundary itself
+  rejects out-of-domain values. The Samsung keys (`global protect_battery`, `global battery_protection_threshold`)
+  and the Xiaomi key (`secure security_pc_secure_protect_mode_key`) are **live** on gated devices (see Capability
+  Gates). OnePlus candidate keys remain present but **must not** be invoked by production code.
 
 ## Capability Gates
 
@@ -62,6 +63,14 @@ without a qualified device; record results in `docs/SAMSUNG_SPIKE_RESULTS.md`.
 
 Unlike Pixel's hidden secure settings, Samsung's `global` keys are world-readable: configured-state verification
 works without Shizuku, and writes apply synchronously (no Settings-Intelligence-style async middleman).
+
+### Xiaomi
+
+Xiaomi control requires **all** of: Xiaomi manufacturer, the exact qualified model (`2306EPN60G`),
+`ro.miui.ui.version.code == 816`, and the system user. The version code identifies a software family, not a
+build — do not widen to a code-only or range gate without qualifying additional devices; record results in
+`docs/XIAOMI_SPIKE_RESULTS.md`. The single key is per-user `secure`, applied synchronously; daemon-level
+enforcement of external writes is pending long-term observation (see the spike doc).
 
 ## Foreground Service Requirement
 

@@ -45,6 +45,17 @@ class SamsungLabAdapter @Inject constructor() : DisabledLabAdapter() {
 }
 
 @Singleton
+class XiaomiLabAdapter @Inject constructor() : DisabledLabAdapter() {
+    override val id = "xiaomi-lab"
+    override val displayName = R.string.adapter_name_xiaomi.toCaString()
+    override fun matches(device: DeviceInfo) = device.manufacturer.equals("Xiaomi", ignoreCase = true)
+
+    companion object {
+        val CANDIDATE_KEYS = setOf("security_pc_secure_protect_mode_key")
+    }
+}
+
+@Singleton
 class OnePlusLabAdapter @Inject constructor() : DisabledLabAdapter() {
     override val id = "oneplus-lab"
     override val displayName = R.string.adapter_name_oneplus.toCaString()

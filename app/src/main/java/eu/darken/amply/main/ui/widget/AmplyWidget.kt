@@ -177,9 +177,10 @@ private fun statusLine(
     return widgetLabel(context, state.observation.policyOrNull() ?: requestedTarget)
 }
 
-/** "∞ <limit>" — the adapter's protective default, e.g. ∞80% on Pixel, ∞85% on legacy Samsung. */
-private fun protectButtonLabel(context: Context, policy: ChargePolicy?): String = when (policy) {
+/** "∞ <limit>" — the adapter's protective default, e.g. ∞80% on Pixel, ∞Auto on Xiaomi. */
+internal fun protectButtonLabel(context: Context, policy: ChargePolicy?): String = when (policy) {
     is ChargePolicy.FixedLimit -> context.getString(R.string.widget_button_protect_fixed, policy.percent)
+    ChargePolicy.Adaptive -> context.getString(R.string.widget_button_protect_adaptive)
     else -> context.getString(R.string.widget_button_protect)
 }
 

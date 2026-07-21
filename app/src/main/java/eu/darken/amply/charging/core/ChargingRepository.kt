@@ -35,6 +35,8 @@ data class ChargingState(
     val adapterId: String? = null,
     val supportedPolicies: List<ChargePolicy> = emptyList(),
     val reconnectSupported: Boolean = false,
+    /** True when the adapter's configured state is directly readable — Shizuku adds nothing for verification. */
+    val syncVerification: Boolean = false,
     val controlEnabled: Boolean = false,
     val contributionWanted: Boolean = false,
     val access: AccessSnapshot? = null,
@@ -313,6 +315,7 @@ class ChargingRepository @Inject constructor(
             adapterId = adapter?.id,
             supportedPolicies = adapter?.supportedPolicies.orEmpty(),
             reconnectSupported = adapter?.reconnectGestureSupported == true,
+            syncVerification = adapter?.verification == VerificationStrategy.SYNC_READBACK,
             controlEnabled = selection.support.controlEnabled,
             contributionWanted = selection.support.contributionWanted,
             access = access,

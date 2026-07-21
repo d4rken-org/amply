@@ -38,7 +38,7 @@ abstract class SamsungChargingAdapter : ChargingAdapter {
             detail = when {
                 !matched -> R.string.adapter_detail_requires_samsung
                 !device.hasProtectBattery -> R.string.adapter_detail_samsung_no_key
-                !device.isSystemUser -> R.string.adapter_detail_samsung_secondary_user
+                !device.isSystemUser -> R.string.adapter_detail_secondary_user
                 else -> R.string.adapter_detail_samsung_ready
             },
             contributionWanted = matched && !device.hasProtectBattery,
@@ -135,6 +135,7 @@ class SamsungModernChargingAdapter @Inject constructor() : SamsungChargingAdapte
                         R.string.charging_reason_value_unrecognized.toCaString(
                             KEY_THRESHOLD, threshold.value.toString(),
                         ),
+                        unrecognizedValue = true,
                     )
                 }
             }
@@ -142,6 +143,7 @@ class SamsungModernChargingAdapter @Inject constructor() : SamsungChargingAdapte
                 R.string.charging_reason_value_unrecognized.toCaString(
                     KEY_PROTECT_BATTERY, protect.value.toString(),
                 ),
+                unrecognizedValue = true,
             )
         }
     }
@@ -204,6 +206,7 @@ class SamsungLegacyChargingAdapter @Inject constructor() : SamsungChargingAdapte
                 R.string.charging_reason_value_unrecognized.toCaString(
                     KEY_PROTECT_BATTERY, protect.value.toString(),
                 ),
+                unrecognizedValue = true,
             )
         }
     }

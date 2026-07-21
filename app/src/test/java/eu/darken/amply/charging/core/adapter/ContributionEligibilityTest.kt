@@ -18,6 +18,8 @@ class ContributionEligibilityTest {
         samsungModern = SamsungModernChargingAdapter(),
         samsungLegacy = SamsungLegacyChargingAdapter(),
         samsungLab = SamsungLabAdapter(),
+        xiaomi = XiaomiChargingAdapter(),
+        xiaomiLab = XiaomiLabAdapter(),
         onePlus = OnePlusLabAdapter(),
     )
 
@@ -32,8 +34,15 @@ class ContributionEligibilityTest {
 
     @Test
     fun `unknown OEM is a wanted contribution`() {
-        val support = registry.select(device("Xiaomi")).support
+        val support = registry.select(device("Sony")).support
         support.matched shouldBe false
+        support.contributionWanted shouldBe true
+    }
+
+    @Test
+    fun `unqualified xiaomi is matched by the lab adapter and wants contributions`() {
+        val support = registry.select(device("Xiaomi")).support
+        support.matched shouldBe true
         support.contributionWanted shouldBe true
     }
 

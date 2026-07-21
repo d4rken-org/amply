@@ -66,6 +66,17 @@ pending-settle window, boot recovery converges on settings readback, and no reap
 The reconnect gesture is Pixel-only (`reconnectGestureSupported`). One UI 6/7 and 9+ fall through to the
 diagnostics-only lab adapter. Ground truth: `docs/SAMSUNG_SPIKE_RESULTS.md`.
 
+## Xiaomi Adapter
+
+One live adapter (`xiaomi-hyperos2-v1`), gated to the exact qualified device: manufacturer Xiaomi +
+model `2306EPN60G` + `ro.miui.ui.version.code == 816` + system user (the code identifies a software
+family, not a build, so the model stays pinned until more devices qualify). Single key
+`secure/security_pc_secure_protect_mode_key`: `0`=charge fully, `1`=Intelligent (heuristic 80% hold →
+`ChargePolicy.Adaptive`), absent=Intelligent (factory state). No hard-cap mode exists. SYNC_READBACK
+with read-back equality; session override = Unrestricted; protective default = Adaptive. Unqualified
+Xiaomi devices fall to `XiaomiLabAdapter` (diagnostics + contribution). Daemon-level enforcement of
+external writes is pending long-term observation — see `docs/XIAOMI_SPIKE_RESULTS.md`.
+
 ## Pixel Adapter
 
 Writes **only** two secure settings:
@@ -113,4 +124,4 @@ persistent low-priority notification is required because Android does not delive
 - Shizuku installation is detected by resolving the owner of `ShizukuProvider.PERMISSION`, **not** a fixed package
   name — this recognizes renamed forks and hidden-package mode. Don't hardcode a package name.
 - OnePlus candidate keys exist in the privileged layer for a future lab adapter but **no production code invokes
-  them**. Don't wire them into shipping paths. (Samsung keys are live — see Samsung Adapters.)
+  them**. Don't wire them into shipping paths. (Samsung and Xiaomi keys are live — see their adapter sections.)

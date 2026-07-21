@@ -78,7 +78,7 @@ class SamsungChargingAdaptersTest {
 
         support.matched shouldBe true
         support.controlEnabled shouldBe false
-        support.detail shouldBe R.string.adapter_detail_samsung_secondary_user
+        support.detail shouldBe R.string.adapter_detail_secondary_user
         support.contributionWanted shouldBe false
     }
 

@@ -7,6 +7,13 @@ sealed interface SessionStartDecision {
     /** No session needed: the active policy already lets the battery reach 100%. */
     data object AlreadyChargesFull : SessionStartDecision
 
+    /**
+     * The current configuration is readable but not a value this adapter recognizes (e.g. a
+     * future OEM mode). Starting a session would overwrite it and later "restore" a guessed
+     * policy — refuse instead of destructively normalizing state Amply cannot reproduce.
+     */
+    data object UnrecognizedCurrentState : SessionStartDecision
+
     data class Start(val restorePolicy: ChargePolicy) : SessionStartDecision
 }
 
@@ -27,7 +34,9 @@ object SessionStartDecider {
         storedProtective: ChargePolicy,
         supportedPolicies: List<ChargePolicy>,
         defaultProtective: ChargePolicy,
+        currentUnrecognized: Boolean = false,
     ): SessionStartDecision {
+        if (currentUnrecognized) return SessionStartDecision.UnrecognizedCurrentState
         if (verifiedCurrent != null &&
             (verifiedCurrent == overridePolicy || verifiedCurrent.allowsFullCharge)
         ) {

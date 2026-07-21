@@ -11,8 +11,10 @@ timeout.
 Two control adapters exist. **Pixel charging optimization** is capability-gated to Pixel 6a and newer phones on
 Android 15+ when Google's charging-optimization controller is present. **Samsung battery protection** (global
 `protect_battery` keys) is gated to verified One UI generations — One UI 8 multi-mode, and the legacy One UI 4/5
-toggle — on the system user. Other Pixels, Samsung on unverified One UI versions (6/7, 9+), and OnePlus/Oppo remain
-diagnostics-only. See `docs/SAMSUNG_SPIKE_RESULTS.md` for the verified Samsung mapping.
+toggle — on the system user. **Xiaomi charging protection** (secure `security_pc_secure_protect_mode_key`,
+binary Adaptive/Unrestricted) is gated to the exact qualified Xiaomi 13T on HyperOS 2.0. Other Pixels, Samsung on
+unverified One UI versions (6/7, 9+), unqualified Xiaomi devices, and OnePlus/Oppo remain diagnostics-only. See
+`docs/SAMSUNG_SPIKE_RESULTS.md` and `docs/XIAOMI_SPIKE_RESULTS.md` for the verified mappings.
 
 Package: `eu.darken.amply`. License: GPL-3.0-or-later. Status: pre-launch (`0.1.0-beta1`).
 

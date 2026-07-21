@@ -21,8 +21,7 @@ class ChargingControlUserService(
     override fun writeSetting(namespace: String, key: String, value: String): Boolean {
         requireNamespace(namespace)
         requireKey(key)
-        require(key in WRITABLE_KEYS.getValue(namespace)) { "Setting is not allowlisted for writes" }
-        require(VALUE.matches(value)) { "Invalid setting value" }
+        SettingWritePolicy.validate(namespace, key, value)
         return runCommand("/system/bin/settings", "put", namespace, key, value).exitCode == 0
     }
 
@@ -70,13 +69,41 @@ class ChargingControlUserService(
 
     companion object {
         private val NAMESPACES = setOf("secure", "global", "system")
-        private val WRITABLE_KEYS = mapOf(
-            "secure" to setOf("charge_optimization_mode", "adaptive_charging_enabled"),
-            "global" to setOf("protect_battery", "battery_protection_threshold"),
-            "system" to setOf("regular_charge_protection_switch_state"),
-        )
         private val KEY = Regex("[A-Za-z0-9_.:-]{1,160}")
-        private val VALUE = Regex("[A-Za-z0-9_.:+,/-]{1,160}")
         private val PACKAGE = Regex("[A-Za-z][A-Za-z0-9_.]{2,200}")
+    }
+}
+
+/**
+ * Pure validation for the privileged write path. Every writable setting carries an explicit
+ * per-key value domain — the boundary itself rejects out-of-domain values instead of trusting
+ * the adapter layer. Keys must be spike-verified before being added (see the OEM
+ * *_SPIKE_RESULTS docs); the OnePlus key is present for a future lab adapter and is not
+ * invoked by production code.
+ */
+internal object SettingWritePolicy {
+    private val WRITABLE: Map<String, Map<String, Set<String>>> = mapOf(
+        "secure" to mapOf(
+            // Pixel charging optimization (docs/PIXEL_SPIKE_RESULTS.md)
+            "charge_optimization_mode" to setOf("0", "1"),
+            "adaptive_charging_enabled" to setOf("0", "1"),
+            // Xiaomi HyperOS charging protection (docs/XIAOMI_SPIKE_RESULTS.md)
+            "security_pc_secure_protect_mode_key" to setOf("0", "1"),
+        ),
+        "global" to mapOf(
+            // Samsung battery protection (docs/SAMSUNG_SPIKE_RESULTS.md)
+            "protect_battery" to setOf("0", "1", "3"),
+            "battery_protection_threshold" to setOf("80", "85", "90", "95"),
+        ),
+        "system" to mapOf(
+            // OnePlus/Oppo candidate — allowlisted for future lab work, never written in production.
+            "regular_charge_protection_switch_state" to setOf("0", "1"),
+        ),
+    )
+
+    fun validate(namespace: String, key: String, value: String) {
+        val domain = WRITABLE[namespace]?.get(key)
+        require(domain != null) { "Setting is not allowlisted for writes" }
+        require(value in domain) { "Invalid setting value: not in the key's allowed domain" }
     }
 }

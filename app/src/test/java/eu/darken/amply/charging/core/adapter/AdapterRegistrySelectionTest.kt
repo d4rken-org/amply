@@ -22,6 +22,8 @@ class AdapterRegistrySelectionTest {
         samsungModern = SamsungModernChargingAdapter(),
         samsungLegacy = SamsungLegacyChargingAdapter(),
         samsungLab = SamsungLabAdapter(),
+        xiaomi = XiaomiChargingAdapter(),
+        xiaomiLab = XiaomiLabAdapter(),
         onePlus = OnePlusLabAdapter(),
     )
 
@@ -63,6 +65,29 @@ class AdapterRegistrySelectionTest {
             DeviceInfo("Google", "Pixel 8", 36, "test", hasChargingOptimization = true),
         )
         selection.adapter?.id shouldBe "google-pixel-lab-v1"
+    }
+
+    @Test
+    fun `qualified xiaomi selects the live adapter`() {
+        val selection = registry.select(
+            DeviceInfo("Xiaomi", "2306EPN60G", 35, "test", miuiVersionCode = 816, isSystemUser = true),
+        )
+        selection.adapter?.id shouldBe "xiaomi-hyperos2-v1"
+        selection.support.controlEnabled shouldBe true
+    }
+
+    @Test
+    fun `unqualified xiaomi devices fall through to the xiaomi lab adapter`() {
+        // Same family code, different model — the exact-model gate must not leak.
+        registry.select(
+            DeviceInfo("Xiaomi", "23078PND5G", 35, "test", miuiVersionCode = 816),
+        ).adapter?.id shouldBe "xiaomi-lab"
+        registry.select(
+            DeviceInfo("Xiaomi", "2306EPN60G", 35, "test", miuiVersionCode = 817),
+        ).adapter?.id shouldBe "xiaomi-lab"
+        registry.select(
+            DeviceInfo("Xiaomi", "M2101K6G", 33, "test"),
+        ).adapter?.id shouldBe "xiaomi-lab"
     }
 
     @Test

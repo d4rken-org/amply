@@ -211,9 +211,10 @@ fun DashboardScreen(
                     }
                     // Only nudge toward Shizuku once the user is already on the WSS-only (computer) path:
                     // durable control is present but Shizuku isn't, so exact readback/diagnostics are
-                    // missing. Before any setup, the setup guide already covers Shizuku, so stay quiet.
+                    // missing. Sync-readback adapters verify through any backend, so the banner's
+                    // readback pitch would be wrong there. Before any setup, stay quiet.
                     val access = state.charging.access
-                    if (access?.direct?.ready == true && !access.canVerify) {
+                    if (access?.direct?.ready == true && !access.canVerify && !state.charging.syncVerification) {
                         item {
                             ShizukuBanner(
                                 running = access.shizuku.available,
