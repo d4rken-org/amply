@@ -52,7 +52,7 @@
     <string name="onboarding_caveat_setup_title">One-time setup on supported devices</string>
     <string name="onboarding_caveat_setup_body">Changing the charge policy requires a permission that apps cannot grant themselves. You grant it once: either run a single command from a computer over ADB, or use the Shizuku app on this phone. If your device is supported, the dashboard walks you through both options.</string>
     <string name="onboarding_caveat_restore_title">Protection returns on its own</string>
-    <string name="onboarding_caveat_restore_body">When you allow a one-time full charge, Amply restores your protective limit as soon as the battery is full, when you unplug, or after a safety timeout. This relies on Amply staying alive in the background. If the app gets force-stopped during a session, open it and restore the limit from the dashboard.</string>
+    <string name="onboarding_caveat_restore_body">When you allow a one-time full charge, Amply restores your protective limit as soon as the battery is full, when you unplug, or after a safety timeout. This relies on Amply staying alive in the background. If the app gets force-stopped during a session, opening Amply again resumes monitoring and restores the limit once it is due.</string>
     <string name="onboarding_page_progress">Page %1$d of %2$d</string>
 
     <!-- Charging policy labels -->
