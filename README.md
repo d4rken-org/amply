@@ -29,6 +29,7 @@ Features include:
 * Quick Settings tile and a home-screen widget for protect / full-charge actions
 * A persisted temporary-session monitor that survives reboots
 * Diagnostics workflow (Shizuku) for before/after setting discovery, with redacted reports
+* Works without ADB/Shizuku too — a charge alarm to remind you to unplug at a chosen level, a live battery-info card, and an OEM battery-protection guide on unsupported devices
 * Branded light/dark themes, optional Material You, and contrast choices
 * Works via `WRITE_SECURE_SETTINGS` or Shizuku
 * No ads, no tracking, open-source (`foss` and `gplay` flavors)

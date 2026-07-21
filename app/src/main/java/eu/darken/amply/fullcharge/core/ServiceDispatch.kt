@@ -46,14 +46,16 @@ object ServiceDispatch {
         sessionExists: Boolean,
         pendingRecovery: Boolean,
         gestureEnabled: Boolean,
+        watcherEnabled: Boolean = false,
     ): String? = when (trigger) {
         Trigger.BOOT -> when {
             sessionExists || pendingRecovery -> ChargeSessionService.ACTION_RECOVER
-            gestureEnabled -> ChargeSessionService.ACTION_MONITOR
+            gestureEnabled || watcherEnabled -> ChargeSessionService.ACTION_MONITOR
             else -> null
         }
         Trigger.FOREGROUND -> when {
-            sessionExists || pendingRecovery || gestureEnabled -> ChargeSessionService.ACTION_CHECK
+            sessionExists || pendingRecovery || gestureEnabled || watcherEnabled ->
+                ChargeSessionService.ACTION_CHECK
             else -> null
         }
     }
