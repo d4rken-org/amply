@@ -99,11 +99,70 @@ class BootRecoveryFlowTest {
     }
 
     @Test
-    fun `boot dispatch prefers recovery and falls back to monitoring`() {
-        BootRecoveryFlow.bootAction(sessionExists = true, pendingRecovery = false, gestureEnabled = true) shouldBe ChargeSessionService.ACTION_RECOVER
-        BootRecoveryFlow.bootAction(sessionExists = false, pendingRecovery = true, gestureEnabled = false) shouldBe ChargeSessionService.ACTION_RECOVER
-        BootRecoveryFlow.bootAction(sessionExists = false, pendingRecovery = false, gestureEnabled = true) shouldBe ChargeSessionService.ACTION_MONITOR
-        BootRecoveryFlow.bootAction(sessionExists = false, pendingRecovery = false, gestureEnabled = false) shouldBe null
+    fun `a pending target wins over a coexisting stale session without restoring it`() {
+        // Process death inside setPersistentPolicy can leave both records; the pending target is
+        // the newer intent, so the session's older restore policy must never be written.
+        runTest {
+            val hooks = FakeHooks(
+                sessionTarget = fixedLimit,
+                pending = ChargePolicy.Unrestricted,
+                observation = { ChargeObservation.Verified(ChargePolicy.Unrestricted, BackendKind.BATTERY_HARDWARE) },
+            )
+
+            BootRecoveryFlow(hooks).run() shouldBe BootRecoveryFlow.Outcome.CONVERGED
+            hooks.restoreCalls shouldBe 0
+            hooks.staleSessionDrops shouldBe 1
+            hooks.sessionTarget shouldBe null
+            hooks.pending shouldBe null
+        }
+    }
+
+    @Test
+    fun `a stale last-request does not supersede a pending target`() = runTest {
+        // Process death before setPersistentPolicy's write lands leaves lastRequested at the OLD
+        // policy. That stale value must not be mistaken for a newer user choice — otherwise both
+        // recovery records are discarded without protection ever being restored.
+        val hooks = FakeHooks(
+            sessionTarget = fixedLimit,
+            pending = ChargePolicy.Unrestricted,
+            intended = { fixedLimit },
+            observation = { ChargeObservation.Verified(ChargePolicy.Unrestricted, BackendKind.BATTERY_HARDWARE) },
+        )
+
+        BootRecoveryFlow(hooks).run() shouldBe BootRecoveryFlow.Outcome.CONVERGED
+        hooks.restoreCalls shouldBe 0
+        hooks.staleSessionDrops shouldBe 1
+        hooks.pending shouldBe null
+    }
+
+    @Test
+    fun `a genuinely newer choice still supersedes a pending-target recovery`() = runTest {
+        // The baseline capture sees the pre-recovery value; the choice changes only afterwards,
+        // so it differs from both the pending target and the stale baseline.
+        var intendedCalls = 0
+        val hooks = FakeHooks(
+            sessionTarget = null,
+            pending = ChargePolicy.Unrestricted,
+            intended = { if (intendedCalls++ == 0) ChargePolicy.Unrestricted else ChargePolicy.Adaptive },
+        )
+
+        BootRecoveryFlow(hooks).run() shouldBe BootRecoveryFlow.Outcome.SUPERSEDED
+        hooks.rewrites.shouldBeEmpty()
+        hooks.pending shouldBe null
+    }
+
+    @Test
+    fun `a pending-only target resumes convergence without touching session restore`() = runTest {
+        val hooks = FakeHooks(
+            sessionTarget = null,
+            pending = fixedLimit,
+            observation = { hardwareLongLife },
+        )
+
+        BootRecoveryFlow(hooks).run() shouldBe BootRecoveryFlow.Outcome.CONVERGED
+        hooks.restoreCalls shouldBe 0
+        hooks.staleSessionDrops shouldBe 0
+        hooks.pending shouldBe null
     }
 
     private inner class FakeHooks(
@@ -117,6 +176,7 @@ class BootRecoveryFlowTest {
     ) : BootRecoveryFlow.Hooks {
         var now = 0L
         var restoreCalls = 0
+        var staleSessionDrops = 0
         val rewrites = mutableListOf<ChargePolicy>()
         val failures = mutableListOf<Boolean>()
 
@@ -134,6 +194,11 @@ class BootRecoveryFlowTest {
             restoreCalls++
             if (restoreResult) sessionTarget = null
             return restoreResult
+        }
+
+        override suspend fun dropStaleSession() {
+            staleSessionDrops++
+            sessionTarget = null
         }
 
         override suspend fun rewrite(policy: ChargePolicy): Boolean {

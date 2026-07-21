@@ -125,7 +125,8 @@ class MainActivity : ComponentActivity() {
                 }
                 LifecycleResumeEffect(Unit) {
                     viewModel.refresh()
-                    onPauseOrDispose { }
+                    val nudge = viewModel.nudgeChargeService()
+                    onPauseOrDispose { nudge.cancel() }
                 }
                 DisposableEffect(Unit) {
                     val receiver = object : BroadcastReceiver() {
