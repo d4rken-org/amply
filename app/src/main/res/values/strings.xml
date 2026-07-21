@@ -141,7 +141,7 @@
     <string name="dashboard_detail_readback">Read back through %1$s</string>
     <string name="dashboard_detail_last_requested">Last requested by Amply; connect Shizuku for exact readback</string>
     <string name="dashboard_policy_adaptive">Adaptive charging</string>
-    <string name="dashboard_policy_full">100% charging</string>
+    <string name="dashboard_policy_full" formatted="false">100% charging</string>
     <string name="dashboard_policy_fixed">%1$d%% limit</string>
     <string name="dashboard_policy_pause_at_full">Pause at full</string>
 
@@ -330,6 +330,70 @@
     <string name="dashboard_quickaccess_dismiss">Dismiss</string>
     <string name="dashboard_quickaccess_widget_manual">Widget pinning isn\'t available here. Long-press your home screen and add the Amply widget from the widget picker.</string>
     <string name="dashboard_quickaccess_tile_manual">Open Quick Settings, tap the edit button, and drag the Amply tile into place.</string>
+
+    <!-- Charge alarm (dashboard card + notification) -->
+    <string name="dashboard_alarm_title">Charge alarm</string>
+    <string name="dashboard_alarm_body_on">Amply will alert you to unplug when charging reaches your target. Works without any special setup.</string>
+    <string name="dashboard_alarm_body_off">Get a reminder to unplug at a chosen level, even without ADB or Shizuku.</string>
+    <string name="dashboard_alarm_target_label">Alert at %1$d%%</string>
+    <string name="dashboard_alarm_notifications_blocked">Notifications are off, so the alarm can\'t alert you.</string>
+    <string name="dashboard_alarm_notifications_fix_action">Turn on</string>
+    <string name="alarm_channel_name">Charge alarm</string>
+    <string name="alarm_channel_description">Alerts you to unplug when the battery reaches your chosen level</string>
+    <string name="alarm_notification_title">Time to unplug</string>
+    <string name="alarm_notification_body">Battery reached %1$d%%. Unplug to protect it.</string>
+
+    <!-- Background monitor (quiet foreground-service notification) -->
+    <string name="monitor_channel_name">Background monitor</string>
+    <string name="monitor_channel_description">Shows while Amply watches the battery in the background</string>
+    <string name="monitor_notification_title">Amply is watching the battery</string>
+    <string name="monitor_notification_body">Keeping an eye on your charge level.</string>
+
+    <!-- Battery info card + detail screen -->
+    <string name="battery_info_title">Battery</string>
+    <string name="battery_info_details_action">Details</string>
+    <string name="battery_info_summary">%1$s · %2$s · %3$s</string>
+    <string name="battery_value_not_reported">Not reported</string>
+    <string name="battery_value_unknown">Unknown</string>
+    <string name="battery_detail_title">Battery details</string>
+    <string name="battery_detail_section_charging">Charging</string>
+    <string name="battery_detail_section_health">Health</string>
+    <string name="battery_detail_section_electrical">Electrical</string>
+    <string name="battery_detail_section_thermal">Thermal</string>
+    <string name="battery_detail_level">Level</string>
+    <string name="battery_detail_status">Status</string>
+    <string name="battery_detail_power_source">Power source</string>
+    <string name="battery_detail_technology">Technology</string>
+    <string name="battery_detail_health">Health</string>
+    <string name="battery_detail_cycle_count">Charge cycles</string>
+    <string name="battery_detail_voltage">Voltage</string>
+    <string name="battery_detail_current">Current now</string>
+    <string name="battery_detail_charge_counter">Charge counter</string>
+    <string name="battery_detail_temperature">Temperature</string>
+    <string name="battery_status_charging">Charging</string>
+    <string name="battery_status_discharging">Discharging</string>
+    <string name="battery_status_not_charging">Not charging</string>
+    <string name="battery_status_full">Full</string>
+    <string name="battery_health_good">Good</string>
+    <string name="battery_health_overheat">Overheating</string>
+    <string name="battery_health_dead">Dead</string>
+    <string name="battery_health_over_voltage">Over voltage</string>
+    <string name="battery_health_failure">Unspecified failure</string>
+    <string name="battery_health_cold">Cold</string>
+    <string name="battery_plug_unplugged">Not plugged in</string>
+    <string name="battery_plug_ac">AC charger</string>
+    <string name="battery_plug_usb">USB</string>
+    <string name="battery_plug_wireless">Wireless</string>
+    <string name="battery_plug_other">Plugged in</string>
+
+    <!-- OEM protection guide (unsupported devices) -->
+    <string name="setup_oem_guide_title">Protect your battery in system settings</string>
+    <string name="setup_oem_guide_open_action">Open battery settings</string>
+    <string name="setup_oem_guide_samsung">Samsung phones include battery protection under Settings → Battery → Battery protection. Amply can\'t control it directly on this device, but you can turn it on there.</string>
+    <string name="setup_oem_guide_oneplus">OnePlus and Oppo phones offer charge limiting under Settings → Battery → Battery health (or Smart charging). Amply can\'t control it directly on this device, but you can enable it there.</string>
+    <string name="setup_oem_guide_xiaomi">Xiaomi, Redmi, and POCO phones may offer charge limiting or protection under Settings → Battery → Battery protection. Amply can\'t control it directly on this device, but you can look for it there.</string>
+    <string name="setup_oem_guide_google">Look for charging optimization under Settings → Battery. Amply can\'t control it directly on this device.</string>
+    <string name="setup_oem_guide_generic">Your phone may offer a built-in battery-protection or charge-limit option in its battery settings. Amply can\'t control it directly on this device, but it\'s worth a look.</string>
 
     <!-- Widget (in-widget text) -->
     <string name="widget_brand_status">Amply · %1$s</string>

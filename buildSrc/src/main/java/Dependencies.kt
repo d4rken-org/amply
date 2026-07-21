@@ -20,6 +20,9 @@ private fun DependencyHandler.androidTestImplementation(dependencyNotation: Any)
 private fun DependencyHandler.ksp(dependencyNotation: Any): Dependency? =
     add("ksp", dependencyNotation)
 
+private fun DependencyHandler.kspTest(dependencyNotation: Any): Dependency? =
+    add("kspTest", dependencyNotation)
+
 private fun DependencyHandler.coreLibraryDesugaring(dependencyNotation: Any): Dependency? =
     add("coreLibraryDesugaring", dependencyNotation)
 
@@ -90,6 +93,9 @@ fun DependencyHandlerScope.addTesting() {
     testImplementation("junit:junit:4.13.2")
     testImplementation("androidx.test:core-ktx:1.7.0")
     testImplementation("org.robolectric:robolectric:4.16.1")
+    // Hilt integration testing for the charge-monitor watcher graph (Robolectric + JUnit 4 rule).
+    testImplementation("com.google.dagger:hilt-android-testing:${Versions.Dagger.core}")
+    kspTest("com.google.dagger:hilt-compiler:${Versions.Dagger.core}")
     // Compose UI tests run locally via Robolectric (JUnit 4 + vintage, like other Robolectric tests).
     testImplementation(platform("androidx.compose:compose-bom:${Versions.Compose.bom}"))
     testImplementation("androidx.compose.ui:ui-test-junit4")
