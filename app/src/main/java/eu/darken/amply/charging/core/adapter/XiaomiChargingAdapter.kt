@@ -67,7 +67,7 @@ class XiaomiChargingAdapter @Inject constructor() : ChargingAdapter {
             null, VALUE_INTELLIGENT -> ChargeObservation.Verified(ChargePolicy.Adaptive, backend.kind)
             VALUE_CHARGE_FULLY -> ChargeObservation.Verified(ChargePolicy.Unrestricted, backend.kind)
             else -> ChargeObservation.Unknown(
-                R.string.charging_reason_value_unrecognized.toCaString(KEY_MODE, mode.value.toString()),
+                R.string.charging_reason_value_unrecognized.toCaString(KEY_MODE, mode.value),
                 unrecognizedValue = true,
             )
         }

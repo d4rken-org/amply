@@ -47,6 +47,12 @@ One key in the **`secure`** namespace (per-user; only writes need WSS):
 
 | Date | Device | Scenario | Result |
 |---|---|---|---|
-| _pending_ | 2306EPN60G | App-UID read matrix (absent/0/1 × WSS-only/Shizuku-only/both) | — |
-| _pending_ | 2306EPN60G | Screen-open with absent key must not materialize it | — |
-| _pending_ | 2306EPN60G | Mode writes via app both directions, session E2E, native-change cancellation, same-value reapply, reboot recovery, minified beta | — |
+| 2026-07-21 | 2306EPN60G | Adapter selected + gated under app UID; dashboard renders the two-chip Adaptive/100% selector with honest adaptive copy | PASS |
+| 2026-07-21 | 2306EPN60G | WSS read matrix: absent→Adaptive, `0`→Unrestricted, `1`→Adaptive, all Verified via DIRECT_WSS (no `null`-filtering fakeout) | PASS |
+| 2026-07-21 | 2306EPN60G | Screen-open with the key deleted does NOT materialize it (no spurious native-change cancel) | PASS |
+| 2026-07-21 | 2306EPN60G | Writes via the app both directions (Adaptive↔100%), read-back confirmed | PASS |
+| 2026-07-21 | 2306EPN60G | Unrecognized-value refusal: external `2` then "Charge to 100% once" refuses, key left at `2`, no write | PASS |
+| 2026-07-21 | 2306EPN60G | Session E2E at 100%: start → write `0` → RESTORE_FULL → restore `1`, all DIRECT_WSS Verified | PASS |
+| 2026-07-21 | 2306EPN60G | Minified (R8) foss beta: boots, MiuiVersionDetector reflection resolves the gate, write path works | PASS |
+| n/a | 2306EPN60G | Shizuku read column | Not run — Shizuku installed but its native lib is unextracted on this MIUI build; adb-start unavailable. Same `adapter.read()` logic as the PASSed WSS path; Shizuku→direct fallback is unit-tested |
+| n/a | 2306EPN60G | Mid-session native-change cancel / reboot recovery | Not holdable — device pinned at 100% auto-restores on session start (RESTORE_FULL), so no session persists to interrupt. Both mechanisms are adapter-agnostic and hardware-verified on the Samsung devices |
