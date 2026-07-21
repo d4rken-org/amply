@@ -16,6 +16,7 @@ data class DeviceInfo(
     val hasChargingOptimization: Boolean = true,
     val oneUiVersion: Int? = null,
     val hyperOsVersion: Int? = null,
+    val oplusRomVersion: Int? = null,
     val hasProtectBattery: Boolean = false,
     val isSystemUser: Boolean = true,
 ) {
@@ -32,6 +33,7 @@ data class DeviceInfo(
             } ?: false,
             oneUiVersion = OneUiVersionDetector.detect(),
             hyperOsVersion = HyperOsVersionDetector.detect(),
+            oplusRomVersion = OplusRomVersionDetector.detect(),
             hasProtectBattery = context?.let {
                 runCatching {
                     Settings.Global.getString(it.contentResolver, KEY_PROTECT_BATTERY) != null

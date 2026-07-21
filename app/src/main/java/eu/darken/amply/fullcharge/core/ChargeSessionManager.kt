@@ -29,7 +29,19 @@ class ChargeSessionManager @Inject constructor(
         }
         val adapter = repository.currentAdapter()
         val overridePolicy = adapter?.sessionOverridePolicy ?: ChargePolicy.Unrestricted
-        val observation = repository.refresh().observation
+        val refreshed = repository.refresh()
+        val observation = refreshed.observation
+        // Central guard: refuse before persisting a session when no backend can actually write
+        // (e.g. a Shizuku-only OnePlus adapter with Shizuku not connected). Otherwise the session
+        // is persisted, the override write fails, the rollback write fails too, and a phantom
+        // recovery session is stranded — regardless of which surface (dashboard/widget/tile) called.
+        if (!refreshed.canApply) {
+            return@withLock ApplyResult(
+                success = false,
+                observation = observation,
+                message = "Charging control needs Shizuku on this device",
+            )
+        }
         // The refresh observation is presentation-oriented: it masks a readable-but-unrecognized
         // OEM value behind LastRequested and can itself degrade to LastRequested when the
         // preferred backend fails. The raw sync readback (null for async adapters) is

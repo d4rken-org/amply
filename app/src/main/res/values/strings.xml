@@ -50,7 +50,7 @@
     <string name="onboarding_continue_action">Get started</string>
     <string name="onboarding_caveats_title">Before you start</string>
     <string name="onboarding_caveat_support_title">Support grows device by device</string>
-    <string name="onboarding_caveat_support_body">Charge control is mapped one device at a time. Right now, direct control works on Pixel 6a and newer phones running Android 15 or later, on Samsung devices with verified One UI versions, and on verified Xiaomi devices. On other devices, Amply explains why control is unavailable, and where a device report can help expand support, the dashboard lets you send one.</string>
+    <string name="onboarding_caveat_support_body">Charge control is mapped one device at a time. Right now, direct control works on Pixel 6a and newer phones running Android 15 or later, on Samsung devices with verified One UI versions, on verified Xiaomi devices, and on OnePlus, Oppo, and Realme devices on ColorOS 15. On other devices, Amply explains why control is unavailable, and where a device report can help expand support, the dashboard lets you send one.</string>
     <string name="onboarding_caveat_setup_title">One-time setup on supported devices</string>
     <string name="onboarding_caveat_setup_body">Changing the charge policy requires a permission that apps cannot grant themselves. You grant it once: either run a single command from a computer over ADB, or use the Shizuku app on this phone. If your device is supported, the dashboard walks you through both options.</string>
     <string name="onboarding_caveat_restore_title">Protection returns on its own</string>
@@ -81,7 +81,7 @@
     <string name="charging_reason_needs_setup">Grant charge-control access or connect Shizuku</string>
     <string name="charging_reason_policy_unsupported">%1$s is not supported by %2$s</string>
     <string name="charging_reason_settings_unreadable">Settings are not readable</string>
-    <string name="charging_reason_values_unrecognized">Unrecognized Pixel values: %1$s=%2$s, %3$s=%4$s</string>
+    <string name="charging_reason_values_unrecognized">Unrecognized values: %1$s=%2$s, %3$s=%4$s</string>
     <string name="charging_reason_value_unrecognized">Unrecognized value: %1$s=%2$s</string>
     <string name="charging_reason_hw_normal">Charging hardware is normal; without Shizuku, Amply cannot distinguish unrestricted from inactive adaptive charging</string>
     <string name="charging_reason_hw_too_cold">Charging is currently temperature-limited because the battery is too cold</string>
@@ -97,7 +97,8 @@
     <string name="adapter_name_samsung_protection">Samsung battery protection</string>
     <string name="adapter_name_xiaomi">Xiaomi (diagnostics)</string>
     <string name="adapter_name_xiaomi_protection">Xiaomi charging protection</string>
-    <string name="adapter_name_oneplus">OnePlus/Oppo (diagnostics)</string>
+    <string name="adapter_name_oneplus">OnePlus/Oppo/Realme (diagnostics)</string>
+    <string name="adapter_name_oplus_protection">ColorOS charging protection</string>
 
     <!-- Adapter support detail (why a device is or isn\'t controllable) -->
     <string name="adapter_detail_requires_pixel">Requires a supported Google Pixel phone</string>
@@ -114,6 +115,8 @@
     <string name="adapter_detail_samsung_ready">Samsung battery protection detected; changes apply immediately</string>
     <string name="adapter_detail_requires_xiaomi">Requires a verified Xiaomi device on HyperOS 2</string>
     <string name="adapter_detail_xiaomi_ready">Xiaomi charging protection detected; changes apply immediately</string>
+    <string name="adapter_detail_requires_oplus">Requires a OnePlus, Oppo, or Realme device on ColorOS 15</string>
+    <string name="adapter_detail_oplus_ready">ColorOS charging protection detected; control requires Shizuku</string>
     <string name="adapter_detail_none">No charging adapter is known for this device</string>
 
     <!-- Access backend detail + summary labels -->
@@ -245,7 +248,7 @@
     <string name="setup_access_ready_body">Charge-control access is granted.</string>
     <string name="setup_access_setup_body">Amply needs one durable Android permission to change the charge policy.</string>
     <string name="setup_access_option_shizuku">Option 1 · Shizuku (recommended)</string>
-    <string name="setup_access_shizuku_hint">With Shizuku, Amply can confirm the configured policy and run diagnostics — not just write it. Start or install Shizuku, allow Amply, then use it to grant the durable permission below.</string>
+    <string name="setup_access_shizuku_hint">With Shizuku, Amply can confirm the configured policy and run diagnostics — not just write it. Start or install Shizuku and allow Amply; the durable permission is then granted automatically. The button below is a manual fallback if that fails.</string>
     <string name="setup_access_grant_shizuku">Grant permission with Shizuku</string>
     <string name="setup_access_granting_shizuku">Granting…</string>
     <string name="setup_access_allow_shizuku">Allow Amply in Shizuku</string>
@@ -313,6 +316,8 @@
     <string name="settings_reconnect_any_level_hint">More sensitive: any unplug/replug of 2–10 seconds starts a full charge, e.g. also below 80%. Momentary power cuts shorter than 2 seconds, like a car cutting USB power while starting, never trigger.</string>
     <string name="dashboard_shizuku_title">Better with Shizuku</string>
     <string name="dashboard_shizuku_body">Shizuku gives Amply exact policy readback instead of relying on hardware state and the last request.</string>
+    <string name="dashboard_shizuku_required_title">Shizuku required to change charging</string>
+    <string name="dashboard_shizuku_required_body">This device stores its charging setting where only Shizuku can change it. Connect Shizuku to switch policies; without it Amply can still show the current state.</string>
     <string name="dashboard_shizuku_allow">Allow access</string>
     <string name="dashboard_shizuku_open">Open Shizuku</string>
     <string name="dashboard_adb_copied">ADB command copied</string>

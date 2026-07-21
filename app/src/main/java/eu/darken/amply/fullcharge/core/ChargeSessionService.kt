@@ -463,6 +463,15 @@ class ChargeSessionService : Service() {
 
     private suspend fun setPersistentPolicy(policy: ChargePolicy) {
         log(TAG) { "Setting persistent policy: ${policy.stableId}" }
+        // Central guard: if no backend can write (e.g. a Shizuku-only adapter with Shizuku not
+        // connected), refuse before persisting a recovery target — otherwise a widget/tile tap
+        // would strand a pending target that never converges. The app's controls guide setup.
+        if (!repository.refresh().canApply) {
+            log(TAG, Logging.Priority.WARN) { "Persistent policy skipped: charging control not writable" }
+            SurfaceUpdater.updateNow(this)
+            continueGestureOrStop()
+            return
+        }
         // Persist the intended end state as the recovery target BEFORE the risky write and before dropping
         // the session, so a failed write or a mid-write process death still converges here on next boot
         // instead of leaving charging in whatever transient state the session had.

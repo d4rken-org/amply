@@ -7,13 +7,13 @@ import org.junit.jupiter.api.Test
 class QuickAccessGateTest {
 
     private fun show(
-        directReady: Boolean = true,
+        canApply: Boolean = true,
         presenceChecked: Boolean = true,
         dismissed: Boolean = false,
         widgetAdded: Boolean = false,
         tileAdded: Boolean = false,
     ) = shouldShowQuickAccess(
-        directReady = directReady,
+        canApply = canApply,
         presenceChecked = presenceChecked,
         quickAccess = QuickAccessState(
             dismissed = dismissed,
@@ -29,7 +29,7 @@ class QuickAccessGateTest {
 
     @Test
     fun `hidden while setup is incomplete`() {
-        show(directReady = false) shouldBe false
+        show(canApply = false) shouldBe false
     }
 
     @Test

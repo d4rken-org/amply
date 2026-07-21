@@ -242,7 +242,7 @@ class FullChargeAction : ActionCallback {
             openApp(context, true)
         } else {
             val state = entryPoint.chargingRepository().refresh()
-            if (!state.controlEnabled || state.access?.canControl != true) {
+            if (!state.canApply) {
                 openApp(context, false)
                 return
             }
@@ -273,7 +273,7 @@ private suspend fun setPersistentOrOpen(context: Context, policy: ChargePolicy) 
         AmplyWidgetEntryPoint::class.java,
     )
     val state = entryPoint.chargingRepository().refresh()
-    if (!state.controlEnabled || state.access?.canControl != true) {
+    if (!state.canApply) {
         openApp(context, false)
         return
     }

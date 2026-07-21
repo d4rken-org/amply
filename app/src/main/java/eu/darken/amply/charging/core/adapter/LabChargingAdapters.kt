@@ -59,11 +59,19 @@ class XiaomiLabAdapter @Inject constructor() : DisabledLabAdapter() {
 class OnePlusLabAdapter @Inject constructor() : DisabledLabAdapter() {
     override val id = "oneplus-lab"
     override val displayName = R.string.adapter_name_oneplus.toCaString()
+
+    // The whole Oplus family (OnePlus/Oppo/Realme) on an unqualified ColorOS version. Live control
+    // (OnePlusChargingAdapter) is gated to the verified ROM version; everything else lands here for
+    // the contribution flow.
     override fun matches(device: DeviceInfo) =
         device.manufacturer.equals("OnePlus", ignoreCase = true) ||
-            device.manufacturer.equals("Oppo", ignoreCase = true)
+            device.manufacturer.equals("Oppo", ignoreCase = true) ||
+            device.manufacturer.equals("realme", ignoreCase = true)
 
     companion object {
-        val CANDIDATE_KEYS = setOf("regular_charge_protection_switch_state")
+        val CANDIDATE_KEYS = setOf(
+            "regular_charge_protection_switch_state",
+            "smart_charge_protection_switch_state",
+        )
     }
 }
