@@ -29,8 +29,17 @@ abstract class DisabledLabAdapter : ChargingAdapter {
 
     override suspend fun apply(policy: ChargePolicy, backend: AccessBackend) = false
 
-    override fun nativeSettingsIntent(context: Context) =
-        Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    override fun nativeSettingsIntent(context: Context): Intent {
+        // Prefer the system battery-usage screen, which on most OEM skins is the entry point that
+        // also holds the built-in charge-protection toggle; fall back to Battery Saver settings
+        // where it isn't resolvable. Both are generic AOSP actions — no brittle OEM ComponentNames.
+        val powerUsage = Intent(Intent.ACTION_POWER_USAGE_SUMMARY).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return if (powerUsage.resolveActivity(context.packageManager) != null) {
+            powerUsage
+        } else {
+            Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+    }
 }
 
 @Singleton
@@ -54,5 +63,19 @@ class OnePlusLabAdapter @Inject constructor() : DisabledLabAdapter() {
 
     companion object {
         val CANDIDATE_KEYS = setOf("regular_charge_protection_switch_state")
+    }
+}
+
+@Singleton
+class XiaomiLabAdapter @Inject constructor() : DisabledLabAdapter() {
+    override val id = "xiaomi-lab"
+    override val displayName = R.string.adapter_name_xiaomi.toCaString()
+
+    // Redmi and POCO devices report manufacturer "Xiaomi", so this covers the whole family.
+    override fun matches(device: DeviceInfo) = device.manufacturer.equals("Xiaomi", ignoreCase = true)
+
+    companion object {
+        // No writable keys are wired yet — Xiaomi stays diagnostics-only + guide-only.
+        val CANDIDATE_KEYS = emptySet<String>()
     }
 }

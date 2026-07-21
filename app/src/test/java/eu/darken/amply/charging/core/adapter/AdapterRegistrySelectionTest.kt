@@ -23,6 +23,7 @@ class AdapterRegistrySelectionTest {
         samsungLegacy = SamsungLegacyChargingAdapter(),
         samsungLab = SamsungLabAdapter(),
         onePlus = OnePlusLabAdapter(),
+        xiaomi = XiaomiLabAdapter(),
     )
 
     private fun samsung(oneUi: Int?) = DeviceInfo(

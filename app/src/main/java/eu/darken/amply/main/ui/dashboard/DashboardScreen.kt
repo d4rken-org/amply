@@ -75,7 +75,10 @@ import eu.darken.amply.common.compose.asComposable
 import eu.darken.amply.fullcharge.core.ChargeSessionRecord
 import eu.darken.amply.fullcharge.core.policyOrNull
 import eu.darken.amply.main.core.formatReport
+import eu.darken.amply.battery.core.BatteryReadout
+import eu.darken.amply.battery.ui.BatteryInfoCard
 import eu.darken.amply.main.ui.setup.AccessSetupGuide
+import eu.darken.amply.main.ui.setup.OemGuideCard
 import eu.darken.amply.main.ui.setup.UnsupportedDeviceCard
 import kotlinx.coroutines.delay
 
@@ -90,6 +93,10 @@ fun DashboardScreen(
     onApply: (ChargePolicy) -> Unit,
     onQuickFullChargeChange: (Boolean) -> Unit,
     onOpenReconnectSettings: () -> Unit,
+    onAlarmEnabledChange: (Boolean) -> Unit,
+    onAlarmTargetChange: (Int) -> Unit,
+    onFixNotifications: () -> Unit,
+    onOpenBatteryDetail: () -> Unit,
     onPinWidget: () -> Unit,
     onAddTile: () -> Unit,
     onDismissQuickAccess: () -> Unit,
@@ -166,6 +173,29 @@ fun DashboardScreen(
                             )
                         }
                     }
+                    // Point unsupported devices at their OEM's own charge-protection setting.
+                    item {
+                        OemGuideCard(
+                            manufacturer = state.charging.device.manufacturer
+                                .ifBlank { stringResource(R.string.dashboard_manufacturer_fallback) },
+                            onOpenSettings = onNativeSettings,
+                        )
+                    }
+                    item {
+                        ChargeAlarmCard(
+                            config = state.alarm,
+                            notificationsBlocked = state.notificationsBlocked,
+                            onEnabledChange = onAlarmEnabledChange,
+                            onTargetChange = onAlarmTargetChange,
+                            onFixNotifications = onFixNotifications,
+                        )
+                    }
+                    item {
+                        BatteryInfoCard(
+                            readout = state.batteryReadout ?: BatteryReadout.UNKNOWN,
+                            onOpenDetail = onOpenBatteryDetail,
+                        )
+                    }
                     if (state.charging.contributionWanted) {
                         item {
                             UnsupportedDeviceCard(
@@ -217,6 +247,21 @@ fun DashboardScreen(
                                 onOpenSettings = onOpenReconnectSettings,
                             )
                         }
+                    }
+                    item {
+                        ChargeAlarmCard(
+                            config = state.alarm,
+                            notificationsBlocked = state.notificationsBlocked,
+                            onEnabledChange = onAlarmEnabledChange,
+                            onTargetChange = onAlarmTargetChange,
+                            onFixNotifications = onFixNotifications,
+                        )
+                    }
+                    item {
+                        BatteryInfoCard(
+                            readout = state.batteryReadout ?: BatteryReadout.UNKNOWN,
+                            onOpenDetail = onOpenBatteryDetail,
+                        )
                     }
                     // Promote the widget/tile shortcuts only once setup is done (the setup guide above
                     // has disappeared) and while at least one shortcut is still undiscovered.
@@ -730,6 +775,10 @@ private fun DashboardScreenPreview() = PreviewWrapper {
         onApply = {},
         onQuickFullChargeChange = {},
         onOpenReconnectSettings = {},
+        onAlarmEnabledChange = {},
+        onAlarmTargetChange = {},
+        onFixNotifications = {},
+        onOpenBatteryDetail = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -790,6 +839,10 @@ private fun DashboardScreenApplyingPreview() = PreviewWrapper {
         onApply = {},
         onQuickFullChargeChange = {},
         onOpenReconnectSettings = {},
+        onAlarmEnabledChange = {},
+        onAlarmTargetChange = {},
+        onFixNotifications = {},
+        onOpenBatteryDetail = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -852,6 +905,10 @@ private fun DashboardScreenSessionActivePreview() = PreviewWrapper {
         onApply = {},
         onQuickFullChargeChange = {},
         onOpenReconnectSettings = {},
+        onAlarmEnabledChange = {},
+        onAlarmTargetChange = {},
+        onFixNotifications = {},
+        onOpenBatteryDetail = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -916,6 +973,10 @@ private fun DashboardScreenSessionRecordedPreview() = PreviewWrapper {
         onApply = {},
         onQuickFullChargeChange = {},
         onOpenReconnectSettings = {},
+        onAlarmEnabledChange = {},
+        onAlarmTargetChange = {},
+        onFixNotifications = {},
+        onOpenBatteryDetail = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -968,6 +1029,10 @@ private fun DashboardScreenWssOnlyPreview() = PreviewWrapper {
         onApply = {},
         onQuickFullChargeChange = {},
         onOpenReconnectSettings = {},
+        onAlarmEnabledChange = {},
+        onAlarmTargetChange = {},
+        onFixNotifications = {},
+        onOpenBatteryDetail = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -1027,6 +1092,10 @@ private fun DashboardScreenSamsungPreview() = PreviewWrapper {
         onApply = {},
         onQuickFullChargeChange = {},
         onOpenReconnectSettings = {},
+        onAlarmEnabledChange = {},
+        onAlarmTargetChange = {},
+        onFixNotifications = {},
+        onOpenBatteryDetail = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -1065,6 +1134,10 @@ private fun DashboardScreenUnsupportedPreview() = PreviewWrapper {
         onApply = {},
         onQuickFullChargeChange = {},
         onOpenReconnectSettings = {},
+        onAlarmEnabledChange = {},
+        onAlarmTargetChange = {},
+        onFixNotifications = {},
+        onOpenBatteryDetail = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
