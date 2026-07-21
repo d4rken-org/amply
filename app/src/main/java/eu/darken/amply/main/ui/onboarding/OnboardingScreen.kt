@@ -1,9 +1,11 @@
 package eu.darken.amply.main.ui.onboarding
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,10 +14,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatterySaver
@@ -28,7 +31,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -39,6 +41,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -59,33 +63,88 @@ fun OnboardingScreen(onContinue: () -> Unit) {
     // Each page composes its own scaffold (and thus its own scroll state), so opening the caveats
     // page never inherits a scroll offset the user left on the welcome page.
     if (showCaveats) {
-        OnboardingCaveatsPage(onBack = { showCaveats = false }, onContinue = onContinue)
+        OnboardingCaveatsPage(onContinue = onContinue)
     } else {
         OnboardingWelcomePage(onNext = { showCaveats = true })
     }
 }
 
 @Composable
-private fun OnboardingScaffold(content: @Composable () -> Unit) {
+private fun OnboardingScaffold(
+    currentPage: Int,
+    actions: @Composable ColumnScope.() -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     // Centre and cap the width so the flow doesn't stretch edge-to-edge on tablets, and consume the
-    // system-bar insets (this screen has no Scaffold) so the buttons clear the gesture nav bar.
-    Box(Modifier.fillMaxSize()) {
+    // safe-drawing insets (this screen has no Scaffold) so the pinned actions clear the gesture nav
+    // bar and display cutouts. Only the content scrolls; the page indicator and primary action stay
+    // at the bottom.
+    Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
         Column(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .widthIn(max = ONBOARDING_MAX_WIDTH)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .windowInsetsPadding(WindowInsets.systemBars)
-                .padding(horizontal = 20.dp, vertical = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            content = { content() },
-        )
+                .fillMaxWidth(),
+        ) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 28.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                content = { content() },
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                PageIndicator(pageCount = ONBOARDING_PAGE_COUNT, currentPage = currentPage)
+                actions()
+            }
+        }
     }
 }
 
 @Composable
-private fun OnboardingWelcomePage(onNext: () -> Unit) = OnboardingScaffold {
+private fun PageIndicator(pageCount: Int, currentPage: Int) {
+    val progressDescription = stringResource(R.string.onboarding_page_progress, currentPage + 1, pageCount)
+    Row(
+        modifier = Modifier.semantics { contentDescription = progressDescription },
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        repeat(pageCount) { index ->
+            val active = index == currentPage
+            Box(
+                Modifier
+                    .size(width = if (active) 24.dp else 8.dp, height = 8.dp)
+                    .background(
+                        color = if (active) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                        },
+                        shape = CircleShape,
+                    ),
+            )
+        }
+    }
+}
+
+@Composable
+private fun OnboardingWelcomePage(onNext: () -> Unit) = OnboardingScaffold(
+    currentPage = 0,
+    actions = {
+        Button(onClick = onNext, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.onboarding_next_action))
+        }
+    },
+) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
@@ -144,14 +203,17 @@ private fun OnboardingWelcomePage(onNext: () -> Unit) = OnboardingScaffold {
             )
         }
     }
-
-    Button(onClick = onNext, modifier = Modifier.fillMaxWidth()) {
-        Text(stringResource(R.string.onboarding_next_action))
-    }
 }
 
 @Composable
-private fun OnboardingCaveatsPage(onBack: () -> Unit, onContinue: () -> Unit) = OnboardingScaffold {
+private fun OnboardingCaveatsPage(onContinue: () -> Unit) = OnboardingScaffold(
+    currentPage = 1,
+    actions = {
+        Button(onClick = onContinue, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.onboarding_continue_action))
+        }
+    },
+) {
     Text(
         text = stringResource(R.string.onboarding_caveats_title),
         style = MaterialTheme.typography.headlineSmall,
@@ -173,15 +235,16 @@ private fun OnboardingCaveatsPage(onBack: () -> Unit, onContinue: () -> Unit) = 
         body = stringResource(R.string.onboarding_caveat_setup_body),
     )
 
-    Button(onClick = onContinue, modifier = Modifier.fillMaxWidth()) {
-        Text(stringResource(R.string.onboarding_continue_action))
-    }
-    TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
-        Text(stringResource(R.string.onboarding_back_action))
-    }
+    CaveatCard(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        title = stringResource(R.string.onboarding_caveat_restore_title),
+        body = stringResource(R.string.onboarding_caveat_restore_body),
+    )
 }
 
 private val ONBOARDING_MAX_WIDTH = 560.dp
+private const val ONBOARDING_PAGE_COUNT = 2
 
 @Composable
 private fun CaveatCard(
@@ -226,5 +289,5 @@ private fun OnboardingWelcomePagePreview() = PreviewWrapper {
 @AmplyPreview
 @Composable
 private fun OnboardingCaveatsPagePreview() = PreviewWrapper {
-    OnboardingCaveatsPage(onBack = {}, onContinue = {})
+    OnboardingCaveatsPage(onContinue = {})
 }

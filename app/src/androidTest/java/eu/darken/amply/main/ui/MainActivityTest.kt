@@ -4,7 +4,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
+import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import eu.darken.amply.R
 import org.junit.Rule
@@ -26,15 +26,17 @@ class MainActivityTest {
         composeRule.onNodeWithText("Option 1 · Shizuku").assertDoesNotExist()
         composeRule.onNodeWithText("Option 2 · Computer").assertDoesNotExist()
 
-        // Next reveals the caveats page with both caveat cards, still without the setup guide.
-        composeRule.onNodeWithText(str(R.string.onboarding_next_action)).performScrollTo().performClick()
+        // Next is pinned at the bottom, so it must be visible without scrolling. It reveals the
+        // caveats page with its caveat cards, still without the setup guide.
+        composeRule.onNodeWithText(str(R.string.onboarding_next_action)).assertIsDisplayed().performClick()
         composeRule.onNodeWithText(str(R.string.onboarding_caveat_support_title)).assertIsDisplayed()
         composeRule.onNodeWithText(str(R.string.onboarding_caveat_setup_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(str(R.string.onboarding_caveat_restore_title)).assertExists()
         composeRule.onNodeWithText(str(R.string.onboarding_continue_action)).assertIsDisplayed()
         composeRule.onNodeWithText("Option 1 · Shizuku").assertDoesNotExist()
 
-        // Back returns to the welcome page.
-        composeRule.onNodeWithText(str(R.string.onboarding_back_action)).performScrollTo().performClick()
+        // There is no visible back button anymore; system back returns to the welcome page.
+        Espresso.pressBack()
         composeRule.onNodeWithText(str(R.string.onboarding_welcome_title)).assertIsDisplayed()
     }
 }
