@@ -65,8 +65,7 @@
     <string name="charging_message_setup_required">Setup required</string>
     <string name="charging_message_applying">Applying %1$s…</string>
     <string name="charging_message_write_failed">Write failed</string>
-    <string name="charging_message_verified">%1$s setting verified; charging hardware may take about 15 seconds</string>
-    <string name="charging_message_requested_slow">%1$s requested; charging hardware may take about 15 seconds</string>
+    <string name="charging_message_verified">%1$s setting verified</string>
     <string name="charging_message_requested">%1$s requested</string>
     <string name="charging_message_shizuku_granted">Shizuku permission granted</string>
     <string name="charging_message_shizuku_denied">Shizuku permission was not granted</string>
@@ -273,11 +272,18 @@
     <string name="dashboard_manufacturer_fallback">these</string>
     <string name="dashboard_applying">Applying…</string>
     <string name="dashboard_device_line">%1$s · Android API %2$d</string>
-    <string name="dashboard_waiting_target">Waiting for the system to switch to %1$s…</string>
+    <string name="dashboard_waiting_target">Waiting for the system to switch to %1$s — this can take about 15 seconds…</string>
     <string name="dashboard_settling_fallback_target">the new policy</string>
+    <string name="dashboard_session_once_title" formatted="false">Charging to 100% once</string>
+    <string name="dashboard_session_returns">%1$s will return automatically at 100%% or when you unplug.</string>
+    <string name="dashboard_policy_desc_fixed">This policy stops charging at %1$d%% to protect long-term battery health.</string>
+    <string name="dashboard_policy_desc_adaptive">This policy learns your routine and finishes charging just before you usually unplug.</string>
+    <string name="dashboard_policy_desc_full" formatted="false">This policy charges the battery fully to 100% without a limit.</string>
+    <string name="dashboard_policy_desc_pause" formatted="false">This policy charges to 100%, then pauses and tops the battery up near full.</string>
     <string name="dashboard_fullcharge_active_title">Charging fully once</string>
     <string name="dashboard_fullcharge_idle_title">Need a full battery?</string>
-    <string name="dashboard_fullcharge_active_body" formatted="false">The protective policy returns at 100% or when you unplug.</string>
+    <string name="dashboard_fullcharge_recorded_title">One-time charge recorded</string>
+    <string name="dashboard_fullcharge_recorded_body" formatted="false">100% charging isn\'t confirmed. Restoring ends the recorded charge.</string>
     <string name="dashboard_fullcharge_idle_body" formatted="false">Temporarily allow 100%, then restore your protective policy automatically.</string>
     <string name="dashboard_fullcharge_restore">Restore limit now</string>
     <string name="dashboard_fullcharge_start" formatted="false">Charge to 100% once</string>

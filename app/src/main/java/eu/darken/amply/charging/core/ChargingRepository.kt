@@ -230,10 +230,12 @@ class ChargingRepository @Inject constructor(
                     } ?: false
             }
             val pending = if (settled) null else PendingRequest(policy, now)
+            // Timing copy lives solely in the dashboard's settling line; these must stay accurate
+            // when nothing is pending (sync-readback adapters, no-op re-applies).
             val messageRes = if (observation is ChargeObservation.Verified) {
                 R.string.charging_message_verified
             } else {
-                R.string.charging_message_requested_slow
+                R.string.charging_message_requested
             }
             val message = caString { it.getString(messageRes, policy.label.get(it)) }
             mutableState.value = state.value.copy(

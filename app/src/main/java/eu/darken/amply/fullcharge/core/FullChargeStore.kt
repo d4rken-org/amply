@@ -3,6 +3,7 @@ package eu.darken.amply.fullcharge.core
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import eu.darken.amply.charging.core.ChargePolicy
@@ -65,6 +66,13 @@ class FullChargeStore @Inject constructor(
         dataStore.store.edit { it.remove(RECOVERY_PENDING_TARGET) }
     }
 
+    /** The boot count during which Amply last ran — used to spot re-delivered BOOT_COMPLETED broadcasts. */
+    suspend fun lastSeenBootCount(): Int? = dataStore.store.data.first()[LAST_SEEN_BOOT_COUNT]
+
+    suspend fun setLastSeenBootCount(count: Int) {
+        dataStore.store.edit { it[LAST_SEEN_BOOT_COUNT] = count }
+    }
+
     suspend fun isQuickFullChargeEnabled(): Boolean = quickFullChargeEnabled.first()
 
     suspend fun setQuickFullChargeEnabled(enabled: Boolean) {
@@ -88,5 +96,6 @@ class FullChargeStore @Inject constructor(
         val SESSION_CONNECTED = booleanPreferencesKey("session.connected_seen")
         val QUICK_FULL_CHARGE_ENABLED = booleanPreferencesKey("fullcharge.quick_replug_enabled")
         val RECOVERY_PENDING_TARGET = stringPreferencesKey("recovery.pending_target")
+        val LAST_SEEN_BOOT_COUNT = intPreferencesKey("recovery.last_seen_boot_count")
     }
 }

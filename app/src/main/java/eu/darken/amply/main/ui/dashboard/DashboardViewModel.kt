@@ -126,14 +126,28 @@ class DashboardViewModel @Inject constructor(
      */
     fun nudgeChargeService(): Job = viewModelScope.launch {
         try {
+            // The first run in a new boot keeps conservative BOOT (restore) semantics even from
+            // here: a launch of an app that stayed stopped across a reboot races the deferred
+            // BOOT_COMPLETED delivery, and seeding the boot count first would downgrade both
+            // paths to CHECK and resume a stale pre-reboot session.
+            val bootCount = ServiceDispatch.currentBootCount(context)
+            val trigger = ServiceDispatch.bootTrigger(
+                currentBootCount = bootCount,
+                lastSeenBootCount = fullChargeStore.lastSeenBootCount(),
+            )
             val action = ServiceDispatch.startAction(
-                trigger = ServiceDispatch.Trigger.FOREGROUND,
+                trigger = trigger,
                 sessionExists = fullChargeStore.currentSession() != null,
                 pendingRecovery = fullChargeStore.pendingRecoveryTarget() != null,
                 gestureEnabled = fullChargeStore.isQuickFullChargeEnabled(),
-            ) ?: return@launch
-            log(TAG) { "Foreground nudge: starting service with $action" }
-            ContextCompat.startForegroundService(context, ServiceDispatch.startIntent(context, action))
+            )
+            if (action != null) {
+                log(TAG) { "Foreground nudge (trigger=$trigger): starting service with $action" }
+                ContextCompat.startForegroundService(context, ServiceDispatch.startIntent(context, action))
+            }
+            // Record only after a start that didn't throw, so a failed dispatch is retried with
+            // unchanged semantics on the next resume.
+            bootCount?.let { fullChargeStore.setLastSeenBootCount(it) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

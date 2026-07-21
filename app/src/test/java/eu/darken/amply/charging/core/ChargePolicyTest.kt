@@ -22,6 +22,8 @@ class ChargePolicyTest {
         ChargePolicy.PauseAtFull.allowsFullCharge shouldBe true
         ChargePolicy.Adaptive.allowsFullCharge shouldBe false
         ChargePolicy.FixedLimit(95).allowsFullCharge shouldBe false
+        // A 100% "limit" is no cap at all.
+        ChargePolicy.FixedLimit(100).allowsFullCharge shouldBe true
     }
 
     @Test

@@ -2,6 +2,7 @@ package eu.darken.amply.fullcharge.core
 
 import android.content.Context
 import android.content.Intent
+import android.provider.Settings
 
 /**
  * Pure dispatch logic for when and how [ChargeSessionService] is started outside of a direct user
@@ -10,6 +11,26 @@ import android.content.Intent
 object ServiceDispatch {
 
     enum class Trigger { BOOT, FOREGROUND }
+
+    /**
+     * Which trigger semantics a BOOT_COMPLETED delivery should use. Android defers the broadcast
+     * for stopped apps and re-delivers it when a force-stopped app next starts (observed on
+     * Android 16 / Pixel 7a) — within the same boot that delivery races the foreground nudge and
+     * must NOT restore over a live session. If Amply has already run during this boot, the
+     * delivery is such a re-delivery and gets the reconciling [Trigger.FOREGROUND] semantics; a
+     * genuinely new (or unknown) boot keeps the restoring [Trigger.BOOT] semantics.
+     */
+    fun bootTrigger(currentBootCount: Int?, lastSeenBootCount: Int?): Trigger = when {
+        currentBootCount != null && currentBootCount == lastSeenBootCount -> Trigger.FOREGROUND
+        else -> Trigger.BOOT
+    }
+
+    /** The system boot counter, or null where the setting is unavailable. */
+    fun currentBootCount(context: Context): Int? = try {
+        Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT)
+    } catch (e: Settings.SettingNotFoundException) {
+        null
+    }
 
     /**
      * The service action a trigger should start, or null when there is no work (never start a

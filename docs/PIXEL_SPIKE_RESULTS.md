@@ -157,3 +157,53 @@ UX pass on top of the qualified build:
 - **Dashboard.** Pixel-settings link moved to the policy card's top-right; hero and reconnect cards now place the icon in the title row with text spanning the full width beneath.
 - **Debug "Shorten session timeouts" toggle removed** now that the safety path is verified (the 2026-07-20 test above used it before removal). The pure `SessionDecisionEngine.decide(armTimeoutMillis, safetyTimeoutMillis)` overload is retained for unit tests.
 - **`onNewIntent` fix.** The widget's notification-permission fallback now works when `MainActivity` is already running (the extra was previously only read once in `LaunchedEffect(Unit)`).
+
+## Foreground recovery nudge smoke test (2026-07-21)
+
+Smoke test of the force-stop recovery nudge (merged that morning: `MainActivity`'s resume effect checks for
+leftover work and pokes the service with `ACTION_CHECK`) on the Pixel 7a, Android 16 / API 36, driven over adb.
+Sessions here used WSS-only access (no Shizuku permission held by Amply).
+
+- **Empty state (no session, no pending target, gesture off).** Force-stop → relaunch: no service start, no
+  notification, dashboard refresh only. The nudge stays silent when there is no work.
+- **Healthy plugged session.** Session started, force-stopped (notification gone, limit still lifted, nothing
+  monitoring), relaunched: `ACTION_CHECK` **resumed** the session — no restore write, session notification back,
+  limit stayed lifted.
+- **Disconnect while dead.** Session force-stopped, unplug simulated, relaunched: exactly one restore
+  (`fixed:80`), then the service stopped cleanly. Full-battery variant (level simulated to 100 while dead):
+  same single-restore behavior; the second CHECK (nudge after the boot-redelivery CHECK, see below) correctly
+  found nothing left to do.
+- **Restore failure (WSS revoked, no Shizuku).** Relaunch with a restore-due session: exactly **one** failed
+  attempt per service start ("Setup required"), recovery notification posted, service destroyed — no retry
+  loop (the pre-nudge code would have re-evaluated the failing write in a tight recursion). With access
+  re-granted, the next real foreground entry retried and restored successfully.
+- **Gesture-only.** Force-stop with the reconnect gesture enabled: relaunch brought the monitor notification
+  back via CHECK.
+- **Notifications denied.** Revoking POST_NOTIFICATIONS kills the process but is *not* a full force-stop: the
+  sticky restart (`action=<restart>`) revived the service and resumed the session on its own; the foreground
+  CHECK then found recovery handled. The FGS ran with the notification suppressed, no crash. This also
+  exercised the null-action sticky path on-device.
+- Session + conflicting pending target and pending-only recovery are covered by unit tests
+  (`BootRecoveryFlowTest`); the process-death window they model cannot be fabricated on an unrooted device.
+
+### Finding: deferred BOOT_COMPLETED redelivery defeats CHECK semantics (fixed same day)
+
+Android 16 re-delivers the deferred `BOOT_COMPLETED` broadcast when a force-stopped app next starts
+(observed via `BOOT_COMPLETED_BROADCAST_COMPLETION_LATENCY_REPORTED` at app launch, no reboot involved).
+`BootReceiver` therefore ran with boot semantics on every launch after a force-stop and sent
+`ACTION_RECOVER`, which **restored the protective policy over a healthy resumable session** before the
+foreground nudge's `ACTION_CHECK` arrived — resume-not-restore never happened. Safe direction (protection
+returned), but it silently cancelled the user's one-time full charge.
+
+Fix: the boot count (`Settings.Global.BOOT_COUNT`) is recorded whenever Amply runs (foreground nudge and
+BootReceiver). A `BOOT_COMPLETED` delivery for an already-seen boot count is a redelivery and downgrades to
+the reconciling `ACTION_CHECK`; a new or unknown boot keeps `ACTION_RECOVER`. Re-verified live: the
+redelivery now logs `trigger=FOREGROUND`, and a force-stopped healthy session resumes instead of being
+restored over.
+
+Minor cosmetic gap noted (not fixed): the "Charge limit needs attention" recovery notification is not
+cancelled when a later restore succeeds; it lingers until swiped.
+
+Test-harness notes: `cmd battery set level` can mask `EXTRA_CHARGING_STATUS`, stalling hardware-confirmation
+convergence (a boot-recovery run went to its bounded give-up under a faked level — by design, not a bug);
+device doze pauses the activity, so resume-driven checks need the screen awake.
