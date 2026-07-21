@@ -1129,6 +1129,7 @@ private fun DashboardScreenOnePlusNeedsShizukuPreview() = PreviewWrapper {
         onAllowShizuku = {},
         onGrantWss = {},
         onCopyAdb = {},
+        onCopyWebUsbLink = {},
         onPrepareSupportReport = {},
         onCopySupportReport = {},
         onOpenSupportIssue = {},
