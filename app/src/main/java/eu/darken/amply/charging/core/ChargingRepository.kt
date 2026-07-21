@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -87,6 +88,9 @@ class ChargingRepository @Inject constructor(
     private val settleScheduler: SettleScheduler,
 ) {
     private val operationMutex = Mutex()
+    // Separate from operationMutex: the ~25s grant deliberately never holds operationMutex (see below),
+    // but manual and automatic callers must still be single-flighted against each other.
+    private val grantMutex = Mutex()
     private val mutableState = MutableStateFlow(ChargingState())
     val state: StateFlow<ChargingState> = mutableState.asStateFlow()
 
@@ -135,11 +139,21 @@ class ChargingRepository @Inject constructor(
         return result
     }
 
-    suspend fun grantWriteSecureSettings(): Boolean {
-        // Show the in-progress cue immediately, but deliberately WITHOUT holding operationMutex: the grant
-        // is a ~10s blocking pm grant and must not serialize ahead of a concurrent protective-policy
-        // restore/apply. The trailing refresh() still takes the lock to reconcile state.
-        mutableState.value = state.value.copy(busy = true, grantingWss = true, message = null)
+    suspend fun grantWriteSecureSettings(): Boolean = grantMutex.withLock {
+        // Single-flight: the manual setup-card button and the automatic coordinator can both call this.
+        // Whoever queued behind an in-flight grant rechecks here and short-circuits if WSS already landed
+        // (also covers an external adb grant). Reconcile via refresh() so the UI and the auto-grant
+        // coordinator observe the granted permission instead of a stale "missing" snapshot. Uses the
+        // lightweight direct-only status, not a full snapshot (which would also poll Shizuku/PackageManager).
+        if (accessResolver.direct.status().ready) {
+            log(TAG) { "WSS already granted; reconciling and skipping grant" }
+            return@withLock refresh().access?.direct?.ready == true
+        }
+        // Drive only `grantingWss` (the setup-card spinner) via an atomic update; never touch the shared
+        // `busy` flag, which a concurrent policy apply owns. Deliberately WITHOUT holding operationMutex:
+        // the grant is a slow blocking pm grant and must not serialize ahead of a protective-policy
+        // restore/apply. The trailing refresh() still takes operationMutex to reconcile state.
+        mutableState.update { it.copy(grantingWss = true, message = null) }
         try {
             try {
                 // The AIDL grant is a blocking Binder transaction; keep it off the main thread to avoid an ANR.
@@ -152,18 +166,19 @@ class ChargingRepository @Inject constructor(
                 log(TAG, Logging.Priority.WARN) { "Shizuku WSS grant call failed: ${e.message}" }
             }
             val granted = refresh().access?.direct?.ready == true
-            mutableState.value = state.value.copy(
-                message = (if (granted) R.string.charging_message_wss_granted else R.string.charging_message_wss_failed)
-                    .toCaString(),
-            )
-            return granted
-        } finally {
-            // refresh() clears these on the normal path; guarantee they never stick on this singleton under
-            // cancellation or a failed refresh. Non-suspending, so it is safe during coroutine teardown.
-            val current = state.value
-            if (current.busy || current.grantingWss) {
-                mutableState.value = current.copy(busy = false, grantingWss = false)
+            mutableState.update {
+                it.copy(
+                    grantingWss = false,
+                    message = (if (granted) R.string.charging_message_wss_granted else R.string.charging_message_wss_failed)
+                        .toCaString(),
+                )
             }
+            return@withLock granted
+        } finally {
+            // refreshLocked() preserves grantingWss so an unrelated refresh mid-grant can't clear the
+            // spinner; guarantee it never sticks under cancellation or a failed refresh. Non-suspending,
+            // so it is safe during coroutine teardown.
+            mutableState.update { if (it.grantingWss) it.copy(grantingWss = false) else it }
         }
     }
 
@@ -379,6 +394,8 @@ class ChargingRepository @Inject constructor(
             observation = observation,
             pending = pending,
             busy = false,
+            // grantingWss is intentionally left default here; mergeRefreshedState (below) carries an
+            // in-flight grant's spinner over from the previous state so a concurrent refresh can't clear it.
             message = message,
         )
         // A WSS grant publishes its busy/grantingWss/message cue OUTSIDE operationMutex (its ~10s Binder
