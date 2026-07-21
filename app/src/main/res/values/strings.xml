@@ -50,7 +50,7 @@
     <string name="onboarding_continue_action">Get started</string>
     <string name="onboarding_caveats_title">Before you start</string>
     <string name="onboarding_caveat_support_title">Support grows device by device</string>
-    <string name="onboarding_caveat_support_body">Charge control is mapped one device at a time. Right now, direct control works on Pixel 6a and newer phones running Android 15 or later, on Samsung devices with verified One UI versions, and on verified Xiaomi devices. On other devices, Amply explains why control is unavailable, and where a device report can help expand support, the dashboard lets you send one.</string>
+    <string name="onboarding_caveat_support_body">Charge control is mapped one device at a time. Right now, direct control works on Pixel 6a and newer phones running Android 15 or later, on Samsung devices with verified One UI versions, on verified Xiaomi devices, and on OnePlus, Oppo, and Realme devices on ColorOS 15. On other devices, Amply explains why control is unavailable, and where a device report can help expand support, the dashboard lets you send one.</string>
     <string name="onboarding_caveat_setup_title">One-time setup on supported devices</string>
     <string name="onboarding_caveat_setup_body">Changing the charge policy requires a permission that apps cannot grant themselves. You grant it once: either run a single command from a computer over ADB, or use the Shizuku app on this phone. If your device is supported, the dashboard walks you through both options.</string>
     <string name="onboarding_caveat_restore_title">Protection returns on its own</string>
@@ -314,6 +314,8 @@
     <string name="settings_reconnect_any_level_hint">More sensitive: any unplug/replug of 2–10 seconds starts a full charge, e.g. also below 80%. Momentary power cuts shorter than 2 seconds, like a car cutting USB power while starting, never trigger.</string>
     <string name="dashboard_shizuku_title">Better with Shizuku</string>
     <string name="dashboard_shizuku_body">Shizuku gives Amply exact policy readback instead of relying on hardware state and the last request.</string>
+    <string name="dashboard_shizuku_required_title">Shizuku required to change charging</string>
+    <string name="dashboard_shizuku_required_body">This device stores its charging setting where only Shizuku can change it. Connect Shizuku to switch policies; without it Amply can still show the current state.</string>
     <string name="dashboard_shizuku_allow">Allow access</string>
     <string name="dashboard_shizuku_open">Open Shizuku</string>
     <string name="dashboard_adb_copied">ADB command copied</string>

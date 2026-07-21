@@ -62,6 +62,8 @@ keys in the `system` namespace with domain {0,1}.
 
 | Date | Device | Scenario | Result |
 |---|---|---|---|
-| _pending_ | CPH2621 | Adapter selected + gated under app UID; dashboard renders the three-way selector | — |
-| _pending_ | CPH2621 | WSS-only write is rejected (confirms system-namespace constraint); Shizuku write succeeds | — |
-| _pending_ | CPH2621 | Read matrix (limit / smart / neither); mode writes via app; session E2E; native-change cancel; minified beta | — |
+| 2026-07-21 | CPH2621 | Adapter selected + gated under app UID; dashboard reads "80% limit" (regular=1) and renders the 80/Adaptive/100 selector; state read via WSS (system is world-readable) | PASS |
+| 2026-07-21 | CPH2621 | **WSS-only write is rejected** — apply reports "Policy not verified / write failed" and the key is untouched (read-back verification catches it honestly). Confirms the system-namespace constraint on hardware | PASS |
+| 2026-07-21 | CPH2621 | **Shizuku write succeeds** for all three policies: 100%→(0,0), Adaptive→(0,1), 80%→(1,0); mutual exclusion is written correctly; "Read back through shizuku" verified | PASS |
+| 2026-07-21 | CPH2621 | WSS-only UX: controls disabled + "Shizuku required to change charging" banner shown; state still readable | PASS |
+| n/a | CPH2621 | Session E2E / native-change cancel / minified beta | Not run this pass — device at 80% under its own limit; the shared session/observer/R8 paths are verified on the other adapters. Left for a follow-up device pass. |

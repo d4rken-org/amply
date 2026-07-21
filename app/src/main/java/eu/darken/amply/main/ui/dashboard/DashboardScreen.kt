@@ -197,7 +197,7 @@ fun DashboardScreen(
                     item {
                         FullChargeCard(
                             presentation = sessionPresentation,
-                            canControl = state.charging.controlEnabled && state.charging.access?.canControl == true,
+                            canControl = state.charging.canApply(),
                             onStart = onStartFull,
                             onRestore = onRestore,
                         )
@@ -210,9 +210,7 @@ fun DashboardScreen(
                             QuickFullChargeCard(
                                 enabled = state.quickFullChargeEnabled,
                                 anyLevel = state.quickFullChargeAnyLevel,
-                                canControl = state.charging.reconnectSupported &&
-                                    state.charging.controlEnabled &&
-                                    state.charging.access?.canControl == true,
+                                canControl = state.charging.reconnectSupported && state.charging.canApply(),
                                 onEnabledChange = onQuickFullChargeChange,
                                 onOpenSettings = onOpenReconnectSettings,
                             )
@@ -237,15 +235,29 @@ fun DashboardScreen(
                             )
                         }
                     }
-                    // Only nudge toward Shizuku once the user is already on the WSS-only (computer) path:
-                    // durable control is present but Shizuku isn't, so exact readback/diagnostics are
-                    // missing. Sync-readback adapters verify through any backend, so the banner's
-                    // readback pitch would be wrong there. Before any setup, stay quiet.
                     val access = state.charging.access
-                    if (access?.direct?.ready == true && !access.canVerify && !state.charging.syncVerification) {
-                        item {
+                    when {
+                        // System-namespace adapters (OnePlus/ColorOS): writes need Shizuku even
+                        // when WSS is granted, so nudge toward it and the controls above are
+                        // disabled until it is connected.
+                        state.charging.controlEnabled &&
+                            state.charging.writeRequiresShizuku &&
+                            access?.shizuku?.ready != true -> item {
+                            ShizukuBanner(
+                                running = access?.shizuku?.available == true,
+                                requiredForControl = true,
+                                onOpen = onOpenShizuku,
+                                onAllow = onAllowShizuku,
+                            )
+                        }
+                        // Only nudge toward Shizuku once the user is already on the WSS-only
+                        // (computer) path: durable control is present but Shizuku isn't, so exact
+                        // readback/diagnostics are missing. Sync-readback adapters verify through
+                        // any backend, so the readback pitch would be wrong there.
+                        access?.direct?.ready == true && !access.canVerify && !state.charging.syncVerification -> item {
                             ShizukuBanner(
                                 running = access.shizuku.available,
+                                requiredForControl = false,
                                 onOpen = onOpenShizuku,
                                 onAllow = onAllowShizuku,
                             )
@@ -476,9 +488,7 @@ private fun PolicyCard(
                 }
             }
             Spacer(Modifier.height(8.dp))
-            val choiceEnabled = state.charging.controlEnabled &&
-                state.charging.access?.canControl == true &&
-                !state.charging.busy
+            val choiceEnabled = state.charging.canApply() && !state.charging.busy
             if (choices.size <= 4) {
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     choices.forEachIndexed { index, (policy, label) ->
@@ -601,6 +611,7 @@ private fun QuickFullChargeCardLargeFontPreview() = PreviewWrapper {
 @Composable
 private fun ShizukuBanner(
     running: Boolean,
+    requiredForControl: Boolean,
     onOpen: () -> Unit,
     onAllow: () -> Unit,
 ) {
@@ -610,12 +621,18 @@ private fun ShizukuBanner(
     ) {
         Column(Modifier.padding(16.dp)) {
             Text(
-                stringResource(R.string.dashboard_shizuku_title),
+                stringResource(
+                    if (requiredForControl) R.string.dashboard_shizuku_required_title
+                    else R.string.dashboard_shizuku_title,
+                ),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                stringResource(R.string.dashboard_shizuku_body),
+                stringResource(
+                    if (requiredForControl) R.string.dashboard_shizuku_required_body
+                    else R.string.dashboard_shizuku_body,
+                ),
                 style = MaterialTheme.typography.bodySmall,
             )
             Spacer(Modifier.height(8.dp))
@@ -633,6 +650,16 @@ private fun ShizukuBanner(
             }
         }
     }
+}
+
+/**
+ * Whether a policy write can actually land: the device must be controllable, and for
+ * system-namespace adapters (OnePlus/ColorOS) Shizuku specifically is required — WSS alone can
+ * read the state but cannot write it, so the controls stay disabled until Shizuku is connected.
+ */
+private fun ChargingState.canApply(): Boolean = controlEnabled && when {
+    writeRequiresShizuku -> access?.shizuku?.ready == true
+    else -> access?.canControl == true
 }
 
 private fun ChargeObservation.title(): CaString = when (this) {
@@ -1015,6 +1042,66 @@ private fun DashboardScreenSamsungPreview() = PreviewWrapper {
                         available = false,
                         granted = false,
                         detail = "Shizuku not installed".toCaString(),
+                    ),
+                ),
+                observation = ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.DIRECT_WSS),
+            ),
+        ),
+        adbCommand = "adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS",
+        onRefresh = {},
+        onSettings = {},
+        onStartFull = {},
+        onRestore = {},
+        onApply = {},
+        onQuickFullChargeChange = {},
+        onOpenReconnectSettings = {},
+        onPinWidget = {},
+        onAddTile = {},
+        onDismissQuickAccess = {},
+        onNativeSettings = {},
+        onOpenShizuku = {},
+        onAllowShizuku = {},
+        onGrantWss = {},
+        onCopyAdb = {},
+        onPrepareSupportReport = {},
+        onCopySupportReport = {},
+        onOpenSupportIssue = {},
+        onEmailSupport = {},
+        onHelp = {},
+    )
+}
+
+@AmplyPreview
+@Composable
+private fun DashboardScreenOnePlusNeedsShizukuPreview() = PreviewWrapper {
+    // OnePlus/ColorOS: state is readable via WSS, but writes need Shizuku (not connected here),
+    // so the controls are disabled and the Shizuku-required banner shows.
+    DashboardScreen(
+        state = DashboardUiState(
+            onboardingComplete = true,
+            charging = ChargingState(
+                device = DeviceInfo("OnePlus", "CPH2621", 35, "preview", oplusRomVersion = 15),
+                adapterName = "ColorOS charging protection".toCaString(),
+                adapterId = "oplus-coloros15-v1",
+                supportedPolicies = listOf(
+                    ChargePolicy.FixedLimit(80),
+                    ChargePolicy.Adaptive,
+                    ChargePolicy.Unrestricted,
+                ),
+                reconnectSupported = false,
+                syncVerification = true,
+                writeRequiresShizuku = true,
+                controlEnabled = true,
+                access = AccessSnapshot(
+                    direct = BackendStatus(
+                        available = true,
+                        granted = true,
+                        detail = "WRITE_SECURE_SETTINGS granted".toCaString(),
+                    ),
+                    shizuku = BackendStatus(
+                        available = false,
+                        granted = false,
+                        detail = "Shizuku not connected".toCaString(),
                     ),
                 ),
                 observation = ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.DIRECT_WSS),

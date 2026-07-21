@@ -52,6 +52,8 @@ data class ChargingState(
     val reconnectSupported: Boolean = false,
     /** True when the adapter's configured state is directly readable — Shizuku adds nothing for verification. */
     val syncVerification: Boolean = false,
+    /** True when applying a policy needs Shizuku (system-namespace adapter WSS can't write). */
+    val writeRequiresShizuku: Boolean = false,
     val controlEnabled: Boolean = false,
     val contributionWanted: Boolean = false,
     val access: AccessSnapshot? = null,
@@ -357,6 +359,7 @@ class ChargingRepository @Inject constructor(
             supportedPolicies = adapter?.supportedPolicies.orEmpty(),
             reconnectSupported = adapter?.reconnectGestureSupported == true,
             syncVerification = adapter?.verification == VerificationStrategy.SYNC_READBACK,
+            writeRequiresShizuku = adapter?.preferShizukuForWrites == true,
             controlEnabled = selection.support.controlEnabled,
             contributionWanted = selection.support.contributionWanted,
             access = access,
