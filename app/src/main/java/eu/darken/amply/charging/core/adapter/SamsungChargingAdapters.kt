@@ -16,7 +16,7 @@ import javax.inject.Singleton
 
 /**
  * Samsung One UI battery protection via world-readable `global` settings. Value mapping was
- * verified on-device (see docs/SAMSUNG_SPIKE_RESULTS.md): writes apply synchronously and the
+ * verified on-device: writes apply synchronously and the
  * Settings UI reflects external changes immediately; only writes need WSS, reads are unprivileged.
  *
  * The keys are device-wide while Amply's session state is per Android user, so control is gated

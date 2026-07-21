@@ -8,13 +8,13 @@ Amply is an **experimental Android controller for OEM battery charge-protection 
 temporarily allows a full charge, then restores the user's protective policy at 100%, on unplug, or at a safety
 timeout.
 
-Two control adapters exist. **Pixel charging optimization** is capability-gated to Pixel 6a and newer phones on
+Three control adapters exist. **Pixel charging optimization** is capability-gated to Pixel 6a and newer phones on
 Android 15+ when Google's charging-optimization controller is present. **Samsung battery protection** (global
 `protect_battery` keys) is gated to verified One UI generations — One UI 8 multi-mode, and the legacy One UI 4/5
 toggle — on the system user. **Xiaomi charging protection** (secure `security_pc_secure_protect_mode_key`,
 binary Adaptive/Unrestricted) is gated to the HyperOS 2.x ROM (`ro.mi.os.version.code == 2`) on Xiaomi devices. Other Pixels, Samsung on
 unverified One UI versions (6/7, 9+), non-HyperOS-2 Xiaomi devices, and OnePlus/Oppo remain diagnostics-only. See
-`docs/SAMSUNG_SPIKE_RESULTS.md` and `docs/XIAOMI_SPIKE_RESULTS.md` for the verified mappings.
+the qualification ledger in `.claude/rules/privileged-access.md` for the verified devices and mappings.
 
 Package: `eu.darken.amply`. License: GPL-3.0-or-later. Status: pre-launch (`0.1.0-beta1`).
 
@@ -54,9 +54,6 @@ AIDL boundary: `app/src/main/aidl/eu/darken/amply/charging/core/access/shizuku/I
 - `build.gradle.kts` (root) — plugin versions (AGP, KSP, Kotlin Compose, Hilt)
 - `.github/workflows/code-checks.yml` — CI (builds + tests + lint for both flavors)
 - `app/src/main/res/values/strings.xml` — extracted user-facing strings (system-surfaced text)
-- `docs/ARCHITECTURE.md` — implementation-level design reference
-- `docs/PIXEL_SPIKE.md` — physical-device qualification procedure
-- `docs/PIXEL_SPIKE_RESULTS.md` — recorded physical Pixel results
 
 ## Rules
 

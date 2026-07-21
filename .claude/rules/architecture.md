@@ -1,7 +1,7 @@
 # Architecture
 
 Amply follows a **feature/core/ui** organization (as used by CAPod and Octi), with SD Maid SE's typed Shizuku
-UserService boundary. Full prose design reference: `docs/ARCHITECTURE.md`. This file is the AI-actionable distillation.
+UserService boundary. This file, the code, and its comments are the source of truth for the design.
 
 ## Single Module
 
@@ -14,7 +14,7 @@ project's convention. Code is grouped by **feature**, not framework layer.
 eu.darken.amply
 ├── charging/core            policies, capability gate, OEM adapters, WSS + Shizuku access
 │   ├── access/shizuku       Shizuku detection, user-service client, AIDL boundary
-│   └── adapter              AdapterRegistry + per-OEM adapters (Pixel is the only live one)
+│   └── adapter              AdapterRegistry + per-OEM adapters (Pixel, Samsung, Xiaomi live; OnePlus lab-only)
 ├── fullcharge/core          temporary session, boot recovery, reconnect gesture, decision engines
 ├── diagnostics/core + ui    privileged before/after setting comparison, guided workflow
 ├── main
@@ -37,6 +37,14 @@ Feature-specific preference facades live with their owning feature but share the
 - `AccessResolver` independently probes direct WSS and Shizuku.
 - `ChargingRepository` selects the strongest backend per operation: **Shizuku for reads, direct WSS for durable
   writes, then Shizuku for verification** when both are available.
+- **Settling state**: a successful write records `PendingRequest(target, requestedAt)`; surfaces show "applying…"
+  until a `BATTERY_HARDWARE` verification *for that exact target* arrives or a 15s window elapses. A settings-level
+  (Shizuku) readback, or a hardware reading for a *different* policy, does **not** clear it — the old policy
+  legitimately still reads during the ~11–12s Pixel HAL transition. A WorkManager `SettleScheduler` fires one refresh
+  at the window's end so the static widget/tile clear across process death.
+- **Widget persistent-policy writes are atomic**: the ∞80% / ∞100% buttons route through a serialized
+  `ACTION_SET_PERSISTENT_POLICY` command that cancels any running session **without restoring** and force-writes the
+  chosen policy, so an explicit always-on choice never races the session's own writes.
 
 ## `ChargeObservation` is not a Boolean
 
@@ -64,7 +72,9 @@ Two live adapters, gated by `ro.build.version.oneui` ranges plus `protect_batter
 Writes apply **synchronously** (`VerificationStrategy.SYNC_READBACK`): `apply()` requires read-back equality, no
 pending-settle window, boot recovery converges on settings readback, and no reapply-inversion trick is needed.
 The reconnect gesture is Pixel-only (`reconnectGestureSupported`). One UI 6/7 and 9+ fall through to the
-diagnostics-only lab adapter. Ground truth: `docs/SAMSUNG_SPIKE_RESULTS.md`.
+diagnostics-only lab adapter. An external `protect_battery=0` makes One UI forget the user's prior mode (it falls back
+to the OEM default on re-enable), so Amply restores the exact prior policy itself rather than trusting Samsung's
+bookkeeping. Verified devices + coverage: see the qualification ledger in `privileged-access.md`.
 
 ## Xiaomi Adapter
 
@@ -78,7 +88,7 @@ with read-back equality; session override = Unrestricted; protective default = A
 pre-HyperOS MIUI, and a future HyperOS 3 fall to `XiaomiLabAdapter` (diagnostics + contribution). Two
 documented assumptions: the feature is treated as present on any HyperOS 2 device (a device lacking it
 reads the key absent → a harmless false claim of control), and daemon-level enforcement of external
-writes is pending long-term observation — see `docs/XIAOMI_SPIKE_RESULTS.md`.
+writes is pending long-term observation (see the qualification ledger in `privileged-access.md`).
 
 ## Pixel Adapter
 

@@ -42,5 +42,5 @@ around them silently. Ask for clarification on ambiguous requirements via the As
 
 Follow the global Test-Target rules: never adopt an Android device/emulator you didn't start unless interference is
 positively ruled out, and never re-point a named target without confirmation. Amply's control paths are
-capability-gated to specific Pixels — record device results in `docs/PIXEL_SPIKE_RESULTS.md` rather than loosening the
-gate to run on an unqualified device.
+capability-gated to specific Pixels — record device results in the qualification ledger in `privileged-access.md`
+rather than loosening the gate to run on an unqualified device.
