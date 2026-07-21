@@ -25,7 +25,7 @@ class DeviceSupportReporterTest {
         isPhone = true,
         hasChargingOptimization = false,
         oneUiVersion = 61000,
-        miuiVersionCode = null,
+        hyperOsVersion = null,
         hasProtectBattery = true,
         adapterId = adapterId,
         adapterMatched = adapterId != null,
@@ -43,11 +43,11 @@ class DeviceSupportReporterTest {
     fun `format is deterministic and schema-tagged`() {
         val text = formatReport(report())
         text shouldStartWith "Amply device-support request"
-        text shouldContain "report_schema=4"
+        text shouldContain "report_schema=5"
         text shouldContain "manufacturer=Samsung"
         text shouldContain "model=SM-S911B"
         text shouldContain "one_ui_version=61000"
-        text shouldContain "miui_version_code=none"
+        text shouldContain "hyperos_version=none"
         text shouldContain "has_protect_battery=true"
         text shouldContain "adapter=samsung-lab"
         text shouldContain "contribution_wanted=true"

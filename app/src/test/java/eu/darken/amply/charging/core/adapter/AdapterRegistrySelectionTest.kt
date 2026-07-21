@@ -68,22 +68,26 @@ class AdapterRegistrySelectionTest {
     }
 
     @Test
-    fun `qualified xiaomi selects the live adapter`() {
+    fun `any HyperOS 2 xiaomi selects the live adapter`() {
         val selection = registry.select(
-            DeviceInfo("Xiaomi", "2306EPN60G", 35, "test", miuiVersionCode = 816, isSystemUser = true),
+            DeviceInfo("Xiaomi", "2306EPN60G", 35, "test", hyperOsVersion = 2, isSystemUser = true),
         )
         selection.adapter?.id shouldBe "xiaomi-hyperos2-v1"
         selection.support.controlEnabled shouldBe true
+
+        // A different HyperOS 2 model selects the live adapter too (ROM-version gate, not model).
+        registry.select(
+            DeviceInfo("Xiaomi", "23078PND5G", 35, "test", hyperOsVersion = 2, isSystemUser = true),
+        ).adapter?.id shouldBe "xiaomi-hyperos2-v1"
     }
 
     @Test
-    fun `unqualified xiaomi devices fall through to the xiaomi lab adapter`() {
-        // Same family code, different model — the exact-model gate must not leak.
+    fun `non-HyperOS-2 xiaomi devices fall through to the xiaomi lab adapter`() {
         registry.select(
-            DeviceInfo("Xiaomi", "23078PND5G", 35, "test", miuiVersionCode = 816),
+            DeviceInfo("Xiaomi", "2306EPN60G", 35, "test", hyperOsVersion = 1),
         ).adapter?.id shouldBe "xiaomi-lab"
         registry.select(
-            DeviceInfo("Xiaomi", "2306EPN60G", 35, "test", miuiVersionCode = 817),
+            DeviceInfo("Xiaomi", "2306EPN60G", 35, "test", hyperOsVersion = 3),
         ).adapter?.id shouldBe "xiaomi-lab"
         registry.select(
             DeviceInfo("Xiaomi", "M2101K6G", 33, "test"),

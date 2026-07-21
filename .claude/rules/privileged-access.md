@@ -66,11 +66,14 @@ works without Shizuku, and writes apply synchronously (no Settings-Intelligence-
 
 ### Xiaomi
 
-Xiaomi control requires **all** of: Xiaomi manufacturer, the exact qualified model (`2306EPN60G`),
-`ro.miui.ui.version.code == 816`, and the system user. The version code identifies a software family, not a
-build — do not widen to a code-only or range gate without qualifying additional devices; record results in
-`docs/XIAOMI_SPIKE_RESULTS.md`. The single key is per-user `secure`, applied synchronously; daemon-level
-enforcement of external writes is pending long-term observation (see the spike doc).
+Xiaomi control requires **all** of: Xiaomi manufacturer (covers Redmi/POCO, which report Xiaomi as
+manufacturer), `ro.mi.os.version.code == 2` (HyperOS 2.x — the ROM feature is version-scoped, not
+model-scoped), and the system user. Use `ro.mi.os.version.code`, NOT the frozen legacy
+`ro.miui.ui.version.code`. Do not widen to HyperOS 3+ without qualifying a device; record results in
+`docs/XIAOMI_SPIKE_RESULTS.md`. The single key is per-user `secure`, applied synchronously. Two deliberate
+assumptions: the feature is treated as present on any HyperOS 2 device (a device lacking it reads the key
+absent → a harmless false claim of control), and daemon-level enforcement of external writes is pending
+long-term observation (see the spike doc).
 
 ## Foreground Service Requirement
 

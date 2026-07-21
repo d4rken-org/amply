@@ -22,7 +22,7 @@ class XiaomiChargingAdapterTest {
 
     private fun xiaomi(
         model: String = "2306EPN60G",
-        miuiCode: Int? = 816,
+        hyperOs: Int? = 2,
         systemUser: Boolean = true,
         manufacturer: String = "Xiaomi",
     ) = DeviceInfo(
@@ -30,22 +30,27 @@ class XiaomiChargingAdapterTest {
         model = model,
         sdk = 35,
         fingerprint = "test",
-        miuiVersionCode = miuiCode,
+        hyperOsVersion = hyperOs,
         isSystemUser = systemUser,
     )
 
     @Test
-    fun `only the qualified model and version match`() {
+    fun `any HyperOS 2 Xiaomi device matches regardless of model`() {
         adapter.probe(xiaomi()).matched shouldBe true
         adapter.probe(xiaomi()).controlEnabled shouldBe true
         adapter.probe(xiaomi()).detail shouldBe R.string.adapter_detail_xiaomi_ready
 
-        // Same family code on a different model must NOT match (816 is not build-specific).
-        adapter.probe(xiaomi(model = "23078PND5G")).matched shouldBe false
-        adapter.probe(xiaomi(miuiCode = 815)).matched shouldBe false
-        adapter.probe(xiaomi(miuiCode = 817)).matched shouldBe false
-        adapter.probe(xiaomi(miuiCode = null)).matched shouldBe false
-        adapter.probe(xiaomi(manufacturer = "Redmi")).matched shouldBe false
+        // The gate is the ROM version, not the model: a different HyperOS 2 model still matches.
+        adapter.probe(xiaomi(model = "23078PND5G")).matched shouldBe true
+        // Redmi/POCO report Xiaomi as manufacturer, so they qualify on HyperOS 2 too.
+        adapter.probe(xiaomi(model = "23021RAAEG")).matched shouldBe true
+    }
+
+    @Test
+    fun `other HyperOS generations and non-Xiaomi devices do not match`() {
+        adapter.probe(xiaomi(hyperOs = 1)).matched shouldBe false // HyperOS 1 unverified
+        adapter.probe(xiaomi(hyperOs = 3)).matched shouldBe false // future HyperOS 3 unverified
+        adapter.probe(xiaomi(hyperOs = null)).matched shouldBe false // pre-HyperOS MIUI
         adapter.probe(xiaomi(manufacturer = "samsung")).matched shouldBe false
     }
 

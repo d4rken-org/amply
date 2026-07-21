@@ -20,10 +20,17 @@ import javax.inject.Singleton
  * 80% hold decided by the OS — adaptive semantics, no hard cap exists). The key is absent in
  * factory state and the OEM UI treats absent as intelligent.
  *
- * v1 is gated to the exact qualified device (Xiaomi 13T on HyperOS 2.0 / version code 816) —
- * `ro.miui.ui.version.code` identifies a software family, not a build, so the model is pinned
- * until more devices are qualified. The secure namespace is per-user while charging hardware is
- * device-wide, so control requires the system user.
+ * The setting is a HyperOS ROM feature rather than a per-model one, so control is gated to the
+ * HyperOS **major version** (2.x, from `ro.mi.os.version.code`) plus the Xiaomi manufacturer
+ * (which also covers Redmi/POCO) and the system user (the secure namespace is per-user while
+ * charging hardware is device-wide). HyperOS 1, pre-HyperOS MIUI, and a future HyperOS 3 fall
+ * through to the diagnostics-only lab adapter until qualified.
+ *
+ * Assumption (deliberate, see the spike doc): the feature is treated as present on any HyperOS 2
+ * device. A HyperOS 2 device that genuinely lacks Battery protection also reports the key absent,
+ * so Amply would show a verified Adaptive state and a control the OS ignores. This is a false
+ * claim of control, not a battery hazard, and only affects the subset of HyperOS 2 devices
+ * without the feature.
  */
 @Singleton
 class XiaomiChargingAdapter @Inject constructor() : ChargingAdapter {
@@ -40,8 +47,7 @@ class XiaomiChargingAdapter @Inject constructor() : ChargingAdapter {
 
     override fun probe(device: DeviceInfo): AdapterSupport {
         val matched = device.manufacturer.equals("Xiaomi", ignoreCase = true) &&
-            device.model.equals(QUALIFIED_MODEL, ignoreCase = true) &&
-            device.miuiVersionCode == QUALIFIED_VERSION_CODE
+            device.hyperOsVersion == QUALIFIED_HYPEROS_VERSION
         return AdapterSupport(
             matched = matched,
             controlEnabled = matched && device.isSystemUser,
@@ -105,7 +111,8 @@ class XiaomiChargingAdapter @Inject constructor() : ChargingAdapter {
         const val VALUE_CHARGE_FULLY = "0"
         const val VALUE_INTELLIGENT = "1"
 
-        const val QUALIFIED_MODEL = "2306EPN60G"
-        const val QUALIFIED_VERSION_CODE = 816
+        // HyperOS 2.x (ro.mi.os.version.code). The mapping was verified on HyperOS 2.0; a future
+        // HyperOS 3 stays unqualified until checked, mirroring the One UI range gates.
+        const val QUALIFIED_HYPEROS_VERSION = 2
     }
 }

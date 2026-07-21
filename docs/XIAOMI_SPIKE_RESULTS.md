@@ -8,11 +8,22 @@ Samsung spikes).
 
 | Device | Model | Android | HyperOS | Result |
 |---|---|---|---|---|
-| Xiaomi 13T | 2306EPN60G | 15 (SDK 35) | 2.0 (`ro.mi.os.version.name=OS2.0`, `ro.miui.ui.version.code=816`) | Binary mapping verified (2026-07-21) |
+| Xiaomi 13T | 2306EPN60G | 15 (SDK 35) | 2.0 (`ro.mi.os.version.name=OS2.0`, `ro.mi.os.version.code=2`) | Binary mapping verified (2026-07-21) |
 
-`ro.miui.ui.version.code` identifies a software *family*, not a build — the v1 gate therefore
-pins the exact qualified model in addition to the code. Record newly qualified devices here
-before widening the gate.
+## Gate
+
+The charge-protection setting is a **HyperOS ROM feature**, not a per-model one, so the adapter is
+gated to the HyperOS **major version**: Xiaomi manufacturer (which covers Redmi/POCO — they report
+`Xiaomi` as manufacturer) + `ro.mi.os.version.code == 2` (HyperOS 2.x) + system user. Use
+`ro.mi.os.version.code`, **not** the frozen legacy `ro.miui.ui.version.code` (=816), which does not
+cleanly separate HyperOS generations. HyperOS 1, pre-HyperOS MIUI, and a future HyperOS 3 fall to
+the diagnostics-only lab adapter — record newly qualified generations here before widening.
+
+**Known assumption**: the mapping was verified on one HyperOS 2.0 device and is assumed to hold
+across HyperOS 2.x. The key is absent in factory state even on devices that *have* the feature, so
+key-presence cannot distinguish "feature exists" from "feature absent" — on a HyperOS 2 device that
+genuinely lacks Battery protection, Amply shows a verified Adaptive state and a control the OS
+ignores. This is a false claim of control, not a battery hazard, and affects only that subset.
 
 ## HyperOS 2.0 mapping (verified on 2306EPN60G)
 
@@ -53,6 +64,6 @@ One key in the **`secure`** namespace (per-user; only writes need WSS):
 | 2026-07-21 | 2306EPN60G | Writes via the app both directions (Adaptive↔100%), read-back confirmed | PASS |
 | 2026-07-21 | 2306EPN60G | Unrecognized-value refusal: external `2` then "Charge to 100% once" refuses, key left at `2`, no write | PASS |
 | 2026-07-21 | 2306EPN60G | Session E2E at 100%: start → write `0` → RESTORE_FULL → restore `1`, all DIRECT_WSS Verified | PASS |
-| 2026-07-21 | 2306EPN60G | Minified (R8) foss beta: boots, MiuiVersionDetector reflection resolves the gate, write path works | PASS |
+| 2026-07-21 | 2306EPN60G | Minified (R8) foss beta: boots, the version-detector reflection resolves the gate, write path works | PASS |
 | n/a | 2306EPN60G | Shizuku read column | Not run — Shizuku installed but its native lib is unextracted on this MIUI build; adb-start unavailable. Same `adapter.read()` logic as the PASSed WSS path; Shizuku→direct fallback is unit-tested |
 | n/a | 2306EPN60G | Mid-session native-change cancel / reboot recovery | Not holdable — device pinned at 100% auto-restores on session start (RESTORE_FULL), so no session persists to interrupt. Both mechanisms are adapter-agnostic and hardware-verified on the Samsung devices |

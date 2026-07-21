@@ -33,7 +33,7 @@ data class DeviceSupportReport(
     val isPhone: Boolean,
     val hasChargingOptimization: Boolean,
     val oneUiVersion: Int?,
-    val miuiVersionCode: Int?,
+    val hyperOsVersion: Int?,
     val hasProtectBattery: Boolean,
     val adapterId: String?,
     val adapterMatched: Boolean,
@@ -70,7 +70,7 @@ class DeviceSupportReporter @Inject constructor(
             isPhone = device.isPhone,
             hasChargingOptimization = device.hasChargingOptimization,
             oneUiVersion = device.oneUiVersion,
-            miuiVersionCode = device.miuiVersionCode,
+            hyperOsVersion = device.hyperOsVersion,
             hasProtectBattery = device.hasProtectBattery,
             adapterId = selection.adapter?.id,
             adapterMatched = selection.support.matched,
@@ -103,7 +103,7 @@ internal fun sanitizeReportValue(value: String?, max: Int = 120): String {
 /** Deterministic, single stable schema. Keep field order fixed so reports are diff-friendly. */
 internal fun formatReport(report: DeviceSupportReport): String = buildString {
     appendLine("Amply device-support request")
-    appendLine("report_schema=4")
+    appendLine("report_schema=5")
     appendLine("app_version=${report.appVersionName} (${report.appVersionCode})")
     appendLine("distribution=${report.flavor}/${report.buildType}")
     appendLine("manufacturer=${report.manufacturer}")
@@ -117,7 +117,7 @@ internal fun formatReport(report: DeviceSupportReport): String = buildString {
     appendLine("is_phone=${report.isPhone}")
     appendLine("has_charging_optimization=${report.hasChargingOptimization}")
     appendLine("one_ui_version=${report.oneUiVersion ?: "none"}")
-    appendLine("miui_version_code=${report.miuiVersionCode ?: "none"}")
+    appendLine("hyperos_version=${report.hyperOsVersion ?: "none"}")
     appendLine("has_protect_battery=${report.hasProtectBattery}")
     appendLine("adapter=${report.adapterId ?: "none"}")
     appendLine("adapter_matched=${report.adapterMatched}")
