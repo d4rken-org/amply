@@ -76,7 +76,7 @@ Amply has no ads and doesn't sell your data. It's free and open-source.
 
 ## Screenshots
 
-<img src="https://github.com/d4rken-org/amply/raw/main/fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="100"><img src="https://github.com/d4rken-org/amply/raw/main/fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="100"><img src="https://github.com/d4rken-org/amply/raw/main/fastlane/metadata/android/en-US/images/phoneScreenshots/3.png" width="100"><img src="https://github.com/d4rken-org/amply/raw/main/fastlane/metadata/android/en-US/images/phoneScreenshots/4.png" width="100"><img src="https://github.com/d4rken-org/amply/raw/main/fastlane/metadata/android/en-US/images/phoneScreenshots/5.png" width="100"><img src="https://github.com/d4rken-org/amply/raw/main/fastlane/metadata/android/en-US/images/phoneScreenshots/6.png" width="100">
+<img src="https://github.com/d4rken-org/amply/raw/main/fastlane/metadata/android/en-US/images/phoneScreenshots/1_dashboard_light.png" width="100"><img src="https://github.com/d4rken-org/amply/raw/main/fastlane/metadata/android/en-US/images/phoneScreenshots/2_full_charge_dark.png" width="100"><img src="https://github.com/d4rken-org/amply/raw/main/fastlane/metadata/android/en-US/images/phoneScreenshots/3_samsung_multimode.png" width="100"><img src="https://github.com/d4rken-org/amply/raw/main/fastlane/metadata/android/en-US/images/phoneScreenshots/4_setup_guide.png" width="100"><img src="https://github.com/d4rken-org/amply/raw/main/fastlane/metadata/android/en-US/images/phoneScreenshots/5_settings.png" width="100"><img src="https://github.com/d4rken-org/amply/raw/main/fastlane/metadata/android/en-US/images/phoneScreenshots/6_reconnect_gesture.png" width="100">
 
 ## Setup & access
 

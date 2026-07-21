@@ -384,16 +384,11 @@ private fun StatusCard(
                     modifier = Modifier.weight(1f),
                 )
             }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                observation.detail().asComposable(),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
             if (!settling) {
                 // One explanatory line: during a one-time charge, which policy comes back; otherwise
                 // what the current policy does. Phrased as definitions so it stays honest when the
-                // observation is only "last requested".
+                // observation is only "last requested". Sits directly under the title; the
+                // provenance line below is closer to metadata.
                 val explanation = if (presentation == SessionPresentation.ACTIVE) {
                     state.session?.let {
                         stringResource(R.string.dashboard_session_returns, it.restorePolicy.shortLabel().asComposable())
@@ -405,11 +400,17 @@ private fun StatusCard(
                     Spacer(Modifier.height(4.dp))
                     Text(
                         it,
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                observation.detail().asComposable(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Spacer(Modifier.height(4.dp))
             Text(
                 stringResource(
