@@ -54,7 +54,8 @@ entry points (`@PreviewTest`) and locale annotations live in `app/src/screenshot
 ./fastlane/copy_screenshots.sh
 ```
 
-Committed output lands in `fastlane/metadata/android/en-US/images/phoneScreenshots/1.png … 6.png`. Both scripts fail
+Committed output lands in `fastlane/metadata/android/en-US/images/phoneScreenshots/` as `1_dashboard_light.png …
+6_reconnect_gesture.png` (names come from `copy_screenshots.sh`'s `screen_file` map). Both scripts fail
 loudly on any count/dimension/format mismatch and `copy_screenshots.sh` requires ImageMagick. Needs the JDK 21 build
 toolchain like everything else. CI compiles these sources (`compileGplayDebugScreenshotTestKotlin`) but does **not**
 render — layoutlib output differs across machines — so **regenerating screenshots is a manual pre-release step**.

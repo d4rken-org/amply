@@ -16,20 +16,22 @@ META_DIR="$SCRIPT_DIR/metadata/android"
 EXPECT_W=1080
 EXPECT_H=1920
 
-# Composable function name → ordered store filename. The leading number sets Play Store display order.
-# A case (not a bash-4 associative array) keeps this runnable on older/macOS bash 3.2.
-screen_num() {
+# Composable function name → ordered store filename (no extension). The leading number sets Play
+# Store display order; the label is for humans. A case (not a bash-4 associative array) keeps this
+# runnable on older/macOS bash 3.2. Keep EXPECTED_FILES in sync.
+screen_file() {
     case "$1" in
-        DashboardReady) echo 1 ;;
-        FullChargeActive) echo 2 ;;
-        SamsungMultiMode) echo 3 ;;
-        SetupGuide) echo 4 ;;
-        Settings) echo 5 ;;
-        ReconnectGesture) echo 6 ;;
+        DashboardReady) echo "1_dashboard_light" ;;
+        FullChargeActive) echo "2_full_charge_dark" ;;
+        SamsungMultiMode) echo "3_samsung_multimode" ;;
+        SetupGuide) echo "4_setup_guide" ;;
+        Settings) echo "5_settings" ;;
+        ReconnectGesture) echo "6_reconnect_gesture" ;;
         *) return 1 ;;
     esac
 }
-EXPECTED_PER_LOCALE=6
+EXPECTED_FILES=(1_dashboard_light 2_full_charge_dark 3_samsung_multimode 4_setup_guide 5_settings 6_reconnect_gesture)
+EXPECTED_PER_LOCALE=${#EXPECTED_FILES[@]}
 
 # ImageMagick flattens the alpha channel (Play rejects transparent PNGs) and reports dimensions.
 if command -v magick >/dev/null 2>&1; then
@@ -72,12 +74,12 @@ for png in "${pngs[@]}"; do
     stem="${stem%_[a-f0-9]*}"  # drop trailing _<hash>
     func="${stem%%_*}"         # composable name (no underscores)
     locale="${stem#*_}"        # fastlane locale dir (the @Preview name)
-    if ! num="$(screen_num "$func")"; then
-        echo "ERROR: unknown composable '$func' (from $(basename "$png")). Update screen_num()." >&2
+    if ! base="$(screen_file "$func")"; then
+        echo "ERROR: unknown composable '$func' (from $(basename "$png")). Update screen_file()." >&2
         exit 1
     fi
     mkdir -p "$STAGE/$locale"
-    "${CONVERT[@]}" "$png" -background white -alpha remove -alpha off -strip "$STAGE/$locale/${num}.png"
+    "${CONVERT[@]}" "$png" -background white -alpha remove -alpha off -strip "$STAGE/$locale/${base}.png"
 done
 
 # Validate every staged locale before touching the metadata tree.
@@ -89,10 +91,10 @@ for locale_dir in "$STAGE"/*/; do
         echo "ERROR: $locale has $count/$EXPECTED_PER_LOCALE screenshots." >&2
         status=1
     fi
-    for n in $(seq 1 "$EXPECTED_PER_LOCALE"); do
-        f="$locale_dir/$n.png"
+    for base in "${EXPECTED_FILES[@]}"; do
+        f="$locale_dir/$base.png"
         if [ ! -f "$f" ]; then
-            echo "ERROR: $locale is missing $n.png." >&2
+            echo "ERROR: $locale is missing $base.png." >&2
             status=1
             continue
         fi
@@ -100,11 +102,11 @@ for locale_dir in "$STAGE"/*/; do
         # `set -e` would treat as a fatal error.
         read -r w h a < <("${IDENTIFY[@]}" -format '%w %h %A\n' "$f")
         if [ "$w" != "$EXPECT_W" ] || [ "$h" != "$EXPECT_H" ]; then
-            echo "ERROR: $locale/$n.png is ${w}x${h}, expected ${EXPECT_W}x${EXPECT_H}." >&2
+            echo "ERROR: $locale/$base.png is ${w}x${h}, expected ${EXPECT_W}x${EXPECT_H}." >&2
             status=1
         fi
         if [ "$a" = "True" ]; then
-            echo "ERROR: $locale/$n.png still carries an alpha channel." >&2
+            echo "ERROR: $locale/$base.png still carries an alpha channel." >&2
             status=1
         fi
     done
