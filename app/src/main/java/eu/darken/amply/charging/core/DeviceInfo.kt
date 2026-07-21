@@ -35,7 +35,12 @@ data class DeviceInfo(
                     Settings.Global.getString(it.contentResolver, KEY_PROTECT_BATTERY) != null
                 }.getOrDefault(false)
             } ?: false,
-            isSystemUser = context?.getSystemService(UserManager::class.java)?.isSystemUser ?: true,
+            // Fail closed: this gates device-wide Samsung writes, so an unresolvable UserManager
+            // must read as "not the system user". Only the context-less placeholder stays true.
+            isSystemUser = context?.let {
+                runCatching { it.getSystemService(UserManager::class.java)?.isSystemUser }
+                    .getOrNull() ?: false
+            } ?: true,
         )
 
         private const val ACTION_CHARGING_OPTIMIZATION =

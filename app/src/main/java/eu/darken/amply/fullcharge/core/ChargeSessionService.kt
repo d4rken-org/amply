@@ -253,8 +253,15 @@ class ChargeSessionService : Service() {
                 // overwrites the policy anyway. Join so a cancelled re-write cannot
                 // land after the session's own policy write.
                 recoveryJob?.let { it.cancel(); it.join() }
-                fullChargeStore.clearPendingRecoveryTarget()
                 beginOrResume()
+                // Drop the pending recovery target only once a session durably replaces it. A
+                // refused/failed start must keep converging on the previous protective target
+                // instead of silently discarding it.
+                if (fullChargeStore.currentSession() != null) {
+                    fullChargeStore.clearPendingRecoveryTarget()
+                } else if (fullChargeStore.pendingRecoveryTarget() != null) {
+                    startRecovery()
+                }
             }
             ACTION_SET_PERSISTENT_POLICY -> {
                 // An explicit persistent-policy choice (widget ∞80% / ∞100%) supersedes both any running

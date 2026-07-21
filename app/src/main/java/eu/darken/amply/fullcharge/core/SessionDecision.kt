@@ -13,22 +13,28 @@ sealed interface SessionStartDecision {
 object SessionStartDecider {
 
     /**
-     * [current] is the observed active policy (null when unreadable), [overridePolicy] what a session
-     * would write. The restore target must be applicable later: an observed or stored policy that the
-     * active adapter cannot apply (e.g. a Pixel 80% limit carried onto a legacy Samsung that only
-     * supports 85%) falls through to the adapter's own default.
+     * [verifiedCurrent] is the authoritative observed policy (null when unverifiable) and is the only
+     * basis for refusing — a stale last-request must never block a session (WSS-only Pixel, unplugged,
+     * after a native change). [lastRequested] still contributes a restore candidate. The restore target
+     * must be applicable later: a policy the active adapter cannot apply (e.g. a Pixel 80% limit
+     * carried onto a legacy Samsung that only supports 85%) falls through to the adapter's own default,
+     * and a full-reaching policy is never persisted as the "protective" restore target.
      */
     fun decide(
-        current: ChargePolicy?,
+        verifiedCurrent: ChargePolicy?,
+        lastRequested: ChargePolicy?,
         overridePolicy: ChargePolicy,
         storedProtective: ChargePolicy,
         supportedPolicies: List<ChargePolicy>,
         defaultProtective: ChargePolicy,
     ): SessionStartDecision {
-        if (current != null && (current == overridePolicy || current.allowsFullCharge)) {
+        if (verifiedCurrent != null &&
+            (verifiedCurrent == overridePolicy || verifiedCurrent.allowsFullCharge)
+        ) {
             return SessionStartDecision.AlreadyChargesFull
         }
-        val restorePolicy = current?.takeIf { it in supportedPolicies }
+        val restorePolicy = (verifiedCurrent ?: lastRequested)
+            ?.takeIf { it in supportedPolicies && !it.allowsFullCharge }
             ?: storedProtective.takeIf { it in supportedPolicies }
             ?: defaultProtective
         return SessionStartDecision.Start(restorePolicy)

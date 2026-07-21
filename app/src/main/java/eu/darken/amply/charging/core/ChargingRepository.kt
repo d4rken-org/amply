@@ -99,8 +99,20 @@ class ChargingRepository @Inject constructor(
     suspend fun syncReadback(): ChargeObservation? {
         val adapter = registry.select().adapter ?: return null
         if (adapter.verification != VerificationStrategy.SYNC_READBACK) return null
-        val backend = accessResolver.readBackend() ?: return null
-        return runCatching { adapter.read(backend) }.getOrNull()
+        return readSyncWithFallback(adapter)
+    }
+
+    /**
+     * Sync-readback adapters use world-readable keys, so a nominally "ready" but misbehaving
+     * Shizuku service (main binder up, user service broken) must not block verification —
+     * fall back to the direct provider backend on a non-verified read.
+     */
+    private suspend fun readSyncWithFallback(adapter: ChargingAdapter): ChargeObservation? {
+        val primary = accessResolver.readBackend() ?: return null
+        val first = runCatching { adapter.read(primary) }.getOrNull()
+        if (first is ChargeObservation.Verified || primary === accessResolver.direct) return first
+        val second = runCatching { adapter.read(accessResolver.direct) }.getOrNull()
+        return if (second is ChargeObservation.Verified) second else first ?: second
     }
 
     fun shizukuManagerPackage(): String? = shizukuController.managerPackage()
@@ -174,13 +186,12 @@ class ChargingRepository @Inject constructor(
         withContext(NonCancellable) { preferences.recordRequested(policy, updateProtective, now) }
         return try {
             val access = accessResolver.snapshot()
-            val verifyBackend = when (adapter.verification) {
+            val observation = when (adapter.verification) {
                 // The configured values are directly readable; any read backend verifies.
-                VerificationStrategy.SYNC_READBACK -> accessResolver.readBackend()
-                VerificationStrategy.ASYNC_HARDWARE -> if (access.shizuku.ready) accessResolver.shizuku else null
-            }
-            val observation = verifyBackend?.let { adapter.read(it) } as? ChargeObservation.Verified
-                ?: ChargeObservation.LastRequested(policy)
+                VerificationStrategy.SYNC_READBACK -> readSyncWithFallback(adapter)
+                VerificationStrategy.ASYNC_HARDWARE ->
+                    if (access.shizuku.ready) adapter.read(accessResolver.shizuku) else null
+            } as? ChargeObservation.Verified ?: ChargeObservation.LastRequested(policy)
             // Suppress the settling cue when there is no transition to wait for: sync-readback adapters
             // apply immediately, and async hardware may already report the target on a no-op re-apply.
             val settled = when (adapter.verification) {

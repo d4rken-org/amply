@@ -29,9 +29,10 @@ class ChargeSessionManager @Inject constructor(
         }
         val adapter = repository.currentAdapter()
         val overridePolicy = adapter?.sessionOverridePolicy ?: ChargePolicy.Unrestricted
-        val current = repository.refresh().observation.policyOrNull()
+        val observation = repository.refresh().observation
         val decision = SessionStartDecider.decide(
-            current = current,
+            verifiedCurrent = (observation as? ChargeObservation.Verified)?.policy,
+            lastRequested = (observation as? ChargeObservation.LastRequested)?.policy,
             overridePolicy = overridePolicy,
             storedProtective = preferences.protectivePolicyNow(),
             supportedPolicies = adapter?.supportedPolicies.orEmpty(),

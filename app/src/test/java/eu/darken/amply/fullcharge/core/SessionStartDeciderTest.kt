@@ -30,7 +30,8 @@ class SessionStartDeciderTest {
         stored: ChargePolicy = ChargePolicy.FixedLimit(80),
         supported: List<ChargePolicy> = pixelPolicies,
         default: ChargePolicy = ChargePolicy.FixedLimit(80),
-    ) = SessionStartDecider.decide(current, override, stored, supported, default)
+        lastRequested: ChargePolicy? = null,
+    ) = SessionStartDecider.decide(current, lastRequested, override, stored, supported, default)
 
     @Test
     fun `protective policy starts a session restoring exactly it`() {
@@ -68,6 +69,23 @@ class SessionStartDeciderTest {
     fun `unknown current falls back to the stored protective policy`() {
         decide(current = null, stored = ChargePolicy.Adaptive) shouldBe
             SessionStartDecision.Start(ChargePolicy.Adaptive)
+    }
+
+    @Test
+    fun `stale unrestricted last-request never blocks a session`() {
+        // WSS-only Pixel, unplugged: nothing is verifiable and the last request is stale
+        // Unrestricted while the user has since enabled protection natively.
+        decide(current = null, lastRequested = ChargePolicy.Unrestricted) shouldBe
+            SessionStartDecision.Start(ChargePolicy.FixedLimit(80))
+    }
+
+    @Test
+    fun `protective last-request is preferred as the restore candidate`() {
+        decide(
+            current = null,
+            lastRequested = ChargePolicy.Adaptive,
+            stored = ChargePolicy.FixedLimit(80),
+        ) shouldBe SessionStartDecision.Start(ChargePolicy.Adaptive)
     }
 
     @Test
