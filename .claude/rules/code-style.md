@@ -99,6 +99,9 @@ log(TAG, Logging.Priority.ERROR) { "Write failed for ${policy.stableId}" }
 
 Priority levels: `VERBOSE`, `DEBUG`, `INFO`, `WARN`, `ERROR`.
 
+Debug logs stay **local**: the file logger records only after explicit consent, nothing is transmitted automatically
+(Android's share sheet opens only on a separate user action), and completed recordings are user-deletable in-app.
+
 ## Data & State
 
 - Reactive with Kotlin Flow / StateFlow.

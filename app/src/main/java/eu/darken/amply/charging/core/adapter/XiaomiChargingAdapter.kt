@@ -16,7 +16,7 @@ import javax.inject.Singleton
 
 /**
  * Xiaomi HyperOS charging protection via `secure/security_pc_secure_protect_mode_key`
- * (see docs/XIAOMI_SPIKE_RESULTS.md): 0 = charge fully, 1 = "Intelligent charging" (heuristic
+ * 0 = charge fully, 1 = "Intelligent charging" (heuristic
  * 80% hold decided by the OS — adaptive semantics, no hard cap exists). The key is absent in
  * factory state and the OEM UI treats absent as intelligent.
  *
@@ -26,7 +26,7 @@ import javax.inject.Singleton
  * charging hardware is device-wide). HyperOS 1, pre-HyperOS MIUI, and a future HyperOS 3 fall
  * through to the diagnostics-only lab adapter until qualified.
  *
- * Assumption (deliberate, see the spike doc): the feature is treated as present on any HyperOS 2
+ * Assumption (deliberate): the feature is treated as present on any HyperOS 2
  * device. A HyperOS 2 device that genuinely lacks Battery protection also reports the key absent,
  * so Amply would show a verified Adaptive state and a control the OS ignores. This is a false
  * claim of control, not a battery hazard, and only affects the subset of HyperOS 2 devices
