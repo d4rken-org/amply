@@ -18,8 +18,9 @@ class ContributionEligibilityTest {
         samsungModern = SamsungModernChargingAdapter(),
         samsungLegacy = SamsungLegacyChargingAdapter(),
         samsungLab = SamsungLabAdapter(),
+        xiaomi = XiaomiChargingAdapter(),
+        xiaomiLab = XiaomiLabAdapter(),
         onePlus = OnePlusLabAdapter(),
-        xiaomi = XiaomiLabAdapter(),
     )
 
     private fun device(manufacturer: String, model: String = "X", sdk: Int = 35) = DeviceInfo(
@@ -33,21 +34,24 @@ class ContributionEligibilityTest {
 
     @Test
     fun `unknown OEM is a wanted contribution`() {
-        val support = registry.select(device("NoSuchBrand")).support
+        val support = registry.select(device("Sony")).support
         support.matched shouldBe false
         support.contributionWanted shouldBe true
     }
 
     @Test
-    fun `diagnostics-only lab adapters want contributions`() {
+    fun `unqualified xiaomi is matched by the lab adapter and wants contributions`() {
+        val support = registry.select(device("Xiaomi")).support
+        support.matched shouldBe true
+        support.contributionWanted shouldBe true
+    }
+
+    @Test
+    fun `samsung and oneplus diagnostics-only adapters want contributions`() {
         // No oneUiVersion → the live Samsung adapters don't match; the lab adapter handles it.
         registry.select(device("Samsung")).support.contributionWanted shouldBe true
         registry.select(device("OnePlus")).support.contributionWanted shouldBe true
         registry.select(device("Oppo")).support.contributionWanted shouldBe true
-        // Xiaomi now matches its own lab adapter (matched=true) instead of the unknown-OEM branch.
-        val xiaomi = registry.select(device("Xiaomi")).support
-        xiaomi.matched shouldBe true
-        xiaomi.contributionWanted shouldBe true
     }
 
     @Test

@@ -31,7 +31,8 @@ class SessionStartDeciderTest {
         supported: List<ChargePolicy> = pixelPolicies,
         default: ChargePolicy = ChargePolicy.FixedLimit(80),
         lastRequested: ChargePolicy? = null,
-    ) = SessionStartDecider.decide(current, lastRequested, override, stored, supported, default)
+        currentUnrecognized: Boolean = false,
+    ) = SessionStartDecider.decide(current, lastRequested, override, stored, supported, default, currentUnrecognized)
 
     @Test
     fun `protective policy starts a session restoring exactly it`() {
@@ -69,6 +70,16 @@ class SessionStartDeciderTest {
     fun `unknown current falls back to the stored protective policy`() {
         decide(current = null, stored = ChargePolicy.Adaptive) shouldBe
             SessionStartDecision.Start(ChargePolicy.Adaptive)
+    }
+
+    @Test
+    fun `readable but unrecognized current state refuses the session`() {
+        // A future OEM value Amply cannot reproduce must never be overwritten by a session.
+        decide(
+            current = null,
+            stored = ChargePolicy.FixedLimit(80),
+            currentUnrecognized = true,
+        ) shouldBe SessionStartDecision.UnrecognizedCurrentState
     }
 
     @Test

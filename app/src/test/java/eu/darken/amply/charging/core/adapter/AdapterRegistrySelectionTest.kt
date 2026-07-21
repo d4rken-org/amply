@@ -22,8 +22,9 @@ class AdapterRegistrySelectionTest {
         samsungModern = SamsungModernChargingAdapter(),
         samsungLegacy = SamsungLegacyChargingAdapter(),
         samsungLab = SamsungLabAdapter(),
+        xiaomi = XiaomiChargingAdapter(),
+        xiaomiLab = XiaomiLabAdapter(),
         onePlus = OnePlusLabAdapter(),
-        xiaomi = XiaomiLabAdapter(),
     )
 
     private fun samsung(oneUi: Int?) = DeviceInfo(
@@ -64,6 +65,33 @@ class AdapterRegistrySelectionTest {
             DeviceInfo("Google", "Pixel 8", 36, "test", hasChargingOptimization = true),
         )
         selection.adapter?.id shouldBe "google-pixel-lab-v1"
+    }
+
+    @Test
+    fun `any HyperOS 2 xiaomi selects the live adapter`() {
+        val selection = registry.select(
+            DeviceInfo("Xiaomi", "2306EPN60G", 35, "test", hyperOsVersion = 2, isSystemUser = true),
+        )
+        selection.adapter?.id shouldBe "xiaomi-hyperos2-v1"
+        selection.support.controlEnabled shouldBe true
+
+        // A different HyperOS 2 model selects the live adapter too (ROM-version gate, not model).
+        registry.select(
+            DeviceInfo("Xiaomi", "23078PND5G", 35, "test", hyperOsVersion = 2, isSystemUser = true),
+        ).adapter?.id shouldBe "xiaomi-hyperos2-v1"
+    }
+
+    @Test
+    fun `non-HyperOS-2 xiaomi devices fall through to the xiaomi lab adapter`() {
+        registry.select(
+            DeviceInfo("Xiaomi", "2306EPN60G", 35, "test", hyperOsVersion = 1),
+        ).adapter?.id shouldBe "xiaomi-lab"
+        registry.select(
+            DeviceInfo("Xiaomi", "2306EPN60G", 35, "test", hyperOsVersion = 3),
+        ).adapter?.id shouldBe "xiaomi-lab"
+        registry.select(
+            DeviceInfo("Xiaomi", "M2101K6G", 33, "test"),
+        ).adapter?.id shouldBe "xiaomi-lab"
     }
 
     @Test

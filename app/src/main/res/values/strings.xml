@@ -7,7 +7,7 @@
     <string name="session_channel_name">Temporary full charge</string>
     <string name="session_notification_title" formatted="false">Charging to 100% once</string>
     <string name="session_notification_armed">Waiting for a charger</string>
-    <string name="session_notification_active">The battery limit will return at 100% or when unplugged.</string>
+    <string name="session_notification_active">Charge protection returns at 100% or when unplugged.</string>
     <string name="session_notification_restore">Restore now</string>
     <string name="gesture_channel_name">Reconnect gesture</string>
     <string name="gesture_notification_title">Quick full charge is on</string>
@@ -50,7 +50,7 @@
     <string name="onboarding_continue_action">Get started</string>
     <string name="onboarding_caveats_title">Before you start</string>
     <string name="onboarding_caveat_support_title">Support grows device by device</string>
-    <string name="onboarding_caveat_support_body">Charge control is mapped one device at a time. Right now, direct control works on Pixel 6a and newer phones running Android 15 or later, and on Samsung devices with verified One UI versions. On other devices, Amply explains why control is unavailable, and where a device report can help expand support, the dashboard lets you send one.</string>
+    <string name="onboarding_caveat_support_body">Charge control is mapped one device at a time. Right now, direct control works on Pixel 6a and newer phones running Android 15 or later, on Samsung devices with verified One UI versions, and on verified Xiaomi devices. On other devices, Amply explains why control is unavailable, and where a device report can help expand support, the dashboard lets you send one.</string>
     <string name="onboarding_caveat_setup_title">One-time setup on supported devices</string>
     <string name="onboarding_caveat_setup_body">Changing the charge policy requires a permission that apps cannot grant themselves. You grant it once: either run a single command from a computer over ADB, or use the Shizuku app on this phone. If your device is supported, the dashboard walks you through both options.</string>
     <string name="onboarding_caveat_restore_title">Protection returns on its own</string>
@@ -95,6 +95,8 @@
     <string name="adapter_name_pixel">Google Pixel charging optimization</string>
     <string name="adapter_name_samsung">Samsung (diagnostics)</string>
     <string name="adapter_name_samsung_protection">Samsung battery protection</string>
+    <string name="adapter_name_xiaomi">Xiaomi (diagnostics)</string>
+    <string name="adapter_name_xiaomi_protection">Xiaomi charging protection</string>
     <string name="adapter_name_oneplus">OnePlus/Oppo (diagnostics)</string>
 
     <!-- Adapter support detail (why a device is or isn\'t controllable) -->
@@ -108,8 +110,10 @@
     <string name="adapter_detail_lab_diagnostics">Detected for diagnostics only; no unverified writes are exposed</string>
     <string name="adapter_detail_requires_samsung">Requires a Samsung device on a verified One UI version</string>
     <string name="adapter_detail_samsung_no_key">The battery-protection setting is not present on this device</string>
-    <string name="adapter_detail_samsung_secondary_user">Battery protection is device-wide; control is limited to the main user</string>
+    <string name="adapter_detail_secondary_user">Charging protection is device-wide; control is limited to the main user</string>
     <string name="adapter_detail_samsung_ready">Samsung battery protection detected; changes apply immediately</string>
+    <string name="adapter_detail_requires_xiaomi">Requires a verified Xiaomi device on HyperOS 2</string>
+    <string name="adapter_detail_xiaomi_ready">Xiaomi charging protection detected; changes apply immediately</string>
     <string name="adapter_detail_none">No charging adapter is known for this device</string>
 
     <!-- Access backend detail + summary labels -->
@@ -287,7 +291,7 @@
     <string name="dashboard_fullcharge_recorded_title">One-time charge recorded</string>
     <string name="dashboard_fullcharge_recorded_body" formatted="false">100% charging isn\'t confirmed. Restoring ends the recorded charge.</string>
     <string name="dashboard_fullcharge_idle_body" formatted="false">Temporarily allow 100%, then restore your protective policy automatically.</string>
-    <string name="dashboard_fullcharge_restore">Restore limit now</string>
+    <string name="dashboard_fullcharge_restore">Restore protection now</string>
     <string name="dashboard_fullcharge_start" formatted="false">Charge to 100% once</string>
     <string name="dashboard_policy_choice_fixed">%1$d%%</string>
     <string name="dashboard_policy_choice_adaptive">Adaptive</string>
@@ -318,9 +322,6 @@
     <string name="dashboard_quickaccess_dismiss">Dismiss</string>
     <string name="dashboard_quickaccess_widget_manual">Widget pinning isn\'t available here. Long-press your home screen and add the Amply widget from the widget picker.</string>
     <string name="dashboard_quickaccess_tile_manual">Open Quick Settings, tap the edit button, and drag the Amply tile into place.</string>
-
-    <!-- OEM adapter names -->
-    <string name="adapter_name_xiaomi">Xiaomi</string>
 
     <!-- Charge alarm (dashboard card + notification) -->
     <string name="dashboard_alarm_title">Charge alarm</string>
@@ -390,6 +391,7 @@
     <string name="widget_brand_status">Amply · %1$s</string>
     <string name="widget_button_protect" formatted="false">∞80%</string>
     <string name="widget_button_protect_fixed">∞%1$d%%</string>
+    <string name="widget_button_protect_adaptive">∞Auto</string>
     <string name="widget_button_always_full" formatted="false">∞100%</string>
     <string name="widget_button_full_once" formatted="false">1×100%</string>
     <string name="widget_status_charging_waiting" formatted="false">Charging to 100% · waiting…</string>

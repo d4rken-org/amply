@@ -38,4 +38,45 @@ class ChargingControlUserServiceTest {
         failure.shouldBeInstanceOf<IllegalArgumentException>()
         failure!!.message shouldContain "namespace"
     }
+
+    @Test
+    fun `write policy accepts only in-domain values for every allowlisted key`() {
+        // Accepted (validate() returns without throwing; the command itself is not run here).
+        SettingWritePolicy.validate("secure", "charge_optimization_mode", "1")
+        SettingWritePolicy.validate("secure", "adaptive_charging_enabled", "0")
+        SettingWritePolicy.validate("secure", "security_pc_secure_protect_mode_key", "0")
+        SettingWritePolicy.validate("secure", "security_pc_secure_protect_mode_key", "1")
+        SettingWritePolicy.validate("global", "protect_battery", "3")
+        SettingWritePolicy.validate("global", "battery_protection_threshold", "95")
+        SettingWritePolicy.validate("system", "regular_charge_protection_switch_state", "1")
+    }
+
+    @Test
+    fun `write policy rejects out-of-domain values`() {
+        listOf(
+            Triple("secure", "security_pc_secure_protect_mode_key", "2"),
+            Triple("secure", "security_pc_secure_protect_mode_key", "999"),
+            Triple("secure", "charge_optimization_mode", "2"),
+            Triple("global", "protect_battery", "2"),
+            Triple("global", "battery_protection_threshold", "75"),
+            Triple("global", "battery_protection_threshold", "100"),
+        ).forEach { (namespace, key, value) ->
+            val failure = runCatching {
+                SettingWritePolicy.validate(namespace, key, value)
+            }.exceptionOrNull()
+            failure.shouldBeInstanceOf<IllegalArgumentException>()
+            failure!!.message shouldContain "domain"
+        }
+    }
+
+    @Test
+    fun `write policy rejects keys outside their own namespace`() {
+        // protect_battery is allowlisted in global only — a secure-namespace write must fail.
+        val failure = runCatching {
+            SettingWritePolicy.validate("secure", "protect_battery", "1")
+        }.exceptionOrNull()
+
+        failure.shouldBeInstanceOf<IllegalArgumentException>()
+        failure!!.message shouldContain "allowlisted"
+    }
 }

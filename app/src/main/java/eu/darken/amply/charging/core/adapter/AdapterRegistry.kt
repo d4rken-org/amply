@@ -19,12 +19,13 @@ class AdapterRegistry @Inject constructor(
     samsungModern: SamsungModernChargingAdapter,
     samsungLegacy: SamsungLegacyChargingAdapter,
     samsungLab: SamsungLabAdapter,
+    xiaomi: XiaomiChargingAdapter,
+    xiaomiLab: XiaomiLabAdapter,
     onePlus: OnePlusLabAdapter,
-    xiaomi: XiaomiLabAdapter,
 ) {
-    // The live Samsung adapters match only their verified One UI ranges; other Samsung devices
-    // (One UI 6/7, unknown, future versions) fall through to the diagnostics-only lab adapter.
-    private val adapters = listOf(pixel, samsungModern, samsungLegacy, samsungLab, onePlus, xiaomi)
+    // Live adapters match only their verified device/version scopes; other devices of the same
+    // OEM fall through to the diagnostics-only lab adapters.
+    private val adapters = listOf(pixel, samsungModern, samsungLegacy, samsungLab, xiaomi, xiaomiLab, onePlus)
 
     fun select(device: DeviceInfo = DeviceInfo.current(context)): AdapterSelection {
         val match = adapters.firstNotNullOfOrNull { adapter ->

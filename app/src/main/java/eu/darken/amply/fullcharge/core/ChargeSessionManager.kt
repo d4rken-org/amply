@@ -30,19 +30,34 @@ class ChargeSessionManager @Inject constructor(
         val adapter = repository.currentAdapter()
         val overridePolicy = adapter?.sessionOverridePolicy ?: ChargePolicy.Unrestricted
         val observation = repository.refresh().observation
+        // The refresh observation is presentation-oriented: it masks a readable-but-unrecognized
+        // OEM value behind LastRequested and can itself degrade to LastRequested when the
+        // preferred backend fails. The raw sync readback (null for async adapters) is
+        // authoritative for the start decision — both for refusing on an unrecognized value and
+        // for the verified current policy.
+        val syncRead = repository.syncReadback()
         val decision = SessionStartDecider.decide(
-            verifiedCurrent = (observation as? ChargeObservation.Verified)?.policy,
+            verifiedCurrent = (syncRead as? ChargeObservation.Verified)?.policy
+                ?: (observation as? ChargeObservation.Verified)?.policy,
             lastRequested = (observation as? ChargeObservation.LastRequested)?.policy,
             overridePolicy = overridePolicy,
             storedProtective = preferences.protectivePolicyNow(),
             supportedPolicies = adapter?.supportedPolicies.orEmpty(),
             defaultProtective = adapter?.defaultProtectivePolicy ?: ChargePolicy.FixedLimit(80),
+            currentUnrecognized = syncRead is ChargeObservation.Unknown && syncRead.unrecognizedValue,
         )
         if (decision is SessionStartDecision.AlreadyChargesFull) {
             return@withLock ApplyResult(
                 success = false,
                 observation = repository.state.value.observation,
                 message = "Charging already reaches 100%; no temporary session needed",
+            )
+        }
+        if (decision is SessionStartDecision.UnrecognizedCurrentState) {
+            return@withLock ApplyResult(
+                success = false,
+                observation = repository.state.value.observation,
+                message = "The current OEM charging mode is not recognized; refusing to overwrite it",
             )
         }
         val restorePolicy = (decision as SessionStartDecision.Start).restorePolicy

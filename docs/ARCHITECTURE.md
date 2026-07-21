@@ -31,13 +31,21 @@ Shizuku installation detection intentionally resolves the owner of `ShizukuProvi
 
 ## Data flow
 
-`AdapterRegistry` selects an OEM adapter from immutable device information. `AccessResolver` independently probes direct WSS and Shizuku. `ChargingRepository` selects the strongest backend per operation: Shizuku for reads, direct WSS for durable writes, then Shizuku for verification when both are available.
+`AdapterRegistry` selects an OEM adapter from immutable device information; live adapters declare a capability surface (session override policy, protective default, verification strategy, reconnect-gesture support) consumed by the session, recovery, and UI layers. `AccessResolver` independently probes direct WSS and Shizuku. `ChargingRepository` selects the strongest backend per operation: Shizuku for reads, direct WSS for durable writes, then Shizuku for verification when both are available.
 
 `ChargeObservation` is deliberately not a Boolean. A state can be verified, merely last-requested, unknown, unsupported, or blocked on setup. Hidden Pixel secure settings are never described as verified from WSS-only access. On supported Pixels, Amply also consumes `BatteryManager.EXTRA_CHARGING_STATUS`, but only while external power is present: long-life (`4`) verifies that the fixed limit is active and adaptive (`5`) verifies an active adaptive profile. Unplugged, the sticky broadcast retains its last powered value, so hardware state is never treated as verification and the display falls back to the last request. Normal (`1`) remains unknown without Shizuku because inactive adaptive charging and unrestricted charging are indistinguishable.
 
 Because the charging HAL applies a setting asynchronously (measured 11–12 s), a successful write records a `PendingRequest(target, requestedAt)` alongside the observation. `ChargingState.isSettling(now)` reports "applying" until either a `BATTERY_HARDWARE` verification *for that exact target* arrives or a 15-second window elapses — a settings-level (Shizuku) readback or a hardware reading for a different policy does not count, so the dashboard hero card and widget honestly show "waiting for the system" rather than a premature confirmation. A `SettleScheduler` (WorkManager, unique-replaceable) fires one refresh at the window's end so surfaces that do not observe the state flow (the static widget, the tile) still clear across process death; the in-app dashboard additionally runs a local clock for a prompt countdown.
 
 While a temporary session is active, the foreground service observes the adapter's settings URIs. An unexpected native/system change cancels the session without restoring, so Amply cannot overwrite a newer external choice. The widget's persistent-policy buttons route through a serialized `ACTION_SET_PERSISTENT_POLICY` service command that cancels any running session without restoring and force-writes the chosen policy, so an explicit "always 80%/100%" choice is atomic rather than racing the session's own writes.
+
+## Samsung adapters
+
+Two live adapters drive the world-readable `global` keys `protect_battery` (0=off, 1=Maximum, 3=Standard/pause-at-full) and `battery_protection_threshold` (80/85/90/95): a One UI 8.x multi-mode adapter (session override: pause-at-full) and a One UI 4.x/5.x legacy toggle adapter (fixed 85% cap). Writes apply synchronously and verify by read-back equality; unverified One UI generations fall through to the diagnostics-only lab adapter. Gated to the system user because the keys are device-wide while sessions are per-user. Ground truth: `SAMSUNG_SPIKE_RESULTS.md`.
+
+## Xiaomi adapter
+
+One live adapter gated to the HyperOS ROM version (Xiaomi manufacturer, which also covers Redmi/POCO, + `ro.mi.os.version.code == 2` = HyperOS 2.x, + system user) — the charge-protection setting is a ROM feature, not a per-model one. Single per-user `secure` key `security_pc_secure_protect_mode_key`: 0=charge fully, 1=Intelligent charging (heuristic 80% hold, mapped to the Adaptive policy); absent means Intelligent. Synchronous read-back verification; daemon-level enforcement of external writes is pending long-term observation. HyperOS 1, pre-HyperOS MIUI, and a future HyperOS 3 fall to the diagnostics-only lab adapter. A HyperOS 2 device that lacks the feature also reads the key absent → a documented, harmless false claim of control. Ground truth: `XIAOMI_SPIKE_RESULTS.md`.
 
 ## Pixel adapter
 
@@ -58,4 +66,4 @@ The same service powers the opt-in reconnect gesture. By default it arms only wh
 
 ## Privileged boundary
 
-The Shizuku process exposes a typed AIDL interface for get, put, WSS grant, and diagnostic snapshots. `ProcessBuilder` receives separate arguments; no shell string is evaluated. Writes require a valid namespace, key/value syntax, and an explicit key allowlist. Samsung and OnePlus candidate keys are present for future lab adapters but no production code invokes them.
+The Shizuku process exposes a typed AIDL interface for get, put, WSS grant, and diagnostic snapshots. `ProcessBuilder` receives separate arguments; no shell string is evaluated. Writes require a valid namespace, key syntax, and an explicit per-key value domain (`SettingWritePolicy`) — the boundary rejects out-of-domain values itself. Samsung and Xiaomi keys are live on gated devices; the OnePlus candidate key is present for future lab work but no production code invokes it.

@@ -66,6 +66,20 @@ pending-settle window, boot recovery converges on settings readback, and no reap
 The reconnect gesture is Pixel-only (`reconnectGestureSupported`). One UI 6/7 and 9+ fall through to the
 diagnostics-only lab adapter. Ground truth: `docs/SAMSUNG_SPIKE_RESULTS.md`.
 
+## Xiaomi Adapter
+
+One live adapter (`xiaomi-hyperos2-v1`), gated to the HyperOS ROM version (the setting is a ROM
+feature, not a per-model one): manufacturer Xiaomi (covers Redmi/POCO — they report Xiaomi as
+manufacturer) + `ro.mi.os.version.code == 2` (HyperOS 2.x) + system user. Use `ro.mi.os.version.code`,
+NOT the frozen legacy `ro.miui.ui.version.code`. Single key
+`secure/security_pc_secure_protect_mode_key`: `0`=charge fully, `1`=Intelligent (heuristic 80% hold →
+`ChargePolicy.Adaptive`), absent=Intelligent (factory state). No hard-cap mode exists. SYNC_READBACK
+with read-back equality; session override = Unrestricted; protective default = Adaptive. HyperOS 1,
+pre-HyperOS MIUI, and a future HyperOS 3 fall to `XiaomiLabAdapter` (diagnostics + contribution). Two
+documented assumptions: the feature is treated as present on any HyperOS 2 device (a device lacking it
+reads the key absent → a harmless false claim of control), and daemon-level enforcement of external
+writes is pending long-term observation — see `docs/XIAOMI_SPIKE_RESULTS.md`.
+
 ## Pixel Adapter
 
 Writes **only** two secure settings:
@@ -124,4 +138,4 @@ Android does not deliver `ACTION_POWER_CONNECTED` / `ACTION_POWER_DISCONNECTED` 
 - Shizuku installation is detected by resolving the owner of `ShizukuProvider.PERMISSION`, **not** a fixed package
   name — this recognizes renamed forks and hidden-package mode. Don't hardcode a package name.
 - OnePlus candidate keys exist in the privileged layer for a future lab adapter but **no production code invokes
-  them**. Don't wire them into shipping paths. (Samsung keys are live — see Samsung Adapters.)
+  them**. Don't wire them into shipping paths. (Samsung and Xiaomi keys are live — see their adapter sections.)

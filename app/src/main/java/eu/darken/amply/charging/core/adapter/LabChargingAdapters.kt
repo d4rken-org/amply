@@ -54,6 +54,17 @@ class SamsungLabAdapter @Inject constructor() : DisabledLabAdapter() {
 }
 
 @Singleton
+class XiaomiLabAdapter @Inject constructor() : DisabledLabAdapter() {
+    override val id = "xiaomi-lab"
+    override val displayName = R.string.adapter_name_xiaomi.toCaString()
+    override fun matches(device: DeviceInfo) = device.manufacturer.equals("Xiaomi", ignoreCase = true)
+
+    companion object {
+        val CANDIDATE_KEYS = setOf("security_pc_secure_protect_mode_key")
+    }
+}
+
+@Singleton
 class OnePlusLabAdapter @Inject constructor() : DisabledLabAdapter() {
     override val id = "oneplus-lab"
     override val displayName = R.string.adapter_name_oneplus.toCaString()
@@ -63,19 +74,5 @@ class OnePlusLabAdapter @Inject constructor() : DisabledLabAdapter() {
 
     companion object {
         val CANDIDATE_KEYS = setOf("regular_charge_protection_switch_state")
-    }
-}
-
-@Singleton
-class XiaomiLabAdapter @Inject constructor() : DisabledLabAdapter() {
-    override val id = "xiaomi-lab"
-    override val displayName = R.string.adapter_name_xiaomi.toCaString()
-
-    // Redmi and POCO devices report manufacturer "Xiaomi", so this covers the whole family.
-    override fun matches(device: DeviceInfo) = device.manufacturer.equals("Xiaomi", ignoreCase = true)
-
-    companion object {
-        // No writable keys are wired yet — Xiaomi stays diagnostics-only + guide-only.
-        val CANDIDATE_KEYS = emptySet<String>()
     }
 }

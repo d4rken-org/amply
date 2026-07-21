@@ -35,6 +35,8 @@ data class ChargingState(
     val adapterId: String? = null,
     val supportedPolicies: List<ChargePolicy> = emptyList(),
     val reconnectSupported: Boolean = false,
+    /** True when the adapter's configured state is directly readable — Shizuku adds nothing for verification. */
+    val syncVerification: Boolean = false,
     val controlEnabled: Boolean = false,
     val contributionWanted: Boolean = false,
     val access: AccessSnapshot? = null,
@@ -139,7 +141,14 @@ class ChargingRepository @Inject constructor(
         val first = runCatching { adapter.read(primary) }.getOrNull()
         if (first is ChargeObservation.Verified || primary === accessResolver.direct) return first
         val second = runCatching { adapter.read(accessResolver.direct) }.getOrNull()
-        return if (second is ChargeObservation.Verified) second else first ?: second
+        // Signal strength: Verified > readable-but-unrecognized (must survive the fallback so
+        // session start can refuse) > generic unreadable.
+        return when {
+            second is ChargeObservation.Verified -> second
+            first is ChargeObservation.Unknown && first.unrecognizedValue -> first
+            second is ChargeObservation.Unknown && second.unrecognizedValue -> second
+            else -> first ?: second
+        }
     }
 
     fun shizukuManagerPackage(): String? = shizukuController.managerPackage()
@@ -313,6 +322,7 @@ class ChargingRepository @Inject constructor(
             adapterId = adapter?.id,
             supportedPolicies = adapter?.supportedPolicies.orEmpty(),
             reconnectSupported = adapter?.reconnectGestureSupported == true,
+            syncVerification = adapter?.verification == VerificationStrategy.SYNC_READBACK,
             controlEnabled = selection.support.controlEnabled,
             contributionWanted = selection.support.contributionWanted,
             access = access,

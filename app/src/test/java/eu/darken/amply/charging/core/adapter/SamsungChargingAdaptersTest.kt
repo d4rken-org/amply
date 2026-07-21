@@ -78,7 +78,7 @@ class SamsungChargingAdaptersTest {
 
         support.matched shouldBe true
         support.controlEnabled shouldBe false
-        support.detail shouldBe R.string.adapter_detail_samsung_secondary_user
+        support.detail shouldBe R.string.adapter_detail_secondary_user
         support.contributionWanted shouldBe false
     }
 
@@ -116,14 +116,15 @@ class SamsungChargingAdaptersTest {
             return modern.read(FakeBackend(values = values))
         }
 
-        // Unknown mode values (e.g. an unverified One UI generation's "2") never verify.
-        observed("2").shouldBeInstanceOf<ChargeObservation.Unknown>()
-        observed("garbage").shouldBeInstanceOf<ChargeObservation.Unknown>()
-        observed(null).shouldBeInstanceOf<ChargeObservation.Unknown>()
+        // Unknown mode values (e.g. an unverified One UI generation's "2") never verify and
+        // must carry the machine-readable unrecognized flag so session start can refuse.
+        observed("2").shouldBeInstanceOf<ChargeObservation.Unknown>().unrecognizedValue shouldBe true
+        observed("garbage").shouldBeInstanceOf<ChargeObservation.Unknown>().unrecognizedValue shouldBe true
+        observed(null).shouldBeInstanceOf<ChargeObservation.Unknown>().unrecognizedValue shouldBe true
         // Threshold must be a valid tick when the key is present; only absence defaults to 80.
-        observed("1", "75").shouldBeInstanceOf<ChargeObservation.Unknown>()
-        observed("1", "100").shouldBeInstanceOf<ChargeObservation.Unknown>()
-        observed("1", "abc").shouldBeInstanceOf<ChargeObservation.Unknown>()
+        observed("1", "75").shouldBeInstanceOf<ChargeObservation.Unknown>().unrecognizedValue shouldBe true
+        observed("1", "100").shouldBeInstanceOf<ChargeObservation.Unknown>().unrecognizedValue shouldBe true
+        observed("1", "abc").shouldBeInstanceOf<ChargeObservation.Unknown>().unrecognizedValue shouldBe true
     }
 
     @Test

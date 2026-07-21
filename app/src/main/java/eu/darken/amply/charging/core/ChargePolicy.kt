@@ -53,7 +53,9 @@ sealed interface ChargePolicy {
 sealed interface ChargeObservation {
     data class Verified(val policy: ChargePolicy, val backend: BackendKind) : ChargeObservation
     data class LastRequested(val policy: ChargePolicy) : ChargeObservation
-    data class Unknown(val reason: CaString) : ChargeObservation
+
+    /** [unrecognizedValue] marks a successfully read but unmapped OEM value (vs. unreadable state). */
+    data class Unknown(val reason: CaString, val unrecognizedValue: Boolean = false) : ChargeObservation
     data class NeedsSetup(val reason: CaString) : ChargeObservation
     data class Unsupported(val reason: CaString) : ChargeObservation
 }
