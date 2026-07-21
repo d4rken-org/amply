@@ -12,6 +12,7 @@ Two control adapters exist. Pixel charging optimization is capability-gated to P
 - Hierarchical General, Support, and acknowledgements settings; changelog and privacy policy link to the project website
 - Explicitly consented local debug-log recording and sharing
 - Optional “reconnect for 100%” gesture at the active 80% hardware limit
+- Works without ADB/Shizuku too: a charge alarm that reminds you to unplug at a chosen level, a live battery-info card with a details screen, and an OEM battery-protection guide on unsupported devices
 - Quick Settings tile for “100% once” and restore
 - Glance widget with 80% protection and one-time full-charge actions
 - `WRITE_SECURE_SETTINGS` and Shizuku access paths
