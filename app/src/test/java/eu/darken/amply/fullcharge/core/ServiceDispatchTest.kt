@@ -14,6 +14,19 @@ class ServiceDispatchTest {
         ServiceDispatch.startAction(Trigger.FOREGROUND, session, pending, gesture)
 
     @Test
+    fun `a boot-completed delivery within an already-seen boot reconciles instead of restoring`() {
+        // Android re-delivers deferred BOOT_COMPLETED when a force-stopped app next starts
+        // (observed on Android 16); same-boot deliveries must not restore over a live session.
+        ServiceDispatch.bootTrigger(currentBootCount = 15, lastSeenBootCount = 15) shouldBe Trigger.FOREGROUND
+        // A genuinely new boot keeps restore semantics.
+        ServiceDispatch.bootTrigger(currentBootCount = 16, lastSeenBootCount = 15) shouldBe Trigger.BOOT
+        // Unknown history (fresh data, unreadable counter) stays conservative.
+        ServiceDispatch.bootTrigger(currentBootCount = 15, lastSeenBootCount = null) shouldBe Trigger.BOOT
+        ServiceDispatch.bootTrigger(currentBootCount = null, lastSeenBootCount = 15) shouldBe Trigger.BOOT
+        ServiceDispatch.bootTrigger(currentBootCount = null, lastSeenBootCount = null) shouldBe Trigger.BOOT
+    }
+
+    @Test
     fun `boot dispatch prefers recovery and falls back to monitoring`() {
         boot(session = true, pending = false, gesture = true) shouldBe ChargeSessionService.ACTION_RECOVER
         boot(session = false, pending = true, gesture = false) shouldBe ChargeSessionService.ACTION_RECOVER
