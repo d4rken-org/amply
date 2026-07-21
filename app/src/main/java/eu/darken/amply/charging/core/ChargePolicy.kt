@@ -9,7 +9,8 @@ sealed interface ChargePolicy {
     val label: CaString
 
     /** Whether the battery reaches 100% under this policy (no cap below full). */
-    val allowsFullCharge: Boolean get() = this == Unrestricted || this == PauseAtFull
+    val allowsFullCharge: Boolean
+        get() = this == Unrestricted || this == PauseAtFull || (this is FixedLimit && percent >= 100)
 
     data object Unrestricted : ChargePolicy {
         override val stableId = "unrestricted"

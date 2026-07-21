@@ -59,6 +59,7 @@ import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingState
 import eu.darken.amply.charging.core.DeviceInfo
+import eu.darken.amply.charging.core.PendingRequest
 import eu.darken.amply.charging.core.SETTLING_WINDOW_MILLIS
 import eu.darken.amply.charging.core.access.AccessSnapshot
 import eu.darken.amply.charging.core.access.BackendStatus
@@ -70,6 +71,8 @@ import eu.darken.amply.common.ca.toCaString
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.common.compose.asComposable
+import eu.darken.amply.fullcharge.core.ChargeSessionRecord
+import eu.darken.amply.fullcharge.core.policyOrNull
 import eu.darken.amply.main.core.formatReport
 import eu.darken.amply.main.ui.setup.AccessSetupGuide
 import eu.darken.amply.main.ui.setup.UnsupportedDeviceCard
@@ -118,12 +121,15 @@ fun DashboardScreen(
                 .fillMaxSize(),
         ) {
             val sidePadding = ((maxWidth - DASHBOARD_MAX_WIDTH) / 2).coerceAtLeast(16.dp)
+            // Derived once and shared by the status + full-charge cards so they can never disagree
+            // about whether the one-time charge is actually in effect.
+            val sessionPresentation = SessionPresentation.from(state.session, state.charging.observation)
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = sidePadding, end = sidePadding, top = 8.dp, bottom = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                item { StatusCard(state, onRefresh) }
+                item { StatusCard(state, sessionPresentation, onRefresh) }
 
                 if (state.charging.observation is ChargeObservation.Unsupported) {
                     // Unsupported devices cannot use the Pixel policy/charge controls; showing them
@@ -132,7 +138,7 @@ fun DashboardScreen(
                     if (state.session != null) {
                         item {
                             FullChargeCard(
-                                active = true,
+                                presentation = sessionPresentation,
                                 canControl = state.charging.controlEnabled &&
                                     state.charging.access?.canControl == true,
                                 onStart = onStartFull,
@@ -183,7 +189,7 @@ fun DashboardScreen(
 
                     item {
                         FullChargeCard(
-                            active = state.session != null,
+                            presentation = sessionPresentation,
                             canControl = state.charging.controlEnabled && state.charging.access?.canControl == true,
                             onStart = onStartFull,
                             onRestore = onRestore,
@@ -225,7 +231,11 @@ fun DashboardScreen(
 private val DASHBOARD_MAX_WIDTH = 600.dp
 
 @Composable
-private fun StatusCard(state: DashboardUiState, onRefresh: () -> Unit) {
+private fun StatusCard(
+    state: DashboardUiState,
+    presentation: SessionPresentation,
+    onRefresh: () -> Unit,
+) {
     val observation = state.charging.observation
     val pending = state.charging.pending
 
@@ -269,7 +279,12 @@ private fun StatusCard(state: DashboardUiState, onRefresh: () -> Unit) {
                     )
                 }
                 Text(
-                    if (settling) stringResource(R.string.dashboard_applying) else observation.title().asComposable(),
+                    when {
+                        settling -> stringResource(R.string.dashboard_applying)
+                        presentation == SessionPresentation.ACTIVE ->
+                            stringResource(R.string.dashboard_session_once_title)
+                        else -> observation.title().asComposable()
+                    },
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.weight(1f),
                 )
@@ -280,6 +295,26 @@ private fun StatusCard(state: DashboardUiState, onRefresh: () -> Unit) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (!settling) {
+                // One explanatory line: during a one-time charge, which policy comes back; otherwise
+                // what the current policy does. Phrased as definitions so it stays honest when the
+                // observation is only "last requested".
+                val explanation = if (presentation == SessionPresentation.ACTIVE) {
+                    state.session?.let {
+                        stringResource(R.string.dashboard_session_returns, it.restorePolicy.shortLabel().asComposable())
+                    }
+                } else {
+                    observation.policyOrNull()?.description()?.asComposable()
+                }
+                explanation?.let {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             Spacer(Modifier.height(4.dp))
             Text(
                 stringResource(
@@ -299,8 +334,8 @@ private fun StatusCard(state: DashboardUiState, onRefresh: () -> Unit) {
                     color = MaterialTheme.colorScheme.tertiary,
                 )
             } else {
-                // The repository's "may take ~15s" message duplicates the settling line, so only show it
-                // once settling has resolved.
+                // The repository's apply message describes the request the settling line already
+                // narrates, so only show it once settling has resolved.
                 state.charging.message?.let {
                     Text(
                         it.asComposable(),
@@ -315,33 +350,40 @@ private fun StatusCard(state: DashboardUiState, onRefresh: () -> Unit) {
 
 @Composable
 private fun FullChargeCard(
-    active: Boolean,
+    presentation: SessionPresentation,
     canControl: Boolean,
     onStart: () -> Unit,
     onRestore: () -> Unit,
 ) {
+    // Any session record offers the restore action; only an observed full-charge policy (verified
+    // or last requested) claims the one-time charge is running.
+    val active = presentation != SessionPresentation.NONE
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
     ) {
         Column(Modifier.padding(16.dp)) {
             Text(
-                if (active) {
-                    stringResource(R.string.dashboard_fullcharge_active_title)
-                } else {
-                    stringResource(R.string.dashboard_fullcharge_idle_title)
+                when (presentation) {
+                    SessionPresentation.NONE -> stringResource(R.string.dashboard_fullcharge_idle_title)
+                    SessionPresentation.ACTIVE -> stringResource(R.string.dashboard_fullcharge_active_title)
+                    SessionPresentation.RECORDED -> stringResource(R.string.dashboard_fullcharge_recorded_title)
                 },
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
-            Text(
-                if (active) {
-                    stringResource(R.string.dashboard_fullcharge_active_body)
-                } else {
-                    stringResource(R.string.dashboard_fullcharge_idle_body)
-                },
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            when (presentation) {
+                // The status card explains an ACTIVE session; repeating it here would duplicate.
+                SessionPresentation.ACTIVE -> Unit
+                SessionPresentation.NONE -> Text(
+                    stringResource(R.string.dashboard_fullcharge_idle_body),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                SessionPresentation.RECORDED -> Text(
+                    stringResource(R.string.dashboard_fullcharge_recorded_body),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
             Spacer(Modifier.height(8.dp))
             Button(
                 onClick = if (active) onRestore else onStart,
@@ -379,7 +421,7 @@ private fun PolicyCard(
             listOf(ChargePolicy.FixedLimit(80), ChargePolicy.Adaptive, ChargePolicy.Unrestricted)
         }
         .map { it to it.choiceLabel() }
-    val selectedPolicy = state.charging.observation.policyOrNull()
+    val selectedPolicy = selectedPolicyFor(state.session, state.charging.observation)
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -520,12 +562,6 @@ private fun ShizukuBanner(
     }
 }
 
-private fun ChargeObservation.policyOrNull(): ChargePolicy? = when (this) {
-    is ChargeObservation.Verified -> policy
-    is ChargeObservation.LastRequested -> policy
-    else -> null
-}
-
 private fun ChargeObservation.title(): CaString = when (this) {
     is ChargeObservation.Verified -> if (backend == BackendKind.BATTERY_HARDWARE) {
         caString { it.getString(R.string.dashboard_status_verified_active, policy.shortLabel().get(it)) }
@@ -567,6 +603,18 @@ private fun ChargePolicy.shortLabel(): CaString = when (this) {
     is ChargePolicy.FixedLimit -> R.string.dashboard_policy_fixed.toCaString(percent)
 }
 
+private fun ChargePolicy.description(): CaString = when (this) {
+    ChargePolicy.Adaptive -> R.string.dashboard_policy_desc_adaptive.toCaString()
+    ChargePolicy.Unrestricted -> R.string.dashboard_policy_desc_full.toCaString()
+    ChargePolicy.PauseAtFull -> R.string.dashboard_policy_desc_pause.toCaString()
+    is ChargePolicy.FixedLimit -> if (percent >= 100) {
+        // A 100% "limit" is a full charge; the battery-health claim would be wrong.
+        R.string.dashboard_policy_desc_full.toCaString()
+    } else {
+        R.string.dashboard_policy_desc_fixed.toCaString(percent)
+    }
+}
+
 @AmplyPreview
 @Composable
 private fun DashboardScreenPreview() = PreviewWrapper {
@@ -597,6 +645,180 @@ private fun DashboardScreenPreview() = PreviewWrapper {
                     ),
                 ),
                 observation = ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.SHIZUKU),
+            ),
+        ),
+        adbCommand = "adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS",
+        onRefresh = {},
+        onSettings = {},
+        onStartFull = {},
+        onRestore = {},
+        onApply = {},
+        onQuickFullChargeChange = {},
+        onNativeSettings = {},
+        onOpenShizuku = {},
+        onAllowShizuku = {},
+        onGrantWss = {},
+        onCopyAdb = {},
+        onPrepareSupportReport = {},
+        onCopySupportReport = {},
+        onOpenSupportIssue = {},
+        onEmailSupport = {},
+        onHelp = {},
+    )
+}
+
+// Mid-apply: spinner, "Applying…", and the waiting line with the duration hint.
+@AmplyPreview
+@Composable
+private fun DashboardScreenApplyingPreview() = PreviewWrapper {
+    // Captured once so recomposition doesn't rebuild the pending request and restart the settle clock.
+    val requestedAt = remember { System.currentTimeMillis() }
+    DashboardScreen(
+        state = DashboardUiState(
+            onboardingComplete = true,
+            charging = ChargingState(
+                device = DeviceInfo("Google", "Pixel 8", 36, "preview"),
+                adapterName = "Pixel Charge Control".toCaString(),
+                adapterId = "pixel",
+                supportedPolicies = listOf(
+                    ChargePolicy.FixedLimit(80),
+                    ChargePolicy.Adaptive,
+                    ChargePolicy.Unrestricted,
+                ),
+                reconnectSupported = true,
+                controlEnabled = true,
+                access = AccessSnapshot(
+                    direct = BackendStatus(
+                        available = true,
+                        granted = true,
+                        detail = "WRITE_SECURE_SETTINGS granted".toCaString(),
+                    ),
+                    shizuku = BackendStatus(
+                        available = true,
+                        granted = true,
+                        detail = "Shizuku connected".toCaString(),
+                    ),
+                ),
+                observation = ChargeObservation.LastRequested(ChargePolicy.FixedLimit(80)),
+                pending = PendingRequest(ChargePolicy.FixedLimit(80), requestedAt),
+            ),
+        ),
+        adbCommand = "adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS",
+        onRefresh = {},
+        onSettings = {},
+        onStartFull = {},
+        onRestore = {},
+        onApply = {},
+        onQuickFullChargeChange = {},
+        onNativeSettings = {},
+        onOpenShizuku = {},
+        onAllowShizuku = {},
+        onGrantWss = {},
+        onCopyAdb = {},
+        onPrepareSupportReport = {},
+        onCopySupportReport = {},
+        onOpenSupportIssue = {},
+        onEmailSupport = {},
+        onHelp = {},
+    )
+}
+
+// One-time full charge running: session-aware hero plus the trimmed restore card.
+@AmplyPreview
+@Composable
+private fun DashboardScreenSessionActivePreview() = PreviewWrapper {
+    DashboardScreen(
+        state = DashboardUiState(
+            onboardingComplete = true,
+            session = ChargeSessionRecord(
+                restorePolicy = ChargePolicy.FixedLimit(80),
+                startedAtMillis = 0L,
+                connectedSeen = true,
+            ),
+            charging = ChargingState(
+                device = DeviceInfo("Google", "Pixel 8", 36, "preview"),
+                adapterName = "Pixel Charge Control".toCaString(),
+                adapterId = "pixel",
+                supportedPolicies = listOf(
+                    ChargePolicy.FixedLimit(80),
+                    ChargePolicy.Adaptive,
+                    ChargePolicy.Unrestricted,
+                ),
+                reconnectSupported = true,
+                controlEnabled = true,
+                access = AccessSnapshot(
+                    direct = BackendStatus(
+                        available = true,
+                        granted = true,
+                        detail = "WRITE_SECURE_SETTINGS granted".toCaString(),
+                    ),
+                    shizuku = BackendStatus(
+                        available = true,
+                        granted = true,
+                        detail = "Shizuku connected".toCaString(),
+                    ),
+                ),
+                observation = ChargeObservation.Verified(ChargePolicy.Unrestricted, BackendKind.BATTERY_HARDWARE),
+            ),
+        ),
+        adbCommand = "adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS",
+        onRefresh = {},
+        onSettings = {},
+        onStartFull = {},
+        onRestore = {},
+        onApply = {},
+        onQuickFullChargeChange = {},
+        onNativeSettings = {},
+        onOpenShizuku = {},
+        onAllowShizuku = {},
+        onGrantWss = {},
+        onCopyAdb = {},
+        onPrepareSupportReport = {},
+        onCopySupportReport = {},
+        onOpenSupportIssue = {},
+        onEmailSupport = {},
+        onHelp = {},
+    )
+}
+
+// A session record without confirmed 100% charging (e.g. the override write failed and the record
+// is kept for recovery): the hero stays truthful and the full-charge card shows the neutral
+// "recorded" wording with the restore action.
+@AmplyPreview
+@Composable
+private fun DashboardScreenSessionRecordedPreview() = PreviewWrapper {
+    DashboardScreen(
+        state = DashboardUiState(
+            onboardingComplete = true,
+            session = ChargeSessionRecord(
+                restorePolicy = ChargePolicy.FixedLimit(80),
+                startedAtMillis = 0L,
+                connectedSeen = false,
+            ),
+            charging = ChargingState(
+                device = DeviceInfo("Google", "Pixel 8", 36, "preview"),
+                adapterName = "Pixel Charge Control".toCaString(),
+                adapterId = "pixel",
+                supportedPolicies = listOf(
+                    ChargePolicy.FixedLimit(80),
+                    ChargePolicy.Adaptive,
+                    ChargePolicy.Unrestricted,
+                ),
+                reconnectSupported = true,
+                controlEnabled = true,
+                access = AccessSnapshot(
+                    direct = BackendStatus(
+                        available = true,
+                        granted = true,
+                        detail = "WRITE_SECURE_SETTINGS granted".toCaString(),
+                    ),
+                    shizuku = BackendStatus(
+                        available = true,
+                        granted = true,
+                        detail = "Shizuku connected".toCaString(),
+                    ),
+                ),
+                observation = ChargeObservation.Unknown("The settings write failed".toCaString()),
             ),
         ),
         adbCommand = "adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS",
