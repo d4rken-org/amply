@@ -81,7 +81,7 @@
     <string name="charging_reason_needs_setup">Grant charge-control access or connect Shizuku</string>
     <string name="charging_reason_policy_unsupported">%1$s is not supported by %2$s</string>
     <string name="charging_reason_settings_unreadable">Settings are not readable</string>
-    <string name="charging_reason_values_unrecognized">Unrecognized Pixel values: %1$s=%2$s, %3$s=%4$s</string>
+    <string name="charging_reason_values_unrecognized">Unrecognized values: %1$s=%2$s, %3$s=%4$s</string>
     <string name="charging_reason_value_unrecognized">Unrecognized value: %1$s=%2$s</string>
     <string name="charging_reason_hw_normal">Charging hardware is normal; without Shizuku, Amply cannot distinguish unrestricted from inactive adaptive charging</string>
     <string name="charging_reason_hw_too_cold">Charging is currently temperature-limited because the battery is too cold</string>

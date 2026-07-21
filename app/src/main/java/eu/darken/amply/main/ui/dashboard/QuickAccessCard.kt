@@ -32,10 +32,10 @@ import eu.darken.amply.main.core.QuickAccessState
  * exists could create a duplicate, since launchers allow multiple instances.
  */
 internal fun shouldShowQuickAccess(
-    directReady: Boolean,
+    canApply: Boolean,
     presenceChecked: Boolean,
     quickAccess: QuickAccessState,
-): Boolean = directReady &&
+): Boolean = canApply &&
     presenceChecked &&
     !quickAccess.dismissed &&
     !(quickAccess.widgetAdded && quickAccess.tileAdded)

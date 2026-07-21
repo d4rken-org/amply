@@ -181,7 +181,10 @@ fun DashboardScreen(
                         }
                     }
                 } else {
-                    if (state.charging.access?.direct?.ready != true) {
+                    // Shizuku-only adapters (OnePlus/ColorOS) can't use WSS at all, so the WSS/ADB
+                    // setup guide would ask for an ineffective grant — the dedicated
+                    // "Shizuku required" banner below covers their setup instead.
+                    if (!state.charging.writeRequiresShizuku && state.charging.access?.direct?.ready != true) {
                         item {
                             AccessSetupGuide(
                                 state = state,
@@ -197,7 +200,7 @@ fun DashboardScreen(
                     item {
                         FullChargeCard(
                             presentation = sessionPresentation,
-                            canControl = state.charging.canApply(),
+                            canControl = state.charging.canApply,
                             onStart = onStartFull,
                             onRestore = onRestore,
                         )
@@ -210,7 +213,7 @@ fun DashboardScreen(
                             QuickFullChargeCard(
                                 enabled = state.quickFullChargeEnabled,
                                 anyLevel = state.quickFullChargeAnyLevel,
-                                canControl = state.charging.reconnectSupported && state.charging.canApply(),
+                                canControl = state.charging.reconnectSupported && state.charging.canApply,
                                 onEnabledChange = onQuickFullChargeChange,
                                 onOpenSettings = onOpenReconnectSettings,
                             )
@@ -219,7 +222,9 @@ fun DashboardScreen(
                     // Promote the widget/tile shortcuts only once setup is done (the setup guide above
                     // has disappeared) and while at least one shortcut is still undiscovered.
                     if (shouldShowQuickAccess(
-                            directReady = state.charging.access?.direct?.ready == true,
+                            // Promote the shortcuts only once they'd actually work — for Shizuku-only
+                            // adapters WSS alone isn't enough, so gate on canApply, not just WSS.
+                            canApply = state.charging.canApply,
                             presenceChecked = state.quickAccessChecked,
                             quickAccess = state.quickAccess,
                         )
@@ -428,7 +433,10 @@ private fun FullChargeCard(
             Spacer(Modifier.height(8.dp))
             Button(
                 onClick = if (active) onRestore else onStart,
-                enabled = active || canControl,
+                // Restore also writes, so it needs a working backend too — gating only on `active`
+                // would keep it enabled after Shizuku drops mid-session on a Shizuku-only adapter,
+                // where tapping it just fails. The Shizuku-required banner guides reconnection.
+                enabled = canControl,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(
@@ -488,7 +496,7 @@ private fun PolicyCard(
                 }
             }
             Spacer(Modifier.height(8.dp))
-            val choiceEnabled = state.charging.canApply() && !state.charging.busy
+            val choiceEnabled = state.charging.canApply && !state.charging.busy
             if (choices.size <= 4) {
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     choices.forEachIndexed { index, (policy, label) ->
@@ -650,16 +658,6 @@ private fun ShizukuBanner(
             }
         }
     }
-}
-
-/**
- * Whether a policy write can actually land: the device must be controllable, and for
- * system-namespace adapters (OnePlus/ColorOS) Shizuku specifically is required — WSS alone can
- * read the state but cannot write it, so the controls stay disabled until Shizuku is connected.
- */
-private fun ChargingState.canApply(): Boolean = controlEnabled && when {
-    writeRequiresShizuku -> access?.shizuku?.ready == true
-    else -> access?.canControl == true
 }
 
 private fun ChargeObservation.title(): CaString = when (this) {
