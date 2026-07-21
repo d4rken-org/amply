@@ -24,6 +24,8 @@ import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
 import eu.darken.amply.main.core.SurfaceUpdater
+import eu.darken.amply.monitor.core.ChargeMonitorTick
+import eu.darken.amply.monitor.core.ChargeMonitorWatcher
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +37,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -44,6 +47,9 @@ class ChargeSessionService : Service() {
     @Inject lateinit var adapterRegistry: AdapterRegistry
     @Inject lateinit var repository: ChargingRepository
     @Inject lateinit var preferences: ChargingPreferences
+
+    // Optional, permission-free battery observers (charge alarm, …), contributed via @IntoSet.
+    @Inject lateinit var watchers: Set<@JvmSuppressWildcards ChargeMonitorWatcher>
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val commandMutex = Mutex()
@@ -100,7 +106,10 @@ class ChargeSessionService : Service() {
     override fun onCreate() {
         super.onCreate()
         log(TAG) { "Creating charge-session service" }
-        startAsForeground(SessionNotifications.gesture(this, armed = false))
+        // Neutral bootstrap notification: onCreate runs before the command dispatch decides why the
+        // service started, so posting the gesture notification here would flash the wrong copy (and
+        // its DEFAULT-importance channel) on an alarm-only start. The dispatch replaces it.
+        startAsForeground(SessionNotifications.monitoring(this))
         ContextCompat.registerReceiver(
             this,
             batteryReceiver,
@@ -185,16 +194,57 @@ class ChargeSessionService : Service() {
             beginOrResume()
             return
         }
-        if (!fullChargeStore.isQuickFullChargeEnabled() || !reconnectGestureAvailable()) {
-            log(TAG) { "Reconnect gesture disabled or unsupported; stopping monitor" }
+        val gestureActive = fullChargeStore.isQuickFullChargeEnabled() && reconnectGestureAvailable()
+        if (!gestureActive && !anyWatcherEnabled()) {
+            log(TAG) { "Reconnect gesture disabled/unsupported and no watcher enabled; stopping monitor" }
             stopMonitoring()
             return
         }
         unregisterSettingObserver()
         startMonitoringLoop()
         monitorReady = true
+        // A watcher-only monitor gets the quiet notification; the gesture path re-posts its own in
+        // evaluateBattery. Post here so an alarm-only start replaces the bootstrap notification.
+        if (!gestureActive) startAsForeground(SessionNotifications.monitoring(this))
         evaluateBattery()
         SurfaceUpdater.updateNow(this)
+    }
+
+    /** A watcher's isEnabled must never throw the service into stopping; treat failure as false. */
+    private suspend fun anyWatcherEnabled(): Boolean = watchers.any { watcher ->
+        try {
+            watcher.isEnabled()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log(TAG, Logging.Priority.WARN) { "Watcher ${watcher.id} isEnabled failed: ${e.message}" }
+            false
+        }
+    }
+
+    /**
+     * Deliver a battery tick to every optional watcher. Evaluations are already serialized (single
+     * evaluation consumer under [commandMutex]), so no extra lock is needed. Each watcher is bounded
+     * by [WATCHER_TICK_BUDGET_MILLIS] and fully isolated: a hung or throwing watcher can neither
+     * strand this evaluation nor, since restore already ran before this point, delay policy recovery.
+     */
+    private suspend fun dispatchWatchers(plugged: Boolean, percent: Int, status: Int, sessionOwned: Boolean) {
+        if (watchers.isEmpty()) return
+        val tick = ChargeMonitorTick(
+            plugged = plugged,
+            percent = percent,
+            batteryStatus = status,
+            sessionActive = sessionOwned,
+        )
+        watchers.forEach { watcher ->
+            try {
+                withTimeoutOrNull(WATCHER_TICK_BUDGET_MILLIS) { watcher.onBatteryTick(tick) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log(TAG, Logging.Priority.WARN) { "Watcher ${watcher.id} tick failed: ${e.message}" }
+            }
+        }
     }
 
     private fun startMonitoringLoop() {
@@ -231,6 +281,7 @@ class ChargeSessionService : Service() {
         val percent = if (level >= 0 && scale > 0) level * 100 / scale else -1
 
         val session = fullChargeStore.currentSession()
+
         if (session != null) {
             val full = status == BatteryManager.BATTERY_STATUS_FULL || percent >= 100
             val decision = SessionDecisionEngine.decide(
@@ -244,19 +295,35 @@ class ChargeSessionService : Service() {
                     manager.markConnected()
                     startAsForeground(SessionNotifications.session(this, connected = true))
                 }
+                // Restore is safety-critical and holds commandMutex: run it BEFORE any optional
+                // watcher work so a slow/hung watcher can never delay restoring the protective
+                // policy. The suppression latch was already set on the session's earlier
+                // (non-restore) ticks below; the post-restore re-evaluation sees it as fired.
                 SessionDecision.RESTORE_FULL,
                 SessionDecision.RESTORE_DISCONNECTED,
                 SessionDecision.RESTORE_ARM_TIMEOUT,
-                SessionDecision.RESTORE_SAFETY_TIMEOUT -> restoreAndContinue()
+                SessionDecision.RESTORE_SAFETY_TIMEOUT -> {
+                    restoreAndContinue()
+                    return
+                }
                 SessionDecision.CONTINUE -> startAsForeground(
                     SessionNotifications.session(this, connected = plugged || session.connectedSeen),
                 )
             }
+            // Non-restore session tick: let watchers observe it (the alarm claims the cycle here).
+            dispatchWatchers(plugged, percent, status, sessionOwned = true)
             return
         }
 
         if (!fullChargeStore.isQuickFullChargeEnabled() || !reconnectGestureAvailable()) {
-            stopMonitoring()
+            dispatchWatchers(plugged, percent, status, sessionOwned = false)
+            // Gesture inactive: keep running only if a watcher still wants the service, showing the
+            // quiet monitoring notification instead of the gesture cue.
+            if (anyWatcherEnabled()) {
+                startAsForeground(SessionNotifications.monitoring(this))
+            } else {
+                stopMonitoring()
+            }
             return
         }
 
@@ -286,6 +353,9 @@ class ChargeSessionService : Service() {
                     "plugged=$plugged percent=$percent status=$status"
             }
         }
+        // A triggering tick is a deliberate full charge about to begin, so the alarm must treat it
+        // as session-owned and NOT fire "unplug now" on the very reconnect that started the charge.
+        dispatchWatchers(plugged, percent, status, sessionOwned = decision == QuickFullChargeDecision.TRIGGER)
         if (decision == QuickFullChargeDecision.TRIGGER) {
             gestureExpiryJob?.cancel()
             log(TAG) { "Reconnect gesture triggered one-time full charging" }
@@ -548,6 +618,9 @@ class ChargeSessionService : Service() {
 
     companion object {
         private val TAG = logTag("ChargeSessionService")
+        // Upper bound on a single optional watcher's tick so a misbehaving one can't hold the
+        // command pipeline. Well above the DataStore-read + notify work a real watcher performs.
+        private const val WATCHER_TICK_BUDGET_MILLIS = 5_000L
         const val ACTION_START = "eu.darken.amply.action.START_FULL_CHARGE"
         const val ACTION_RESTORE = "eu.darken.amply.action.RESTORE_CHARGE_LIMIT"
         const val ACTION_MONITOR = "eu.darken.amply.action.MONITOR_QUICK_FULL_CHARGE"

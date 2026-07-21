@@ -16,6 +16,9 @@
             <action android:name="android.settings.BATTERY_SAVER_SETTINGS" />
         </intent>
         <intent>
+            <action android:name="android.intent.action.POWER_USAGE_SUMMARY" />
+        </intent>
+        <intent>
             <action android:name="com.samsung.android.sm.ACTION_BATTERY_PROTECTION" />
         </intent>
     </queries>
@@ -66,7 +69,7 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="User-enabled charging monitor that restores temporary policy overrides and detects a deliberate unplug/replug gesture while a charge-protection policy is active" />
+                android:value="User-enabled charging monitor that restores temporary policy overrides, detects a deliberate unplug/replug gesture while a charge-protection policy is active, and alerts the user to unplug when the battery reaches a user-set charge level" />
         </service>
 
         <service
