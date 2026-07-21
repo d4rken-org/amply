@@ -50,6 +50,7 @@ class DashboardScreenGestureTest {
                 onAllowShizuku = {},
                 onGrantWss = {},
                 onCopyAdb = {},
+                onCopyWebUsbLink = {},
                 onPrepareSupportReport = {},
                 onCopySupportReport = {},
                 onOpenSupportIssue = {},

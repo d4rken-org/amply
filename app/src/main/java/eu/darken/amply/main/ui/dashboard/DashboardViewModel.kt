@@ -25,6 +25,7 @@ import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingRepository
 import eu.darken.amply.charging.core.ChargingState
+import eu.darken.amply.common.AmplyLinks
 import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
@@ -393,6 +394,15 @@ class DashboardViewModel @Inject constructor(
             ClipData.newPlainText("Amply setup command", adbGrantCommand),
         )
         Toast.makeText(context, context.getString(R.string.dashboard_adb_copied), Toast.LENGTH_SHORT).show()
+    }
+
+    fun copyWebUsbLink() {
+        // The WebUSB helper runs on the computer the phone is plugged into, so we copy the
+        // link for the user to open there rather than launching the phone's own browser.
+        context.getSystemService(ClipboardManager::class.java).setPrimaryClip(
+            ClipData.newPlainText("Amply web helper link", AmplyLinks.WEB_ADB),
+        )
+        Toast.makeText(context, context.getString(R.string.dashboard_weblink_copied), Toast.LENGTH_SHORT).show()
     }
 
     /** Build the device-support report so the confirmation dialog can preview exactly what will be shared. */
