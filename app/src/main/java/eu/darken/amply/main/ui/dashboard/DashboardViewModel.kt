@@ -122,7 +122,17 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun grantWriteSecureSettings() = viewModelScope.launch {
-        repository.grantWriteSecureSettings()
+        // The status card's result message can be scrolled off-screen while the user watches the setup
+        // card, so surface a failure locally too. The repository returns the refreshed permission state
+        // (WSS actually granted), so false is a real failure — not a lost pm-grant reply.
+        val granted = repository.grantWriteSecureSettings()
+        if (!granted) {
+            Toast.makeText(
+                context,
+                context.getString(R.string.dashboard_wss_grant_failed_toast),
+                Toast.LENGTH_LONG,
+            ).show()
+        }
     }
 
     fun openNativeSettings() {

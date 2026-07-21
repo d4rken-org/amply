@@ -231,14 +231,16 @@
     <string name="setup_access_setup_title">Set up charge control</string>
     <string name="setup_access_ready_body">WRITE_SECURE_SETTINGS is granted.</string>
     <string name="setup_access_setup_body">Amply needs one durable Android permission to change the charge policy.</string>
-    <string name="setup_access_option_shizuku">Option 1 · Shizuku</string>
-    <string name="setup_access_shizuku_hint">Start Shizuku, allow Amply, then grant the durable permission.</string>
+    <string name="setup_access_option_shizuku">Option 1 · Shizuku (recommended)</string>
+    <string name="setup_access_shizuku_hint">With Shizuku, Amply can confirm the configured policy and run diagnostics — not just write it. Start or install Shizuku, allow Amply, then use it to grant the durable permission below.</string>
     <string name="setup_access_grant_shizuku">Grant permission with Shizuku</string>
+    <string name="setup_access_granting_shizuku">Granting…</string>
     <string name="setup_access_allow_shizuku">Allow Amply in Shizuku</string>
     <string name="setup_access_open_shizuku">Open Shizuku</string>
     <string name="setup_access_option_computer">Option 2 · Computer</string>
-    <string name="setup_access_adb_hint">Connect with ADB and run:</string>
+    <string name="setup_access_adb_hint">Grants durable control from a computer. Shizuku is still needed for diagnostics and reliable readback. Connect with ADB and run:</string>
     <string name="setup_access_copy_adb">Copy ADB command</string>
+    <string name="setup_access_adb_refresh_note">After it runs, tap Refresh in the top bar so Amply detects the permission.</string>
 
     <!-- Diagnostics screen (static) -->
     <string name="diagnostics_category_access">Access</string>
@@ -284,6 +286,7 @@
     <string name="dashboard_shizuku_allow">Allow access</string>
     <string name="dashboard_shizuku_open">Open Shizuku</string>
     <string name="dashboard_adb_copied">ADB command copied</string>
+    <string name="dashboard_wss_grant_failed_toast">Couldn\'t grant the permission via Shizuku. Make sure Amply is allowed in Shizuku.</string>
 
     <!-- Widget (in-widget text) -->
     <string name="widget_brand_status">Amply · %1$s</string>
