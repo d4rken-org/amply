@@ -30,7 +30,6 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -51,17 +50,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import eu.darken.amply.R
 import eu.darken.amply.charging.core.BackendKind
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingState
 import eu.darken.amply.charging.core.DeviceInfo
 import eu.darken.amply.charging.core.SETTLING_WINDOW_MILLIS
-import eu.darken.amply.charging.core.isSettling
-import eu.darken.amply.charging.core.settlingTarget
-import eu.darken.amply.R
 import eu.darken.amply.charging.core.access.AccessSnapshot
 import eu.darken.amply.charging.core.access.BackendStatus
+import eu.darken.amply.charging.core.isSettling
+import eu.darken.amply.charging.core.settlingTarget
 import eu.darken.amply.common.ca.CaString
 import eu.darken.amply.common.ca.caString
 import eu.darken.amply.common.ca.toCaString
@@ -123,88 +122,88 @@ fun DashboardScreen(
             ) {
                 item { StatusCard(state, onRefresh) }
 
-            if (state.charging.observation is ChargeObservation.Unsupported) {
-                // Unsupported devices cannot use the Pixel policy/charge controls; showing them
-                // greyed-out (and a "Pixel settings" action) only confuses non-Pixel users. Offer
-                // a contribution path instead, and keep only the restore card if a session lingers.
-                if (state.session != null) {
+                if (state.charging.observation is ChargeObservation.Unsupported) {
+                    // Unsupported devices cannot use the Pixel policy/charge controls; showing them
+                    // greyed-out (and a "Pixel settings" action) only confuses non-Pixel users. Offer
+                    // a contribution path instead, and keep only the restore card if a session lingers.
+                    if (state.session != null) {
+                        item {
+                            FullChargeCard(
+                                active = true,
+                                canControl = state.charging.controlEnabled &&
+                                    state.charging.access?.canControl == true,
+                                onStart = onStartFull,
+                                onRestore = onRestore,
+                            )
+                        }
+                    }
+                    // If the reconnect gesture is still switched on (e.g. the device became unsupported
+                    // after it was enabled), keep the card so the user can turn it — and its foreground
+                    // service — off. The card renders as disable-only when control isn't available.
+                    if (state.quickFullChargeEnabled) {
+                        item {
+                            QuickFullChargeCard(
+                                enabled = true,
+                                canControl = state.charging.controlEnabled &&
+                                    state.charging.access?.canControl == true,
+                                onEnabledChange = onQuickFullChargeChange,
+                            )
+                        }
+                    }
+                    if (state.charging.contributionWanted) {
+                        item {
+                            UnsupportedDeviceCard(
+                                manufacturer = state.charging.device.manufacturer
+                                    .ifBlank { stringResource(R.string.dashboard_manufacturer_fallback) },
+                                reportPreview = state.deviceReport?.let(::formatReport),
+                                onPrepareReport = onPrepareSupportReport,
+                                onCopyReport = onCopySupportReport,
+                                onOpenIssue = onOpenSupportIssue,
+                                onEmail = onEmailSupport,
+                                onHelp = onHelp,
+                            )
+                        }
+                    }
+                } else {
+                    if (state.charging.access?.direct?.ready != true) {
+                        item {
+                            AccessSetupGuide(
+                                state = state,
+                                adbCommand = adbCommand,
+                                onOpenShizuku = onOpenShizuku,
+                                onAllowShizuku = onAllowShizuku,
+                                onGrantWss = onGrantWss,
+                                onCopyAdb = onCopyAdb,
+                            )
+                        }
+                    }
+
                     item {
                         FullChargeCard(
-                            active = true,
-                            canControl = state.charging.controlEnabled &&
-                                state.charging.access?.canControl == true,
+                            active = state.session != null,
+                            canControl = state.charging.controlEnabled && state.charging.access?.canControl == true,
                             onStart = onStartFull,
                             onRestore = onRestore,
                         )
                     }
-                }
-                // If the reconnect gesture is still switched on (e.g. the device became unsupported
-                // after it was enabled), keep the card so the user can turn it — and its foreground
-                // service — off. The card renders as disable-only when control isn't available.
-                if (state.quickFullChargeEnabled) {
+                    item { PolicyCard(state, onApply, onNativeSettings) }
                     item {
                         QuickFullChargeCard(
-                            enabled = true,
-                            canControl = state.charging.controlEnabled &&
-                                state.charging.access?.canControl == true,
+                            enabled = state.quickFullChargeEnabled,
+                            canControl = state.charging.controlEnabled && state.charging.access?.canControl == true,
                             onEnabledChange = onQuickFullChargeChange,
                         )
                     }
-                }
-                if (state.charging.contributionWanted) {
-                    item {
-                        UnsupportedDeviceCard(
-                            manufacturer = state.charging.device.manufacturer
-                                .ifBlank { stringResource(R.string.dashboard_manufacturer_fallback) },
-                            reportPreview = state.deviceReport?.let(::formatReport),
-                            onPrepareReport = onPrepareSupportReport,
-                            onCopyReport = onCopySupportReport,
-                            onOpenIssue = onOpenSupportIssue,
-                            onEmail = onEmailSupport,
-                            onHelp = onHelp,
-                        )
+                    if (state.charging.access?.shizuku?.ready != true) {
+                        item {
+                            ShizukuBanner(
+                                running = state.charging.access?.shizuku?.available == true,
+                                onOpen = onOpenShizuku,
+                                onAllow = onAllowShizuku,
+                            )
+                        }
                     }
                 }
-            } else {
-                if (state.charging.access?.direct?.ready != true) {
-                    item {
-                        AccessSetupGuide(
-                            state = state,
-                            adbCommand = adbCommand,
-                            onOpenShizuku = onOpenShizuku,
-                            onAllowShizuku = onAllowShizuku,
-                            onGrantWss = onGrantWss,
-                            onCopyAdb = onCopyAdb,
-                        )
-                    }
-                }
-
-                item {
-                    FullChargeCard(
-                        active = state.session != null,
-                        canControl = state.charging.controlEnabled && state.charging.access?.canControl == true,
-                        onStart = onStartFull,
-                        onRestore = onRestore,
-                    )
-                }
-                item { PolicyCard(state, onApply, onNativeSettings) }
-                item {
-                    QuickFullChargeCard(
-                        enabled = state.quickFullChargeEnabled,
-                        canControl = state.charging.controlEnabled && state.charging.access?.canControl == true,
-                        onEnabledChange = onQuickFullChargeChange,
-                    )
-                }
-                if (state.charging.access?.shizuku?.ready != true) {
-                    item {
-                        ShizukuBanner(
-                            running = state.charging.access?.shizuku?.available == true,
-                            onOpen = onOpenShizuku,
-                            onAllow = onAllowShizuku,
-                        )
-                    }
-                }
-            }
             }
         }
     }
@@ -240,7 +239,7 @@ private fun StatusCard(state: DashboardUiState, onRefresh: () -> Unit) {
     ) {
         Column(Modifier.padding(20.dp)) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (settling) {
@@ -262,7 +261,7 @@ private fun StatusCard(state: DashboardUiState, onRefresh: () -> Unit) {
                     modifier = Modifier.weight(1f),
                 )
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
             Text(
                 observation.detail().asComposable(),
                 style = MaterialTheme.typography.bodyMedium,
@@ -312,7 +311,7 @@ private fun FullChargeCard(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
     ) {
-        Column(Modifier.padding(20.dp)) {
+        Column(Modifier.padding(16.dp)) {
             Text(
                 if (active) {
                     stringResource(R.string.dashboard_fullcharge_active_title)
@@ -330,7 +329,7 @@ private fun FullChargeCard(
                 },
                 style = MaterialTheme.typography.bodyMedium,
             )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
             Button(
                 onClick = if (active) onRestore else onStart,
                 enabled = active || canControl,
@@ -366,7 +365,7 @@ private fun PolicyCard(
     )
     val selectedPolicy = state.charging.observation.policyOrNull()
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(20.dp)) {
+        Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     stringResource(R.string.dashboard_policy_card_title),
@@ -389,7 +388,7 @@ private fun PolicyCard(
                     )
                 }
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 choices.forEachIndexed { index, (policy, label) ->
                     SegmentedButton(
@@ -420,12 +419,12 @@ private fun QuickFullChargeCard(
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
-                .padding(20.dp)
+                .padding(start=20.dp,end=20.dp,top=12.dp,bottom=20.dp)
                 .alpha(if (interactive) 1f else 0.38f),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(Icons.Default.Bolt, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
@@ -545,7 +544,11 @@ private fun DashboardScreenPreview() = PreviewWrapper {
                         granted = true,
                         detail = "WRITE_SECURE_SETTINGS granted".toCaString(),
                     ),
-                    shizuku = BackendStatus(available = true, granted = true, detail = "Shizuku connected".toCaString()),
+                    shizuku = BackendStatus(
+                        available = true,
+                        granted = true,
+                        detail = "Shizuku connected".toCaString()
+                    ),
                 ),
                 observation = ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.SHIZUKU),
             ),

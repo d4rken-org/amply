@@ -142,6 +142,7 @@ fun AccessSetupGuide(
                         )
                     }
                 }
+                Spacer(Modifier.height(4.dp))
                 FilledTonalButton(onClick = onCopyAdb, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.ContentCopy, contentDescription = null)
                     Text(stringResource(R.string.setup_access_copy_adb), Modifier.padding(start = 8.dp))
