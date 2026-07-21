@@ -177,8 +177,9 @@ fun AccessSetupGuide(
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    // An external `adb pm grant` does not notify this screen, so tell the user how to make
-                    // Amply re-check instead of leaving the setup card apparently stuck.
+                    // An external `adb pm grant` fires no OS callback, but while this card is shown Amply
+                    // polls for the grant (see monitorAccessWhileAwaitingGrant); the note reassures the user
+                    // it is detected automatically, with manual Refresh as a fallback.
                     stringResource(R.string.setup_access_adb_refresh_note),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

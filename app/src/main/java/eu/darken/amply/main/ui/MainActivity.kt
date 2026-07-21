@@ -31,7 +31,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import dagger.hilt.android.AndroidEntryPoint
 import eu.darken.amply.R
 import eu.darken.amply.common.AmplyLinks
@@ -40,6 +43,7 @@ import eu.darken.amply.diagnostics.ui.DiagnosticsScreen
 import eu.darken.amply.diagnostics.ui.DiagnosticsViewModel
 import eu.darken.amply.main.ui.dashboard.DashboardScreen
 import eu.darken.amply.main.ui.dashboard.DashboardViewModel
+import eu.darken.amply.main.ui.dashboard.shouldMonitorAccess
 import eu.darken.amply.main.ui.onboarding.OnboardingScreen
 import eu.darken.amply.main.ui.settings.AcknowledgementsScreen
 import eu.darken.amply.main.ui.settings.GeneralSettingsScreen
@@ -144,6 +148,19 @@ class MainActivity : ComponentActivity() {
                         ContextCompat.RECEIVER_EXPORTED,
                     )
                     onDispose { runCatching { unregisterReceiver(receiver) } }
+                }
+                // An external grant (`adb pm grant`, or Shizuku authorised in its own manager) fires no OS
+                // callback while Amply stays foregrounded, so without this the dashboard only re-checks on the
+                // next battery broadcast (~1 min). While the setup card is up, watch for the grant and stop the
+                // instant it lands. RESUMED-scoped so it never polls in the background.
+                val lifecycle = LocalLifecycleOwner.current.lifecycle
+                val awaitingAccessGrant =
+                    shouldMonitorAccess(state, onDashboard = destination == SettingsDestination.DASHBOARD)
+                LaunchedEffect(awaitingAccessGrant) {
+                    if (!awaitingAccessGrant) return@LaunchedEffect
+                    lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                        viewModel.monitorAccessWhileAwaitingGrant()
+                    }
                 }
 
                     BackHandler(

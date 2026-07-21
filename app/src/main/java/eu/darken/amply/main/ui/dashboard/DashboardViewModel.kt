@@ -21,6 +21,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import eu.darken.amply.R
+import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingRepository
 import eu.darken.amply.charging.core.ChargingState
@@ -45,9 +46,13 @@ import eu.darken.amply.main.core.issueUrl
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -124,6 +129,37 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun refresh() = viewModelScope.launch { repository.refresh() }
+
+    /**
+     * Runs while the access-setup card is on screen and the activity is resumed (see [shouldMonitorAccess];
+     * driven from a repeatOnLifecycle boundary at the composition root, so it is cancelled on pause and torn
+     * down the instant WSS is detected). Catches an external grant that fires no OS callback — `adb pm grant`
+     * or Shizuku authorised in its own manager — by merging a slow poll with Shizuku availability events and
+     * re-checking access cheaply. A tick failure is logged and the monitor keeps running; cancellation
+     * propagates so the lifecycle can stop it.
+     */
+    suspend fun monitorAccessWhileAwaitingGrant() {
+        merge(
+            repository.accessEvents(),
+            flow {
+                while (true) {
+                    emit(Unit)
+                    delay(ACCESS_POLL_INTERVAL_MS)
+                }
+            },
+        ).conflate().collect {
+            // conflate() after merge bounds pending re-checks to one: while a full refresh suspends, a burst
+            // of ticks/Shizuku events collapses instead of queuing behind it. (Not collectLatest — a new
+            // tick must not cancel an in-progress repository refresh.)
+            try {
+                repository.refreshAccessIfChanged()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log(TAG, Logging.Priority.WARN) { "Access monitor tick failed: ${e.message}" }
+            }
+        }
+    }
 
     /**
      * Foreground-entry nudge: after a force-stop, no receiver or sticky restart revives the
@@ -432,5 +468,22 @@ class DashboardViewModel @Inject constructor(
 
     private companion object {
         val TAG = logTag("Dashboard", "VM")
+
+        // Slow on purpose: the merged Shizuku events make the Shizuku path near-instant, so this only
+        // backstops the ADB-grant path (no OS callback exists for it) while the user is on the setup card.
+        const val ACCESS_POLL_INTERVAL_MS = 2_000L
     }
 }
+
+/**
+ * True only while the access-setup card is actually on screen awaiting a grant, mirroring its visibility in
+ * [DashboardScreen]: onboarding done, on the dashboard, a control-capable device (not Unsupported), and
+ * durable WRITE_SECURE_SETTINGS not yet granted. Gates on direct WSS — not [AccessSnapshot.canControl] — so a
+ * Shizuku-ready device still polls for an external `adb pm grant`. Keeps the watcher off unsupported devices
+ * (where access would never flip) and off every other screen.
+ */
+fun shouldMonitorAccess(state: DashboardUiState, onDashboard: Boolean): Boolean =
+    state.onboardingComplete == true &&
+        onDashboard &&
+        state.charging.observation !is ChargeObservation.Unsupported &&
+        state.charging.access?.direct?.ready != true

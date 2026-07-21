@@ -253,7 +253,7 @@
     <string name="setup_access_option_computer">Option 2 · Computer</string>
     <string name="setup_access_adb_hint">Grants durable control from a computer. Shizuku is still needed for diagnostics and reliable readback. Connect with ADB and run:</string>
     <string name="setup_access_copy_adb">Copy ADB command</string>
-    <string name="setup_access_adb_refresh_note">After it runs, tap Refresh in the top bar so Amply detects the permission.</string>
+    <string name="setup_access_adb_refresh_note">Amply detects the permission automatically once it runs — or tap Refresh in the top bar.</string>
 
     <!-- Diagnostics screen (static) -->
     <string name="diagnostics_category_access">Access</string>

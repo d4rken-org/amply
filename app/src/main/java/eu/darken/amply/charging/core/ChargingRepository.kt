@@ -20,14 +20,29 @@ import eu.darken.amply.common.debug.logging.logTag
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/**
+ * Merge a freshly-computed [built] state with the live [prev] one for publication. A Shizuku-driven
+ * WRITE_SECURE_SETTINGS grant sets busy/grantingWss/message outside operationMutex, so while that grant is
+ * in flight a concurrent refresh preserves those transient fields instead of resetting them — the grant's
+ * own finally block is what clears them. All non-transient fields come from the fresh [built] state.
+ */
+internal fun mergeRefreshedState(prev: ChargingState, built: ChargingState): ChargingState =
+    if (prev.grantingWss) {
+        built.copy(busy = prev.busy, grantingWss = true, message = prev.message)
+    } else {
+        built
+    }
 
 data class ChargingState(
     val device: DeviceInfo = DeviceInfo.current(),
@@ -64,6 +79,25 @@ class ChargingRepository @Inject constructor(
 
     suspend fun refresh(message: CaString? = null): ChargingState = operationMutex.withLock {
         refreshLocked(message)
+    }
+
+    /** Shizuku availability transitions, for a foreground watcher awaiting an external access grant. */
+    fun accessEvents(): Flow<Unit> = shizukuController.accessEvents
+
+    /**
+     * Cheap access-only re-check for the foreground grant watcher: probe access and reconcile with a full
+     * refresh ONLY when it actually changed. Skips while a grant/apply is in flight so a repeated poll can
+     * never erase the grant spinner or a transient message — grantWriteSecureSettings() deliberately runs
+     * its ~10s Binder call without the mutex — and avoids the full hardware/DataStore/package work (and
+     * log line) of refresh() on every tick.
+     */
+    suspend fun refreshAccessIfChanged() {
+        val current = mutableState.value
+        if (current.busy || current.grantingWss) return
+        // Let snapshot() failures (incl. CancellationException) propagate to the caller's monitor, which
+        // rethrows cancellation and logs the rest — swallowing here would break lifecycle cancellation.
+        val snapshot = accessResolver.snapshot()
+        if (snapshot != current.access) refresh()
     }
 
     suspend fun applyPersistent(policy: ChargePolicy): ApplyResult = operationMutex.withLock {
@@ -316,7 +350,7 @@ class ChargingRepository @Inject constructor(
             hardware = adapter?.readHardware(context),
             verification = adapter?.verification ?: VerificationStrategy.ASYNC_HARDWARE,
         )
-        return ChargingState(
+        val built = ChargingState(
             device = DeviceInfo.current(context),
             adapterName = adapter?.displayName ?: R.string.adapter_name_unsupported.toCaString(),
             adapterId = adapter?.id,
@@ -330,18 +364,20 @@ class ChargingRepository @Inject constructor(
             pending = pending,
             busy = false,
             message = message,
-        ).also {
-            mutableState.value = it
-            log(TAG, Logging.Priority.VERBOSE) {
-                val access = it.access
-                val accessState = if (access == null) {
-                    "none"
-                } else {
-                    "direct=${access.direct.ready},shizuku=${access.shizuku.ready}"
-                }
-                "refresh(adapter=${it.adapterId}, access=$accessState, observation=${it.observation})"
-            }
+        )
+        // A WSS grant publishes its busy/grantingWss/message cue OUTSIDE operationMutex (its ~10s Binder
+        // call must not serialize behind a policy apply), so any concurrent refresh — this access poll, or
+        // the resume/battery refreshes in MainActivity — must not clobber it. updateAndGet closes the
+        // check-then-act window: if a grant became active between building and publishing, its transient
+        // fields carry over and the grant's own finally block still clears them.
+        val published = mutableState.updateAndGet { prev -> mergeRefreshedState(prev, built) }
+        log(TAG, Logging.Priority.VERBOSE) {
+            val accessState = published.access
+                ?.let { "direct=${it.direct.ready},shizuku=${it.shizuku.ready}" }
+                ?: "none"
+            "refresh(adapter=${published.adapterId}, access=$accessState, observation=${published.observation})"
         }
+        return published
     }
 
     /**

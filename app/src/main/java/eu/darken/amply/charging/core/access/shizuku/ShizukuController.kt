@@ -8,6 +8,9 @@ import android.os.IBinder
 import dagger.hilt.android.qualifiers.ApplicationContext
 import eu.darken.amply.BuildConfig
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
@@ -30,6 +33,26 @@ class ShizukuController @Inject constructor(
     fun isGranted(): Boolean = isAvailable() && runCatching {
         Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
     }.getOrDefault(false)
+
+    /**
+     * Emits on Shizuku availability transitions (service connect / death) so a foreground watcher can
+     * re-probe access without waiting for the next battery broadcast. The sticky binder-received listener
+     * also fires the current state immediately on subscription. Deliberately omits
+     * OnRequestPermissionResultListener — the in-app request already awaits its own per-request listener (a
+     * second global one would clear that flow's grant/deny message), and manager-side authorization isn't
+     * guaranteed to emit it anyway (the caller's poll covers that case). The collector conflates: a
+     * restart/death burst collapses to at most one pending re-check.
+     */
+    val accessEvents: Flow<Unit> = callbackFlow {
+        val onReceived = Shizuku.OnBinderReceivedListener { trySend(Unit) }
+        val onDead = Shizuku.OnBinderDeadListener { trySend(Unit) }
+        Shizuku.addBinderReceivedListenerSticky(onReceived)
+        Shizuku.addBinderDeadListener(onDead)
+        awaitClose {
+            Shizuku.removeBinderReceivedListener(onReceived)
+            Shizuku.removeBinderDeadListener(onDead)
+        }
+    }
 
     suspend fun requestPermission(): Boolean {
         if (!isAvailable()) return false
