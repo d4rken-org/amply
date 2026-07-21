@@ -245,7 +245,7 @@
     <string name="setup_access_ready_body">Charge-control access is granted.</string>
     <string name="setup_access_setup_body">Amply needs one durable Android permission to change the charge policy.</string>
     <string name="setup_access_option_shizuku">Option 1 · Shizuku (recommended)</string>
-    <string name="setup_access_shizuku_hint">With Shizuku, Amply can confirm the configured policy and run diagnostics — not just write it. Start or install Shizuku, allow Amply, then use it to grant the durable permission below.</string>
+    <string name="setup_access_shizuku_hint">With Shizuku, Amply can confirm the configured policy and run diagnostics — not just write it. Start or install Shizuku and allow Amply; the durable permission is then granted automatically. The button below is a manual fallback if that fails.</string>
     <string name="setup_access_grant_shizuku">Grant permission with Shizuku</string>
     <string name="setup_access_granting_shizuku">Granting…</string>
     <string name="setup_access_allow_shizuku">Allow Amply in Shizuku</string>
