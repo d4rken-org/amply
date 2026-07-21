@@ -155,6 +155,9 @@ class MainActivity : ComponentActivity() {
                     viewModel.refresh()
                     // Also re-checks widget placement after returning from the launcher's pin dialog.
                     viewModel.refreshQuickAccessPresence()
+                    // Re-check Shizuku for the contribution wizard too, so granting access from its intro card
+                    // (which pauses the activity behind Shizuku's dialog) updates the card on return.
+                    contributionViewModel.refreshStatus()
                     val nudge = viewModel.nudgeChargeService()
                     onPauseOrDispose { nudge.cancel() }
                 }

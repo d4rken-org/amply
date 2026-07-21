@@ -23,17 +23,28 @@ class SettingsListParseTest {
     }
 
     @Test
-    fun `rejects a non-blank line without a separator`() {
-        assertThrows<IllegalArgumentException> { parseSettingsList("a=1\ngarbage\n") }
+    fun `a multi-line value's continuation lines are appended, not treated as new entries`() {
+        // Real devices carry multi-line JSON values (e.g. a search-engine config in secure).
+        val raw = "a=1\n" +
+            "json={\n" +
+            "  \"name\": \"Google\",\n" +
+            "  \"keyword\": \"google.com\"\n" +
+            "}\n" +
+            "b=2\n"
+        parseSettingsList(raw) shouldBe mapOf(
+            "a" to "1",
+            "json" to "{\n  \"name\": \"Google\",\n  \"keyword\": \"google.com\"\n}",
+            "b" to "2",
+        )
     }
 
     @Test
-    fun `rejects an empty key`() {
-        assertThrows<IllegalArgumentException> { parseSettingsList("=1") }
+    fun `a leading orphan line without a key is ignored`() {
+        parseSettingsList("=1\na=2") shouldBe mapOf("a" to "2")
     }
 
     @Test
-    fun `rejects duplicate keys`() {
-        assertThrows<IllegalArgumentException> { parseSettingsList("a=1\na=2") }
+    fun `a duplicate key keeps the last value`() {
+        parseSettingsList("a=1\na=2") shouldBe mapOf("a" to "2")
     }
 }
