@@ -70,6 +70,4 @@ class DirectSettingsBackend @Inject constructor(
             }
         }.getOrDefault(false)
     }
-
-    override suspend fun snapshot(namespace: SettingNamespace): Map<String, String> = emptyMap()
 }

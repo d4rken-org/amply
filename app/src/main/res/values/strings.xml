@@ -24,7 +24,8 @@
     <string name="setup_unsupported_title">This device isn\'t supported yet</string>
     <string name="setup_unsupported_body">Amply works by switching your phone\'s built-in battery-protection setting. It hasn\'t been mapped for %1$s devices yet, but you can help me add it.</string>
     <string name="setup_unsupported_shares_note">Shares your device\'s model and build details, Android version, battery state, and Amply\'s version and compatibility check. No personal identifiers.</string>
-    <string name="setup_unsupported_request_action">Request support on GitHub</string>
+    <string name="setup_unsupported_wizard_action">Help add support (guided)</string>
+    <string name="setup_unsupported_request_action">Just send device info</string>
     <string name="setup_unsupported_help_action">More help &amp; contact</string>
     <string name="setup_unsupported_dialog_title">Send device details?</string>
     <string name="setup_unsupported_dialog_body">This opens a public GitHub page with the details below filled in. They are sent to GitHub as soon as the page opens; nothing is posted until you submit the issue.</string>
@@ -138,7 +139,7 @@
     <string name="dashboard_detail_readback">Read back through %1$s</string>
     <string name="dashboard_detail_last_requested">Last requested by Amply; connect Shizuku for exact readback</string>
     <string name="dashboard_policy_adaptive">Adaptive charging</string>
-    <string name="dashboard_policy_full">100% charging</string>
+    <string name="dashboard_policy_full" formatted="false">100% charging</string>
     <string name="dashboard_policy_fixed">%1$d%% limit</string>
     <string name="dashboard_policy_pause_at_full">Pause at full</string>
 
@@ -177,9 +178,9 @@
     <string name="settings_version">Amply %1$s</string>
     <string name="settings_general_subtitle">Theme and appearance</string>
     <string name="settings_category_advanced">Advanced</string>
-    <string name="settings_diagnostics_title">Diagnostics</string>
-    <string name="settings_diagnostics_subtitle_ready">Charging-setting discovery · Shizuku ready</string>
-    <string name="settings_diagnostics_subtitle_setup">Charging-setting discovery · Shizuku setup required</string>
+    <string name="settings_diagnostics_title">Help add support</string>
+    <string name="settings_diagnostics_subtitle_ready">Guide a maintainer to add your device · Shizuku ready</string>
+    <string name="settings_diagnostics_subtitle_setup">Guide a maintainer to add your device · Shizuku setup required</string>
     <string name="settings_category_other">Other</string>
     <string name="settings_support_title">Support</string>
     <string name="settings_support_subtitle">Help, contact, and debug logs</string>
@@ -257,24 +258,75 @@
     <string name="setup_access_copy_adb">Copy ADB command</string>
     <string name="setup_access_adb_refresh_note">Amply detects the permission automatically once it runs — or tap Refresh in the top bar.</string>
 
-    <!-- Diagnostics screen (static) -->
-    <string name="diagnostics_category_access">Access</string>
-    <string name="diagnostics_category_discovery">Setting discovery</string>
-    <string name="diagnostics_discovery_hint">Use this developer tool to discover which Android setting changes when you change a native OEM option.</string>
-    <string name="diagnostics_step_capture_title">1. Capture baseline</string>
-    <string name="diagnostics_step_capture_subtitle">Snapshot secure, global, and system settings</string>
-    <string name="diagnostics_step_change_title">2. Change the native setting</string>
-    <string name="diagnostics_step_change_subtitle">Open native charging settings and change one option</string>
-    <string name="diagnostics_step_compare_title">3. Compare changes</string>
-    <string name="diagnostics_step_compare_subtitle">Create a redacted difference from the baseline</string>
-    <string name="diagnostics_category_result">Result</string>
-    <string name="diagnostics_share">Share redacted report</string>
-    <string name="diagnostics_share_subject">Amply charging-settings discovery</string>
-    <string name="diagnostics_shizuku_ready_title">Shizuku ready</string>
-    <string name="diagnostics_shizuku_required_title">Shizuku required</string>
-    <string name="diagnostics_shizuku_checking">Checking Shizuku access…</string>
-    <string name="diagnostics_allow_shizuku">Allow Amply in Shizuku</string>
-    <string name="diagnostics_open_shizuku">Open Shizuku</string>
+    <!-- Contribution wizard ("Help add support") -->
+    <string name="contribution_title">Help add support</string>
+    <string name="contribution_share_subject">Amply device-support discovery</string>
+
+    <!-- Shizuku access card -->
+    <string name="contribution_shizuku_ready_title">Shizuku ready</string>
+    <string name="contribution_shizuku_required_title">Shizuku needed</string>
+    <string name="contribution_shizuku_checking">Checking Shizuku access…</string>
+    <string name="contribution_shizuku_not_installed_body">This guide reads your hidden settings through Shizuku (read-only). Install and start Shizuku, then come back.</string>
+    <string name="contribution_install_shizuku">How to set up Shizuku</string>
+    <string name="contribution_allow_shizuku">Allow Amply in Shizuku</string>
+    <string name="contribution_open_shizuku">Open Shizuku</string>
+
+    <!-- Step: intro / consent -->
+    <string name="contribution_intro_title">Help add support for your device</string>
+    <string name="contribution_intro_body">You\'ll switch your phone\'s battery-protection setting a few times while Amply records which hidden settings change. Nothing is sent until you review it and choose what to include.</string>
+    <string name="contribution_intro_candidate_note">This produces candidate information to help a maintainer — it does not enable control on your device.</string>
+
+    <!-- Step: details -->
+    <string name="contribution_details_title">About this device</string>
+    <string name="contribution_feature_label">Battery-protection feature name</string>
+    <string name="contribution_feature_hint">What is it called on your phone? e.g. \"Protect battery\", \"Battery care\"</string>
+    <string name="contribution_rom_label">Software version</string>
+    <string name="contribution_rom_hint">From Settings › About phone, e.g. \"One UI 8\", \"HyperOS 2\", \"ColorOS 15\"</string>
+    <string name="contribution_notes_label">Anything else? (optional)</string>
+    <string name="contribution_notes_pii_warning">Don\'t enter serial numbers, IMEI, or account names — this goes into a public report.</string>
+
+    <!-- Step: capture -->
+    <string name="contribution_capture_title">Capture each mode</string>
+    <string name="contribution_capture_instructions">For each mode your phone offers (off, each level, adaptive), set it in your battery settings, give it a name here, then capture.</string>
+    <string name="contribution_open_native">Open battery settings</string>
+    <string name="contribution_native_manual">Can\'t find it? Look under Settings › Battery for a battery-protection or charging-limit option.</string>
+    <string name="contribution_mode_label_hint">Name this mode, e.g. \"Off\", \"Maximum 80%\"</string>
+    <string name="contribution_capture_action">Capture this mode</string>
+    <string name="contribution_label_required">Give this mode a name first.</string>
+    <string name="contribution_label_duplicate">You already captured a mode with that name.</string>
+    <string name="contribution_status_no_change">That mode changed no settings — recorded anyway.</string>
+    <string name="contribution_status_shizuku_required">Shizuku access is required to capture.</string>
+    <string name="contribution_undo_last">Undo last</string>
+    <string name="contribution_restart">Start over</string>
+    <string name="contribution_modes_captured">%1$d mode(s) captured</string>
+    <string name="contribution_changed_count">%1$d setting(s) changed vs the previous mode</string>
+    <string name="contribution_effect_prompt">While charging, switching to this mode…</string>
+    <string name="contribution_effect_started">Started charging</string>
+    <string name="contribution_effect_stopped">Stopped charging</string>
+    <string name="contribution_effect_nochange">No visible change</string>
+    <string name="contribution_effect_unsure">Didn\'t check</string>
+
+    <!-- Step: review -->
+    <string name="contribution_review_title">Review what to send</string>
+    <string name="contribution_review_body">Known charging settings are included automatically. Everything else is hidden — reveal a row to inspect it on your device, then choose whether to include it.</string>
+    <string name="contribution_review_auto">Included</string>
+    <string name="contribution_review_hidden">Hidden</string>
+    <string name="contribution_review_reveal">Reveal</string>
+    <string name="contribution_review_include">Include in the public report</string>
+    <string name="contribution_review_empty">No settings changed across the captured modes.</string>
+
+    <!-- Step: deliver -->
+    <string name="contribution_deliver_title">Send it</string>
+    <string name="contribution_deliver_preview">This exact text will be sent. Review it once more.</string>
+    <string name="contribution_open_issue">Open a GitHub issue</string>
+    <string name="contribution_copy_report">Copy report</string>
+    <string name="contribution_email">Send by email instead</string>
+    <string name="contribution_too_large">The report is large. Copy it and paste it into a blank issue or email.</string>
+    <string name="contribution_report_copied">Report copied</string>
+
+    <!-- Navigation -->
+    <string name="contribution_next">Next</string>
+    <string name="contribution_back">Back</string>
 
     <!-- Dashboard (static UI) -->
     <string name="dashboard_manufacturer_fallback">these</string>

@@ -50,6 +50,7 @@ fun UnsupportedDeviceCard(
     modifier: Modifier = Modifier,
     manufacturer: String,
     reportPreview: String?,
+    onOpenWizard: () -> Unit,
     onPrepareReport: () -> Unit,
     onCopyReport: () -> Unit,
     onOpenIssue: () -> Unit,
@@ -92,18 +93,26 @@ fun UnsupportedDeviceCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            // Primary path: the guided wizard, which produces the far more useful setting-discovery report.
             Button(
+                onClick = onOpenWizard,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.AutoMirrored.TwoTone.OpenInNew, contentDescription = null)
+                Text(
+                    stringResource(R.string.setup_unsupported_wizard_action),
+                    Modifier.padding(start = 8.dp),
+                )
+            }
+            // Secondary: send just the non-privileged device metadata (no Shizuku needed).
+            OutlinedButton(
                 onClick = {
                     onPrepareReport()
                     showDialog = true
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Icon(Icons.AutoMirrored.TwoTone.OpenInNew, contentDescription = null)
-                Text(
-                    stringResource(R.string.setup_unsupported_request_action),
-                    Modifier.padding(start = 8.dp),
-                )
+                Text(stringResource(R.string.setup_unsupported_request_action))
             }
 
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
@@ -197,6 +206,7 @@ private fun UnsupportedDeviceCardPreview() = PreviewWrapper {
         modifier = Modifier.padding(16.dp),
         manufacturer = "Samsung",
         reportPreview = PREVIEW_REPORT,
+        onOpenWizard = {},
         onPrepareReport = {},
         onCopyReport = {},
         onOpenIssue = {},

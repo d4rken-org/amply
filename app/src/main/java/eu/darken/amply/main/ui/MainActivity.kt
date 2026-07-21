@@ -2,12 +2,17 @@ package eu.darken.amply.main.ui
 
 import android.Manifest
 import android.content.BroadcastReceiver
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
+import androidx.core.content.getSystemService
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -39,8 +44,10 @@ import dagger.hilt.android.AndroidEntryPoint
 import eu.darken.amply.R
 import eu.darken.amply.common.AmplyLinks
 import eu.darken.amply.common.theming.AmplyTheme
-import eu.darken.amply.diagnostics.ui.DiagnosticsScreen
-import eu.darken.amply.diagnostics.ui.DiagnosticsViewModel
+import eu.darken.amply.charging.core.DeviceInfo
+import eu.darken.amply.charging.core.adapter.OemChargingShortcuts
+import eu.darken.amply.diagnostics.ui.ContributionWizardScreen
+import eu.darken.amply.diagnostics.ui.ContributionWizardViewModel
 import eu.darken.amply.main.ui.dashboard.DashboardScreen
 import eu.darken.amply.main.ui.dashboard.DashboardViewModel
 import eu.darken.amply.main.ui.dashboard.shouldMonitorAccess
@@ -57,7 +64,7 @@ import eu.darken.amply.main.ui.settings.SupportScreen
 class MainActivity : ComponentActivity() {
     private val viewModel: DashboardViewModel by viewModels()
     private val settingsViewModel: SettingsViewModel by viewModels()
-    private val diagnosticsViewModel: DiagnosticsViewModel by viewModels()
+    private val contributionViewModel: ContributionWizardViewModel by viewModels()
 
     // Compose-observable so a widget launch that reuses an already-running activity (SINGLE_TOP →
     // onNewIntent, which does not re-run LaunchedEffect(Unit)) still triggers the permission flow.
@@ -90,8 +97,18 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val state by viewModel.state.collectAsState()
                     val debugState by settingsViewModel.debugState.collectAsState()
-                    val diagnosticsState by diagnosticsViewModel.state.collectAsState()
+                    val contributionState by contributionViewModel.state.collectAsState()
                     var destination by rememberSaveable { mutableStateOf(SettingsDestination.DASHBOARD) }
+                    // Where a back-out of the contribution wizard returns to (set on each entry).
+                    var wizardOrigin by rememberSaveable { mutableStateOf(SettingsDestination.DASHBOARD) }
+                    val leaveWizard = {
+                        contributionViewModel.exitWizard()
+                        destination = wizardOrigin
+                    }
+                    val enterWizard = { origin: SettingsDestination ->
+                        wizardOrigin = origin
+                        destination = SettingsDestination.DIAGNOSTICS
+                    }
                 var notificationAction by remember { mutableStateOf<NotificationAction?>(null) }
                 val notificationLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestPermission(),
@@ -166,11 +183,13 @@ class MainActivity : ComponentActivity() {
                     BackHandler(
                         enabled = state.onboardingComplete == true && destination != SettingsDestination.DASHBOARD,
                     ) {
-                        destination = when (destination) {
+                        when (destination) {
+                            // The wizard clears its raw session and returns to whichever surface opened it.
+                            SettingsDestination.DIAGNOSTICS -> leaveWizard()
                             // RECONNECT_GESTURE is entered from the dashboard card, not the settings hub.
                             SettingsDestination.SETTINGS,
-                            SettingsDestination.RECONNECT_GESTURE -> SettingsDestination.DASHBOARD
-                            else -> SettingsDestination.SETTINGS
+                            SettingsDestination.RECONNECT_GESTURE -> destination = SettingsDestination.DASHBOARD
+                            else -> destination = SettingsDestination.SETTINGS
                         }
                     }
 
@@ -207,6 +226,7 @@ class MainActivity : ComponentActivity() {
                             onGrantWss = viewModel::grantWriteSecureSettings,
                             onCopyAdb = viewModel::copyAdbCommand,
                             onCopyWebUsbLink = viewModel::copyWebUsbLink,
+                            onOpenContribution = { enterWizard(SettingsDestination.DASHBOARD) },
                             onPrepareSupportReport = viewModel::prepareDeviceSupportReport,
                             onCopySupportReport = viewModel::copyDeviceSupportReport,
                             onOpenSupportIssue = viewModel::openDeviceSupportIssue,
@@ -216,9 +236,11 @@ class MainActivity : ComponentActivity() {
                         SettingsDestination.SETTINGS -> SettingsScreen(
                             onBack = { destination = SettingsDestination.DASHBOARD },
                             onGeneral = { destination = SettingsDestination.GENERAL },
-                            showDiagnostics = state.charging.access?.shizuku?.installed == true,
+                            // Offered whenever this device is one we want contribution data for (unsupported/lab),
+                            // regardless of whether Shizuku is installed yet — the wizard nudges the install.
+                            showDiagnostics = state.charging.contributionWanted,
                             diagnosticsReady = state.charging.access?.shizuku?.ready == true,
-                            onDiagnostics = { destination = SettingsDestination.DIAGNOSTICS },
+                            onDiagnostics = { enterWizard(SettingsDestination.SETTINGS) },
                             onSupport = { destination = SettingsDestination.SUPPORT },
                             onChangelog = { settingsViewModel.openUrl(AmplyLinks.CHANGELOG) },
                             onAcknowledgements = { destination = SettingsDestination.ACKNOWLEDGEMENTS },
@@ -231,17 +253,30 @@ class MainActivity : ComponentActivity() {
                             onStyleChange = settingsViewModel::setThemeStyle,
                             onColorChange = settingsViewModel::setThemeColor,
                         )
-                        SettingsDestination.DIAGNOSTICS -> DiagnosticsScreen(
-                            state = diagnosticsState,
-                            shizuku = state.charging.access?.shizuku,
-                            onBack = { destination = SettingsDestination.SETTINGS },
-                            onRefresh = viewModel::refresh,
+                        SettingsDestination.DIAGNOSTICS -> ContributionWizardScreen(
+                            state = contributionState,
+                            onExit = leaveWizard,
+                            onRefreshStatus = contributionViewModel::refreshStatus,
                             onOpenShizuku = viewModel::openShizuku,
                             onAllowShizuku = viewModel::requestShizukuPermission,
-                            onCapture = diagnosticsViewModel::captureBaseline,
-                            onOpenNativeSettings = viewModel::openNativeSettings,
-                            onCompare = diagnosticsViewModel::compare,
-                            onShare = ::shareReport,
+                            onFeatureNameChange = contributionViewModel::setFeatureName,
+                            onRomVersionChange = contributionViewModel::setRomVersion,
+                            onNotesChange = contributionViewModel::setNotes,
+                            onPendingLabelChange = contributionViewModel::setPendingLabel,
+                            onOpenNativeSettings = ::openContributionNativeSettings,
+                            onCaptureMode = contributionViewModel::captureMode,
+                            onSetEffect = contributionViewModel::setEffect,
+                            onUndoLast = contributionViewModel::undoLastCapture,
+                            onRestart = contributionViewModel::restartSession,
+                            onRevealRow = contributionViewModel::revealRow,
+                            onToggleInclude = contributionViewModel::toggleInclude,
+                            onNext = contributionViewModel::goNext,
+                            onBack = contributionViewModel::goBack,
+                            onOpenIssue = {
+                                openContributionIssue(contributionState.issueUrl, contributionState.reportText)
+                            },
+                            onCopyReport = { copyContribution(contributionState.reportText) },
+                            onEmail = { emailContribution(contributionState.reportText) },
                         )
                         SettingsDestination.SUPPORT -> SupportScreen(
                             state = debugState,
@@ -271,18 +306,54 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun shareReport(report: String) {
-        startActivity(
-            Intent.createChooser(
-                Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_SUBJECT, getString(R.string.diagnostics_share_subject))
-                    putExtra(Intent.EXTRA_TEXT, report)
-                },
-                getString(R.string.diagnostics_share),
-            ),
-        )
+    /** Opens the OEM's battery-protection screen when we can resolve one, else the generic battery-saver fallback. */
+    private fun openContributionNativeSettings() {
+        val intent = OemChargingShortcuts.resolve(this, DeviceInfo.current(this))
+        if (intent != null) {
+            runCatching { startActivity(intent) }.onFailure { viewModel.openNativeSettings() }
+        } else {
+            viewModel.openNativeSettings()
+        }
     }
+
+    /** Launches the prefilled issue when it fits in a URL; otherwise copies the report and opens a blank issue. */
+    private fun openContributionIssue(url: String?, report: String?) {
+        if (url != null) {
+            val launched = runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }.isSuccess
+            if (launched) return
+        }
+        report?.let { copyToClipboard(it) }
+        val opened = runCatching {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("${AmplyLinks.ISSUES}/new")))
+        }.isSuccess
+        toast(if (opened) R.string.contribution_report_copied else R.string.setup_unsupported_no_browser)
+    }
+
+    private fun copyContribution(report: String?) {
+        if (report == null) return
+        copyToClipboard(report)
+        toast(R.string.contribution_report_copied)
+    }
+
+    private fun emailContribution(report: String?) {
+        if (report == null) return
+        val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:")).apply {
+            putExtra(Intent.EXTRA_EMAIL, arrayOf(SUPPORT_EMAIL))
+            putExtra(Intent.EXTRA_SUBJECT, getString(R.string.contribution_share_subject))
+            putExtra(Intent.EXTRA_TEXT, report)
+        }
+        runCatching { startActivity(intent) }.onFailure {
+            copyToClipboard(report)
+            toast(R.string.setup_unsupported_no_email)
+        }
+    }
+
+    private fun copyToClipboard(text: String) {
+        getSystemService<ClipboardManager>()
+            ?.setPrimaryClip(ClipData.newPlainText(getString(R.string.contribution_share_subject), text))
+    }
+
+    private fun toast(resId: Int) = Toast.makeText(this, resId, Toast.LENGTH_SHORT).show()
 
     private enum class NotificationAction {
         START_FULL_CHARGE,
@@ -291,5 +362,6 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_REQUEST_NOTIFICATIONS = "request_notifications"
+        private const val SUPPORT_EMAIL = "support@darken.eu"
     }
 }

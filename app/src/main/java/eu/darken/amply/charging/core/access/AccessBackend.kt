@@ -35,5 +35,4 @@ interface AccessBackend {
     suspend fun status(): BackendStatus
     suspend fun read(namespace: SettingNamespace, key: String): SettingRead
     suspend fun write(mutation: SettingMutation): Boolean
-    suspend fun snapshot(namespace: SettingNamespace): Map<String, String>
 }

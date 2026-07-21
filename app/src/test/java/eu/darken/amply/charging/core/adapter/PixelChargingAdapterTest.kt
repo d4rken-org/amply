@@ -194,7 +194,5 @@ class PixelChargingAdapterTest {
             values[mutation.key] = mutation.value
             return true
         }
-
-        override suspend fun snapshot(namespace: SettingNamespace) = emptyMap<String, String>()
     }
 }

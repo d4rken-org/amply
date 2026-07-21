@@ -4,13 +4,16 @@ import eu.darken.amply.R
 import eu.darken.amply.charging.core.access.shizuku.ShizukuController
 import eu.darken.amply.charging.core.BackendKind
 import eu.darken.amply.common.ca.toCaString
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class ShizukuSettingsBackend @Inject constructor(
     private val controller: ShizukuController,
-) : AccessBackend {
+) : AccessBackend, SettingsSnapshotSource {
     override val kind = BackendKind.SHIZUKU
 
     override suspend fun status(): BackendStatus {
@@ -46,13 +49,17 @@ class ShizukuSettingsBackend @Inject constructor(
         )
     }.getOrDefault(false)
 
-    override suspend fun snapshot(namespace: SettingNamespace): Map<String, String> = runCatching {
-        controller.service().snapshotSettings(namespace.commandName)
-            .lineSequence()
-            .mapNotNull { line ->
-                val index = line.indexOf('=')
-                if (index <= 0) null else line.substring(0, index) to line.substring(index + 1)
-            }
-            .toMap()
-    }.getOrDefault(emptyMap())
+    override suspend fun snapshot(namespace: SettingNamespace): NamespaceSnapshot = withContext(Dispatchers.IO) {
+        // Blocking Binder transaction (a full `settings list` can take ~10s) — keep it off the caller's thread.
+        try {
+            val raw = controller.service().snapshotSettings(namespace.commandName)
+            NamespaceSnapshot.Success(parseSettingsList(raw))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // A failed namespace must surface as a typed failure, never an empty map — an empty map would make
+            // the next diff claim every prior key was deleted.
+            NamespaceSnapshot.Failure((e.message ?: e.javaClass.simpleName).toCaString())
+        }
+    }
 }

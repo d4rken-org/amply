@@ -51,6 +51,7 @@ class DashboardScreenGestureTest {
                 onGrantWss = {},
                 onCopyAdb = {},
                 onCopyWebUsbLink = {},
+                onOpenContribution = {},
                 onPrepareSupportReport = {},
                 onCopySupportReport = {},
                 onOpenSupportIssue = {},
