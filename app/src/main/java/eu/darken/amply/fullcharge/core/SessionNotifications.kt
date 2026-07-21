@@ -93,7 +93,7 @@ object SessionNotifications {
             .build()
     }
 
-    fun gesture(context: Context, armed: Boolean): Notification {
+    fun gesture(context: Context, armed: Boolean, anyLevel: Boolean = false): Notification {
         ensureChannels(context)
         val openPendingIntent = PendingIntent.getActivity(
             context,
@@ -106,8 +106,12 @@ object SessionNotifications {
             .setContentTitle(context.getString(R.string.gesture_notification_title))
             .setContentText(
                 context.getString(
-                    if (armed) R.string.gesture_notification_armed
-                    else R.string.gesture_notification_waiting,
+                    when {
+                        armed && anyLevel -> R.string.gesture_notification_armed_any_level
+                        armed -> R.string.gesture_notification_armed
+                        anyLevel -> R.string.gesture_notification_waiting_any_level
+                        else -> R.string.gesture_notification_waiting
+                    },
                 ),
             )
             .setContentIntent(openPendingIntent)

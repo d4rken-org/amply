@@ -11,8 +11,8 @@ import javax.inject.Singleton
 private val Context.amplyDataStore by preferencesDataStore(name = "amply")
 
 @Singleton
-class AppDataStore @Inject constructor(
-    @ApplicationContext context: Context,
+class AppDataStore internal constructor(
+    val store: DataStore<Preferences>,
 ) {
-    val store: DataStore<Preferences> = context.amplyDataStore
+    @Inject constructor(@ApplicationContext context: Context) : this(context.amplyDataStore)
 }

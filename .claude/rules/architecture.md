@@ -99,11 +99,22 @@ that are unit-tested on the JVM — keep new decision logic in these testable un
 
 ## Reconnect Gesture
 
-Opt-in. The same foreground service arms only when the public battery broadcast **simultaneously** reports external
-power, charging-policy hardware state `4`, a non-charging battery status, and an expected limit-range level. A
-powered→unpowered transition opens a 10-second window; reconnecting inside it starts the normal persisted session. A
-persistent low-priority notification is required because Android does not deliver `ACTION_POWER_CONNECTED` /
-`ACTION_POWER_DISCONNECTED` to modern manifest receivers.
+Opt-in, with two arming bases:
+
+- **Limit hold (default)**: the public battery broadcast **simultaneously** reports external power, charging-policy
+  hardware state `4`, a non-charging battery status, and an expected limit-range level. Once latched during a plug
+  period it survives option flips (the evidence was the hardware hold itself).
+- **Any level (opt-in sub-option)**: plugged AND Amply's *persistent* configured policy
+  (`ChargingPreferences.lastPersistentPolicy`, never updated by temporary session writes) is protective. Percent,
+  battery status, and hardware hold are deliberately ignored. This basis is revoked immediately — including an open
+  reconnect window — when the option is switched off or the persistent policy stops being protective.
+
+A powered→unpowered transition opens a reconnect window of **2–10 seconds** (`elapsedRealtime`-based): the 2s
+debounce floor filters momentary power cuts (car ignition, connector jostle), and a rejected too-fast/too-late replug
+re-evaluates arming immediately. A reconnect inside the window starts the normal persisted session. Battery
+evaluations are serialized through a single channel in `ChargeSessionService` — the receiver, 30s poll, and window
+expiry nudge must never mutate `QuickFullChargeGesture` concurrently. A persistent notification is required because
+Android does not deliver `ACTION_POWER_CONNECTED` / `ACTION_POWER_DISCONNECTED` to modern manifest receivers.
 
 ## Pitfalls
 

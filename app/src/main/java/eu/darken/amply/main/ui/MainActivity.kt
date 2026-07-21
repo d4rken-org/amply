@@ -43,6 +43,7 @@ import eu.darken.amply.main.ui.dashboard.DashboardViewModel
 import eu.darken.amply.main.ui.onboarding.OnboardingScreen
 import eu.darken.amply.main.ui.settings.AcknowledgementsScreen
 import eu.darken.amply.main.ui.settings.GeneralSettingsScreen
+import eu.darken.amply.main.ui.settings.ReconnectGestureSettingsScreen
 import eu.darken.amply.main.ui.settings.SettingsDestination
 import eu.darken.amply.main.ui.settings.SettingsScreen
 import eu.darken.amply.main.ui.settings.SettingsViewModel
@@ -149,7 +150,9 @@ class MainActivity : ComponentActivity() {
                         enabled = state.onboardingComplete == true && destination != SettingsDestination.DASHBOARD,
                     ) {
                         destination = when (destination) {
-                            SettingsDestination.SETTINGS -> SettingsDestination.DASHBOARD
+                            // RECONNECT_GESTURE is entered from the dashboard card, not the settings hub.
+                            SettingsDestination.SETTINGS,
+                            SettingsDestination.RECONNECT_GESTURE -> SettingsDestination.DASHBOARD
                             else -> SettingsDestination.SETTINGS
                         }
                     }
@@ -174,6 +177,9 @@ class MainActivity : ComponentActivity() {
                                 } else {
                                     viewModel.setQuickFullChargeEnabled(false)
                                 }
+                            },
+                            onOpenReconnectSettings = {
+                                destination = SettingsDestination.RECONNECT_GESTURE
                             },
                             onPinWidget = viewModel::requestPinWidget,
                             onAddTile = viewModel::requestAddTile,
@@ -233,6 +239,12 @@ class MainActivity : ComponentActivity() {
                         SettingsDestination.ACKNOWLEDGEMENTS -> AcknowledgementsScreen(
                             onBack = { destination = SettingsDestination.SETTINGS },
                             onOpenUrl = settingsViewModel::openUrl,
+                        )
+                        SettingsDestination.RECONNECT_GESTURE -> ReconnectGestureSettingsScreen(
+                            gestureEnabled = state.quickFullChargeEnabled,
+                            anyLevelEnabled = state.quickFullChargeAnyLevel,
+                            onBack = { destination = SettingsDestination.DASHBOARD },
+                            onAnyLevelChange = viewModel::setQuickFullChargeAnyLevel,
                         )
                     }
                 }
