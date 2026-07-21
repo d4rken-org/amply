@@ -354,7 +354,7 @@ class DashboardViewModel @Inject constructor(
 
     fun copyAdbCommand() {
         context.getSystemService(ClipboardManager::class.java).setPrimaryClip(
-            ClipData.newPlainText("Amply WSS command", adbGrantCommand),
+            ClipData.newPlainText("Amply setup command", adbGrantCommand),
         )
         Toast.makeText(context, context.getString(R.string.dashboard_adb_copied), Toast.LENGTH_SHORT).show()
     }

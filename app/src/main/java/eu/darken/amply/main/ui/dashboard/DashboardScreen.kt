@@ -712,7 +712,7 @@ private fun DashboardScreenPreview() = PreviewWrapper {
                     direct = BackendStatus(
                         available = true,
                         granted = true,
-                        detail = "WRITE_SECURE_SETTINGS granted".toCaString(),
+                        detail = "Charge-control access granted".toCaString(),
                     ),
                     shizuku = BackendStatus(
                         available = true,
@@ -771,7 +771,7 @@ private fun DashboardScreenApplyingPreview() = PreviewWrapper {
                     direct = BackendStatus(
                         available = true,
                         granted = true,
-                        detail = "WRITE_SECURE_SETTINGS granted".toCaString(),
+                        detail = "Charge-control access granted".toCaString(),
                     ),
                     shizuku = BackendStatus(
                         available = true,
@@ -834,7 +834,7 @@ private fun DashboardScreenSessionActivePreview() = PreviewWrapper {
                     direct = BackendStatus(
                         available = true,
                         granted = true,
-                        detail = "WRITE_SECURE_SETTINGS granted".toCaString(),
+                        detail = "Charge-control access granted".toCaString(),
                     ),
                     shizuku = BackendStatus(
                         available = true,
@@ -898,7 +898,7 @@ private fun DashboardScreenSessionRecordedPreview() = PreviewWrapper {
                     direct = BackendStatus(
                         available = true,
                         granted = true,
-                        detail = "WRITE_SECURE_SETTINGS granted".toCaString(),
+                        detail = "Charge-control access granted".toCaString(),
                     ),
                     shizuku = BackendStatus(
                         available = true,
@@ -950,7 +950,7 @@ private fun DashboardScreenWssOnlyPreview() = PreviewWrapper {
                     direct = BackendStatus(
                         available = true,
                         granted = true,
-                        detail = "WRITE_SECURE_SETTINGS granted".toCaString(),
+                        detail = "Charge-control access granted".toCaString(),
                     ),
                     shizuku = BackendStatus(
                         available = false,
@@ -1009,7 +1009,7 @@ private fun DashboardScreenSamsungPreview() = PreviewWrapper {
                     direct = BackendStatus(
                         available = true,
                         granted = true,
-                        detail = "WRITE_SECURE_SETTINGS granted".toCaString(),
+                        detail = "Charge-control access granted".toCaString(),
                     ),
                     shizuku = BackendStatus(
                         available = false,

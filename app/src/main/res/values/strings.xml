@@ -71,14 +71,14 @@
     <string name="charging_message_requested">%1$s requested</string>
     <string name="charging_message_shizuku_granted">Shizuku permission granted</string>
     <string name="charging_message_shizuku_denied">Shizuku permission was not granted</string>
-    <string name="charging_message_wss_granted">WRITE_SECURE_SETTINGS granted</string>
-    <string name="charging_message_wss_failed">Could not grant WRITE_SECURE_SETTINGS</string>
+    <string name="charging_message_wss_granted">Charge-control access granted</string>
+    <string name="charging_message_wss_failed">Could not grant charge-control access</string>
 
     <!-- Charge observation reasons (dashboard status detail) -->
     <string name="charging_reason_loading">Loading</string>
     <string name="charging_reason_state_unavailable">State unavailable</string>
     <string name="charging_reason_write_failed">The settings write failed</string>
-    <string name="charging_reason_needs_setup">Grant WSS or connect Shizuku</string>
+    <string name="charging_reason_needs_setup">Grant charge-control access or connect Shizuku</string>
     <string name="charging_reason_policy_unsupported">%1$s is not supported by %2$s</string>
     <string name="charging_reason_settings_unreadable">Settings are not readable</string>
     <string name="charging_reason_values_unrecognized">Unrecognized Pixel values: %1$s=%2$s, %3$s=%4$s</string>
@@ -117,15 +117,15 @@
     <string name="adapter_detail_none">No charging adapter is known for this device</string>
 
     <!-- Access backend detail + summary labels -->
-    <string name="access_wss_granted">WRITE_SECURE_SETTINGS granted</string>
-    <string name="access_wss_not_granted">WRITE_SECURE_SETTINGS not granted</string>
+    <string name="access_wss_granted">Charge-control access granted</string>
+    <string name="access_wss_not_granted">Charge-control access not granted</string>
     <string name="access_shizuku_not_installed">Shizuku is not installed</string>
     <string name="access_shizuku_not_running">Shizuku is installed but not running</string>
     <string name="access_shizuku_not_granted">Shizuku permission not granted</string>
     <string name="access_shizuku_ready">Shizuku ready</string>
     <string name="access_read_blocked">Android blocks third-party reads of this hidden setting</string>
-    <string name="access_label_wss_shizuku">WSS + Shizuku</string>
-    <string name="access_label_wss">WRITE_SECURE_SETTINGS</string>
+    <string name="access_label_wss_shizuku">System access + Shizuku</string>
+    <string name="access_label_wss">System access</string>
     <string name="access_label_shizuku">Shizuku</string>
     <string name="access_label_setup_required">Setup required</string>
 
@@ -242,7 +242,7 @@
     <!-- Access setup guide -->
     <string name="setup_access_ready_title">Control is ready</string>
     <string name="setup_access_setup_title">Set up charge control</string>
-    <string name="setup_access_ready_body">WRITE_SECURE_SETTINGS is granted.</string>
+    <string name="setup_access_ready_body">Charge-control access is granted.</string>
     <string name="setup_access_setup_body">Amply needs one durable Android permission to change the charge policy.</string>
     <string name="setup_access_option_shizuku">Option 1 · Shizuku (recommended)</string>
     <string name="setup_access_shizuku_hint">With Shizuku, Amply can confirm the configured policy and run diagnostics — not just write it. Start or install Shizuku, allow Amply, then use it to grant the durable permission below.</string>
