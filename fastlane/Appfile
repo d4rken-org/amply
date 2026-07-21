@@ -1,0 +1,12 @@
+# Play Console package + service-account key for `fastlane supply`.
+#
+# The key is only wired up when AMPLY_PLAY_PUBLISH_APPROVED=1. The Appfile is loaded by *every* supply
+# entry point — the lanes in the Fastfile AND a bare `fastlane supply` / `fastlane run supply` — so
+# gating the credentials here (not just in the lanes) means nothing can authenticate to Play, and thus
+# nothing can be published, until the specialUse use case is approved and the operator opts in. See
+# .claude/rules/release.md. Never commit the key itself.
+package_name("eu.darken.amply")
+
+if ENV["AMPLY_PLAY_PUBLISH_APPROVED"] == "1"
+  json_key_file(ENV["AMPLY_SUPPLY_JSON_KEY"] || File.expand_path("~/.config/projects/eu.darken.amply/gplay-amply-ci_api.json"))
+end
