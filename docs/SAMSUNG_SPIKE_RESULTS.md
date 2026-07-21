@@ -58,5 +58,11 @@ launchable on One UI 8.0).
 
 | Date | Device | Scenario | Result |
 |---|---|---|---|
-| _pending_ | SM-X210 | Full session E2E (Maximum@80 → PauseAtFull → restore), WSS + Shizuku paths, reboot-during-session, native-change cancellation | — |
-| _pending_ | SM-G781B | Legacy toggle E2E | — |
+| 2026-07-21 | SM-X210 | Detector + gate under app UID (debug build): modern adapter selected, six policy choices rendered | PASS |
+| 2026-07-21 | SM-X210 | Policy writes via WSS: 85% (`1`+threshold `85`), back to 80%; verified readback in UI | PASS |
+| 2026-07-21 | SM-X210 | Session E2E: Maximum@80 → PauseAtFull (`3`, threshold untouched) → manual restore (`1`/`80`) | PASS |
+| 2026-07-21 | SM-X210 | Native-change cancellation: external `protect_battery=0` during session cancelled without restoring; external value respected | PASS |
+| 2026-07-21 | SM-X210 | Uniform session refusal: "Charge to 100% once" while Unrestricted starts no session, writes nothing | PASS |
+| 2026-07-21 | SM-G781B | Legacy gate + dashboard (85%/100% choices), session E2E: `1` → `0` → restore `1`; threshold key never created | PASS |
+| 2026-07-21 | SM-G781B | Reboot during session: boot recovery restored `fixed:85`, outcome CONVERGED via sync readback (no nudge delay) | PASS |
+| 2026-07-21 | SM-G781B | Minified (R8) foss beta: startup + One UI detector reflection + legacy gate work. Uncovered a pre-existing R8 startup crash (`WorkDatabase_Impl.<init>` stripped) present on main; fixed via Room keep rule in the same branch | PASS after fix |
