@@ -45,7 +45,7 @@ Two live adapters drive the world-readable `global` keys `protect_battery` (0=of
 
 ## Xiaomi adapter
 
-One live adapter for the exact qualified Xiaomi 13T on HyperOS 2.0 (`ro.miui.ui.version.code` 816 identifies a family, so the model is pinned). Single per-user `secure` key `security_pc_secure_protect_mode_key`: 0=charge fully, 1=Intelligent charging (heuristic 80% hold, mapped to the Adaptive policy); absent means Intelligent. Synchronous read-back verification; daemon-level enforcement of external writes is pending long-term observation. Unqualified Xiaomi devices fall to the diagnostics-only lab adapter. Ground truth: `XIAOMI_SPIKE_RESULTS.md`.
+One live adapter gated to the HyperOS ROM version (Xiaomi manufacturer, which also covers Redmi/POCO, + `ro.mi.os.version.code == 2` = HyperOS 2.x, + system user) — the charge-protection setting is a ROM feature, not a per-model one. Single per-user `secure` key `security_pc_secure_protect_mode_key`: 0=charge fully, 1=Intelligent charging (heuristic 80% hold, mapped to the Adaptive policy); absent means Intelligent. Synchronous read-back verification; daemon-level enforcement of external writes is pending long-term observation. HyperOS 1, pre-HyperOS MIUI, and a future HyperOS 3 fall to the diagnostics-only lab adapter. A HyperOS 2 device that lacks the feature also reads the key absent → a documented, harmless false claim of control. Ground truth: `XIAOMI_SPIKE_RESULTS.md`.
 
 ## Pixel adapter
 

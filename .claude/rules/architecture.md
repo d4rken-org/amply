@@ -68,14 +68,17 @@ diagnostics-only lab adapter. Ground truth: `docs/SAMSUNG_SPIKE_RESULTS.md`.
 
 ## Xiaomi Adapter
 
-One live adapter (`xiaomi-hyperos2-v1`), gated to the exact qualified device: manufacturer Xiaomi +
-model `2306EPN60G` + `ro.miui.ui.version.code == 816` + system user (the code identifies a software
-family, not a build, so the model stays pinned until more devices qualify). Single key
+One live adapter (`xiaomi-hyperos2-v1`), gated to the HyperOS ROM version (the setting is a ROM
+feature, not a per-model one): manufacturer Xiaomi (covers Redmi/POCO — they report Xiaomi as
+manufacturer) + `ro.mi.os.version.code == 2` (HyperOS 2.x) + system user. Use `ro.mi.os.version.code`,
+NOT the frozen legacy `ro.miui.ui.version.code`. Single key
 `secure/security_pc_secure_protect_mode_key`: `0`=charge fully, `1`=Intelligent (heuristic 80% hold →
 `ChargePolicy.Adaptive`), absent=Intelligent (factory state). No hard-cap mode exists. SYNC_READBACK
-with read-back equality; session override = Unrestricted; protective default = Adaptive. Unqualified
-Xiaomi devices fall to `XiaomiLabAdapter` (diagnostics + contribution). Daemon-level enforcement of
-external writes is pending long-term observation — see `docs/XIAOMI_SPIKE_RESULTS.md`.
+with read-back equality; session override = Unrestricted; protective default = Adaptive. HyperOS 1,
+pre-HyperOS MIUI, and a future HyperOS 3 fall to `XiaomiLabAdapter` (diagnostics + contribution). Two
+documented assumptions: the feature is treated as present on any HyperOS 2 device (a device lacking it
+reads the key absent → a harmless false claim of control), and daemon-level enforcement of external
+writes is pending long-term observation — see `docs/XIAOMI_SPIKE_RESULTS.md`.
 
 ## Pixel Adapter
 
