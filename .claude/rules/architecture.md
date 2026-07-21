@@ -80,6 +80,19 @@ documented assumptions: the feature is treated as present on any HyperOS 2 devic
 reads the key absent → a harmless false claim of control), and daemon-level enforcement of external
 writes is pending long-term observation — see `docs/XIAOMI_SPIKE_RESULTS.md`.
 
+## OnePlus / ColorOS Adapter
+
+One live adapter (`oplus-coloros15-v1`) for the ColorOS/OxygenOS (Oplus) family — OnePlus, Oppo, Realme —
+gated to `ro.build.version.oplusrom == 15` (Oplus-exclusive property, so it doubles as the family signal) +
+system user. Two mutually-exclusive **`system`** keys under Battery health: `regular_charge_protection_switch_state`
+= "Charging limit" (fixed 80% cap → `FixedLimit(80)`) and `smart_charge_protection_switch_state` = "Smart charging"
+(adaptive → `Adaptive`); neither on = Unrestricted; both on = Unknown/unrecognized. The OEM enforces exclusion and
+keeps a `_status` mirror (Amply writes only `_switch_state`). SYNC_READBACK with read-back equality; session
+override = Unrestricted; protective default = FixedLimit(80). **Writes require Shizuku** — the keys are `system`
+namespace, which WRITE_SECURE_SETTINGS cannot write (reads are unprivileged); the adapter sets
+`preferShizukuForWrites`. Unqualified Oplus versions fall to `OnePlusLabAdapter`. Enforcement is directly
+observable (device holds at 80%). Ground truth: `docs/ONEPLUS_SPIKE_RESULTS.md`.
+
 ## Pixel Adapter
 
 Writes **only** two secure settings:
@@ -137,5 +150,5 @@ Android does not deliver `ACTION_POWER_CONNECTED` / `ACTION_POWER_DISCONNECTED` 
   replace this runtime gate with an exact-model allowlist or a version-only check.
 - Shizuku installation is detected by resolving the owner of `ShizukuProvider.PERMISSION`, **not** a fixed package
   name — this recognizes renamed forks and hidden-package mode. Don't hardcode a package name.
-- OnePlus candidate keys exist in the privileged layer for a future lab adapter but **no production code invokes
-  them**. Don't wire them into shipping paths. (Samsung and Xiaomi keys are live — see their adapter sections.)
+- Pixel/Samsung/Xiaomi/Oplus keys are all live on gated devices (see the adapter sections). New writable keys must
+  be spike-verified and added to `SettingWritePolicy` with an explicit per-key value domain.

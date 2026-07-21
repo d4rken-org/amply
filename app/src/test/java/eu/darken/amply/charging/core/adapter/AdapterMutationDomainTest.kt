@@ -23,6 +23,7 @@ class AdapterMutationDomainTest {
         SamsungModernChargingAdapter(),
         SamsungLegacyChargingAdapter(),
         XiaomiChargingAdapter(),
+        OnePlusChargingAdapter(),
     )
 
     @Test

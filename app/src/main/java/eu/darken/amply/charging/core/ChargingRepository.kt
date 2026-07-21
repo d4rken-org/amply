@@ -215,7 +215,7 @@ class ChargingRepository @Inject constructor(
             )
             return ApplyResult(false, observation, "Unsupported policy")
         }
-        val backend = accessResolver.writeBackend()
+        val backend = accessResolver.writeBackend(preferShizuku = adapter.preferShizukuForWrites)
         if (backend == null) {
             val observation = ChargeObservation.NeedsSetup(R.string.charging_reason_needs_setup.toCaString())
             mutableState.value = state.value.copy(

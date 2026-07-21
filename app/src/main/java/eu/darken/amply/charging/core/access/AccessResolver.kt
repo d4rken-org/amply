@@ -31,13 +31,14 @@ class AccessResolver @Inject constructor(
         shizuku = shizuku.status(),
     )
 
-    suspend fun writeBackend(): AccessBackend? {
+    suspend fun writeBackend(preferShizuku: Boolean = false): AccessBackend? {
         val state = snapshot()
-        return when {
-            state.direct.ready -> direct
-            state.shizuku.ready -> shizuku
-            else -> null
-        }
+        // System-namespace adapters prefer Shizuku (direct WSS can't write system settings), but
+        // direct is still returned as a last resort so a lenient OEM/ROM can still succeed — a
+        // failed write is caught by the adapter's read-back verification.
+        val order = if (preferShizuku) listOf(shizuku to state.shizuku, direct to state.direct)
+        else listOf(direct to state.direct, shizuku to state.shizuku)
+        return order.firstOrNull { it.second.ready }?.first
     }
 
     suspend fun readBackend(): AccessBackend? {

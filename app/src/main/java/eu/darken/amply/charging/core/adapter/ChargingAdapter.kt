@@ -48,6 +48,15 @@ interface ChargingAdapter {
     /** Whether the powered→unpowered reconnect gesture's hardware preconditions exist on this adapter. */
     val reconnectGestureSupported: Boolean get() = false
 
+    /**
+     * Prefer Shizuku over direct WSS for writes. Set by adapters whose keys live in the `system`
+     * namespace: `WRITE_SECURE_SETTINGS` covers secure/global but not system, so a direct write
+     * would silently fail — Shizuku (shell UID) can write system. Reads are unaffected (system is
+     * world-readable). Direct WSS is still tried as a last resort, and read-back verification
+     * catches a write that did not land.
+     */
+    val preferShizukuForWrites: Boolean get() = false
+
     fun probe(device: DeviceInfo): AdapterSupport
     fun readHardware(context: Context): ChargeObservation? = null
     fun decodeHardware(chargingState: Int, plugged: Boolean): ChargeObservation? = null

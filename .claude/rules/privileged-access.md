@@ -33,9 +33,10 @@ for get / put / WSS grant / diagnostic snapshots. Hard rules:
 - Writes require a valid **namespace**, valid key/value **syntax**, and an explicit **key allowlist**. Do not widen
   the allowlist without an explicit, reviewed reason.
 - Every writable key carries an explicit **per-key value domain** (`SettingWritePolicy`) — the boundary itself
-  rejects out-of-domain values. The Samsung keys (`global protect_battery`, `global battery_protection_threshold`)
-  and the Xiaomi key (`secure security_pc_secure_protect_mode_key`) are **live** on gated devices (see Capability
-  Gates). OnePlus candidate keys remain present but **must not** be invoked by production code.
+  rejects out-of-domain values. The Samsung keys (`global protect_battery`, `global battery_protection_threshold`),
+  the Xiaomi key (`secure security_pc_secure_protect_mode_key`), and the Oplus keys (`system
+  regular_charge_protection_switch_state`, `system smart_charge_protection_switch_state`) are all **live** on gated
+  devices (see Capability Gates).
 
 ## Capability Gates
 
@@ -63,6 +64,14 @@ without a qualified device; record results in `docs/SAMSUNG_SPIKE_RESULTS.md`.
 
 Unlike Pixel's hidden secure settings, Samsung's `global` keys are world-readable: configured-state verification
 works without Shizuku, and writes apply synchronously (no Settings-Intelligence-style async middleman).
+
+### OnePlus / ColorOS (Oplus)
+
+Oplus control requires **all** of: `ro.build.version.oplusrom == 15` (ColorOS/OxygenOS 15 — the property is
+Oplus-exclusive and covers OnePlus/Oppo/Realme) and the system user. **Writes require Shizuku**: the two keys are in
+the `system` namespace, which `WRITE_SECURE_SETTINGS` cannot write (reads are unprivileged). The adapter sets
+`preferShizukuForWrites` and read-back-verifies, so a WSS-only write fails honestly. Do not widen to ColorOS 16+
+without a qualified device; record results in `docs/ONEPLUS_SPIKE_RESULTS.md`.
 
 ### Xiaomi
 

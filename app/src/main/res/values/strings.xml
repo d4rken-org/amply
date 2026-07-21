@@ -97,7 +97,8 @@
     <string name="adapter_name_samsung_protection">Samsung battery protection</string>
     <string name="adapter_name_xiaomi">Xiaomi (diagnostics)</string>
     <string name="adapter_name_xiaomi_protection">Xiaomi charging protection</string>
-    <string name="adapter_name_oneplus">OnePlus/Oppo (diagnostics)</string>
+    <string name="adapter_name_oneplus">OnePlus/Oppo/Realme (diagnostics)</string>
+    <string name="adapter_name_oplus_protection">ColorOS charging protection</string>
 
     <!-- Adapter support detail (why a device is or isn\'t controllable) -->
     <string name="adapter_detail_requires_pixel">Requires a supported Google Pixel phone</string>
@@ -114,6 +115,8 @@
     <string name="adapter_detail_samsung_ready">Samsung battery protection detected; changes apply immediately</string>
     <string name="adapter_detail_requires_xiaomi">Requires a verified Xiaomi device on HyperOS 2</string>
     <string name="adapter_detail_xiaomi_ready">Xiaomi charging protection detected; changes apply immediately</string>
+    <string name="adapter_detail_requires_oplus">Requires a OnePlus, Oppo, or Realme device on ColorOS 15</string>
+    <string name="adapter_detail_oplus_ready">ColorOS charging protection detected; control requires Shizuku</string>
     <string name="adapter_detail_none">No charging adapter is known for this device</string>
 
     <!-- Access backend detail + summary labels -->

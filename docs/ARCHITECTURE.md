@@ -47,6 +47,10 @@ Two live adapters drive the world-readable `global` keys `protect_battery` (0=of
 
 One live adapter gated to the HyperOS ROM version (Xiaomi manufacturer, which also covers Redmi/POCO, + `ro.mi.os.version.code == 2` = HyperOS 2.x, + system user) — the charge-protection setting is a ROM feature, not a per-model one. Single per-user `secure` key `security_pc_secure_protect_mode_key`: 0=charge fully, 1=Intelligent charging (heuristic 80% hold, mapped to the Adaptive policy); absent means Intelligent. Synchronous read-back verification; daemon-level enforcement of external writes is pending long-term observation. HyperOS 1, pre-HyperOS MIUI, and a future HyperOS 3 fall to the diagnostics-only lab adapter. A HyperOS 2 device that lacks the feature also reads the key absent → a documented, harmless false claim of control. Ground truth: `XIAOMI_SPIKE_RESULTS.md`.
 
+## OnePlus / ColorOS adapter
+
+One live adapter for the ColorOS/OxygenOS (Oplus) family — OnePlus, Oppo, Realme — gated to `ro.build.version.oplusrom == 15` (Oplus-exclusive property, so it doubles as the family signal) plus system user. Two mutually-exclusive `system` keys under Battery health: `regular_charge_protection_switch_state` = "Charging limit" (fixed 80% cap → `FixedLimit(80)`) and `smart_charge_protection_switch_state` = "Smart charging" (adaptive → `Adaptive`); neither on = Unrestricted; both on = Unknown (inconsistent external state). The OEM enforces mutual exclusion and keeps a read-only `_status` mirror, so Amply writes only `_switch_state`. Synchronous read-back verification; session override = Unrestricted; protective default = `FixedLimit(80)`. Enforcement is directly observable (the device holds at 80%). **Writes require Shizuku**: the keys are `system` namespace, which `WRITE_SECURE_SETTINGS` cannot write (reads are unprivileged); the adapter sets `preferShizukuForWrites`. Unqualified Oplus versions fall to the diagnostics-only lab adapter. Ground truth: `ONEPLUS_SPIKE_RESULTS.md`.
+
 ## Pixel adapter
 
 The adapter writes only:
