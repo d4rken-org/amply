@@ -104,13 +104,15 @@ fun SettingsSwitchItem(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     icon: ImageVector? = null,
+    enabled: Boolean = true,
 ) = SettingsBaseItem(
     title = title,
     subtitle = subtitle,
     icon = icon,
+    enabled = enabled,
     onClick = { onCheckedChange(!checked) },
     trailingContent = {
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
     },
 )
 

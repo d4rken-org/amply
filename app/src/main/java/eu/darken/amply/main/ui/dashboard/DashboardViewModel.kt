@@ -1,11 +1,17 @@
 package eu.darken.amply.main.ui.dashboard
 
+import android.app.StatusBarManager
+import android.appwidget.AppWidgetManager
 import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.Icon
 import android.net.Uri
+import android.os.Build
+import android.os.SystemClock
 import android.provider.Settings
 import android.widget.Toast
 import androidx.core.content.ContextCompat
@@ -29,6 +35,10 @@ import eu.darken.amply.fullcharge.core.ServiceDispatch
 import eu.darken.amply.main.core.DeviceSupportReport
 import eu.darken.amply.main.core.DeviceSupportReporter
 import eu.darken.amply.main.core.OnboardingSettings
+import eu.darken.amply.main.core.QuickAccessState
+import eu.darken.amply.main.core.QuickAccessStore
+import eu.darken.amply.main.ui.tile.ChargeTileService
+import eu.darken.amply.main.ui.widget.AmplyWidgetReceiver
 import eu.darken.amply.main.core.formatReport
 import eu.darken.amply.main.core.issueTitle
 import eu.darken.amply.main.core.issueUrl
@@ -49,7 +59,12 @@ data class DashboardUiState(
     val session: ChargeSessionRecord? = null,
     val onboardingComplete: Boolean? = null,
     val quickFullChargeEnabled: Boolean = false,
+    val quickFullChargeAnyLevel: Boolean = false,
     val deviceReport: DeviceSupportReport? = null,
+    val quickAccess: QuickAccessState = QuickAccessState(),
+    /** True once the initial widget-presence check has completed; the promo card hides until then. */
+    val quickAccessChecked: Boolean = false,
+    val tileRequestPending: Boolean = false,
 )
 
 @HiltViewModel
@@ -60,22 +75,44 @@ class DashboardViewModel @Inject constructor(
     private val sessionManager: ChargeSessionManager,
     private val onboardingSettings: OnboardingSettings,
     private val deviceSupportReporter: DeviceSupportReporter,
+    private val quickAccessStore: QuickAccessStore,
 ) : ViewModel() {
     private val deviceReport = MutableStateFlow<DeviceSupportReport?>(null)
+    private val quickAccessChecked = MutableStateFlow(false)
+    private val tileRequestPending = MutableStateFlow(false)
+    private var lastPinRequestAt = 0L
+
+    // The typed combine overloads stop at five flows; the two gesture booleans are pre-combined.
+    private val gestureFlags = combine(
+        fullChargeStore.quickFullChargeEnabled,
+        fullChargeStore.quickFullChargeAnyLevel,
+    ) { enabled, anyLevel -> enabled to anyLevel }
 
     val state = combine(
-        repository.state,
-        fullChargeStore.session,
-        onboardingSettings.isComplete,
-        fullChargeStore.quickFullChargeEnabled,
-        deviceReport,
-    ) { charging, session, onboardingComplete, quickFullChargeEnabled, report ->
-        DashboardUiState(
-            charging = charging,
-            session = session,
-            onboardingComplete = onboardingComplete,
-            quickFullChargeEnabled = quickFullChargeEnabled,
-            deviceReport = report,
+        combine(
+            repository.state,
+            fullChargeStore.session,
+            onboardingSettings.isComplete,
+            gestureFlags,
+            deviceReport,
+        ) { charging, session, onboardingComplete, (quickFullChargeEnabled, quickFullChargeAnyLevel), report ->
+            DashboardUiState(
+                charging = charging,
+                session = session,
+                onboardingComplete = onboardingComplete,
+                quickFullChargeEnabled = quickFullChargeEnabled,
+                quickFullChargeAnyLevel = quickFullChargeAnyLevel,
+                deviceReport = report,
+            )
+        },
+        quickAccessStore.state,
+        quickAccessChecked,
+        tileRequestPending,
+    ) { base, quickAccess, checked, tilePending ->
+        base.copy(
+            quickAccess = quickAccess,
+            quickAccessChecked = checked,
+            tileRequestPending = tilePending,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
 
@@ -134,6 +171,15 @@ class DashboardViewModel @Inject constructor(
         log(TAG, Logging.Priority.INFO) { "applyPolicy(${policy.stableId})" }
         if (fullChargeStore.currentSession() != null) sessionManager.cancelWithoutRestore()
         repository.applyPersistent(policy)
+        // The persistent policy is an any-level arming input; nudge a running gesture monitor so
+        // arming and notification copy react now instead of on the next broadcast/30s poll.
+        if (fullChargeStore.isQuickFullChargeEnabled()) {
+            ContextCompat.startForegroundService(
+                context,
+                Intent(context, ChargeSessionService::class.java)
+                    .setAction(ChargeSessionService.ACTION_MONITOR),
+            )
+        }
     }
 
     fun startFullCharge() {
@@ -158,6 +204,113 @@ class DashboardViewModel @Inject constructor(
             context,
             Intent(context, ChargeSessionService::class.java).setAction(ChargeSessionService.ACTION_MONITOR),
         )
+    }
+
+    fun setQuickFullChargeAnyLevel(enabled: Boolean) = viewModelScope.launch {
+        log(TAG, Logging.Priority.INFO) { "setQuickFullChargeAnyLevel($enabled)" }
+        fullChargeStore.setQuickFullChargeAnyLevel(enabled)
+        // Nudge a running monitor so the notification copy and arming reflect the change now
+        // instead of on the next broadcast; a stopped/ineligible service just stops itself again.
+        ContextCompat.startForegroundService(
+            context,
+            Intent(context, ChargeSessionService::class.java).setAction(ChargeSessionService.ACTION_MONITOR),
+        )
+    }
+
+    /**
+     * Best-effort widget discovery for the quick-access promotion. Deliberately separate from
+     * [refresh]: that runs on every battery broadcast, and a binder/DataStore failure here must
+     * never affect charging state. Until the first successful check the promo card stays hidden —
+     * offering "Add widget" before knowing one exists could create a duplicate.
+     */
+    fun refreshQuickAccessPresence() = viewModelScope.launch {
+        runCatching {
+            val widgetIds = withContext(Dispatchers.Default) {
+                AppWidgetManager.getInstance(context)
+                    .getAppWidgetIds(ComponentName(context, AmplyWidgetReceiver::class.java))
+            }
+            if (widgetIds.isNotEmpty()) quickAccessStore.markWidgetAdded()
+            quickAccessChecked.value = true
+        }.onFailure {
+            // Stay "unchecked" so the card keeps hidden; the next resume retries.
+            log(TAG, Logging.Priority.WARN) { "Quick-access widget check failed: ${it.message}" }
+        }
+    }
+
+    fun dismissQuickAccess() = viewModelScope.launch { quickAccessStore.dismiss() }
+
+    fun requestPinWidget() {
+        // The pin dialog is modal once shown, but rapid taps before it appears would queue
+        // multiple launcher requests — swallow them.
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastPinRequestAt < 1_000) return
+        lastPinRequestAt = now
+
+        // No success PendingIntent: the launcher accepting the request doesn't mean placement, so
+        // confirmation comes from the presence re-check on the next resume instead.
+        val requested = runCatching {
+            val manager = AppWidgetManager.getInstance(context)
+            manager.isRequestPinAppWidgetSupported &&
+                manager.requestPinAppWidget(ComponentName(context, AmplyWidgetReceiver::class.java), null, null)
+        }.onFailure {
+            log(TAG, Logging.Priority.WARN) { "requestPinAppWidget failed: ${it.message}" }
+        }.getOrDefault(false)
+
+        if (!requested) {
+            Toast.makeText(
+                context,
+                context.getString(R.string.dashboard_quickaccess_widget_manual),
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
+
+    fun requestAddTile() {
+        if (Build.VERSION.SDK_INT < 33) {
+            // No add-tile API before Tiramisu (reachable: legacy Samsung support covers One UI 4/5).
+            Toast.makeText(
+                context,
+                context.getString(R.string.dashboard_quickaccess_tile_manual),
+                Toast.LENGTH_LONG,
+            ).show()
+            return
+        }
+        // SystemUI rejects overlapping requests with TILE_ADD_REQUEST_ERROR_REQUEST_IN_PROGRESS;
+        // the flag also disables the button until the callback resolves.
+        if (!tileRequestPending.compareAndSet(expect = false, update = true)) return
+        runCatching {
+            context.getSystemService(StatusBarManager::class.java).requestAddTileService(
+                ComponentName(context, ChargeTileService::class.java),
+                context.getString(R.string.tile_label),
+                Icon.createWithResource(context, R.drawable.ic_launcher_monochrome),
+                ContextCompat.getMainExecutor(context),
+            ) { result ->
+                tileRequestPending.value = false
+                when (result) {
+                    StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED,
+                    StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED,
+                    -> viewModelScope.launch { quickAccessStore.markTileAdded() }
+                    // User declined or closed the dialog — keep the card, no nagging toast.
+                    StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_NOT_ADDED -> Unit
+                    else -> {
+                        log(TAG, Logging.Priority.WARN) { "requestAddTileService result: $result" }
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.dashboard_quickaccess_tile_manual),
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                }
+            }
+        }.onFailure {
+            tileRequestPending.value = false
+            log(TAG, Logging.Priority.WARN) { "requestAddTileService failed: ${it.message}" }
+            Toast.makeText(
+                context,
+                context.getString(R.string.dashboard_quickaccess_tile_manual),
+                Toast.LENGTH_LONG,
+            ).show()
+        }
     }
 
     fun requestShizukuPermission() = viewModelScope.launch {

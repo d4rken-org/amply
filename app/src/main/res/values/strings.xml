@@ -11,8 +11,10 @@
     <string name="session_notification_restore">Restore now</string>
     <string name="gesture_channel_name">Reconnect gesture</string>
     <string name="gesture_notification_title">Quick full charge is on</string>
-    <string name="gesture_notification_waiting">When the 80% limit pauses charging, reconnect the cable to charge fully once.</string>
-    <string name="gesture_notification_armed">80% limit reached. Reconnect within 10 seconds to charge fully once.</string>
+    <string name="gesture_notification_waiting">When the 80% limit pauses charging, unplug for a few seconds and reconnect to charge fully once.</string>
+    <string name="gesture_notification_armed">80% limit reached. Unplug for at least 2 seconds, then reconnect within 10 to charge fully once.</string>
+    <string name="gesture_notification_waiting_any_level">While a protective policy is set, unplug for a few seconds and reconnect to charge fully once.</string>
+    <string name="gesture_notification_armed_any_level">Ready at any charge level. Unplug for at least 2 seconds, then reconnect within 10 to charge fully once.</string>
     <string name="recovery_channel_name">Charge policy recovery</string>
     <string name="recovery_notification_title">Charge limit needs attention</string>
     <string name="recovery_notification_body">Open Amply and restart Shizuku to restore your protective policy.</string>
@@ -298,14 +300,28 @@
     <string name="dashboard_policy_card_title">Charging policy</string>
     <string name="dashboard_native_settings">System settings</string>
     <string name="dashboard_reconnect_title" formatted="false">Reconnect for 100%</string>
-    <string name="dashboard_reconnect_body_on" formatted="false">At the 80% limit, unplug and reconnect within 10 seconds. An ongoing notification keeps the gesture reliable.</string>
+    <string name="dashboard_reconnect_body_on" formatted="false">At the 80% limit, unplug for at least 2 seconds and reconnect within 10. An ongoing notification keeps the gesture reliable.</string>
+    <string name="dashboard_reconnect_body_on_any_level">At any charge level while a protective policy is set, unplug for at least 2 seconds and reconnect within 10. An ongoing notification keeps the gesture reliable.</string>
     <string name="dashboard_reconnect_body_off" formatted="false">Optionally use a quick unplug/replug at the 80% limit to charge fully once.</string>
+    <string name="dashboard_reconnect_settings_action">Reconnect gesture settings</string>
+    <string name="settings_reconnect_title">Reconnect gesture</string>
+    <string name="settings_reconnect_category">Trigger</string>
+    <string name="settings_reconnect_any_level_title">Any charge level</string>
+    <string name="settings_reconnect_any_level_body">Arm the gesture whenever a protective policy is set through Amply — not just while the 80% limit is holding the battery.</string>
+    <string name="settings_reconnect_any_level_hint">More sensitive: any unplug/replug of 2–10 seconds starts a full charge, e.g. also below 80%. Momentary power cuts shorter than 2 seconds, like a car cutting USB power while starting, never trigger.</string>
     <string name="dashboard_shizuku_title">Better with Shizuku</string>
     <string name="dashboard_shizuku_body">Shizuku gives Amply exact policy readback instead of relying on hardware state and the last request.</string>
     <string name="dashboard_shizuku_allow">Allow access</string>
     <string name="dashboard_shizuku_open">Open Shizuku</string>
     <string name="dashboard_adb_copied">ADB command copied</string>
     <string name="dashboard_wss_grant_failed_toast">Couldn\'t grant the permission via Shizuku. Make sure Amply is allowed in Shizuku.</string>
+    <string name="dashboard_quickaccess_title">Quick access</string>
+    <string name="dashboard_quickaccess_body" formatted="false">Start a full charge without opening the app: add the Amply widget to your home screen, or the “100% once” tile to Quick Settings.</string>
+    <string name="dashboard_quickaccess_add_widget">Add widget</string>
+    <string name="dashboard_quickaccess_add_tile">Add tile</string>
+    <string name="dashboard_quickaccess_dismiss">Dismiss</string>
+    <string name="dashboard_quickaccess_widget_manual">Widget pinning isn\'t available here. Long-press your home screen and add the Amply widget from the widget picker.</string>
+    <string name="dashboard_quickaccess_tile_manual">Open Quick Settings, tap the edit button, and drag the Amply tile into place.</string>
 
     <!-- Widget (in-widget text) -->
     <string name="widget_brand_status">Amply · %1$s</string>
