@@ -61,7 +61,12 @@ private fun brandedScheme(color: ThemeColor, style: ThemeStyle, dark: Boolean): 
             outline = if (dark) Color(0xFFAAB2A9) else Color(0xFF535B53),
         )
         ThemeStyle.HIGH_CONTRAST -> base.copy(
-            primary = if (dark) Color(0xFFE8FFEC) else Color(0xFF003019),
+            // Keep the high-contrast primary within the selected color family; a fixed value here would
+            // tint every scheme (e.g. the Blue theme) with the same hue.
+            primary = when {
+                color == ThemeColor.BLUE -> if (dark) Color(0xFFEAF1FF) else Color(0xFF001A3D)
+                else -> if (dark) Color(0xFFE0FFF6) else Color(0xFF00332B)
+            },
             onPrimary = if (dark) Color.Black else Color.White,
             onSurface = if (dark) Color.White else Color.Black,
             onSurfaceVariant = if (dark) Color.White else Color.Black,
@@ -72,10 +77,10 @@ private fun brandedScheme(color: ThemeColor, style: ThemeStyle, dark: Boolean): 
 }
 
 private val GreenLight = lightColorScheme(
-    primary = Color(0xFF006D39),
+    primary = Color(0xFF006B5B),
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFC0F0D0),
-    onPrimaryContainer = Color(0xFF00210D),
+    primaryContainer = Color(0xFF79F8DE),
+    onPrimaryContainer = Color(0xFF00201A),
     secondary = Color(0xFF4E6354),
     onSecondary = Color.White,
     secondaryContainer = Color(0xFFD1E8D5),
@@ -100,10 +105,10 @@ private val GreenLight = lightColorScheme(
 )
 
 private val GreenDark = darkColorScheme(
-    primary = Color(0xFF66D996),
-    onPrimary = Color(0xFF00391B),
-    primaryContainer = Color(0xFF005229),
-    onPrimaryContainer = Color(0xFFC0F0D0),
+    primary = Color(0xFF5BDBC2),
+    onPrimary = Color(0xFF003730),
+    primaryContainer = Color(0xFF005143),
+    onPrimaryContainer = Color(0xFF79F8DE),
     secondary = Color(0xFFB5CCBA),
     onSecondary = Color(0xFF213528),
     secondaryContainer = Color(0xFF374B3D),
@@ -135,6 +140,8 @@ private val BlueLight = GreenLight.copy(
     secondary = Color(0xFF486084),
     secondaryContainer = Color(0xFFD4E3FF),
     onSecondaryContainer = Color(0xFF1D3557),
+    // surfaceTint defaults to primary at construction; copy() would otherwise keep GreenLight's teal.
+    surfaceTint = Color(0xFF0060B0),
 )
 
 private val BlueDark = GreenDark.copy(
@@ -145,4 +152,6 @@ private val BlueDark = GreenDark.copy(
     secondary = Color(0xFFAFC8F1),
     secondaryContainer = Color(0xFF233C5E),
     onSecondaryContainer = Color(0xFFD4E3FF),
+    // surfaceTint defaults to primary at construction; copy() would otherwise keep GreenDark's teal.
+    surfaceTint = Color(0xFF77B0FF),
 )
