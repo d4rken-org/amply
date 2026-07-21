@@ -1,0 +1,24 @@
+theme: minima
+plugins:
+  - jekyll-relative-links
+  - jekyll-github-metadata
+  - jemoji
+
+relative_links:
+  enabled: true
+  collections: true
+
+title: "Amply"
+description: "An Android controller for OEM battery charge-protection modes."
+author: "by Matthias Urhahn"
+
+include:
+  - PRIVACY_POLICY.md
+  - README.md
+  - CHANGELOG.md
+exclude:
+  - buildSrc
+  - gradle/wrapper
+  - fastlane
+  - app
+  - tools

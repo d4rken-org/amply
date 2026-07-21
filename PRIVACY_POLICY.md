@@ -1,3 +1,9 @@
+---
+layout: plain
+permalink: /privacy
+title: "Privacy Policy"
+---
+
 # Amply Privacy Policy
 
 Amply works locally on the device. It contains no analytics, advertising, account system, or automatic data transmission.
