@@ -141,7 +141,14 @@ class ChargingRepository @Inject constructor(
         val first = runCatching { adapter.read(primary) }.getOrNull()
         if (first is ChargeObservation.Verified || primary === accessResolver.direct) return first
         val second = runCatching { adapter.read(accessResolver.direct) }.getOrNull()
-        return if (second is ChargeObservation.Verified) second else first ?: second
+        // Signal strength: Verified > readable-but-unrecognized (must survive the fallback so
+        // session start can refuse) > generic unreadable.
+        return when {
+            second is ChargeObservation.Verified -> second
+            first is ChargeObservation.Unknown && first.unrecognizedValue -> first
+            second is ChargeObservation.Unknown && second.unrecognizedValue -> second
+            else -> first ?: second
+        }
     }
 
     fun shizukuManagerPackage(): String? = shizukuController.managerPackage()

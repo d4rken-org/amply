@@ -30,11 +30,15 @@ class ChargeSessionManager @Inject constructor(
         val adapter = repository.currentAdapter()
         val overridePolicy = adapter?.sessionOverridePolicy ?: ChargePolicy.Unrestricted
         val observation = repository.refresh().observation
-        // The refresh observation masks a readable-but-unrecognized OEM value behind LastRequested;
-        // the raw sync readback keeps the distinction (null for async adapters).
+        // The refresh observation is presentation-oriented: it masks a readable-but-unrecognized
+        // OEM value behind LastRequested and can itself degrade to LastRequested when the
+        // preferred backend fails. The raw sync readback (null for async adapters) is
+        // authoritative for the start decision — both for refusing on an unrecognized value and
+        // for the verified current policy.
         val syncRead = repository.syncReadback()
         val decision = SessionStartDecider.decide(
-            verifiedCurrent = (observation as? ChargeObservation.Verified)?.policy,
+            verifiedCurrent = (syncRead as? ChargeObservation.Verified)?.policy
+                ?: (observation as? ChargeObservation.Verified)?.policy,
             lastRequested = (observation as? ChargeObservation.LastRequested)?.policy,
             overridePolicy = overridePolicy,
             storedProtective = preferences.protectivePolicyNow(),
