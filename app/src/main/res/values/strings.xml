@@ -296,6 +296,13 @@
     <string name="dashboard_shizuku_open">Open Shizuku</string>
     <string name="dashboard_adb_copied">ADB command copied</string>
     <string name="dashboard_wss_grant_failed_toast">Couldn\'t grant the permission via Shizuku. Make sure Amply is allowed in Shizuku.</string>
+    <string name="dashboard_quickaccess_title">Quick access</string>
+    <string name="dashboard_quickaccess_body" formatted="false">Start a full charge without opening the app: add the Amply widget to your home screen, or the “100% once” tile to Quick Settings.</string>
+    <string name="dashboard_quickaccess_add_widget">Add widget</string>
+    <string name="dashboard_quickaccess_add_tile">Add tile</string>
+    <string name="dashboard_quickaccess_dismiss">Dismiss</string>
+    <string name="dashboard_quickaccess_widget_manual">Widget pinning isn\'t available here. Long-press your home screen and add the Amply widget from the widget picker.</string>
+    <string name="dashboard_quickaccess_tile_manual">Open Quick Settings, tap the edit button, and drag the Amply tile into place.</string>
 
     <!-- Widget (in-widget text) -->
     <string name="widget_brand_status">Amply · %1$s</string>

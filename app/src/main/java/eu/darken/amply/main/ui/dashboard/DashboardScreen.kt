@@ -85,6 +85,9 @@ fun DashboardScreen(
     onRestore: () -> Unit,
     onApply: (ChargePolicy) -> Unit,
     onQuickFullChargeChange: (Boolean) -> Unit,
+    onPinWidget: () -> Unit,
+    onAddTile: () -> Unit,
+    onDismissQuickAccess: () -> Unit,
     onNativeSettings: () -> Unit,
     onOpenShizuku: () -> Unit,
     onAllowShizuku: () -> Unit,
@@ -200,6 +203,25 @@ fun DashboardScreen(
                                     state.charging.controlEnabled &&
                                     state.charging.access?.canControl == true,
                                 onEnabledChange = onQuickFullChargeChange,
+                            )
+                        }
+                    }
+                    // Promote the widget/tile shortcuts only once setup is done (the setup guide above
+                    // has disappeared) and while at least one shortcut is still undiscovered.
+                    if (shouldShowQuickAccess(
+                            directReady = state.charging.access?.direct?.ready == true,
+                            presenceChecked = state.quickAccessChecked,
+                            quickAccess = state.quickAccess,
+                        )
+                    ) {
+                        item {
+                            QuickAccessCard(
+                                widgetAdded = state.quickAccess.widgetAdded,
+                                tileAdded = state.quickAccess.tileAdded,
+                                tileRequestPending = state.tileRequestPending,
+                                onPinWidget = onPinWidget,
+                                onAddTile = onAddTile,
+                                onDismiss = onDismissQuickAccess,
                             )
                         }
                     }
@@ -573,6 +595,8 @@ private fun DashboardScreenPreview() = PreviewWrapper {
     DashboardScreen(
         state = DashboardUiState(
             onboardingComplete = true,
+            // Presence check done, nothing discovered yet — renders the quick-access promotion.
+            quickAccessChecked = true,
             charging = ChargingState(
                 device = DeviceInfo("Google", "Pixel 8", 36, "preview"),
                 adapterName = "Pixel Charge Control".toCaString(),
@@ -606,6 +630,9 @@ private fun DashboardScreenPreview() = PreviewWrapper {
         onRestore = {},
         onApply = {},
         onQuickFullChargeChange = {},
+        onPinWidget = {},
+        onAddTile = {},
+        onDismissQuickAccess = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
@@ -654,6 +681,9 @@ private fun DashboardScreenWssOnlyPreview() = PreviewWrapper {
         onRestore = {},
         onApply = {},
         onQuickFullChargeChange = {},
+        onPinWidget = {},
+        onAddTile = {},
+        onDismissQuickAccess = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
@@ -709,6 +739,9 @@ private fun DashboardScreenSamsungPreview() = PreviewWrapper {
         onRestore = {},
         onApply = {},
         onQuickFullChargeChange = {},
+        onPinWidget = {},
+        onAddTile = {},
+        onDismissQuickAccess = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
@@ -743,6 +776,9 @@ private fun DashboardScreenUnsupportedPreview() = PreviewWrapper {
         onRestore = {},
         onApply = {},
         onQuickFullChargeChange = {},
+        onPinWidget = {},
+        onAddTile = {},
+        onDismissQuickAccess = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
