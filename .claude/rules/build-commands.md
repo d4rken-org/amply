@@ -40,6 +40,25 @@ bash fastlane/check_metadata_length.sh
 ./gradlew lintGplayDebug
 ```
 
+## Play Store Screenshots
+
+Screenshots are rendered from `@Preview` composables on the JVM (no device) via the Compose Preview Screenshot
+Testing plugin (`com.android.compose.screenshot`, enabled by `android.experimental.enableScreenshotTest=true` in
+`gradle.properties`). The store composables live in `app/src/debug/.../screenshots/ScreenshotContent.kt`; the capture
+entry points (`@PreviewTest`) and locale annotations live in `app/src/screenshotTest/.../screenshots/`.
+
+```bash
+# 1. Render (writes to app/src/screenshotTestGplayDebug/reference/, which is gitignored)
+./fastlane/generate_screenshots.sh
+# 2. Normalize (flatten alpha → opaque 1080x1920) + sort into the committed metadata tree
+./fastlane/copy_screenshots.sh
+```
+
+Committed output lands in `fastlane/metadata/android/en-US/images/phoneScreenshots/1.png … 6.png`. Both scripts fail
+loudly on any count/dimension/format mismatch and `copy_screenshots.sh` requires ImageMagick. Needs the JDK 21 build
+toolchain like everything else. CI compiles these sources (`compileGplayDebugScreenshotTestKotlin`) but does **not**
+render — layoutlib output differs across machines — so **regenerating screenshots is a manual pre-release step**.
+
 ## Install & Inspect
 
 ```bash

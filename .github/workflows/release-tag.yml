@@ -2,9 +2,10 @@ name: Tagged releases
 
 # Adapted from CAPod's release-tag.yml, scoped to what Amply currently supports:
 #   * FOSS GitHub release only.
-#   * NO Google Play upload job — Amply has no fastlane deploy lanes, and Play
-#     publication must stay gated on approval of the declared specialUse
-#     foreground-service use case (see .claude/rules/privileged-access.md).
+#   * NO Google Play upload job — the manual fastlane supply lanes exist but are
+#     gated (AMPLY_PLAY_PUBLISH_APPROVED) and never CI-wired; Play publication
+#     must stay gated on approval of the declared specialUse foreground-service
+#     use case (see .claude/rules/privileged-access.md).
 #   * NO Pages deployment — the project website is deferred.
 # Fires only on a deliberate v* tag (cut via release-prepare.yml), so it never
 # runs by accident. Requires SIGNING_KEYSTORE_BASE64 + STORE_PASSWORD/KEY_ALIAS/

@@ -1,0 +1,134 @@
+# Fastlane lanes for Amply's Play Store listing.
+#
+# IMPORTANT: these lanes are NOT wired into CI and must stay that way for now. Google Play publication
+# is gated on approval of Amply's declared `specialUse` foreground-service use case (see
+# .claude/rules/release.md and .claude/rules/privileged-access.md). Every lane that mutates Play state
+# therefore refuses to run unless AMPLY_PLAY_PUBLISH_APPROVED=1 is set, so an accidental invocation
+# can't publish. release-tag.yml intentionally ships a FOSS GitHub release only.
+#
+# Prerequisites (all manual, none automated here): an existing Play app for eu.darken.amply, a service
+# account JSON reachable via the Appfile, and the specialUse review passed.
+
+fastlane_version "2.226.0"
+
+default_platform :android
+
+# Refuse to touch Play until the specialUse use case is approved and the operator opts in explicitly.
+def require_publish_approval!
+  unless ENV["AMPLY_PLAY_PUBLISH_APPROVED"] == "1"
+    UI.user_error!(
+      "Refusing to run: Play publication is gated on approval of Amply's specialUse foreground-service " \
+      "use case (see .claude/rules/release.md). Set AMPLY_PLAY_PUBLISH_APPROVED=1 only once that " \
+      "approval has landed and you intend to publish."
+    )
+  end
+end
+
+# Amply builds an UNSIGNED bundle when signing material is incomplete (app/build.gradle.kts degrades
+# gracefully). Mirror Gradle's readiness check exactly — env takes precedence, the keystore file must
+# exist, and store password / key alias / key password must all be non-blank — so we fail before
+# building rather than uploading an unsigned artifact that supply would only reject later.
+def require_gplay_signing!
+  store_path = ENV["STORE_PATH"].to_s
+  if !store_path.empty?
+    ready = File.exist?(store_path) &&
+      !ENV["STORE_PASSWORD"].to_s.empty? &&
+      !ENV["KEY_ALIAS"].to_s.empty? &&
+      !ENV["KEY_PASSWORD"].to_s.empty?
+  else
+    props_path = File.expand_path("~/.config/projects/eu.darken.amply/signing-gplay-upload.properties")
+    ready = false
+    if File.exist?(props_path)
+      props = {}
+      File.foreach(props_path) do |line|
+        stripped = line.strip
+        next if stripped.empty? || stripped.start_with?("#")
+        key, value = stripped.split("=", 2)
+        props[key.to_s.strip] = value.to_s.strip if key
+      end
+      store = File.expand_path(props["release.storePath"].to_s) unless props["release.storePath"].to_s.empty?
+      ready = !store.nil? && File.exist?(store) &&
+        !props["release.storePassword"].to_s.empty? &&
+        !props["release.keyAlias"].to_s.empty? &&
+        !props["release.keyPassword"].to_s.empty?
+    end
+  end
+  unless ready
+    UI.user_error!(
+      "gplay signing is not fully configured — need a readable keystore plus non-blank store password, " \
+      "key alias and key password (via STORE_PATH env, or " \
+      "~/.config/projects/eu.darken.amply/signing-gplay-upload.properties). Refusing to build an " \
+      "unsigned bundle for upload."
+    )
+  end
+end
+
+platform :android do
+  # Upload the beta bundle + changelogs to the closed beta track, as a draft release.
+  lane :beta do
+    require_publish_approval!
+    require_gplay_signing!
+    gradle(task: "clean bundleGplayBeta")
+    supply(
+      track: "beta",
+      release_status: "draft",
+      package_name: "eu.darken.amply",
+      aab: "app/build/outputs/bundle/gplayBeta/app-gplay-beta.aab",
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      skip_upload_changelogs: false,
+    )
+  end
+
+  # Upload the release bundle + changelogs to production, as a draft release (manual promotion).
+  lane :production do
+    require_publish_approval!
+    require_gplay_signing!
+    gradle(task: "clean bundleGplayRelease")
+    supply(
+      track: "production",
+      release_status: "draft",
+      package_name: "eu.darken.amply",
+      aab: "app/build/outputs/bundle/gplayRelease/app-gplay-release.aab",
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      skip_upload_changelogs: false,
+    )
+  end
+
+  # Push the store listing text + graphics + screenshots only (no binary).
+  lane :listing_only do
+    require_publish_approval!
+    supply(
+      track: "production",
+      package_name: "eu.darken.amply",
+      skip_upload_aab: true,
+      skip_upload_apk: true,
+      skip_upload_changelogs: true,
+      skip_upload_metadata: false,
+      skip_upload_images: false,
+      skip_upload_screenshots: false,
+    )
+  end
+
+  # Push only the phone screenshots (e.g. after regenerating them locally). skip_upload_images stays
+  # true — that flag governs icon/feature-graphic/promo images, which are independent of screenshots
+  # and must not be pushed by a screenshot-only lane.
+  lane :screenshots_only do
+    require_publish_approval!
+    supply(
+      track: "production",
+      package_name: "eu.darken.amply",
+      skip_upload_aab: true,
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_changelogs: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: false,
+    )
+  end
+end

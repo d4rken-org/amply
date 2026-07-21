@@ -1,0 +1,6 @@
+source "https://rubygems.org"
+
+# Pessimistic bound: allow 2.226+ patch/minor updates but not a major bump that could change `supply`
+# behavior. Commit Gemfile.lock (generate with `cd fastlane && bundle lock`) and run lanes via
+# `bundle exec fastlane` so a release workstation resolves the exact same versions.
+gem "fastlane", "~> 2.226"

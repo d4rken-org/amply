@@ -73,6 +73,22 @@ jobs:
       - name: Validate metadata lengths
         run: bash fastlane/check_metadata_length.sh
 
+  check-screenshots:
+    name: Screenshot sources
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+      - name: Setup project and build environment
+        uses: ./.github/actions/common-setup
+
+      # Compile-only: the screenshotTest source set is never built by assemble/test, so this is the
+      # only guard against the Play Store screenshot composables silently breaking. Rendering the PNGs
+      # stays a manual pre-release step (fastlane/generate_screenshots.sh) — layoutlib output differs
+      # across machines, so it isn't asserted in CI.
+      - name: Compile screenshot sources
+        run: ./gradlew :app:compileGplayDebugScreenshotTestKotlin
+
   check-release-tooling:
     name: Release tooling
     runs-on: ubuntu-latest
@@ -87,6 +103,9 @@ jobs:
 
       - name: Shellcheck bump.sh
         run: shellcheck tools/release/bump.sh
+
+      - name: Shellcheck fastlane scripts
+        run: shellcheck fastlane/generate_screenshots.sh fastlane/copy_screenshots.sh
 
       - name: Run bump.sh unit tests
         run: bats tools/release/bump.bats

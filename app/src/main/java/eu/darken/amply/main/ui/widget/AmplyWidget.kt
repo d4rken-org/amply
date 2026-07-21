@@ -59,7 +59,7 @@ import eu.darken.amply.main.ui.MainActivity
 /** Below this width the brand mark + name is dropped so the status line stays readable. */
 private val BRAND_MIN_WIDTH = 200.dp
 
-private val TITLE_COLOR = ColorProvider(Color(0xFF15382B), Color(0xFFE4F5EC))
+private val TITLE_COLOR = ColorProvider(Color(0xFF123832), Color(0xFFE0F5F0))
 
 @Keep
 class AmplyWidget : GlanceAppWidget() {
@@ -89,7 +89,7 @@ class AmplyWidget : GlanceAppWidget() {
             Column(
                 modifier = GlanceModifier
                     .fillMaxSize()
-                    .background(ColorProvider(Color(0xFFE5F4ED), Color(0xFF18352A)))
+                    .background(ColorProvider(Color(0xFFE1F5F0), Color(0xFF153531)))
                     .clickable(
                         actionStartActivity(
                             Intent(context, MainActivity::class.java)
