@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -55,6 +57,7 @@ import eu.darken.amply.fullcharge.core.FullChargeStore
 import eu.darken.amply.fullcharge.core.ChargeSessionService
 import eu.darken.amply.fullcharge.core.policyOrNull
 import eu.darken.amply.main.ui.MainActivity
+import kotlinx.coroutines.CancellationException
 
 /** Below this width the brand mark + name is dropped so the status line stays readable. */
 private val BRAND_MIN_WIDTH = 200.dp
@@ -71,20 +74,39 @@ class AmplyWidget : GlanceAppWidget() {
             context.applicationContext,
             AmplyWidgetEntryPoint::class.java,
         )
-        // Refresh on every render (with a last-good fallback): the widget process can be cold and the
-        // in-memory state stale, and native Settings changes are only observed while the app/service runs.
         val repo = entryPoint.chargingRepository()
-        val state = runCatching { repo.refresh() }.getOrElse { repo.state.value }
-        val sessionActive = entryPoint.sessionStore().currentSession() != null
-        val now = System.currentTimeMillis()
-        val requestedTarget = runCatching { entryPoint.chargingPreferences().lastRequestedNow() }.getOrNull()
-        val settling = state.isSettling(now)
-        // "Constant" state = a plain resting policy, nothing in flight — the only time the brand is shown.
-        val steady = !sessionActive && !settling
-        val status = statusLine(context, sessionActive, settling, state, requestedTarget)
+        val sessionStore = entryPoint.sessionStore()
+        val preferences = entryPoint.chargingPreferences()
+
+        // Seed once, before provideContent: the widget process can be cold and the in-memory state stale, and
+        // native Settings changes are only observed while the app/service runs. Doing this here (not in a
+        // per-composition LaunchedEffect) avoids re-refreshing once per size under SizeMode.Exact and avoids
+        // briefly flashing the empty initial ChargingState() before the refresh lands. Cancellation propagates.
+        try {
+            // Populate repo.state (collected below) so the first composition renders real values, not the
+            // empty initial ChargingState().
+            repo.refresh()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Cold read failed; the composition falls back to the last-known repo.state.value.
+        }
+        val initialSession = runCatching { sessionStore.currentSession() }.getOrNull()
+        val initialRequested = runCatching { preferences.lastRequestedNow() }.getOrNull()
 
         provideContent {
-            val showBrand = steady && LocalSize.current.width >= BRAND_MIN_WIDTH
+            // Reactive composition: Glance never re-runs an already-active provideGlance, so a one-shot
+            // pre-provideContent read alone would miss later backend changes and freeze the widget after a tap.
+            // Observing the same reactive sources the rest of the app uses makes Glance recompose this content
+            // in place whenever the backend emits. The StateFlow already reflects the seeded refresh above; the
+            // two plain flows are seeded with the pre-read values so the first frame is never empty.
+            val state by repo.state.collectAsState()
+            val session by sessionStore.session.collectAsState(initial = initialSession)
+            val requestedTarget by preferences.lastRequested.collectAsState(initial = initialRequested)
+
+            val display = widgetDisplay(state, sessionActive = session != null, now = System.currentTimeMillis())
+            val status = statusLine(context, display.sessionActive, display.settling, state, requestedTarget)
+            val showBrand = display.steady && LocalSize.current.width >= BRAND_MIN_WIDTH
             val titleStyle = TextStyle(color = TITLE_COLOR, fontWeight = FontWeight.Bold)
             Column(
                 modifier = GlanceModifier
@@ -120,7 +142,7 @@ class AmplyWidget : GlanceAppWidget() {
                 val buttonText = TextStyle(fontSize = 12.sp)
                 Row(modifier = GlanceModifier.fillMaxWidth().padding(top = 10.dp)) {
                     Button(
-                        text = protectButtonLabel(context, repo.currentAdapter()?.defaultProtectivePolicy),
+                        text = protectButtonLabel(context, state.defaultProtectivePolicy),
                         onClick = actionRunCallback<ProtectAction>(),
                         modifier = GlanceModifier.defaultWeight(),
                         style = buttonText,
@@ -146,6 +168,26 @@ class AmplyWidget : GlanceAppWidget() {
             }
         }
     }
+}
+
+/**
+ * Structural (context-free) widget display derivation, kept pure so the branches are JVM-unit-testable.
+ * `sessionActive` wins over everything; `settling` is the pending-request window; `steady` (a plain resting
+ * policy, nothing in flight) is the only state that shows the brand mark.
+ */
+internal data class WidgetDisplay(
+    val sessionActive: Boolean,
+    val settling: Boolean,
+    val steady: Boolean,
+)
+
+internal fun widgetDisplay(state: ChargingState, sessionActive: Boolean, now: Long): WidgetDisplay {
+    val settling = state.isSettling(now)
+    return WidgetDisplay(
+        sessionActive = sessionActive,
+        settling = settling,
+        steady = !sessionActive && !settling,
+    )
 }
 
 /**

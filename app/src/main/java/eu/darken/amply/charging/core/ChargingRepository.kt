@@ -51,6 +51,12 @@ data class ChargingState(
     val adapterName: CaString = R.string.adapter_name_detecting.toCaString(),
     val adapterId: String? = null,
     val supportedPolicies: List<ChargePolicy> = emptyList(),
+    /**
+     * The selected adapter's protective default (e.g. FixedLimit(80) on Pixel, Adaptive on Xiaomi), or
+     * null before an adapter is selected. Carried on the state so observing surfaces (the widget) can
+     * label the "∞ protect" action without a separate suspend adapter lookup at composition time.
+     */
+    val defaultProtectivePolicy: ChargePolicy? = null,
     val reconnectSupported: Boolean = false,
     /** True when the adapter's configured state is directly readable — Shizuku adds nothing for verification. */
     val syncVerification: Boolean = false,
@@ -310,7 +316,18 @@ class ChargingRepository @Inject constructor(
                 pending = pending,
                 message = message,
             )
-            if (pending != null) settleScheduler.schedule(now)
+            // Always schedule an eventual surface re-push, even for a settled write (pending == null).
+            // SYNC_READBACK adapters (Samsung/Xiaomi/Oplus) verify synchronously and leave pending null,
+            // so without this a static widget/tile on a killed process would never be pushed the new
+            // state after a tap. Scheduling with `now` fires the worker AFTER the settling window, so its
+            // refresh() computes pending == null (no phantom settling is reintroduced) and only re-pushes.
+            // Isolate the call locally: a scheduler failure must not fall into the metadata-failure catch
+            // below, which would overwrite this just-published settled state with a phantom PendingRequest.
+            try {
+                settleScheduler.schedule(now)
+            } catch (e: Exception) {
+                log(TAG, Logging.Priority.WARN) { "Surface re-push scheduling failed: ${e.message}" }
+            }
             ApplyResult(true, observation, message.get(context))
                 .also { log(TAG, Logging.Priority.INFO) { "Applied ${policy.stableId}: $observation" } }
         } catch (e: CancellationException) {
@@ -384,6 +401,7 @@ class ChargingRepository @Inject constructor(
             adapterName = adapter?.displayName ?: R.string.adapter_name_unsupported.toCaString(),
             adapterId = adapter?.id,
             supportedPolicies = adapter?.supportedPolicies.orEmpty(),
+            defaultProtectivePolicy = adapter?.defaultProtectivePolicy,
             reconnectSupported = adapter?.reconnectGestureSupported == true,
             syncVerification = adapter?.verification == VerificationStrategy.SYNC_READBACK,
             writeRequiresShizuku = adapter?.preferShizukuForWrites == true,

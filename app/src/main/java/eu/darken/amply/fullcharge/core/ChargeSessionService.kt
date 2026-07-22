@@ -96,7 +96,8 @@ class ChargeSessionService : Service() {
                     // Respect a native Settings change instead of restoring over the user's choice.
                     manager.cancelWithoutRestore()
                     unregisterSettingObserver()
-                    SurfaceUpdater.update(this@ChargeSessionService)
+                    // continueGestureOrStop() awaits a surface update on every terminal branch, so no path
+                    // here leaves the widget/tile un-pushed (some paths push more than once — updateAll is idempotent).
                     continueGestureOrStop()
                 }
             }
@@ -197,7 +198,21 @@ class ChargeSessionService : Service() {
         val gestureActive = fullChargeStore.isQuickFullChargeEnabled() && reconnectGestureAvailable()
         if (!gestureActive && !anyWatcherEnabled()) {
             log(TAG) { "Reconnect gesture disabled/unsupported and no watcher enabled; stopping monitor" }
-            stopMonitoring()
+            // The stop branch used to be the one terminal path through continueGestureOrStop that pushed no
+            // surface update — a session/native change ending here (e.g. via the setting observer) left the
+            // widget and tile stale until some later refresh. Push here, before stopping, so no branch leaves
+            // the surfaces un-pushed (nested/recursive paths may legitimately push more than once — updateAll
+            // is idempotent). A surface failure must not skip stopMonitoring()'s required cleanup
+            // (stopForeground/stopSelf), and cancellation must still propagate.
+            try {
+                SurfaceUpdater.updateNow(this)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log(TAG, Logging.Priority.WARN) { "Surface update before stop failed: ${e.message}" }
+            } finally {
+                stopMonitoring()
+            }
             return
         }
         unregisterSettingObserver()
@@ -453,7 +468,8 @@ class ChargeSessionService : Service() {
             val outcome = BootRecoveryFlow(recoveryHooks).run()
             log(TAG) { "Boot recovery outcome: $outcome" }
             commandMutex.withLock {
-                SurfaceUpdater.update(this@ChargeSessionService)
+                // continueGestureOrStop() awaits a surface update on every terminal branch, so no path here
+                // leaves the widget/tile un-pushed (some paths push more than once — updateAll is idempotent).
                 continueGestureOrStop()
             }
         }
