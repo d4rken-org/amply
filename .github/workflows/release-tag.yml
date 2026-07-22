@@ -69,6 +69,11 @@ jobs:
   release-github:
     needs: validate-tag
     name: Create GitHub release (FOSS)
+    # Scopes the job to the foss-production environment so its signing secrets
+    # (SIGNING_KEYSTORE_BASE64 / STORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD) resolve;
+    # the environment's required-reviewer rule also gates each tag build behind a
+    # manual approval before the APK is built and published.
+    environment: foss-production
     permissions:
       contents: write
     runs-on: ubuntu-latest
