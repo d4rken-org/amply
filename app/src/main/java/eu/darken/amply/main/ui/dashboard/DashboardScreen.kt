@@ -30,6 +30,7 @@ import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -405,7 +406,11 @@ private fun StatusCard(
                     )
                 }
             }
-            Spacer(Modifier.height(4.dp))
+            // Divider marks the boundary between "what the current policy is" (title + explanation)
+            // above and the provenance metadata below — where the reading comes from and which device.
+            Spacer(Modifier.height(12.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(12.dp))
             Text(
                 observation.detail().asComposable(),
                 style = MaterialTheme.typography.bodySmall,
