@@ -34,12 +34,18 @@ class ShizukuSettingsBackend @Inject constructor(
         )
     }
 
-    override suspend fun read(namespace: SettingNamespace, key: String): SettingRead = runCatching {
+    override suspend fun read(namespace: SettingNamespace, key: String): SettingRead = try {
         SettingRead(
             readable = true,
             value = controller.service().readSetting(namespace.commandName, key),
         )
-    }.getOrElse { SettingRead(false, error = (it.message ?: it.javaClass.simpleName).toCaString()) }
+    } catch (e: CancellationException) {
+        // Binding the user service (controller.service()) can suspend up to ~15s; a cancelled read must
+        // propagate rather than be reported as an unreadable setting — matching snapshot() below.
+        throw e
+    } catch (e: Exception) {
+        SettingRead(false, error = (e.message ?: e.javaClass.simpleName).toCaString())
+    }
 
     override suspend fun write(mutation: SettingMutation): Boolean = runCatching {
         controller.service().writeSetting(
