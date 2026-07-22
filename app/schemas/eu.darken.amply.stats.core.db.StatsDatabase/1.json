@@ -1,0 +1,298 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "d39f220aefbc6937a7d9e2dde83995f1",
+    "entities": [
+      {
+        "tableName": "charge_sessions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `startedAtWallMillis` INTEGER NOT NULL, `startedElapsedRealtimeMillis` INTEGER NOT NULL, `bootId` INTEGER NOT NULL, `endedAtWallMillis` INTEGER, `endedElapsedRealtimeMillis` INTEGER, `endReason` TEXT, `startPercent` INTEGER, `endPercent` INTEGER, `pluggedRaw` INTEGER, `fullReachedAtWallMillis` INTEGER, `partial` INTEGER NOT NULL, `avgPowerMilliwatts` INTEGER, `avgTemperatureTenthsC` INTEGER, `runningSampleCount` INTEGER NOT NULL, `runningPowerWeightedSum` REAL NOT NULL, `runningPowerWeightedDurationMillis` INTEGER NOT NULL, `runningTemperatureWeightedSum` REAL NOT NULL, `runningTemperatureWeightedDurationMillis` INTEGER NOT NULL, `runningPeakPowerMilliwatts` INTEGER, `runningMinTemperatureTenthsC` INTEGER, `runningMaxTemperatureTenthsC` INTEGER, `runningLastPowerMilliwatts` INTEGER, `runningLastTemperatureTenthsC` INTEGER, `runningLastPercent` INTEGER, `runningLastElapsedRealtimeMillis` INTEGER, `runningLastWallMillis` INTEGER, `limitHitEvidence` INTEGER NOT NULL, `overrideSeen` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startedAtWallMillis",
+            "columnName": "startedAtWallMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startedElapsedRealtimeMillis",
+            "columnName": "startedElapsedRealtimeMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bootId",
+            "columnName": "bootId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endedAtWallMillis",
+            "columnName": "endedAtWallMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "endedElapsedRealtimeMillis",
+            "columnName": "endedElapsedRealtimeMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "endReason",
+            "columnName": "endReason",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "startPercent",
+            "columnName": "startPercent",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "endPercent",
+            "columnName": "endPercent",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "pluggedRaw",
+            "columnName": "pluggedRaw",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "fullReachedAtWallMillis",
+            "columnName": "fullReachedAtWallMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "partial",
+            "columnName": "partial",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "avgPowerMilliwatts",
+            "columnName": "avgPowerMilliwatts",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "avgTemperatureTenthsC",
+            "columnName": "avgTemperatureTenthsC",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "runningSampleCount",
+            "columnName": "runningSampleCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "runningPowerWeightedSum",
+            "columnName": "runningPowerWeightedSum",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "runningPowerWeightedDurationMillis",
+            "columnName": "runningPowerWeightedDurationMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "runningTemperatureWeightedSum",
+            "columnName": "runningTemperatureWeightedSum",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "runningTemperatureWeightedDurationMillis",
+            "columnName": "runningTemperatureWeightedDurationMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "runningPeakPowerMilliwatts",
+            "columnName": "runningPeakPowerMilliwatts",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "runningMinTemperatureTenthsC",
+            "columnName": "runningMinTemperatureTenthsC",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "runningMaxTemperatureTenthsC",
+            "columnName": "runningMaxTemperatureTenthsC",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "runningLastPowerMilliwatts",
+            "columnName": "runningLastPowerMilliwatts",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "runningLastTemperatureTenthsC",
+            "columnName": "runningLastTemperatureTenthsC",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "runningLastPercent",
+            "columnName": "runningLastPercent",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "runningLastElapsedRealtimeMillis",
+            "columnName": "runningLastElapsedRealtimeMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "runningLastWallMillis",
+            "columnName": "runningLastWallMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "limitHitEvidence",
+            "columnName": "limitHitEvidence",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "overrideSeen",
+            "columnName": "overrideSeen",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "battery_samples",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sessionId` INTEGER NOT NULL, `wallMillis` INTEGER NOT NULL, `elapsedRealtimeMillis` INTEGER NOT NULL, `bootId` INTEGER NOT NULL, `percent` INTEGER, `batteryStatus` INTEGER, `chargingStatus` INTEGER, `pluggedRaw` INTEGER, `temperatureTenthsC` INTEGER, `voltageMillivolts` INTEGER, `currentNowMicroamps` INTEGER, `powerMilliwatts` INTEGER, FOREIGN KEY(`sessionId`) REFERENCES `charge_sessions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "wallMillis",
+            "columnName": "wallMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "elapsedRealtimeMillis",
+            "columnName": "elapsedRealtimeMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bootId",
+            "columnName": "bootId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "percent",
+            "columnName": "percent",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "batteryStatus",
+            "columnName": "batteryStatus",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "chargingStatus",
+            "columnName": "chargingStatus",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "pluggedRaw",
+            "columnName": "pluggedRaw",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "temperatureTenthsC",
+            "columnName": "temperatureTenthsC",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "voltageMillivolts",
+            "columnName": "voltageMillivolts",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "currentNowMicroamps",
+            "columnName": "currentNowMicroamps",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "powerMilliwatts",
+            "columnName": "powerMilliwatts",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_battery_samples_sessionId_elapsedRealtimeMillis",
+            "unique": false,
+            "columnNames": [
+              "sessionId",
+              "elapsedRealtimeMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_battery_samples_sessionId_elapsedRealtimeMillis` ON `${TABLE_NAME}` (`sessionId`, `elapsedRealtimeMillis`)"
+          },
+          {
+            "name": "index_battery_samples_wallMillis",
+            "unique": false,
+            "columnNames": [
+              "wallMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_battery_samples_wallMillis` ON `${TABLE_NAME}` (`wallMillis`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "charge_sessions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "sessionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'd39f220aefbc6937a7d9e2dde83995f1')"
+    ]
+  }
+}

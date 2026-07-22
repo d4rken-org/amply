@@ -20,17 +20,29 @@ import javax.inject.Inject
 class BatteryReader @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
+    /** Reads its own sticky [Intent.ACTION_BATTERY_CHANGED] broadcast (for callers without one). */
     fun read(): BatteryReadout {
         val battery = runCatching {
             context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         }.getOrNull() ?: return BatteryReadout.UNKNOWN
+        return read(battery)
+    }
 
+    /**
+     * Build a readout from an already-resolved [Intent.ACTION_BATTERY_CHANGED] intent (the one the
+     * charge-session service just evaluated), so plug state / percent / voltage / temperature all
+     * come from a single observation and can't be joined across two different sticky reads during a
+     * rapid unplug/replug. Non-null and never falls back to a second sticky read — a caller with no
+     * intent must use [BatteryReadout.UNKNOWN] rather than passing null.
+     */
+    fun read(battery: Intent): BatteryReadout {
         val manager = context.getSystemService(BatteryManager::class.java)
 
         return BatteryReadoutFactory.build(
             level = battery.getIntExtra(BatteryManager.EXTRA_LEVEL, ABSENT),
             scale = battery.getIntExtra(BatteryManager.EXTRA_SCALE, ABSENT),
             status = battery.getIntExtra(BatteryManager.EXTRA_STATUS, ABSENT),
+            chargingStatus = battery.getIntExtra(BatteryManager.EXTRA_CHARGING_STATUS, ABSENT),
             plugged = battery.getIntExtra(BatteryManager.EXTRA_PLUGGED, ABSENT),
             health = battery.getIntExtra(BatteryManager.EXTRA_HEALTH, ABSENT),
             technology = battery.getStringExtra(BatteryManager.EXTRA_TECHNOLOGY),

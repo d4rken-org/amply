@@ -10,6 +10,7 @@ import dagger.hilt.android.testing.HiltAndroidTest
 import dagger.hilt.android.testing.HiltTestApplication
 import dagger.hilt.components.SingletonComponent
 import eu.darken.amply.alarm.core.ChargeAlarmWatcher
+import eu.darken.amply.stats.core.ChargeStatsWatcher
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import org.junit.Rule
@@ -47,5 +48,17 @@ class ChargeMonitorWatcherGraphTest {
 
         watchers.map { it.id } shouldContain "charge_alarm"
         watchers.any { it is ChargeAlarmWatcher } shouldBe true
+    }
+
+    @Test
+    fun `the battery stats watcher is bound into the monitor watcher set`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val watchers = EntryPointAccessors.fromApplication(
+            context,
+            WatcherEntryPoint::class.java,
+        ).watchers()
+
+        watchers.map { it.id } shouldContain "battery_stats"
+        watchers.any { it is ChargeStatsWatcher } shouldBe true
     }
 }

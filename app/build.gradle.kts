@@ -139,6 +139,13 @@ android {
     }
 }
 
+// Export Room schemas to a committed directory so future schema changes (P2/P3) have a baseline to
+// diff and write tested migrations against. Room v1 has nothing to migrate yet, but the baseline must
+// exist from the first shipped version.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 androidComponents {
     onVariants { variant ->
         val buildType = variant.buildType ?: return@onVariants
@@ -201,6 +208,7 @@ dependencies {
     addCompose()
     addNavigation3()
     addDataStore()
+    addRoom()
     addGlance()
 
     addShizuku()

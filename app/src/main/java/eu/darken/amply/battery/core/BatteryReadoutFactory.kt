@@ -20,6 +20,7 @@ object BatteryReadoutFactory {
         level: Int = ABSENT,
         scale: Int = ABSENT,
         status: Int = ABSENT,
+        chargingStatus: Int = ABSENT,
         plugged: Int = ABSENT,
         health: Int = ABSENT,
         technology: String? = null,
@@ -31,6 +32,7 @@ object BatteryReadoutFactory {
     ): BatteryReadout = BatteryReadout(
         levelPercent = percentOf(level, scale),
         status = status.orNull(),
+        chargingStatus = chargingStatus.orNull(),
         plugged = plugged.orNull(),
         health = health.orNull(),
         technology = technology?.trim()?.ifEmpty { null },

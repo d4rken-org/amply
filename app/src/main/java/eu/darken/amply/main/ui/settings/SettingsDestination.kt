@@ -9,4 +9,6 @@ enum class SettingsDestination {
     ACKNOWLEDGEMENTS,
     RECONNECT_GESTURE,
     BATTERY_DETAIL,
+    STATS,
+    STATS_SESSION_DETAIL,
 }

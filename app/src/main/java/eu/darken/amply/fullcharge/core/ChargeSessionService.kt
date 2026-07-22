@@ -228,13 +228,26 @@ class ChargeSessionService : Service() {
      * by [WATCHER_TICK_BUDGET_MILLIS] and fully isolated: a hung or throwing watcher can neither
      * strand this evaluation nor, since restore already ran before this point, delay policy recovery.
      */
-    private suspend fun dispatchWatchers(plugged: Boolean, percent: Int, status: Int, sessionOwned: Boolean) {
+    private suspend fun dispatchWatchers(
+        plugged: Boolean,
+        percent: Int,
+        status: Int,
+        sessionOwned: Boolean,
+        battery: Intent?,
+        observedAtElapsed: Long,
+    ) {
         if (watchers.isEmpty()) return
+        // Pass the exact evaluated intent through; watchers parse it and read live properties off the
+        // evaluation thread. Building the readout here would put Binder calls under commandMutex and
+        // could delay a queued restore.
         val tick = ChargeMonitorTick(
             plugged = plugged,
             percent = percent,
             batteryStatus = status,
             sessionActive = sessionOwned,
+            batteryIntent = battery,
+            observedElapsedRealtimeMillis = observedAtElapsed,
+            wallClockMillis = System.currentTimeMillis(),
         )
         watchers.forEach { watcher ->
             try {
@@ -311,12 +324,12 @@ class ChargeSessionService : Service() {
                 )
             }
             // Non-restore session tick: let watchers observe it (the alarm claims the cycle here).
-            dispatchWatchers(plugged, percent, status, sessionOwned = true)
+            dispatchWatchers(plugged, percent, status, sessionOwned = true, battery, observedAtElapsed)
             return
         }
 
         if (!fullChargeStore.isQuickFullChargeEnabled() || !reconnectGestureAvailable()) {
-            dispatchWatchers(plugged, percent, status, sessionOwned = false)
+            dispatchWatchers(plugged, percent, status, sessionOwned = false, battery, observedAtElapsed)
             // Gesture inactive: keep running only if a watcher still wants the service, showing the
             // quiet monitoring notification instead of the gesture cue.
             if (anyWatcherEnabled()) {
@@ -355,7 +368,14 @@ class ChargeSessionService : Service() {
         }
         // A triggering tick is a deliberate full charge about to begin, so the alarm must treat it
         // as session-owned and NOT fire "unplug now" on the very reconnect that started the charge.
-        dispatchWatchers(plugged, percent, status, sessionOwned = decision == QuickFullChargeDecision.TRIGGER)
+        dispatchWatchers(
+            plugged,
+            percent,
+            status,
+            sessionOwned = decision == QuickFullChargeDecision.TRIGGER,
+            battery,
+            observedAtElapsed,
+        )
         if (decision == QuickFullChargeDecision.TRIGGER) {
             gestureExpiryJob?.cancel()
             log(TAG) { "Reconnect gesture triggered one-time full charging" }
