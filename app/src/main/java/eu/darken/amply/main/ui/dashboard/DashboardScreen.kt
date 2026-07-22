@@ -182,6 +182,7 @@ fun DashboardScreen(
                             manufacturer = state.charging.device.manufacturer
                                 .ifBlank { stringResource(R.string.dashboard_manufacturer_fallback) },
                             onOpenSettings = onNativeSettings,
+                            isLineageOs = state.charging.device.lineageOsVersion != null,
                         )
                     }
                     item {

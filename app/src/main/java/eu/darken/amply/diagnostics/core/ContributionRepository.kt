@@ -5,7 +5,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import eu.darken.amply.charging.core.DeviceInfo
 import eu.darken.amply.charging.core.access.BackendStatus
 import eu.darken.amply.charging.core.access.NamespaceSnapshot
-import eu.darken.amply.charging.core.access.SettingNamespace
+import eu.darken.amply.charging.core.access.STANDARD_SETTINGS_NAMESPACES
 import eu.darken.amply.charging.core.access.SettingsSnapshotSource
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
 import eu.darken.amply.common.ca.CaString
@@ -40,7 +40,9 @@ class DefaultContributionRepository @Inject constructor(
 
     override suspend fun captureSnapshot(): CaptureResult {
         val merged = LinkedHashMap<SettingId, String>()
-        for (namespace in SettingNamespace.entries) {
+        // Only the three AOSP namespaces — never the Lineage provider. It isn't a `settings` CLI
+        // namespace, and querying it on a non-Lineage device would fail the whole capture.
+        for (namespace in STANDARD_SETTINGS_NAMESPACES) {
             when (val result = source.snapshot(namespace)) {
                 is NamespaceSnapshot.Success -> result.values.forEach { (key, value) ->
                     merged[SettingId(namespace, key)] = value

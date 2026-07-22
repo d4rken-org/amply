@@ -12,6 +12,9 @@
     <queries>
         <package android:name="moe.shizuku.privileged.api" />
         <package android:name="com.google.android.settings.intelligence" />
+        <!-- LineageOS private settings provider — needed so resolveContentProvider/query aren't
+             hidden by package visibility on API 30+ (the Lineage charge-control adapter reads it). -->
+        <provider android:authorities="lineagesettings" />
         <intent>
             <action android:name="android.settings.BATTERY_SAVER_SETTINGS" />
         </intent>

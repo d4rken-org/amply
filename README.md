@@ -91,6 +91,11 @@ control can write Pixel's hidden values but Android blocks direct third-party re
 public charging-hardware state; Shizuku provides exact configured-setting readback while it is running. On tested
 Pixels, Google's policy worker takes roughly 10–15 seconds to propagate a setting change to the charging HAL.
 
+The required access path is adapter-dependent: some devices (OnePlus/Oppo/Realme on ColorOS, and LineageOS) keep their
+setting in a namespace that `WRITE_SECURE_SETTINGS` cannot write, so control there **requires Shizuku** — the ADB grant
+alone won't be enough, and the dashboard surfaces this. The relevant dashboard card guides you to the option your
+device needs.
+
 ## License
 
 Amply's code is available under a GPL v3 license, this excludes:

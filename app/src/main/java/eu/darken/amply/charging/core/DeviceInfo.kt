@@ -12,12 +12,15 @@ data class DeviceInfo(
     val model: String,
     val sdk: Int,
     val fingerprint: String,
+    val codename: String = "",
     val isPhone: Boolean = true,
     val hasChargingOptimization: Boolean = true,
     val oneUiVersion: Int? = null,
     val hyperOsVersion: Int? = null,
     val oplusRomVersion: Int? = null,
+    val lineageOsVersion: String? = null,
     val hasProtectBattery: Boolean = false,
+    val hasLineageSettingsProvider: Boolean = false,
     val isSystemUser: Boolean = true,
 ) {
     companion object {
@@ -26,6 +29,7 @@ data class DeviceInfo(
             model = Build.MODEL.orEmpty(),
             sdk = Build.VERSION.SDK_INT,
             fingerprint = Build.FINGERPRINT.orEmpty(),
+            codename = Build.DEVICE.orEmpty(),
             isPhone = context?.packageManager?.hasSystemFeature(PackageManager.FEATURE_TELEPHONY)
                 ?: true,
             hasChargingOptimization = context?.let {
@@ -34,9 +38,18 @@ data class DeviceInfo(
             oneUiVersion = OneUiVersionDetector.detect(),
             hyperOsVersion = HyperOsVersionDetector.detect(),
             oplusRomVersion = OplusRomVersionDetector.detect(),
+            lineageOsVersion = LineageOsDetector.detect(),
             hasProtectBattery = context?.let {
                 runCatching {
                     Settings.Global.getString(it.contentResolver, KEY_PROTECT_BATTERY) != null
+                }.getOrDefault(false)
+            } ?: false,
+            // Whether LineageOS's private settings provider is installed (the charge-control settings
+            // surface). Fail closed; requires the <queries> provider entry so package visibility on
+            // API 30+ doesn't false-negative resolution. Provider presence is not HAL-enforcement proof.
+            hasLineageSettingsProvider = context?.let {
+                runCatching {
+                    it.packageManager.resolveContentProvider(LINEAGE_SETTINGS_AUTHORITY, 0) != null
                 }.getOrDefault(false)
             } ?: false,
             // Fail closed: this gates device-wide Samsung writes, so an unresolvable UserManager
@@ -52,5 +65,8 @@ data class DeviceInfo(
 
         // Shared with the Samsung adapters; duplicated here to keep DeviceInfo dependency-free.
         const val KEY_PROTECT_BATTERY = "protect_battery"
+
+        /** Authority of LineageOS's private settings provider (`content://lineagesettings/...`). */
+        const val LINEAGE_SETTINGS_AUTHORITY = "lineagesettings"
     }
 }

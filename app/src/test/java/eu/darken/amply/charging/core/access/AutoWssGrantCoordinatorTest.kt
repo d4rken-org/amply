@@ -23,6 +23,7 @@ class AutoWssGrantCoordinatorTest {
 
     private val ready = AutoWssGrantInputs(
         onboardingComplete = true, controlEnabled = true, shizukuReady = true, wssReady = false,
+        writeRequiresShizuku = false,
     )
     private val wssGranted = ready.copy(wssReady = true)
     private val shizukuGone = ready.copy(shizukuReady = false)

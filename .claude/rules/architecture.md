@@ -14,7 +14,7 @@ project's convention. Code is grouped by **feature**, not framework layer.
 eu.darken.amply
 ├── charging/core            policies, capability gate, OEM adapters, WSS + Shizuku access
 │   ├── access/shizuku       Shizuku detection, user-service client, AIDL boundary
-│   └── adapter              AdapterRegistry + per-OEM adapters (Pixel, Samsung, Xiaomi, OnePlus/ColorOS live)
+│   └── adapter              AdapterRegistry + adapters (Pixel, Samsung, Xiaomi, OnePlus/ColorOS, LineageOS live)
 ├── fullcharge/core          temporary session, boot recovery, reconnect gesture, decision engines
 ├── diagnostics/core + ui    "Help add support" contribution wizard: read-only multi-mode setting discovery + on-device privacy review
 ├── main
@@ -102,6 +102,33 @@ override = Unrestricted; protective default = FixedLimit(80). **Writes require S
 namespace, which WRITE_SECURE_SETTINGS cannot write (reads are unprivileged); the adapter sets
 `preferShizukuForWrites`. Unqualified Oplus versions fall to `OnePlusLabAdapter`. Enforcement is directly
 observable (device holds at 80%). See the qualification ledger in `privileged-access.md`.
+
+## LineageOS Adapter
+
+One live adapter (`lineageos-chargingcontrol-v1`) plus a `LineageLabAdapter`, for LineageOS's native Charging
+Control. **Manufacturer-agnostic** — the ROM changes charging control regardless of the OEM hardware — so both are
+registered **first** in `AdapterRegistry`, ahead of every OEM adapter; a LineageOS build on Samsung/Xiaomi/OnePlus/
+Pixel hardware is handled by these, never the OEM lab adapters (stock devices have `lineageOsVersion == null` and
+skip both). Gate: `ro.lineage.build.version` present + `Build.DEVICE` in a **physically-qualified codename
+allowlist** (`QUALIFIED_CODENAMES`) + `lineagesettings` provider present + system user. Unqualified LineageOS builds
+fall to `LineageLabAdapter`.
+
+The three keys live in the private `content://lineagesettings/system` provider (`SettingNamespace.LINEAGE_SYSTEM`),
+NOT any AOSP `settings` namespace: `charging_control_enabled` (0/1), `charging_control_mode` (3=LIMIT), and
+`charging_control_charging_limit` (the discrete ticks 70/75/80/85/90/95). A hard cap is `enabled=1`+`mode=3`+`limit=N`;
+`enabled=0` is Unrestricted. Writes are ordered limit→mode→enabled (the observable "on" flip last). **Reads are
+unprivileged** (`LineageSettingsClient` via ContentResolver, shared by both backends); **writes require Shizuku**
+(`content insert`; the shell UID holds `lineageos.permission.WRITE_SETTINGS`, which `WRITE_SECURE_SETTINGS` cannot
+cover — `preferShizukuForWrites`, and the WSS auto-grant is skipped). `SYNC_READBACK` with read-back equality;
+session override = Unrestricted; protective default = FixedLimit(80); reconnect gesture unsupported.
+
+LineageOS's own `ChargingControlController` observes these keys and re-drives the `vendor.lineage.health.
+IChargingControl` HAL, so an external write is honored. But the HAL is **device-dependent** (the setting can flip
+while charging never actually stops — the `mIsLimitSet:false` bug), which is why the gate is a qualified-codename
+allowlist and control ships disabled until a codename is physically proven. `read()` returns `Verified` **only** for
+states v1 can restore exactly (a supported fixed limit, or Unrestricted); AUTO/CUSTOM schedules, off-tick limits, and
+an absent/malformed `enabled` decode to `Unknown(unrecognizedValue=true)` so a temporary session refuses rather than
+clobbering the user's native choice. Verified devices + coverage: see the qualification ledger in `privileged-access.md`.
 
 ## Pixel Adapter
 
