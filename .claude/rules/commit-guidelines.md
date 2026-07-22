@@ -1,10 +1,12 @@
 # Commit & Pull Request Guidelines
 
-## Pre-launch workflow
+## Workflow
 
-Amply is **pre-launch**. Until it launches, feature branches are **merged directly into `main`** — do not open PRs for
-routine work. (Recorded in project memory: "No PRs pre-launch".) The PR sections below apply once that changes, or for
-any change where a review is explicitly requested.
+All changes go through a **pull request** into `main` — the same flow CAPod uses. Direct pushes to `main` are
+blocked by a branch ruleset (no force-push, no deletion) that requires an open PR with passing CI status checks and
+resolved review threads before a change can land; version tags (`v*`) are protected the same way. Only the
+`d4rken-org-releaser` app bypasses these rules, for the automated release/tag workflows. Work on a feature branch or
+worktree, open a PR, let CI go green, then merge — see the PR sections below.
 
 ## Commit Message Format
 
@@ -47,7 +49,7 @@ until the HAL confirms or a budget expires, persisting the pending
 target so a killed service resumes.
 ```
 
-## Pull Requests (when used)
+## Pull Requests
 
 Follow the project's global PR rules: one PR per coherent change, no known-flaw PRs, open as **draft** if more work is
 still landing in the same PR.
