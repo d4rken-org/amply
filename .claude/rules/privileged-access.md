@@ -185,6 +185,19 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
   - Also confirmed on oriole: `charging_control_*` keys are **absent in factory state** (validates the conservative
     "absent → unrecognized" decode). Still open: the provider's change-notification URI form (per-key vs table)
     against the registered `observedSettingUris`, to be checked on a HAL-enforcing device.
+  - **Pixel 6 (oriole) on LineageOS 23.2 / Android 16 — retested 2026-07-22 after an anti-rollback firmware bump,
+    result NO-GO (HAL no longer offers LIMIT mode at all).** A *sharper* root cause than the LOS 20 run: the
+    `vendor.lineage.health.IChargingControl` HAL reports `getSupportedMode()` **without the LIMIT bit**, so
+    `ChargingControlController.isChargingModeSupported(LIMIT)` is false and LineageOS **coerces `charging_control_mode=3`
+    → `1` (AUTO)** — verified live: every raw shell-UID `content insert` of `mode=3` (even while `enabled=0`) read back
+    as `1`. Enabling then logs `LineageHealth: No alarm found, auto charging control has no effect` and `Setting charge
+    deadline: … 73353`; the active provider is `ccprovider.Deadline` (Google Adaptive Charging — time/alarm-based, **no
+    fixed-percent cap**). `charging_policy`/`charge_stage` sysfs never changed. So oriole is NO-GO on **both** builds for
+    different reasons: LOS 20 *accepted* LIMIT but the HAL silently didn't cut; LOS 23.2's HAL dropped LIMIT and falls
+    back to the Deadline mechanism. Consequence for the adapter (unchanged — correct by design): SYNC_READBACK
+    `apply(FixedLimit)` writes `mode=3`, reads back `mode=1 ≠ 3` → decodes `Unknown(unrecognizedValue=true)` → `apply`
+    returns false, so it **refuses without a false claim of control**. Reinforces the allowlist bar: a device must both
+    expose the LIMIT mode bit **and** actually cut charging. `charging_control_*` again **absent in factory state**.
 - **Xiaomi** — adaptive hardware enforcement of external writes unconfirmed; treat the adapter as provisional until
   the 80% hold is physically observed.
 - **Pixel** — wireless at-threshold hold/charge-past and the widget under Shizuku-only remain unexercised (both share
