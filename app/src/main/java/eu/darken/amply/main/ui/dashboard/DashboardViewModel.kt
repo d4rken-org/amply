@@ -29,6 +29,7 @@ import eu.darken.amply.common.AmplyLinks
 import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
+import eu.darken.amply.common.flow.combine as combine6
 import eu.darken.amply.fullcharge.core.ChargeSessionManager
 import eu.darken.amply.fullcharge.core.ChargeSessionRecord
 import eu.darken.amply.fullcharge.core.ChargeSessionService
@@ -50,6 +51,9 @@ import eu.darken.amply.alarm.core.ChargeAlarmStore
 import eu.darken.amply.battery.core.BatteryReadout
 import eu.darken.amply.battery.core.BatteryReadoutSource
 import eu.darken.amply.monitor.core.ChargeMonitorWatcher
+import eu.darken.amply.stats.core.ChargeSessionSummary
+import eu.darken.amply.stats.core.ChargeStatsRepository
+import eu.darken.amply.stats.core.StatsPreferences
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -58,7 +62,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -82,6 +88,10 @@ data class DashboardUiState(
     val alarm: ChargeAlarmConfig = ChargeAlarmConfig(),
     /** True when the OS/channel would suppress the charge-alarm alert (permission off or blocked). */
     val notificationsBlocked: Boolean = false,
+    val statsEnabled: Boolean = false,
+    /** Most recent finished charge session, for the dashboard teaser (null when none yet). */
+    val statsLastSession: ChargeSessionSummary? = null,
+    val statsSessionCount: Int = 0,
 )
 
 @HiltViewModel
@@ -95,6 +105,8 @@ class DashboardViewModel @Inject constructor(
     private val quickAccessStore: QuickAccessStore,
     private val batteryReadoutSource: BatteryReadoutSource,
     private val chargeAlarmStore: ChargeAlarmStore,
+    private val statsPreferences: StatsPreferences,
+    private val statsRepository: ChargeStatsRepository,
     private val watchers: Set<@JvmSuppressWildcards ChargeMonitorWatcher>,
 ) : ViewModel() {
     private val deviceReport = MutableStateFlow<DeviceSupportReport?>(null)
@@ -109,15 +121,29 @@ class DashboardViewModel @Inject constructor(
         fullChargeStore.quickFullChargeAnyLevel,
     ) { enabled, anyLevel -> enabled to anyLevel }
 
-    // Same five-flow ceiling: the live battery readout, the alarm config, and the notifications-
-    // blocked flag are pre-combined so the outer combine stays within the typed overloads.
+    // Grouped so the outer combine keeps one slot each: the live battery readout, the alarm config,
+    // and the notifications-blocked flag.
     private val unprivilegedExtras = combine(
         batteryReadoutSource.readouts(),
         chargeAlarmStore.config,
         notificationsBlocked,
     ) { readout, alarm, blocked -> Triple(readout, alarm, blocked) }
 
-    val state = combine(
+    // Battery-statistics dashboard teaser. The session/count reads (which open the stats Room DB)
+    // run only while capture is enabled — when it's off the card shows a promo, so a user who never
+    // turned stats on never gets an empty stats.db created just by opening the dashboard.
+    private val statsDashboard = statsPreferences.captureEnabled.flatMapLatest { enabled ->
+        if (!enabled) {
+            flowOf(StatsDashboard(enabled = false, lastSession = null, count = 0))
+        } else {
+            combine(
+                statsRepository.recentSessions(limit = 1),
+                statsRepository.sessionCount(),
+            ) { recent, count -> StatsDashboard(enabled = true, lastSession = recent.firstOrNull(), count = count) }
+        }
+    }
+
+    val state = combine6(
         combine(
             repository.state,
             fullChargeStore.session,
@@ -138,7 +164,8 @@ class DashboardViewModel @Inject constructor(
         quickAccessChecked,
         tileRequestPending,
         unprivilegedExtras,
-    ) { base, quickAccess, checked, tilePending, (readout, alarm, blocked) ->
+        statsDashboard,
+    ) { base, quickAccess, checked, tilePending, (readout, alarm, blocked), stats ->
         base.copy(
             quickAccess = quickAccess,
             quickAccessChecked = checked,
@@ -146,8 +173,17 @@ class DashboardViewModel @Inject constructor(
             batteryReadout = readout,
             alarm = alarm,
             notificationsBlocked = blocked,
+            statsEnabled = stats.enabled,
+            statsLastSession = stats.lastSession,
+            statsSessionCount = stats.count,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
+
+    private data class StatsDashboard(
+        val enabled: Boolean,
+        val lastSession: ChargeSessionSummary?,
+        val count: Int,
+    )
 
     val adbGrantCommand: String
         get() = "adb shell pm grant ${context.packageName} android.permission.WRITE_SECURE_SETTINGS"

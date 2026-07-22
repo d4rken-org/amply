@@ -466,6 +466,15 @@
     <!-- Battery statistics -->
     <string name="settings_stats_title">Battery statistics</string>
     <string name="settings_stats_subtitle">Detailed charge history, speed, and temperature</string>
+    <string name="dashboard_stats_title">Battery statistics</string>
+    <string name="dashboard_stats_view_action">View</string>
+    <string name="dashboard_stats_promo">See detailed charge history, speed, and temperature</string>
+    <string name="dashboard_stats_last">Last charge: %1$s</string>
+    <string name="dashboard_stats_recording_empty">Recording — no completed session yet</string>
+    <plurals name="dashboard_stats_session_count">
+        <item quantity="one">%1$d recorded session</item>
+        <item quantity="other">%1$d recorded sessions</item>
+    </plurals>
     <string name="stats_title">Battery statistics</string>
     <string name="stats_capture_title">Record statistics</string>
     <string name="stats_capture_subtitle">Records each charge in detail — level, charging speed, and temperature over time. While on, Amply keeps a permanent notification and runs continuously; you can turn it off any time.</string>

@@ -81,6 +81,7 @@ import eu.darken.amply.battery.ui.BatteryInfoCard
 import eu.darken.amply.main.ui.setup.AccessSetupGuide
 import eu.darken.amply.main.ui.setup.OemGuideCard
 import eu.darken.amply.main.ui.setup.UnsupportedDeviceCard
+import eu.darken.amply.stats.ui.StatsDashboardCard
 import kotlinx.coroutines.delay
 
 @Composable
@@ -98,6 +99,7 @@ fun DashboardScreen(
     onAlarmTargetChange: (Int) -> Unit,
     onFixNotifications: () -> Unit,
     onOpenBatteryDetail: () -> Unit,
+    onOpenStats: () -> Unit,
     onPinWidget: () -> Unit,
     onAddTile: () -> Unit,
     onDismissQuickAccess: () -> Unit,
@@ -199,6 +201,14 @@ fun DashboardScreen(
                             onOpenDetail = onOpenBatteryDetail,
                         )
                     }
+                    item {
+                        StatsDashboardCard(
+                            enabled = state.statsEnabled,
+                            lastSession = state.statsLastSession,
+                            sessionCount = state.statsSessionCount,
+                            onOpen = onOpenStats,
+                        )
+                    }
                     if (state.charging.contributionWanted) {
                         item {
                             UnsupportedDeviceCard(
@@ -267,6 +277,14 @@ fun DashboardScreen(
                         BatteryInfoCard(
                             readout = state.batteryReadout ?: BatteryReadout.UNKNOWN,
                             onOpenDetail = onOpenBatteryDetail,
+                        )
+                    }
+                    item {
+                        StatsDashboardCard(
+                            enabled = state.statsEnabled,
+                            lastSession = state.statsLastSession,
+                            sessionCount = state.statsSessionCount,
+                            onOpen = onOpenStats,
                         )
                     }
                     // Promote the widget/tile shortcuts only once setup is done (the setup guide above
@@ -815,6 +833,7 @@ private fun DashboardScreenPreview() = PreviewWrapper {
         onAlarmTargetChange = {},
         onFixNotifications = {},
         onOpenBatteryDetail = {},
+        onOpenStats = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -881,6 +900,7 @@ private fun DashboardScreenApplyingPreview() = PreviewWrapper {
         onAlarmTargetChange = {},
         onFixNotifications = {},
         onOpenBatteryDetail = {},
+        onOpenStats = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -949,6 +969,7 @@ private fun DashboardScreenSessionActivePreview() = PreviewWrapper {
         onAlarmTargetChange = {},
         onFixNotifications = {},
         onOpenBatteryDetail = {},
+        onOpenStats = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -1019,6 +1040,7 @@ private fun DashboardScreenSessionRecordedPreview() = PreviewWrapper {
         onAlarmTargetChange = {},
         onFixNotifications = {},
         onOpenBatteryDetail = {},
+        onOpenStats = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -1077,6 +1099,7 @@ private fun DashboardScreenWssOnlyPreview() = PreviewWrapper {
         onAlarmTargetChange = {},
         onFixNotifications = {},
         onOpenBatteryDetail = {},
+        onOpenStats = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -1142,6 +1165,7 @@ private fun DashboardScreenSamsungPreview() = PreviewWrapper {
         onAlarmTargetChange = {},
         onFixNotifications = {},
         onOpenBatteryDetail = {},
+        onOpenStats = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -1208,6 +1232,7 @@ private fun DashboardScreenOnePlusNeedsShizukuPreview() = PreviewWrapper {
         onAlarmTargetChange = {},
         onFixNotifications = {},
         onOpenBatteryDetail = {},
+        onOpenStats = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -1252,6 +1277,7 @@ private fun DashboardScreenUnsupportedPreview() = PreviewWrapper {
         onAlarmTargetChange = {},
         onFixNotifications = {},
         onOpenBatteryDetail = {},
+        onOpenStats = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},

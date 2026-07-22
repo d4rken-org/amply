@@ -103,11 +103,12 @@ class MainActivity : ComponentActivity() {
                     val state by viewModel.state.collectAsState()
                     val debugState by settingsViewModel.debugState.collectAsState()
                     val contributionState by contributionViewModel.state.collectAsState()
-                    val statsState by statsViewModel.state.collectAsState()
-                    val statsDetail by statsViewModel.detailState.collectAsState()
                     var destination by rememberSaveable { mutableStateOf(SettingsDestination.DASHBOARD) }
                     // Where a back-out of the contribution wizard returns to (set on each entry).
                     var wizardOrigin by rememberSaveable { mutableStateOf(SettingsDestination.DASHBOARD) }
+                    // Battery statistics is reachable from both the dashboard card and the settings hub;
+                    // remember which so back returns there.
+                    var statsOrigin by rememberSaveable { mutableStateOf(SettingsDestination.SETTINGS) }
                     val leaveWizard = {
                         contributionViewModel.exitWizard()
                         destination = wizardOrigin
@@ -207,11 +208,13 @@ class MainActivity : ComponentActivity() {
                             SettingsDestination.SETTINGS,
                             SettingsDestination.RECONNECT_GESTURE,
                             SettingsDestination.BATTERY_DETAIL -> destination = SettingsDestination.DASHBOARD
-                            // The session detail returns to the stats list; the list returns to settings.
+                            // The session detail returns to the stats list; the list returns to wherever
+                            // it was opened from (dashboard card or settings hub).
                             SettingsDestination.STATS_SESSION_DETAIL -> {
                                 statsViewModel.closeSession()
                                 destination = SettingsDestination.STATS
                             }
+                            SettingsDestination.STATS -> destination = statsOrigin
                             else -> destination = SettingsDestination.SETTINGS
                         }
                     }
@@ -250,6 +253,10 @@ class MainActivity : ComponentActivity() {
                             onAlarmTargetChange = viewModel::setChargeAlarmTarget,
                             onFixNotifications = viewModel::openNotificationSettings,
                             onOpenBatteryDetail = { destination = SettingsDestination.BATTERY_DETAIL },
+                            onOpenStats = {
+                                statsOrigin = SettingsDestination.DASHBOARD
+                                destination = SettingsDestination.STATS
+                            },
                             onPinWidget = viewModel::requestPinWidget,
                             onAddTile = viewModel::requestAddTile,
                             onDismissQuickAccess = viewModel::dismissQuickAccess,
@@ -269,7 +276,10 @@ class MainActivity : ComponentActivity() {
                         SettingsDestination.SETTINGS -> SettingsScreen(
                             onBack = { destination = SettingsDestination.DASHBOARD },
                             onGeneral = { destination = SettingsDestination.GENERAL },
-                            onStats = { destination = SettingsDestination.STATS },
+                            onStats = {
+                                statsOrigin = SettingsDestination.SETTINGS
+                                destination = SettingsDestination.STATS
+                            },
                             // Offered whenever this device is one we want contribution data for (unsupported/lab),
                             // regardless of whether Shizuku is installed yet — the wizard nudges the install.
                             showDiagnostics = state.charging.contributionWanted,
@@ -337,29 +347,38 @@ class MainActivity : ComponentActivity() {
                             readout = state.batteryReadout,
                             onBack = { destination = SettingsDestination.DASHBOARD },
                         )
-                        SettingsDestination.STATS -> StatsScreen(
-                            state = statsState,
-                            onBack = { destination = SettingsDestination.SETTINGS },
-                            onCaptureEnabledChange = { enabled ->
-                                if (enabled) {
-                                    runWithNotifications(NotificationAction.ENABLE_STATS)
-                                } else {
-                                    statsViewModel.setCaptureEnabled(false)
-                                }
-                            },
-                            onOpenSession = { id ->
-                                statsViewModel.openSession(id)
-                                destination = SettingsDestination.STATS_SESSION_DETAIL
-                            },
-                            onClearData = statsViewModel::clearData,
-                        )
-                        SettingsDestination.STATS_SESSION_DETAIL -> StatsSessionDetailScreen(
-                            state = statsDetail,
-                            onBack = {
-                                statsViewModel.closeSession()
-                                destination = SettingsDestination.STATS
-                            },
-                        )
+                        // Collect the stats state only while its screens are shown, so the stats Room DB
+                        // isn't opened just by having the dashboard up — a user who never enables
+                        // statistics never creates stats.db.
+                        SettingsDestination.STATS -> {
+                            val statsState by statsViewModel.state.collectAsState()
+                            StatsScreen(
+                                state = statsState,
+                                onBack = { destination = statsOrigin },
+                                onCaptureEnabledChange = { enabled ->
+                                    if (enabled) {
+                                        runWithNotifications(NotificationAction.ENABLE_STATS)
+                                    } else {
+                                        statsViewModel.setCaptureEnabled(false)
+                                    }
+                                },
+                                onOpenSession = { id ->
+                                    statsViewModel.openSession(id)
+                                    destination = SettingsDestination.STATS_SESSION_DETAIL
+                                },
+                                onClearData = statsViewModel::clearData,
+                            )
+                        }
+                        SettingsDestination.STATS_SESSION_DETAIL -> {
+                            val statsDetail by statsViewModel.detailState.collectAsState()
+                            StatsSessionDetailScreen(
+                                state = statsDetail,
+                                onBack = {
+                                    statsViewModel.closeSession()
+                                    destination = SettingsDestination.STATS
+                                },
+                            )
+                        }
                     }
                 }
                 }
