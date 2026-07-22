@@ -15,6 +15,10 @@ object Versions {
         const val lifecycle = "2.10.0"
     }
 
+    object Room {
+        const val core = "2.7.1"
+    }
+
     object Navigation3 {
         const val core = "1.0.1"
     }

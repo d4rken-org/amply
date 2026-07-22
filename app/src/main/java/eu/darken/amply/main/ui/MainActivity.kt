@@ -60,12 +60,16 @@ import eu.darken.amply.main.ui.settings.SettingsDestination
 import eu.darken.amply.main.ui.settings.SettingsScreen
 import eu.darken.amply.main.ui.settings.SettingsViewModel
 import eu.darken.amply.main.ui.settings.SupportScreen
+import eu.darken.amply.stats.ui.StatsScreen
+import eu.darken.amply.stats.ui.StatsSessionDetailScreen
+import eu.darken.amply.stats.ui.StatsViewModel
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     private val viewModel: DashboardViewModel by viewModels()
     private val settingsViewModel: SettingsViewModel by viewModels()
     private val contributionViewModel: ContributionWizardViewModel by viewModels()
+    private val statsViewModel: StatsViewModel by viewModels()
 
     // Compose-observable so a widget launch that reuses an already-running activity (SINGLE_TOP →
     // onNewIntent, which does not re-run LaunchedEffect(Unit)) still triggers the permission flow.
@@ -99,6 +103,8 @@ class MainActivity : ComponentActivity() {
                     val state by viewModel.state.collectAsState()
                     val debugState by settingsViewModel.debugState.collectAsState()
                     val contributionState by contributionViewModel.state.collectAsState()
+                    val statsState by statsViewModel.state.collectAsState()
+                    val statsDetail by statsViewModel.detailState.collectAsState()
                     var destination by rememberSaveable { mutableStateOf(SettingsDestination.DASHBOARD) }
                     // Where a back-out of the contribution wizard returns to (set on each entry).
                     var wizardOrigin by rememberSaveable { mutableStateOf(SettingsDestination.DASHBOARD) }
@@ -119,6 +125,7 @@ class MainActivity : ComponentActivity() {
                             NotificationAction.START_FULL_CHARGE -> viewModel.startFullCharge()
                             NotificationAction.ENABLE_QUICK_GESTURE -> viewModel.setQuickFullChargeEnabled(true)
                             NotificationAction.ENABLE_CHARGE_ALARM -> viewModel.setChargeAlarmEnabled(true)
+                            NotificationAction.ENABLE_STATS -> statsViewModel.setCaptureEnabled(true)
                             null -> Unit
                         }
                     }
@@ -141,6 +148,7 @@ class MainActivity : ComponentActivity() {
                             NotificationAction.START_FULL_CHARGE -> viewModel.startFullCharge()
                             NotificationAction.ENABLE_QUICK_GESTURE -> viewModel.setQuickFullChargeEnabled(true)
                             NotificationAction.ENABLE_CHARGE_ALARM -> viewModel.setChargeAlarmEnabled(true)
+                            NotificationAction.ENABLE_STATS -> statsViewModel.setCaptureEnabled(true)
                         }
                     }
                 }
@@ -199,6 +207,11 @@ class MainActivity : ComponentActivity() {
                             SettingsDestination.SETTINGS,
                             SettingsDestination.RECONNECT_GESTURE,
                             SettingsDestination.BATTERY_DETAIL -> destination = SettingsDestination.DASHBOARD
+                            // The session detail returns to the stats list; the list returns to settings.
+                            SettingsDestination.STATS_SESSION_DETAIL -> {
+                                statsViewModel.closeSession()
+                                destination = SettingsDestination.STATS
+                            }
                             else -> destination = SettingsDestination.SETTINGS
                         }
                     }
@@ -256,6 +269,7 @@ class MainActivity : ComponentActivity() {
                         SettingsDestination.SETTINGS -> SettingsScreen(
                             onBack = { destination = SettingsDestination.DASHBOARD },
                             onGeneral = { destination = SettingsDestination.GENERAL },
+                            onStats = { destination = SettingsDestination.STATS },
                             // Offered whenever this device is one we want contribution data for (unsupported/lab),
                             // regardless of whether Shizuku is installed yet — the wizard nudges the install.
                             showDiagnostics = state.charging.contributionWanted,
@@ -323,6 +337,29 @@ class MainActivity : ComponentActivity() {
                             readout = state.batteryReadout,
                             onBack = { destination = SettingsDestination.DASHBOARD },
                         )
+                        SettingsDestination.STATS -> StatsScreen(
+                            state = statsState,
+                            onBack = { destination = SettingsDestination.SETTINGS },
+                            onCaptureEnabledChange = { enabled ->
+                                if (enabled) {
+                                    runWithNotifications(NotificationAction.ENABLE_STATS)
+                                } else {
+                                    statsViewModel.setCaptureEnabled(false)
+                                }
+                            },
+                            onOpenSession = { id ->
+                                statsViewModel.openSession(id)
+                                destination = SettingsDestination.STATS_SESSION_DETAIL
+                            },
+                            onClearData = statsViewModel::clearData,
+                        )
+                        SettingsDestination.STATS_SESSION_DETAIL -> StatsSessionDetailScreen(
+                            state = statsDetail,
+                            onBack = {
+                                statsViewModel.closeSession()
+                                destination = SettingsDestination.STATS
+                            },
+                        )
                     }
                 }
                 }
@@ -383,6 +420,7 @@ class MainActivity : ComponentActivity() {
         START_FULL_CHARGE,
         ENABLE_QUICK_GESTURE,
         ENABLE_CHARGE_ALARM,
+        ENABLE_STATS,
     }
 
     companion object {

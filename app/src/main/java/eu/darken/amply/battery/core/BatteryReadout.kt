@@ -13,6 +13,8 @@ package eu.darken.amply.battery.core
 data class BatteryReadout(
     val levelPercent: Int? = null,
     val status: Int? = null,
+    /** Raw [android.os.BatteryManager.EXTRA_CHARGING_STATUS] (hidden Pixel charge-policy state). */
+    val chargingStatus: Int? = null,
     val plugged: Int? = null,
     val health: Int? = null,
     val technology: String? = null,

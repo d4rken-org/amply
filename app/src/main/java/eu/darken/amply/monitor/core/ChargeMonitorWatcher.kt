@@ -1,9 +1,19 @@
 package eu.darken.amply.monitor.core
 
+import android.content.Intent
+
 /**
  * A single sample of public battery state, handed to every [ChargeMonitorWatcher] on each
- * evaluation tick of the charge-session foreground service. All fields come from the sticky
- * [android.content.Intent.ACTION_BATTERY_CHANGED] broadcast and need no permission.
+ * evaluation tick of the charge-session foreground service. All fields derive from the sticky
+ * [Intent.ACTION_BATTERY_CHANGED] broadcast and need no permission.
+ *
+ * [plugged]/[percent]/[batteryStatus] are the minimal fields simple watchers use. Richer consumers
+ * (statistics) get the exact [batteryIntent] this evaluation used — so they can read voltage /
+ * current / temperature / charging-status off the *same* observation rather than a second sticky
+ * read — plus [observedElapsedRealtimeMillis] (boot-scoped, for durations/ordering) and
+ * [wallClockMillis] (display). To keep the safety-critical evaluation cheap, watchers must not do
+ * blocking work here: parse [batteryIntent] and read live properties off the evaluation thread. The
+ * rich fields default to empty so a watcher or test needing only the basics can omit them.
  */
 data class ChargeMonitorTick(
     val plugged: Boolean,
@@ -13,6 +23,12 @@ data class ChargeMonitorTick(
     val batteryStatus: Int,
     /** Whether a temporary full-charge session is currently active. */
     val sessionActive: Boolean,
+    /** The exact battery intent this evaluation used, or null when none was available. */
+    val batteryIntent: Intent? = null,
+    /** [android.os.SystemClock.elapsedRealtime] when this state was observed. */
+    val observedElapsedRealtimeMillis: Long = 0,
+    /** Wall-clock time of observation, for display/persistence only. */
+    val wallClockMillis: Long = 0,
 )
 
 /**

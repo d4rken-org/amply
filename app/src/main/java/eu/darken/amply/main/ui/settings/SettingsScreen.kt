@@ -9,6 +9,7 @@ import androidx.compose.material.icons.twotone.Book
 import androidx.compose.material.icons.twotone.BugReport
 import androidx.compose.material.icons.twotone.Favorite
 import androidx.compose.material.icons.twotone.History
+import androidx.compose.material.icons.automirrored.twotone.ShowChart
 import androidx.compose.material.icons.twotone.Settings
 import androidx.compose.material.icons.twotone.SupportAgent
 import androidx.compose.material3.Icon
@@ -33,6 +34,7 @@ import eu.darken.amply.common.settings.SettingsNavigationItem
 fun SettingsScreen(
     onBack: () -> Unit,
     onGeneral: () -> Unit,
+    onStats: () -> Unit,
     showDiagnostics: Boolean,
     diagnosticsReady: Boolean,
     onDiagnostics: () -> Unit,
@@ -72,6 +74,15 @@ fun SettingsScreen(
                     subtitle = stringResource(R.string.settings_general_subtitle),
                     icon = Icons.TwoTone.Settings,
                     onClick = onGeneral,
+                )
+            }
+            item { SettingsDivider() }
+            item {
+                SettingsNavigationItem(
+                    title = stringResource(R.string.settings_stats_title),
+                    subtitle = stringResource(R.string.settings_stats_subtitle),
+                    icon = Icons.AutoMirrored.TwoTone.ShowChart,
+                    onClick = onStats,
                 )
             }
             item { SettingsDivider() }
@@ -148,6 +159,7 @@ private fun SettingsScreenPreview() = PreviewWrapper {
     SettingsScreen(
         onBack = {},
         onGeneral = {},
+        onStats = {},
         showDiagnostics = true,
         diagnosticsReady = true,
         onDiagnostics = {},

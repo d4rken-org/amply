@@ -73,6 +73,14 @@ fun DependencyHandlerScope.addDataStore() {
     implementation("androidx.datastore:datastore-preferences:1.2.0")
 }
 
+fun DependencyHandlerScope.addRoom() {
+    implementation("androidx.room:room-runtime:${Versions.Room.core}")
+    implementation("androidx.room:room-ktx:${Versions.Room.core}")
+    ksp("androidx.room:room-compiler:${Versions.Room.core}")
+    // In-memory Room for DAO/migration tests (Robolectric, JUnit 4 lane).
+    testImplementation("androidx.room:room-testing:${Versions.Room.core}")
+}
+
 fun DependencyHandlerScope.addGlance() {
     implementation("androidx.glance:glance-appwidget:${Versions.Glance.core}")
     implementation("androidx.glance:glance-material3:${Versions.Glance.core}")

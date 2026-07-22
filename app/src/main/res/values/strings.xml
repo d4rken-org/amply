@@ -462,4 +462,44 @@
     <string name="widget_label_adaptive">Adaptive charging</string>
     <string name="widget_label_pause_at_full">Pause at full charge</string>
     <string name="widget_label_tap">Tap to set a limit</string>
+
+    <!-- Battery statistics -->
+    <string name="settings_stats_title">Battery statistics</string>
+    <string name="settings_stats_subtitle">Detailed charge history, speed, and temperature</string>
+    <string name="stats_title">Battery statistics</string>
+    <string name="stats_capture_title">Record statistics</string>
+    <string name="stats_capture_subtitle">Records each charge in detail — level, charging speed, and temperature over time. While on, Amply keeps a permanent notification and runs continuously; you can turn it off any time.</string>
+    <string name="stats_capture_last_recorded">Last recorded %1$s</string>
+    <string name="stats_capture_never">not yet — recording starts on your next charge</string>
+    <string name="stats_sessions_header">Charge sessions</string>
+    <string name="stats_empty">No charge sessions recorded yet. Plug in while recording is on to capture one.</string>
+    <string name="stats_clear_action">Clear statistics data</string>
+    <string name="stats_clear_confirm_title">Clear statistics?</string>
+    <string name="stats_clear_confirm_message">This permanently deletes all recorded charge sessions from this device. This can\'t be undone.</string>
+    <string name="stats_clear_confirm_positive">Clear</string>
+    <string name="stats_action_cancel">Cancel</string>
+    <string name="stats_session_partial">Partial</string>
+    <string name="stats_session_limit_likely">Limit likely reached</string>
+    <string name="stats_detail_title">Charge session</string>
+    <string name="stats_detail_curve_title">Charge curve</string>
+    <string name="stats_curve_empty">No curve data for this session</string>
+    <string name="stats_curve_series_percent">Level</string>
+    <string name="stats_curve_series_power">Power</string>
+    <string name="stats_curve_series_temperature">Temperature</string>
+    <string name="stats_detail_level">Level</string>
+    <string name="stats_detail_duration">Duration</string>
+    <string name="stats_detail_charging_type">Connection</string>
+    <string name="stats_detail_avg_power">Average power</string>
+    <string name="stats_detail_peak_power">Peak power</string>
+    <string name="stats_detail_temperature">Temperature range</string>
+    <string name="stats_detail_limit_likely">Limit likely reached</string>
+    <string name="stats_detail_partial_note">This session is partial: recording started mid-charge, or was interrupted by a restart or reboot, so its duration and curve may be incomplete.</string>
+    <string name="stats_value_yes">Yes</string>
+    <string name="stats_value_no">No</string>
+    <string name="stats_charging_type_ac">AC charger</string>
+    <string name="stats_charging_type_usb">USB</string>
+    <string name="stats_charging_type_wireless">Wireless</string>
+    <string name="stats_charging_type_dock">Dock</string>
+    <string name="stats_charging_type_mixed">Mixed</string>
+    <string name="stats_charging_type_unknown">Unknown</string>
 </resources>
