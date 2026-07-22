@@ -134,19 +134,19 @@ object SessionNotifications {
             Intent(context, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        return NotificationCompat.Builder(context, GESTURE_CHANNEL)
+        // Armed copy is the same regardless of arming basis; only the passive "waiting" copy
+        // distinguishes any-level from limit-hold.
+        val contentText = context.getString(
+            when {
+                armed -> R.string.gesture_notification_armed
+                anyLevel -> R.string.gesture_notification_waiting_any_level
+                else -> R.string.gesture_notification_waiting
+            },
+        )
+        val builder = NotificationCompat.Builder(context, GESTURE_CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher_monochrome)
             .setContentTitle(context.getString(R.string.gesture_notification_title))
-            .setContentText(
-                context.getString(
-                    when {
-                        armed && anyLevel -> R.string.gesture_notification_armed_any_level
-                        armed -> R.string.gesture_notification_armed
-                        anyLevel -> R.string.gesture_notification_waiting_any_level
-                        else -> R.string.gesture_notification_waiting
-                    },
-                ),
-            )
+            .setContentText(contentText)
             .setContentIntent(openPendingIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -154,7 +154,17 @@ object SessionNotifications {
             // Show at once instead of the ~10s foreground-service deferral, so the armed
             // "reconnect now" cue is visible within its 10-second window.
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .build()
+        // The persistent waiting notification carries the "you can turn this off" hint in its
+        // expanded view — kept out of the collapsed line so it stays short, and off the armed
+        // cue so the time-sensitive reconnect instruction isn't diluted.
+        if (!armed) {
+            builder.setStyle(
+                NotificationCompat.BigTextStyle().bigText(
+                    contentText + "\n\n" + context.getString(R.string.gesture_notification_disable_hint),
+                ),
+            )
+        }
+        return builder.build()
     }
 
     fun recovering(context: Context): Notification {

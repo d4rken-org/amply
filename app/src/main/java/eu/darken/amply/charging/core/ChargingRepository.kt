@@ -3,6 +3,7 @@ package eu.darken.amply.charging.core
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
 import eu.darken.amply.R
+import eu.darken.amply.charging.core.access.AccessBackend
 import eu.darken.amply.charging.core.access.AccessResolver
 import eu.darken.amply.charging.core.access.AccessSnapshot
 import eu.darken.amply.charging.core.access.shizuku.ShizukuController
@@ -50,6 +51,12 @@ data class ChargingState(
     val adapterName: CaString = R.string.adapter_name_detecting.toCaString(),
     val adapterId: String? = null,
     val supportedPolicies: List<ChargePolicy> = emptyList(),
+    /**
+     * The selected adapter's protective default (e.g. FixedLimit(80) on Pixel, Adaptive on Xiaomi), or
+     * null before an adapter is selected. Carried on the state so observing surfaces (the widget) can
+     * label the "∞ protect" action without a separate suspend adapter lookup at composition time.
+     */
+    val defaultProtectivePolicy: ChargePolicy? = null,
     val reconnectSupported: Boolean = false,
     /** True when the adapter's configured state is directly readable — Shizuku adds nothing for verification. */
     val syncVerification: Boolean = false,
@@ -194,23 +201,16 @@ class ChargingRepository @Inject constructor(
     }
 
     /**
-     * Sync-readback adapters use world-readable keys, so a nominally "ready" but misbehaving
-     * Shizuku service (main binder up, user service broken) must not block verification —
-     * fall back to the direct provider backend on a non-verified read.
+     * Sync-readback adapters use world-readable / unprivileged keys, so the DIRECT provider read is
+     * authoritative and — unlike a Shizuku user-service bind, which can block up to ~15s on a cold process
+     * ([ShizukuController.service]) — never stalls. Read direct first so that bind is never on the critical
+     * path (the widget/tile refresh after a tap); consult Shizuku only as a fallback when the direct read is
+     * not authoritative on some ROM. A nominally "ready" but misbehaving Shizuku service therefore can no
+     * longer delay verification.
      */
     private suspend fun readSyncWithFallback(adapter: ChargingAdapter): ChargeObservation? {
-        val primary = accessResolver.readBackend() ?: return null
-        val first = runCatching { adapter.read(primary) }.getOrNull()
-        if (first is ChargeObservation.Verified || primary === accessResolver.direct) return first
-        val second = runCatching { adapter.read(accessResolver.direct) }.getOrNull()
-        // Signal strength: Verified > readable-but-unrecognized (must survive the fallback so
-        // session start can refuse) > generic unreadable.
-        return when {
-            second is ChargeObservation.Verified -> second
-            first is ChargeObservation.Unknown && first.unrecognizedValue -> first
-            second is ChargeObservation.Unknown && second.unrecognizedValue -> second
-            else -> first ?: second
-        }
+        val shizuku = accessResolver.shizuku.takeIf { accessResolver.shizuku.status().ready }
+        return readSyncDirectFirst(adapter, accessResolver.direct, shizuku)
     }
 
     fun shizukuManagerPackage(): String? = shizukuController.managerPackage()
@@ -316,7 +316,18 @@ class ChargingRepository @Inject constructor(
                 pending = pending,
                 message = message,
             )
-            if (pending != null) settleScheduler.schedule(now)
+            // Always schedule an eventual surface re-push, even for a settled write (pending == null).
+            // SYNC_READBACK adapters (Samsung/Xiaomi/Oplus) verify synchronously and leave pending null,
+            // so without this a static widget/tile on a killed process would never be pushed the new
+            // state after a tap. Scheduling with `now` fires the worker AFTER the settling window, so its
+            // refresh() computes pending == null (no phantom settling is reintroduced) and only re-pushes.
+            // Isolate the call locally: a scheduler failure must not fall into the metadata-failure catch
+            // below, which would overwrite this just-published settled state with a phantom PendingRequest.
+            try {
+                settleScheduler.schedule(now)
+            } catch (e: Exception) {
+                log(TAG, Logging.Priority.WARN) { "Surface re-push scheduling failed: ${e.message}" }
+            }
             ApplyResult(true, observation, message.get(context))
                 .also { log(TAG, Logging.Priority.INFO) { "Applied ${policy.stableId}: $observation" } }
         } catch (e: CancellationException) {
@@ -355,8 +366,13 @@ class ChargingRepository @Inject constructor(
             !selection.support.controlEnabled -> ChargeObservation.Unsupported(selection.support.detail.toCaString())
             !access.canControl -> ChargeObservation.NeedsSetup(R.string.charging_reason_needs_setup.toCaString())
             else -> {
-                val backend = accessResolver.readBackend()
-                val read = if (backend != null) adapter.read(backend) else null
+                // Sync-readback adapters read the direct provider first (authoritative, never stalls on a
+                // cold Shizuku bind); async (Pixel) keeps the preferred-backend + hardware path.
+                val read = when (adapter.verification) {
+                    VerificationStrategy.SYNC_READBACK -> readSyncWithFallback(adapter)
+                    VerificationStrategy.ASYNC_HARDWARE ->
+                        accessResolver.readBackend()?.let { adapter.read(it) }
+                }
                 when {
                     read is ChargeObservation.Verified -> read
                     // A readable-but-unrecognized OEM value must not be masked by a stale last
@@ -385,6 +401,7 @@ class ChargingRepository @Inject constructor(
             adapterName = adapter?.displayName ?: R.string.adapter_name_unsupported.toCaString(),
             adapterId = adapter?.id,
             supportedPolicies = adapter?.supportedPolicies.orEmpty(),
+            defaultProtectivePolicy = adapter?.defaultProtectivePolicy,
             reconnectSupported = adapter?.reconnectGestureSupported == true,
             syncVerification = adapter?.verification == VerificationStrategy.SYNC_READBACK,
             writeRequiresShizuku = adapter?.preferShizukuForWrites == true,
@@ -408,43 +425,105 @@ class ChargingRepository @Inject constructor(
             val accessState = published.access
                 ?.let { "direct=${it.direct.ready},shizuku=${it.shizuku.ready}" }
                 ?: "none"
-            "refresh(adapter=${published.adapterId}, access=$accessState, observation=${published.observation})"
+            "refresh(adapter=${published.adapterId}, access=$accessState, " +
+                "observation=${published.observation}, pending=${published.pending?.target})"
         }
         return published
-    }
-
-    /**
-     * Reconstruct the pending settling request from the persisted target+timestamp, clearing it once the
-     * window elapses, the hardware confirms the target, or access is lost. Deliberately does NOT clear on
-     * "hardware reports a different policy": mid-transition the hardware legitimately still shows the old
-     * policy, so that is not evidence of a native change. A genuine native change within the window shows a
-     * stale cue for at most one window before expiry corrects it.
-     */
-    private fun computeRefreshPending(
-        reqPolicy: ChargePolicy?,
-        reqAt: Long,
-        now: Long,
-        observation: ChargeObservation,
-        hardware: ChargeObservation?,
-        verification: VerificationStrategy,
-    ): PendingRequest? {
-        if (reqPolicy == null || reqAt <= 0L) return null
-        if (now - reqAt !in 0 until SETTLING_WINDOW_MILLIS) return null
-        if (observation is ChargeObservation.Unsupported || observation is ChargeObservation.NeedsSetup) return null
-        val confirmed = when (verification) {
-            // Settings readback IS confirmation when writes apply synchronously.
-            VerificationStrategy.SYNC_READBACK ->
-                observation is ChargeObservation.Verified && observation.policy == reqPolicy
-            VerificationStrategy.ASYNC_HARDWARE ->
-                hardware is ChargeObservation.Verified &&
-                    hardware.backend == BackendKind.BATTERY_HARDWARE &&
-                    hardware.policy == reqPolicy
-        }
-        if (confirmed) return null
-        return PendingRequest(reqPolicy, reqAt)
     }
 
     private companion object {
         val TAG = logTag("Charging", "Repository")
     }
+}
+
+/**
+ * Read a sync-readback adapter's configured state, preferring the [direct] provider and consulting
+ * [shizuku] (may be null when not ready) only as a fallback. Direct reads of these adapters' world-readable
+ * keys are authoritative and cannot stall, so an *authoritative* direct read — [ChargeObservation.Verified]
+ * or a readable-but-unrecognized OEM value — short-circuits without ever binding the Shizuku user service
+ * (both backends read the same settings provider, so Shizuku could not report anything stronger). Only a
+ * genuinely unreadable direct result falls back to Shizuku.
+ */
+internal suspend fun readSyncDirectFirst(
+    adapter: ChargingAdapter,
+    direct: AccessBackend,
+    shizuku: AccessBackend?,
+): ChargeObservation? {
+    val primary = readObservationOrNull(adapter, direct)
+    if (primary.isAuthoritativeSyncRead()) return primary
+    val fallback = shizuku?.let { readObservationOrNull(adapter, it) }
+    return chooseSyncObservation(primary, fallback)
+}
+
+/**
+ * A sync read that resolves the pending transition on its own: a confirmed policy or a readable-but-
+ * unrecognized OEM value (the setting *was* read, we just don't map the value). Mirrors the SYNC_READBACK
+ * arm of [computeRefreshPending] — what clears pending is exactly what makes the Shizuku fallback redundant.
+ */
+private fun ChargeObservation?.isAuthoritativeSyncRead(): Boolean =
+    this is ChargeObservation.Verified ||
+        (this is ChargeObservation.Unknown && unrecognizedValue)
+
+/** Read via one backend, turning ordinary failures into null but never swallowing cancellation. */
+internal suspend fun readObservationOrNull(
+    adapter: ChargingAdapter,
+    backend: AccessBackend,
+): ChargeObservation? = try {
+    adapter.read(backend)
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Exception) {
+    null
+}
+
+/**
+ * Pick the strongest of a [primary] (direct) and [fallback] (Shizuku) sync read: Verified beats a
+ * readable-but-unrecognized value (which must survive so a session start can refuse) beats a generic
+ * unreadable one. Primary wins ties at each tier.
+ */
+internal fun chooseSyncObservation(
+    primary: ChargeObservation?,
+    fallback: ChargeObservation?,
+): ChargeObservation? = when {
+    primary is ChargeObservation.Verified -> primary
+    fallback is ChargeObservation.Verified -> fallback
+    primary is ChargeObservation.Unknown && primary.unrecognizedValue -> primary
+    fallback is ChargeObservation.Unknown && fallback.unrecognizedValue -> fallback
+    else -> primary ?: fallback
+}
+
+/**
+ * Reconstruct the pending settling request from the persisted target+timestamp, clearing it once the window
+ * elapses or the request is confirmed resolved.
+ *
+ * The confirmation signal differs by strategy. For [VerificationStrategy.ASYNC_HARDWARE] (Pixel) only a
+ * matching BATTERY_HARDWARE reading confirms, and a hardware reading for a *different* policy is deliberately
+ * NOT treated as resolution — mid-transition the HAL legitimately still shows the old policy. For
+ * [VerificationStrategy.SYNC_READBACK] the settings readback is authoritative and synchronous, so ANY
+ * successful read resolves the transition: a Verified value (matching OR different — a different value is a
+ * native/competing change that has already taken effect) or a readable-but-unrecognized OEM value. Only a
+ * genuinely unreadable/generic-unknown sync state keeps the request pending until the window expires.
+ */
+internal fun computeRefreshPending(
+    reqPolicy: ChargePolicy?,
+    reqAt: Long,
+    now: Long,
+    observation: ChargeObservation,
+    hardware: ChargeObservation?,
+    verification: VerificationStrategy,
+): PendingRequest? {
+    if (reqPolicy == null || reqAt <= 0L) return null
+    if (now - reqAt !in 0 until SETTLING_WINDOW_MILLIS) return null
+    if (observation is ChargeObservation.Unsupported || observation is ChargeObservation.NeedsSetup) return null
+    val confirmed = when (verification) {
+        VerificationStrategy.SYNC_READBACK ->
+            observation is ChargeObservation.Verified ||
+                (observation is ChargeObservation.Unknown && observation.unrecognizedValue)
+        VerificationStrategy.ASYNC_HARDWARE ->
+            hardware is ChargeObservation.Verified &&
+                hardware.backend == BackendKind.BATTERY_HARDWARE &&
+                hardware.policy == reqPolicy
+    }
+    if (confirmed) return null
+    return PendingRequest(reqPolicy, reqAt)
 }

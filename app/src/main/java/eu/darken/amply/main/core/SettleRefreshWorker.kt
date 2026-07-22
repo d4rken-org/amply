@@ -27,7 +27,10 @@ class SettleRefreshWorker(
         )
         return try {
             entryPoint.chargingRepository().refresh()
-            // Await the surface push in the worker's own scope so the process can't die before it lands.
+            // updateNow awaits Glance *enqueuing* its durable update work, not the eventual composition +
+            // AppWidgetManager delivery (Glance does that later in its own worker). Process-death safety for
+            // the actual push therefore rests on Glance's durable work, not on awaiting here; this call still
+            // ensures the enqueue happens (and a failure at that step yields Result.retry below).
             SurfaceUpdater.updateNow(applicationContext)
             Result.success()
         } catch (e: CancellationException) {

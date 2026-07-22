@@ -45,6 +45,8 @@ class ShizukuSettingsBackend @Inject constructor(
             try {
                 SettingRead(readable = true, value = controller.service().readSetting(namespace.commandName, key))
             } catch (e: CancellationException) {
+                // Binding the user service (controller.service()) can suspend up to ~15s; a cancelled read
+                // must propagate rather than be reported as an unreadable setting — matching snapshot().
                 throw e
             } catch (e: Exception) {
                 SettingRead(false, error = (e.message ?: e.javaClass.simpleName).toCaString())

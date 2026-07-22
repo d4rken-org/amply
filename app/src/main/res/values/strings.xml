@@ -11,10 +11,10 @@
     <string name="session_notification_restore">Restore now</string>
     <string name="gesture_channel_name">Reconnect gesture</string>
     <string name="gesture_notification_title">Quick full charge is on</string>
-    <string name="gesture_notification_waiting">When the 80% limit pauses charging, unplug for a few seconds and reconnect to charge fully once.</string>
-    <string name="gesture_notification_armed">80% limit reached. Unplug for at least 2 seconds, then reconnect within 10 to charge fully once.</string>
-    <string name="gesture_notification_waiting_any_level">While a protective policy is set, unplug for a few seconds and reconnect to charge fully once.</string>
-    <string name="gesture_notification_armed_any_level">Ready at any charge level. Unplug for at least 2 seconds, then reconnect within 10 to charge fully once.</string>
+    <string name="gesture_notification_waiting">Waiting for a quick unplug and reconnect.</string>
+    <string name="gesture_notification_armed">Reconnect now: unplug 2s, then replug within 10s to charge fully.</string>
+    <string name="gesture_notification_waiting_any_level">Waiting for a quick unplug and reconnect at any charge level.</string>
+    <string name="gesture_notification_disable_hint">You can turn this notification off (long-press it) without stopping the gesture.</string>
     <string name="recovery_channel_name">Charge policy recovery</string>
     <string name="recovery_notification_title">Charge limit needs attention</string>
     <string name="recovery_notification_body">Open Amply and restart Shizuku to restore your protective policy.</string>
