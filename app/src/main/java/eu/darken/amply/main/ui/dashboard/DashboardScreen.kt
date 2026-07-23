@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Bolt
@@ -41,7 +42,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -68,6 +69,7 @@ import eu.darken.amply.common.ca.caString
 import eu.darken.amply.common.ca.toCaString
 import eu.darken.amply.common.compose.AmplyCard
 import eu.darken.amply.common.compose.AmplyCardHeader
+import eu.darken.amply.common.compose.AmplyClickableCard
 import eu.darken.amply.common.compose.AmplyCardToggleIndicator
 import eu.darken.amply.common.compose.AmplyCardTone
 import eu.darken.amply.common.compose.AmplyPreview
@@ -78,7 +80,8 @@ import eu.darken.amply.fullcharge.core.ChargeSessionRecord
 import eu.darken.amply.fullcharge.core.policyOrNull
 import eu.darken.amply.main.core.formatReport
 import eu.darken.amply.battery.core.BatteryReadout
-import eu.darken.amply.battery.ui.BatteryInfoCard
+import eu.darken.amply.battery.ui.batteryStatusLabel
+import eu.darken.amply.battery.ui.formatTemperature
 import eu.darken.amply.main.ui.setup.AccessSetupGuide
 import eu.darken.amply.main.ui.setup.OemGuideCard
 import eu.darken.amply.main.ui.setup.UnsupportedDeviceCard
@@ -147,7 +150,7 @@ fun DashboardScreen(
                 contentPadding = PaddingValues(start = sidePadding, end = sidePadding, top = 8.dp, bottom = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                item { StatusCard(state, sessionPresentation, onRefresh) }
+                item { StatusCard(state, sessionPresentation, onOpenBatteryDetail) }
 
                 if (state.charging.observation is ChargeObservation.Unsupported) {
                     // Unsupported devices cannot use the Pixel policy/charge controls; showing them
@@ -195,12 +198,6 @@ fun DashboardScreen(
                             onEnabledChange = onAlarmEnabledChange,
                             onTargetChange = onAlarmTargetChange,
                             onFixNotifications = onFixNotifications,
-                        )
-                    }
-                    item {
-                        BatteryInfoCard(
-                            readout = state.batteryReadout ?: BatteryReadout.UNKNOWN,
-                            onOpenDetail = onOpenBatteryDetail,
                         )
                     }
                     item {
@@ -276,12 +273,6 @@ fun DashboardScreen(
                         )
                     }
                     item {
-                        BatteryInfoCard(
-                            readout = state.batteryReadout ?: BatteryReadout.UNKNOWN,
-                            onOpenDetail = onOpenBatteryDetail,
-                        )
-                    }
-                    item {
                         StatsDashboardCard(
                             enabled = state.statsEnabled,
                             lastSession = state.statsLastSession,
@@ -350,14 +341,15 @@ private val DASHBOARD_MAX_WIDTH = 600.dp
 private fun StatusCard(
     state: DashboardUiState,
     presentation: SessionPresentation,
-    onRefresh: () -> Unit,
+    onOpenBatteryDetail: () -> Unit,
 ) {
     val observation = state.charging.observation
     val pending = state.charging.pending
 
-    // Drive a live clock so the "applying…" cue and its spinner clear promptly at the end of the window,
-    // independent of WorkManager's (possibly slightly late) durable clear.
-    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    // Drive a live clock so the "applying…" cue and its spinner clear promptly at the end of the window.
+    // The repository refresh at the deadline is owned by DashboardViewModel so it survives navigation
+    // away from the dashboard (tapping through to battery details); this clock is presentation-only.
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(pending) {
         if (pending != null) {
             val end = pending.requestedAt + SETTLING_WINDOW_MILLIS
@@ -366,13 +358,16 @@ private fun StatusCard(
                 delay(500)
             }
             now = System.currentTimeMillis()
-            onRefresh() // re-read hardware to promote to Verified / clear the pending marker
         }
     }
     val settling = state.charging.isSettling(now)
     val verified = observation is ChargeObservation.Verified
 
-    AmplyCard(tone = AmplyCardTone.SurfaceContainer) {
+    AmplyClickableCard(
+        onClick = onOpenBatteryDetail,
+        onClickLabel = stringResource(R.string.dashboard_battery_details_action),
+        tone = AmplyCardTone.SurfaceContainer,
+    ) {
         // Custom header: state-dependent leading spinner/icon, hero titleLarge, and dynamic tint —
         // not expressible via the standard AmplyCardHeader, so laid out inline.
         Row(
@@ -424,8 +419,32 @@ private fun StatusCard(
                 )
             }
         }
-        // Divider marks the boundary between "what the current policy is" (title + explanation)
-        // above and the provenance metadata below — where the reading comes from and which device.
+        // Live battery telemetry — the observable effect of the policy (e.g. held at 82%, not
+        // charging). Always shown; an absent/unreadable readout renders "Not reported …", matching
+        // the removed standalone battery card. Carries the card's navigation affordance (the whole
+        // card taps through to the full battery details), and has its own top spacing because the
+        // explanation line above is absent while settling or on unsupported/unknown devices.
+        val readout = state.batteryReadout ?: BatteryReadout.UNKNOWN
+        Spacer(Modifier.height(8.dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                stringResource(R.string.dashboard_battery_line, batterySummaryLine(readout)),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        // Divider marks the boundary between "what the current policy is" (title + explanation +
+        // live battery reading) above and the provenance metadata below — where the reading comes
+        // from and which device.
         Spacer(Modifier.height(12.dp))
         HorizontalDivider()
         Spacer(Modifier.height(12.dp))
@@ -464,6 +483,17 @@ private fun StatusCard(
             }
         }
     }
+}
+
+/** "82% · Charging · 31.4 °C" — the compact battery reading shown in the hero, reusing the shared
+ * battery status/temperature formatting. Each absent value renders its own "Not reported"/"Unknown". */
+@Composable
+private fun batterySummaryLine(readout: BatteryReadout): String {
+    val notReported = stringResource(R.string.battery_value_not_reported)
+    val level = readout.levelPercent?.let { "$it%" } ?: notReported
+    val status = stringResource(batteryStatusLabel(readout.status))
+    val temperature = formatTemperature(readout.temperatureTenthsC) ?: notReported
+    return stringResource(R.string.battery_info_summary, level, status, temperature)
 }
 
 @Composable
@@ -771,6 +801,12 @@ private fun DashboardScreenPreview() = PreviewWrapper {
             quickFullChargeEnabled = true,
             // Presence check done, nothing discovered yet — renders the quick-access promotion.
             quickAccessChecked = true,
+            // Held at the 80% limit: paired with the policy so the reading reads as the effect.
+            batteryReadout = BatteryReadout(
+                levelPercent = 80,
+                status = android.os.BatteryManager.BATTERY_STATUS_NOT_CHARGING,
+                temperatureTenthsC = 298,
+            ),
             charging = ChargingState(
                 device = DeviceInfo("Google", "Pixel 8", 36, "preview"),
                 adapterName = "Pixel Charge Control".toCaString(),
@@ -837,6 +873,12 @@ private fun DashboardScreenApplyingPreview() = PreviewWrapper {
     DashboardScreen(
         state = DashboardUiState(
             onboardingComplete = true,
+            // Still charging while the write settles — the reading keeps updating under the spinner.
+            batteryReadout = BatteryReadout(
+                levelPercent = 79,
+                status = android.os.BatteryManager.BATTERY_STATUS_CHARGING,
+                temperatureTenthsC = 312,
+            ),
             charging = ChargingState(
                 device = DeviceInfo("Google", "Pixel 8", 36, "preview"),
                 adapterName = "Pixel Charge Control".toCaString(),
@@ -1233,6 +1275,13 @@ private fun DashboardScreenUnsupportedPreview() = PreviewWrapper {
     DashboardScreen(
         state = DashboardUiState(
             onboardingComplete = true,
+            // The battery reading still shows on unsupported devices — the hero is now the single
+            // permission-free battery surface.
+            batteryReadout = BatteryReadout(
+                levelPercent = 64,
+                status = android.os.BatteryManager.BATTERY_STATUS_DISCHARGING,
+                temperatureTenthsC = 305,
+            ),
             charging = ChargingState(
                 device = DeviceInfo("Samsung", "SM-S911B", 34, "preview", hasChargingOptimization = false),
                 adapterName = "Diagnostics only".toCaString(),
