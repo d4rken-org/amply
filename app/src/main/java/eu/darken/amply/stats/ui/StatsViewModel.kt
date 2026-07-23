@@ -3,6 +3,7 @@ package eu.darken.amply.stats.ui
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -14,7 +15,6 @@ import eu.darken.amply.stats.core.ChargeStatsRecorder
 import eu.darken.amply.stats.core.ChargeStatsRepository
 import eu.darken.amply.stats.core.StatsPreferences
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -44,6 +44,7 @@ class StatsViewModel @Inject constructor(
     private val preferences: StatsPreferences,
     private val repository: ChargeStatsRepository,
     private val recorder: ChargeStatsRecorder,
+    private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
     val state: StateFlow<StatsUiState> = combine(
@@ -54,7 +55,11 @@ class StatsViewModel @Inject constructor(
         StatsUiState(captureEnabled = enabled, lastCaptureWallMillis = lastCapture, sessions = sessions)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), StatsUiState())
 
-    private val selectedSessionId = MutableStateFlow<Long?>(null)
+    // Backed by SavedStateHandle so the open detail screen survives process death: the restored
+    // Activity comes back to STATS_SESSION_DETAIL (a saved destination), and the id it needs is
+    // restored here too, rather than defaulting to null and stranding the screen on a spinner.
+    private val selectedSessionId: StateFlow<Long?> =
+        savedStateHandle.getStateFlow(KEY_SELECTED_SESSION, null)
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val detailState: StateFlow<StatsDetailState?> = selectedSessionId
@@ -72,11 +77,11 @@ class StatsViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), null)
 
     fun openSession(id: Long) {
-        selectedSessionId.value = id
+        savedStateHandle[KEY_SELECTED_SESSION] = id
     }
 
     fun closeSession() {
-        selectedSessionId.value = null
+        savedStateHandle[KEY_SELECTED_SESSION] = null
     }
 
     /**
@@ -105,5 +110,6 @@ class StatsViewModel @Inject constructor(
 
     private companion object {
         const val STOP_TIMEOUT_MILLIS = 5_000L
+        const val KEY_SELECTED_SESSION = "stats.selected_session_id"
     }
 }
