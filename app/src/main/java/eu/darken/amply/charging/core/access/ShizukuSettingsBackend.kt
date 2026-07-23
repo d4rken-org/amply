@@ -34,26 +34,39 @@ class ShizukuSettingsBackend @Inject constructor(
         )
     }
 
-    override suspend fun read(namespace: SettingNamespace, key: String): SettingRead = try {
-        SettingRead(
-            readable = true,
-            value = controller.service().readSetting(namespace.commandName, key),
-        )
-    } catch (e: CancellationException) {
-        // Binding the user service (controller.service()) can suspend up to ~15s; a cancelled read must
-        // propagate rather than be reported as an unreadable setting — matching snapshot() below.
-        throw e
-    } catch (e: Exception) {
-        SettingRead(false, error = (e.message ?: e.javaClass.simpleName).toCaString())
+    override suspend fun read(namespace: SettingNamespace, key: String): SettingRead {
+        // Lineage reads never go through a settings backend — the adapter reads a consistent snapshot via
+        // LineageChargeReader (unprivileged ContentResolver). Guard defensively.
+        if (namespace == SettingNamespace.LINEAGE_SYSTEM) {
+            return SettingRead(readable = false, error = R.string.charging_reason_settings_unreadable.toCaString())
+        }
+        // Blocking Binder transaction: keep off the caller's (often Main) thread to avoid an ANR.
+        return withContext(Dispatchers.IO) {
+            try {
+                SettingRead(readable = true, value = controller.service().readSetting(namespace.commandName, key))
+            } catch (e: CancellationException) {
+                // Binding the user service (controller.service()) can suspend up to ~15s; a cancelled read
+                // must propagate rather than be reported as an unreadable setting — matching snapshot().
+                throw e
+            } catch (e: Exception) {
+                SettingRead(false, error = (e.message ?: e.javaClass.simpleName).toCaString())
+            }
+        }
     }
 
-    override suspend fun write(mutation: SettingMutation): Boolean = runCatching {
-        controller.service().writeSetting(
-            mutation.namespace.commandName,
-            mutation.key,
-            mutation.value,
-        )
-    }.getOrDefault(false)
+    override suspend fun write(mutation: SettingMutation): Boolean = withContext(Dispatchers.IO) {
+        try {
+            if (mutation.namespace == SettingNamespace.LINEAGE_SYSTEM) {
+                controller.service().writeLineageSetting(mutation.key, mutation.value)
+            } else {
+                controller.service().writeSetting(mutation.namespace.commandName, mutation.key, mutation.value)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
+        }
+    }
 
     override suspend fun snapshot(namespace: SettingNamespace): NamespaceSnapshot = withContext(Dispatchers.IO) {
         // Blocking Binder transaction (a full `settings list` can take ~10s) — keep it off the caller's thread.

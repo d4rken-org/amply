@@ -44,6 +44,22 @@ class ChargingControlUserService(
         return result.stdout
     }
 
+    override fun writeLineageSetting(key: String, value: String): Boolean {
+        // Boundary owns validation: key allowlist + per-key value domain, independent of the adapter layer.
+        LineageSettingWritePolicy.validate(key, value)
+        // `content insert` upserts (name TEXT UNIQUE ON CONFLICT REPLACE). Constant binary + constant URI,
+        // argv-separated — no shell string. The allowlisted key/value contain no ':'/space so the
+        // `col:s:val` bind tokens stay single argv elements. Exit code is corroborated by the adapter's
+        // read-back verification, so a `content`-reported success that the provider validator rejected still fails.
+        val result = runCommand(
+            "/system/bin/content", "insert",
+            "--uri", LINEAGE_SYSTEM_URI,
+            "--bind", "name:s:$key",
+            "--bind", "value:s:$value",
+        )
+        return result.exitCode == 0
+    }
+
     override fun destroy() = exitProcess(0)
 
     private fun requireNamespace(namespace: String) {
@@ -61,6 +77,7 @@ class ChargingControlUserService(
         private val NAMESPACES = setOf("secure", "global", "system")
         private val KEY = Regex("[A-Za-z0-9_.:-]{1,160}")
         private val PACKAGE = Regex("[A-Za-z][A-Za-z0-9_.]{2,200}")
+        const val LINEAGE_SYSTEM_URI = "content://lineagesettings/system"
         private const val COMMAND_TIMEOUT_MS = 10_000L
         // `snapshotSettings` returns the whole dump as one AIDL String, whose Parcel is ~2 bytes/char plus overhead,
         // so this UTF-8 byte cap stays well under the ~1 MiB Binder transaction ceiling. Real `settings list`
@@ -183,5 +200,31 @@ internal object SettingWritePolicy {
         val domain = WRITABLE[namespace]?.get(key)
         require(domain != null) { "Setting is not allowlisted for writes" }
         require(value in domain) { "Invalid setting value: not in the key's allowed domain" }
+    }
+}
+
+/**
+ * Write boundary for the LineageOS `content://lineagesettings/system` charge-control keys. Exact-string
+ * domains, which also reject non-canonical forms (e.g. leading-zero "080") for free. Mirrors — and is kept
+ * in lockstep with — the supported set in `LineageChargingAdapter`; the boundary constrains independently
+ * of the adapter, so widen it only when the corresponding policy is supported AND qualified.
+ */
+internal object LineageSettingWritePolicy {
+    const val KEY_ENABLED = "charging_control_enabled"
+    const val KEY_MODE = "charging_control_mode"
+    const val KEY_LIMIT = "charging_control_charging_limit"
+
+    // v1 supports mode 3 (LIMIT) only; disabling control is via enabled=0, never mode=0 (invalid: provider
+    // validates mode 1..3). Limits are the discrete 70..95 ticks the adapter exposes.
+    private val WRITABLE: Map<String, Set<String>> = mapOf(
+        KEY_ENABLED to setOf("0", "1"),
+        KEY_MODE to setOf("3"),
+        KEY_LIMIT to setOf("70", "75", "80", "85", "90", "95"),
+    )
+
+    fun validate(key: String, value: String) {
+        val domain = WRITABLE[key]
+        require(domain != null) { "Lineage setting is not allowlisted for writes" }
+        require(value in domain) { "Invalid Lineage setting value: not in the key's allowed domain" }
     }
 }

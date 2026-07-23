@@ -65,6 +65,24 @@ class XiaomiLabAdapter @Inject constructor() : DisabledLabAdapter() {
 }
 
 @Singleton
+class LineageLabAdapter @Inject constructor() : DisabledLabAdapter() {
+    override val id = "lineageos-lab"
+    override val displayName = R.string.adapter_name_lineageos.toCaString()
+
+    // Any LineageOS build whose device codename is not in the live adapter's qualified allowlist.
+    // Charging control is HAL-dependent and unverified here, so it stays diagnostics/contribution only.
+    override fun matches(device: DeviceInfo) = device.lineageOsVersion != null
+
+    companion object {
+        val CANDIDATE_KEYS = setOf(
+            "charging_control_enabled",
+            "charging_control_mode",
+            "charging_control_charging_limit",
+        )
+    }
+}
+
+@Singleton
 class OnePlusLabAdapter @Inject constructor() : DisabledLabAdapter() {
     override val id = "oneplus-lab"
     override val displayName = R.string.adapter_name_oneplus.toCaString()

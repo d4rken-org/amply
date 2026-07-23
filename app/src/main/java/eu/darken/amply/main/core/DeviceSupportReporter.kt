@@ -35,7 +35,9 @@ data class DeviceSupportReport(
     val oneUiVersion: Int?,
     val hyperOsVersion: Int?,
     val oplusRomVersion: Int?,
+    val lineageOsVersion: String?,
     val hasProtectBattery: Boolean,
+    val hasLineageSettingsProvider: Boolean,
     val adapterId: String?,
     val adapterMatched: Boolean,
     val adapterControlEnabled: Boolean,
@@ -73,7 +75,9 @@ class DeviceSupportReporter @Inject constructor(
             oneUiVersion = device.oneUiVersion,
             hyperOsVersion = device.hyperOsVersion,
             oplusRomVersion = device.oplusRomVersion,
+            lineageOsVersion = device.lineageOsVersion,
             hasProtectBattery = device.hasProtectBattery,
+            hasLineageSettingsProvider = device.hasLineageSettingsProvider,
             adapterId = selection.adapter?.id,
             adapterMatched = selection.support.matched,
             adapterControlEnabled = selection.support.controlEnabled,
@@ -105,7 +109,7 @@ internal fun sanitizeReportValue(value: String?, max: Int = 120): String {
 /** Deterministic, single stable schema. Keep field order fixed so reports are diff-friendly. */
 internal fun formatReport(report: DeviceSupportReport): String = buildString {
     appendLine("Amply device-support request")
-    appendLine("report_schema=6")
+    appendLine("report_schema=7")
     appendLine("app_version=${report.appVersionName} (${report.appVersionCode})")
     appendLine("distribution=${report.flavor}/${report.buildType}")
     appendLine("manufacturer=${report.manufacturer}")
@@ -121,7 +125,9 @@ internal fun formatReport(report: DeviceSupportReport): String = buildString {
     appendLine("one_ui_version=${report.oneUiVersion ?: "none"}")
     appendLine("hyperos_version=${report.hyperOsVersion ?: "none"}")
     appendLine("oplus_rom_version=${report.oplusRomVersion ?: "none"}")
+    appendLine("lineageos_version=${report.lineageOsVersion ?: "none"}")
     appendLine("has_protect_battery=${report.hasProtectBattery}")
+    appendLine("has_lineage_settings_provider=${report.hasLineageSettingsProvider}")
     appendLine("adapter=${report.adapterId ?: "none"}")
     appendLine("adapter_matched=${report.adapterMatched}")
     appendLine("adapter_control_enabled=${report.adapterControlEnabled}")

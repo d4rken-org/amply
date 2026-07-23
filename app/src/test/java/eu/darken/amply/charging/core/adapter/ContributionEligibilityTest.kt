@@ -3,6 +3,9 @@ package eu.darken.amply.charging.core.adapter
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import eu.darken.amply.charging.core.DeviceInfo
+import eu.darken.amply.charging.core.access.LineageChargeReadout
+import eu.darken.amply.charging.core.access.LineageChargeReader
+import eu.darken.amply.common.ca.toCaString
 import io.kotest.matchers.shouldBe
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -12,8 +15,13 @@ import org.robolectric.RobolectricTestRunner
 class ContributionEligibilityTest {
 
     private val context: Context = ApplicationProvider.getApplicationContext()
+    private val stubReader = object : LineageChargeReader {
+        override suspend fun readChargeControl() = LineageChargeReadout.Unreadable("unused".toCaString())
+    }
     private val registry = AdapterRegistry(
         context = context,
+        lineage = LineageChargingAdapter(stubReader),
+        lineageLab = LineageLabAdapter(),
         pixel = PixelChargingAdapter(),
         samsungModern = SamsungModernChargingAdapter(),
         samsungLegacy = SamsungLegacyChargingAdapter(),

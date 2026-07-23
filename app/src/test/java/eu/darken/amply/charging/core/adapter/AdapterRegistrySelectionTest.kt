@@ -2,6 +2,9 @@ package eu.darken.amply.charging.core.adapter
 
 import androidx.test.core.app.ApplicationProvider
 import eu.darken.amply.charging.core.DeviceInfo
+import eu.darken.amply.charging.core.access.LineageChargeReadout
+import eu.darken.amply.charging.core.access.LineageChargeReader
+import eu.darken.amply.common.ca.toCaString
 import io.kotest.matchers.shouldBe
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -16,8 +19,16 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class AdapterRegistrySelectionTest {
 
+    // Reads aren't exercised at the registry level (only probe); a stub reader suffices, and the test seam
+    // supplies a qualified codename so the live-selection/ordering paths stay covered.
+    private val stubReader = object : LineageChargeReader {
+        override suspend fun readChargeControl() = LineageChargeReadout.Unreadable("unused".toCaString())
+    }
+
     private val registry = AdapterRegistry(
         context = ApplicationProvider.getApplicationContext(),
+        lineage = LineageChargingAdapter(stubReader, setOf("oriole")),
+        lineageLab = LineageLabAdapter(),
         pixel = PixelChargingAdapter(),
         samsungModern = SamsungModernChargingAdapter(),
         samsungLegacy = SamsungLegacyChargingAdapter(),
@@ -118,5 +129,65 @@ class AdapterRegistrySelectionTest {
         registry.select(
             DeviceInfo("realme", "RMX3999", 34, "test"),
         ).adapter?.id shouldBe "oneplus-lab"
+    }
+
+    private fun lineage(
+        codename: String = "oriole",
+        manufacturer: String = "Google",
+        provider: Boolean = true,
+        systemUser: Boolean = true,
+        version: String? = "23.2",
+    ) = DeviceInfo(
+        manufacturer = manufacturer,
+        model = "TEST",
+        sdk = 36,
+        fingerprint = "test",
+        codename = codename,
+        lineageOsVersion = version,
+        hasLineageSettingsProvider = provider,
+        isSystemUser = systemUser,
+    )
+
+    @Test
+    fun `a qualified lineageos codename selects the live adapter with control`() {
+        val selection = registry.select(lineage(codename = "oriole"))
+        selection.adapter?.id shouldBe "lineageos-chargingcontrol-v1"
+        selection.support.controlEnabled shouldBe true
+    }
+
+    @Test
+    fun `a qualified lineageos device without the provider matches but disables control`() {
+        val selection = registry.select(lineage(codename = "oriole", provider = false))
+        selection.adapter?.id shouldBe "lineageos-chargingcontrol-v1"
+        selection.support.controlEnabled shouldBe false
+    }
+
+    @Test
+    fun `a secondary user on a qualified lineageos device disables control`() {
+        val selection = registry.select(lineage(codename = "oriole", systemUser = false))
+        selection.adapter?.id shouldBe "lineageos-chargingcontrol-v1"
+        selection.support.controlEnabled shouldBe false
+    }
+
+    @Test
+    fun `an unqualified lineageos codename falls through to the lineage lab adapter`() {
+        val selection = registry.select(lineage(codename = "raven")) // Pixel 6 Pro, not yet qualified
+        selection.adapter?.id shouldBe "lineageos-lab"
+        selection.support.controlEnabled shouldBe false
+    }
+
+    @Test
+    fun `a lineageos build on OEM hardware is handled by lineage, never the OEM lab adapter`() {
+        // The Lineage adapters precede all OEM adapters, so a custom-ROM build on Samsung/Xiaomi/OnePlus
+        // hardware is never swallowed by a manufacturer-based lab adapter.
+        registry.select(lineage(codename = "gts9", manufacturer = "samsung")).adapter?.id shouldBe "lineageos-lab"
+        registry.select(lineage(codename = "munch", manufacturer = "Xiaomi")).adapter?.id shouldBe "lineageos-lab"
+        registry.select(lineage(codename = "salami", manufacturer = "OnePlus")).adapter?.id shouldBe "lineageos-lab"
+    }
+
+    @Test
+    fun `a stock device is unaffected by the lineage adapters`() {
+        // lineageOsVersion == null → both Lineage adapters skip, OEM matching proceeds as before.
+        registry.select(samsung(80000)).adapter?.id shouldBe "samsung-oneui8-v1"
     }
 }

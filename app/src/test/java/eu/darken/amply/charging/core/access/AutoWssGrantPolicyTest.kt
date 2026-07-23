@@ -10,12 +10,14 @@ class AutoWssGrantPolicyTest {
         controlEnabled: Boolean = true,
         shizukuReady: Boolean = true,
         wssReady: Boolean = false,
+        writeRequiresShizuku: Boolean = false,
         attempted: Boolean = false,
     ) = AutoWssGrantPolicy.evaluate(
         onboardingComplete = onboardingComplete,
         controlEnabled = controlEnabled,
         shizukuReady = shizukuReady,
         wssReady = wssReady,
+        writeRequiresShizuku = writeRequiresShizuku,
         attempted = attempted,
     )
 
@@ -56,6 +58,15 @@ class AutoWssGrantPolicyTest {
     fun `never grants on a capability-gated device and preserves the latch`() {
         eval(controlEnabled = false) shouldBe AutoWssGrantPolicy.Outcome(grant = false, attempted = false)
         eval(controlEnabled = false, attempted = true) shouldBe
+            AutoWssGrantPolicy.Outcome(grant = false, attempted = true)
+    }
+
+    @Test
+    fun `never grants for a shizuku-write adapter and preserves the latch`() {
+        // Lineage/Oplus write via the system/lineagesettings namespace, which WSS can't touch — auto-granting
+        // WSS there is wasted least-privilege surface.
+        eval(writeRequiresShizuku = true) shouldBe AutoWssGrantPolicy.Outcome(grant = false, attempted = false)
+        eval(writeRequiresShizuku = true, attempted = true) shouldBe
             AutoWssGrantPolicy.Outcome(grant = false, attempted = true)
     }
 

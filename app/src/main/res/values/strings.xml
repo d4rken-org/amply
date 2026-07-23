@@ -53,7 +53,7 @@
     <string name="onboarding_caveat_support_title">Support grows device by device</string>
     <string name="onboarding_caveat_support_body">Charge control is mapped one device at a time. Right now, direct control works on Pixel 6a and newer phones running Android 15 or later, on Samsung devices with verified One UI versions, on verified Xiaomi devices, and on OnePlus, Oppo, and Realme devices on ColorOS 15. On other devices, Amply explains why control is unavailable, and where a device report can help expand support, the dashboard lets you send one.</string>
     <string name="onboarding_caveat_setup_title">One-time setup on supported devices</string>
-    <string name="onboarding_caveat_setup_body">Changing the charge policy requires a permission that apps cannot grant themselves. You grant it once: either run a single command from a computer over ADB, or use the Shizuku app on this phone. If your device is supported, the dashboard walks you through both options.</string>
+    <string name="onboarding_caveat_setup_body">Changing the charge policy requires a permission that apps cannot grant themselves. You grant it once, using either a single command from a computer over ADB or the Shizuku app on this phone. Some devices require Shizuku specifically. If your device is supported, the dashboard walks you through the right option.</string>
     <string name="onboarding_caveat_restore_title">Protection returns on its own</string>
     <string name="onboarding_caveat_restore_body">When you allow a one-time full charge, Amply restores your protective limit as soon as the battery is full, when you unplug, or after a safety timeout. This relies on Amply staying alive in the background. If the app gets force-stopped during a session, opening Amply again resumes monitoring and restores the limit once it is due.</string>
     <string name="onboarding_page_progress">Page %1$d of %2$d</string>
@@ -100,6 +100,7 @@
     <string name="adapter_name_xiaomi_protection">Xiaomi charging protection</string>
     <string name="adapter_name_oneplus">OnePlus/Oppo/Realme (diagnostics)</string>
     <string name="adapter_name_oplus_protection">ColorOS charging protection</string>
+    <string name="adapter_name_lineageos">LineageOS charging control</string>
 
     <!-- Adapter support detail (why a device is or isn\'t controllable) -->
     <string name="adapter_detail_requires_pixel">Requires a supported Google Pixel phone</string>
@@ -118,6 +119,9 @@
     <string name="adapter_detail_xiaomi_ready">Xiaomi charging protection detected; changes apply immediately</string>
     <string name="adapter_detail_requires_oplus">Requires a OnePlus, Oppo, or Realme device on ColorOS 15</string>
     <string name="adapter_detail_oplus_ready">ColorOS charging protection detected; control requires Shizuku</string>
+    <string name="adapter_detail_requires_lineageos">Requires a qualified LineageOS device</string>
+    <string name="adapter_detail_lineageos_no_provider">LineageOS charging control is not available on this build</string>
+    <string name="adapter_detail_lineageos_ready">LineageOS charging control detected; control requires Shizuku</string>
     <string name="adapter_detail_none">No charging adapter is known for this device</string>
 
     <!-- Access backend detail + summary labels -->
@@ -445,6 +449,7 @@
     <string name="setup_oem_guide_oneplus">OnePlus and Oppo phones offer charge limiting under Settings → Battery → Battery health (or Smart charging). Amply can\'t control it directly on this device, but you can enable it there.</string>
     <string name="setup_oem_guide_xiaomi">Xiaomi, Redmi, and POCO phones may offer charge limiting or protection under Settings → Battery → Battery protection. Amply can\'t control it directly on this device, but you can look for it there.</string>
     <string name="setup_oem_guide_google">Look for charging optimization under Settings → Battery. Amply can\'t control it directly on this device.</string>
+    <string name="setup_oem_guide_lineageos">LineageOS includes Charging control under Settings → Battery. Amply can\'t control it directly on this device, but you can set a limit there.</string>
     <string name="setup_oem_guide_generic">Your phone may offer a built-in battery-protection or charge-limit option in its battery settings. Amply can\'t control it directly on this device, but it\'s worth a look.</string>
 
     <!-- Widget (in-widget text) -->

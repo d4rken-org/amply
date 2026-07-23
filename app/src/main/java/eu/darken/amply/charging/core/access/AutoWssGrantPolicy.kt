@@ -22,14 +22,18 @@ object AutoWssGrantPolicy {
         controlEnabled: Boolean,
         shizukuReady: Boolean,
         wssReady: Boolean,
+        writeRequiresShizuku: Boolean,
         attempted: Boolean,
     ): Outcome = when {
         // Episode over (WSS obtained) or not active (Shizuku not ready): clear the latch so the next
         // Shizuku-ready episode gets a fresh automatic attempt.
         wssReady || !shizukuReady -> Outcome(grant = false, attempted = false)
         // Not eligible to auto-grant yet: before onboarding is accepted we must not grant a system
-        // permission, and a capability-gated device could never use it. Hold the latch unchanged.
-        !onboardingComplete || !controlEnabled -> Outcome(grant = false, attempted = attempted)
+        // permission, a capability-gated device could never use it, and a Shizuku-write adapter
+        // (system/lineagesettings namespace) can never write via WSS — so granting it would be
+        // wasted least-privilege surface. Hold the latch unchanged.
+        !onboardingComplete || !controlEnabled || writeRequiresShizuku ->
+            Outcome(grant = false, attempted = attempted)
         // Already tried this episode: leave it to the manual fallback button.
         attempted -> Outcome(grant = false, attempted = true)
         // First eligible observation of Shizuku-ready-without-WSS: grant once and latch.

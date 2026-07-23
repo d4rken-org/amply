@@ -83,6 +83,31 @@ assumptions: the feature is treated as present on any HyperOS 2 device (a device
 absent → a harmless false claim of control), and daemon-level enforcement of external writes is pending
 long-term observation (see Known gaps below).
 
+### LineageOS
+
+LineageOS control requires **all** of: LineageOS (`ro.lineage.build.version` present), a **physically-qualified
+device codename** (`Build.DEVICE` ∈ `LineageChargingAdapter.QUALIFIED_CODENAMES`), the `lineagesettings` provider
+present, and the system user. It is **manufacturer-agnostic** (LineageOS runs on many OEMs), so the Lineage
+live/lab adapters are ordered **before all OEM adapters** in `AdapterRegistry` — a LineageOS build on Samsung/
+Xiaomi/OnePlus hardware must never be swallowed by a manufacturer-based lab adapter. Unqualified LineageOS builds
+fall to `LineageLabAdapter` (diagnostics/contribution).
+
+The three keys live in the private `content://lineagesettings/system` provider — **NOT** any AOSP `settings`
+namespace. Modeled as `SettingNamespace.LINEAGE_SYSTEM`: **reads are unprivileged** (`LineageSettingsClient`,
+ContentResolver — the provider declares no readPermission), **writes require Shizuku** (`content insert`, the shell
+UID holds `lineageos.permission.WRITE_SETTINGS`; `WRITE_SECURE_SETTINGS` cannot write it). The adapter sets
+`preferShizukuForWrites`, and `AutoWssGrantCoordinator` skips the WSS auto-grant for it (WSS is useless here).
+Writable keys/domains (`LineageSettingWritePolicy`, independent of the adapter): `charging_control_enabled` ∈
+{0,1}, `charging_control_mode` = 3 (LIMIT only; mode 0 is invalid, disabling is via enabled=0), and
+`charging_control_charging_limit` ∈ {70,75,80,85,90,95}. Verification is `SYNC_READBACK` (read-back equality).
+
+**Crucial gate rationale:** the setting can be written while the `vendor.lineage.health.IChargingControl` HAL never
+actually limits (the `mIsLimitSet:false` class of bug) — setting readback does **not** prove hardware enforcement.
+That is why the gate is a qualified-codename allowlist, not "any LineageOS device": a device must be physically
+proven (see the qualification protocol) before its codename is added. The adapter also **refuses** (reads
+`Unknown(unrecognizedValue=true)`) any native state it cannot restore exactly — AUTO/CUSTOM schedule modes, off-tick
+limits, or an absent/malformed `enabled` — so a temporary session never clobbers the user's own choice.
+
 ## Foreground Service Requirement
 
 The temporary override uses a `specialUse` foreground service because dormant apps cannot reliably receive
@@ -137,6 +162,42 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
 
 ## Known gaps
 
+- **LineageOS** — landed **diagnostics-only**: `QUALIFIED_CODENAMES` ships **empty**, so the live adapter never
+  matches and every LineageOS build falls to `LineageLabAdapter`. A codename is added only after that device passes
+  qualification (real charging cessation at the limit, wired + wireless, below/at/above threshold) and gets a
+  "Verified devices" row.
+  - **Pixel 6 (oriole) on LineageOS 20.0 / Android 13 — tested 2026-07-22, result NO-GO (no hardware enforcement).**
+    The *software chain is fully validated* — both raw (shell-UID `content query`/`content insert`) **and through the
+    app's real Shizuku backend end-to-end** (R8 debug build + Shizuku granted): tapping 80 % wrote the trio via
+    `writeLineageSetting` and read back `Verified(FixedLimit(80), SHIZUKU)`. LineageOS's `ChargingControlController`
+    **observes the external write** and updates its live config (`dumpsys lineagehealth` → `mConfigEnabled:true,
+    mConfigMode:3, mConfigLimit:80`); the `vendor.lineage.health.IChargingControl/default` HAL is registered and its
+    service runs. The refuse-don't-clobber decode was also confirmed live: a native `mode=2` (CUSTOM) state read as
+    `Unknown(unrecognized)` ("Policy not verified"), never overwritten. And the diagnostics-only path was smoke-tested
+    (empty allowlist → `lineageos-lab` → "Detected for diagnostics only", no crash). **But the hard percent
+    limit did not cut charging** — with `limit=80` set, the battery charged 92→95 %+ at ~1.2 A (`charge_stage=Inactive`,
+    `charge_limit` sysfs empty, `mChargingStopReason:0`). On Pixel the charge hardware is driven by Google's
+    adaptive/`charge_deadline` mechanism, and this Lineage build's HAL does not map the %-cap to a real cutoff — the
+    `mIsLimitSet:false` device-dependent class of gap. So oriole stays **out** of the allowlist. This is a clean
+    validation of the conservative gate: an "any LineageOS device" gate would have claimed 80 % protection while the
+    phone charged to 100 %. (Qualifying a device with a *working* charge-control HAL remains open; the adapter's
+    provider/observer mechanism is proven, only per-device HAL enforcement varies.)
+  - Also confirmed on oriole: `charging_control_*` keys are **absent in factory state** (validates the conservative
+    "absent → unrecognized" decode). Still open: the provider's change-notification URI form (per-key vs table)
+    against the registered `observedSettingUris`, to be checked on a HAL-enforcing device.
+  - **Pixel 6 (oriole) on LineageOS 23.2 / Android 16 — retested 2026-07-22 after an anti-rollback firmware bump,
+    result NO-GO (HAL no longer offers LIMIT mode at all).** A *sharper* root cause than the LOS 20 run: the
+    `vendor.lineage.health.IChargingControl` HAL reports `getSupportedMode()` **without the LIMIT bit**, so
+    `ChargingControlController.isChargingModeSupported(LIMIT)` is false and LineageOS **coerces `charging_control_mode=3`
+    → `1` (AUTO)** — verified live: every raw shell-UID `content insert` of `mode=3` (even while `enabled=0`) read back
+    as `1`. Enabling then logs `LineageHealth: No alarm found, auto charging control has no effect` and `Setting charge
+    deadline: … 73353`; the active provider is `ccprovider.Deadline` (Google Adaptive Charging — time/alarm-based, **no
+    fixed-percent cap**). `charging_policy`/`charge_stage` sysfs never changed. So oriole is NO-GO on **both** builds for
+    different reasons: LOS 20 *accepted* LIMIT but the HAL silently didn't cut; LOS 23.2's HAL dropped LIMIT and falls
+    back to the Deadline mechanism. Consequence for the adapter (unchanged — correct by design): SYNC_READBACK
+    `apply(FixedLimit)` writes `mode=3`, reads back `mode=1 ≠ 3` → decodes `Unknown(unrecognizedValue=true)` → `apply`
+    returns false, so it **refuses without a false claim of control**. Reinforces the allowlist bar: a device must both
+    expose the LIMIT mode bit **and** actually cut charging. `charging_control_*` again **absent in factory state**.
 - **Xiaomi** — adaptive hardware enforcement of external writes unconfirmed; treat the adapter as provisional until
   the 80% hold is physically observed.
 - **Pixel** — wireless at-threshold hold/charge-past and the widget under Shizuku-only remain unexercised (both share

@@ -40,6 +40,24 @@ class ChargingControlUserServiceTest {
     }
 
     @Test
+    fun `writeLineageSetting validates key and value before executing any command`() {
+        // Non-allowlisted Lineage key is rejected up-front (no `content` process is ever spawned).
+        runCatching {
+            service.writeLineageSetting("charging_control_start_time", "0")
+        }.exceptionOrNull().let {
+            it.shouldBeInstanceOf<IllegalArgumentException>()
+            it!!.message shouldContain "allowlisted"
+        }
+        // Out-of-domain value (schedule mode) is rejected likewise.
+        runCatching {
+            service.writeLineageSetting("charging_control_mode", "1")
+        }.exceptionOrNull().let {
+            it.shouldBeInstanceOf<IllegalArgumentException>()
+            it!!.message shouldContain "domain"
+        }
+    }
+
+    @Test
     fun `write policy accepts only in-domain values for every allowlisted key`() {
         // Accepted (validate() returns without throwing; the command itself is not run here).
         SettingWritePolicy.validate("secure", "charge_optimization_mode", "1")

@@ -5,6 +5,8 @@ import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import eu.darken.amply.charging.core.SettleScheduler
+import eu.darken.amply.charging.core.access.LineageChargeReader
+import eu.darken.amply.charging.core.access.LineageSettingsClient
 import eu.darken.amply.charging.core.access.SettingsSnapshotSource
 import eu.darken.amply.charging.core.access.ShizukuSettingsBackend
 import eu.darken.amply.diagnostics.core.ContributionRepository
@@ -22,4 +24,8 @@ abstract class ChargingCoreModule {
 
     @Binds
     abstract fun bindContributionRepository(impl: DefaultContributionRepository): ContributionRepository
+
+    /** LineageOS charge-control reads: unprivileged ContentResolver snapshot, shared by the Lineage adapter. */
+    @Binds
+    abstract fun bindLineageChargeReader(impl: LineageSettingsClient): LineageChargeReader
 }

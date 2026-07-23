@@ -27,6 +27,7 @@ internal data class AutoWssGrantInputs(
     val controlEnabled: Boolean,
     val shizukuReady: Boolean,
     val wssReady: Boolean,
+    val writeRequiresShizuku: Boolean,
 )
 
 /**
@@ -81,6 +82,7 @@ internal fun autoWssGrantInputs(
         controlEnabled = state.controlEnabled,
         shizukuReady = state.access?.shizuku?.ready == true,
         wssReady = state.access?.direct?.ready == true,
+        writeRequiresShizuku = state.writeRequiresShizuku,
     )
 }.distinctUntilChanged()
     .retryWhen { cause, attempt ->
@@ -120,6 +122,7 @@ internal suspend fun observeAutoWssGrant(
             controlEnabled = input.controlEnabled,
             shizukuReady = input.shizukuReady,
             wssReady = input.wssReady,
+            writeRequiresShizuku = input.writeRequiresShizuku,
             attempted = attempted,
         )
         attempted = outcome.attempted

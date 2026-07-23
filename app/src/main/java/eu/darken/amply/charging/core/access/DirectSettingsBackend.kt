@@ -31,11 +31,21 @@ class DirectSettingsBackend @Inject constructor(
         )
     }
 
-    override suspend fun read(namespace: SettingNamespace, key: String): SettingRead = runCatching {
+    override suspend fun read(namespace: SettingNamespace, key: String): SettingRead {
+        // Lineage reads never go through a settings backend — the adapter reads a consistent snapshot via
+        // LineageChargeReader (unprivileged ContentResolver). Guard defensively.
+        if (namespace == SettingNamespace.LINEAGE_SYSTEM) {
+            return SettingRead(readable = false, error = R.string.charging_reason_settings_unreadable.toCaString())
+        }
+        return readAosp(namespace, key)
+    }
+
+    private fun readAosp(namespace: SettingNamespace, key: String): SettingRead = runCatching {
         val value = when (namespace) {
             SettingNamespace.SECURE -> Settings.Secure.getString(context.contentResolver, key)
             SettingNamespace.GLOBAL -> Settings.Global.getString(context.contentResolver, key)
             SettingNamespace.SYSTEM -> Settings.System.getString(context.contentResolver, key)
+            SettingNamespace.LINEAGE_SYSTEM -> error("Lineage reads are handled by LineageSettingsClient")
         }
         SettingRead(readable = true, value = value)
     }.getOrElse {
@@ -49,6 +59,9 @@ class DirectSettingsBackend @Inject constructor(
     }
 
     override suspend fun write(mutation: SettingMutation): Boolean {
+        // WRITE_SECURE_SETTINGS cannot write the Lineage provider (it needs lineageos.permission.WRITE_SETTINGS,
+        // held only by the shell UID) — fail honestly so the adapter falls back to Shizuku.
+        if (mutation.namespace == SettingNamespace.LINEAGE_SYSTEM) return false
         if (!status().ready) return false
         return runCatching {
             when (mutation.namespace) {
@@ -67,6 +80,7 @@ class DirectSettingsBackend @Inject constructor(
                     mutation.key,
                     mutation.value,
                 )
+                SettingNamespace.LINEAGE_SYSTEM -> false // unreachable: early-returned above
             }
         }.getOrDefault(false)
     }
