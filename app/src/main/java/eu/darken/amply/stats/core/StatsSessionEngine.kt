@@ -93,6 +93,22 @@ object StatsSessionEngine {
     }
 
     /**
+     * Merge a below-cadence sample's sticky evidence ([ChargeSessionEntity.limitHitEvidence] /
+     * [ChargeSessionEntity.overrideSeen]) into [session] without folding aggregates or advancing the
+     * curve. Returns the updated entity, or null when neither flag changed so the recorder can skip
+     * the write. A hold or override can begin and end entirely between two recorded points, so this
+     * captures that evidence even when [StatsCadence] drops the sample itself.
+     */
+    fun latchEvidence(session: ChargeSessionEntity, sample: StatsSample): ChargeSessionEntity? {
+        val limitHitEvidence = session.limitHitEvidence || sample.limitHeldNow
+        val overrideSeen = session.overrideSeen || sample.overrideActive
+        if (limitHitEvidence == session.limitHitEvidence && overrideSeen == session.overrideSeen) {
+            return null
+        }
+        return session.copy(limitHitEvidence = limitHitEvidence, overrideSeen = overrideSeen)
+    }
+
+    /**
      * Close [session]. [endWallMillis]/[endElapsedMillis]/[endPercent] come from the unplug tick when
      * available, else the session's last recorded values (recovery/disable seals). The final open
      * interval is credited before averaging so the tail isn't lost.
