@@ -114,7 +114,7 @@ class ChargeStatsRecorder @Inject constructor(
         )
         when (val transition = StatsSessionEngine.decide(openSession != null, previousPlugged, sample.plugged, recordDue)) {
             is StatsTransition.Open -> openNewSession(sample, transition.partial)
-            is StatsTransition.Append -> if (transition.record) appendSample(sample)
+            is StatsTransition.Append -> if (transition.record) appendSample(sample) else latchEvidence(sample)
             is StatsTransition.Seal -> sealCurrent(
                 reason = transition.reason,
                 endWallMillis = sample.wallMillis,
@@ -151,6 +151,7 @@ class ChargeStatsRecorder @Inject constructor(
                 chargingStatus = readout.chargingStatus,
                 batteryStatus = tick.batteryStatus,
                 percent = percent,
+                currentNowMicroamps = readout.currentNowMicroamps,
             ),
         )
     }
@@ -177,6 +178,19 @@ class ChargeStatsRecorder @Inject constructor(
         }
         openSession = folded
         markRecorded(sample)
+    }
+
+    /**
+     * Persist a below-cadence sample's sticky evidence (see [StatsSessionEngine.latchEvidence]) so a
+     * limit hold or override that starts and ends within one cadence window isn't lost when the
+     * sample itself is dropped. Writes only when a flag actually flips — at most once per flag per
+     * session — and never touches aggregates or the curve.
+     */
+    private suspend fun latchEvidence(sample: StatsSample) {
+        val current = openSession ?: return
+        val updated = StatsSessionEngine.latchEvidence(current, sample) ?: return
+        database.get().statsDao().updateSession(updated)
+        openSession = updated
     }
 
     private suspend fun sealCurrent(

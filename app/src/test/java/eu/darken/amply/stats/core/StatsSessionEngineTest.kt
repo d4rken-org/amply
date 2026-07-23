@@ -144,6 +144,43 @@ class StatsSessionEngineTest {
     }
 
     @Test
+    fun `latchEvidence captures a hold seen only in a below-cadence sample`() {
+        val opened = StatsSessionEngine.open(sample(elapsed = 0, limit = false), partial = false)
+        opened.limitHitEvidence shouldBe false
+        val updated = StatsSessionEngine.latchEvidence(opened, sample(elapsed = 5_000, limit = true))
+        updated?.limitHitEvidence shouldBe true
+    }
+
+    @Test
+    fun `latchEvidence captures an override seen only in a below-cadence sample`() {
+        val opened = StatsSessionEngine.open(sample(elapsed = 0), partial = false)
+        val updated = StatsSessionEngine.latchEvidence(opened, sample(elapsed = 5_000, override = true))
+        updated?.overrideSeen shouldBe true
+    }
+
+    @Test
+    fun `latchEvidence returns null when no sticky flag changes`() {
+        val opened = StatsSessionEngine.open(sample(elapsed = 0, limit = true), partial = false)
+        // Already latched → no write needed.
+        StatsSessionEngine.latchEvidence(opened, sample(elapsed = 5_000, limit = true)) shouldBe null
+        // No new evidence at all → no write needed.
+        StatsSessionEngine.latchEvidence(
+            StatsSessionEngine.open(sample(elapsed = 0), partial = false),
+            sample(elapsed = 5_000),
+        ) shouldBe null
+    }
+
+    @Test
+    fun `latchEvidence leaves aggregates and the curve untouched`() {
+        val opened = StatsSessionEngine.open(sample(elapsed = 0, power = 1000), partial = false)
+        val updated = StatsSessionEngine.latchEvidence(opened, sample(elapsed = 5_000, power = 9999, limit = true))
+        // Only the sticky flag moved — sample count / running power endpoint / timestamps unchanged.
+        updated?.runningSampleCount shouldBe opened.runningSampleCount
+        updated?.runningLastPowerMilliwatts shouldBe opened.runningLastPowerMilliwatts
+        updated?.runningLastElapsedRealtimeMillis shouldBe opened.runningLastElapsedRealtimeMillis
+    }
+
+    @Test
     fun `a doze gap is clamped so it cannot overweight one reading`() {
         // 1000 mW then a 1-hour gap: only MAX_WEIGHT_GAP_MILLIS of it is credited.
         var s = StatsSessionEngine.open(sample(elapsed = 0, power = 1000), partial = false)
