@@ -3,16 +3,12 @@ package eu.darken.amply.main.ui.dashboard
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.WarningAmber
-import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -26,7 +22,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import eu.darken.amply.R
 import eu.darken.amply.alarm.core.ChargeAlarmConfig
+import eu.darken.amply.common.compose.AmplyCardHeader
+import eu.darken.amply.common.compose.AmplyCardToggleIndicator
 import eu.darken.amply.common.compose.AmplyPreview
+import eu.darken.amply.common.compose.AmplyToggleCard
 import eu.darken.amply.common.compose.PreviewWrapper
 
 /**
@@ -49,65 +48,53 @@ fun ChargeAlarmCard(
         mutableFloatStateOf(config.targetPercent.toFloat())
     }
 
-    Card(modifier = modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
+    AmplyToggleCard(
+        checked = config.enabled,
+        onCheckedChange = onEnabledChange,
+        modifier = modifier,
+    ) {
+        AmplyCardHeader(
+            title = stringResource(R.string.dashboard_alarm_title),
+            icon = Icons.Default.NotificationsActive,
+            trailing = { AmplyCardToggleIndicator(config.enabled) },
+        )
+        Text(
+            stringResource(
+                if (config.enabled) R.string.dashboard_alarm_body_on else R.string.dashboard_alarm_body_off,
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            stringResource(R.string.dashboard_alarm_target_label, sliderValue.toInt()),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Slider(
+            value = sliderValue,
+            onValueChange = { sliderValue = it },
+            onValueChangeFinished = { onTargetChange(sliderValue.toInt()) },
+            valueRange = ChargeAlarmConfig.MIN_TARGET_PERCENT.toFloat()..ChargeAlarmConfig.MAX_TARGET_PERCENT.toFloat(),
+            // Range 50..100 in steps of 5 → 9 interior stops.
+            steps = ALARM_SLIDER_STEPS,
+        )
+        if (config.enabled && notificationsBlocked) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
-                    Icons.Default.NotificationsActive,
+                    Icons.Default.WarningAmber,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = MaterialTheme.colorScheme.error,
                 )
                 Text(
-                    stringResource(R.string.dashboard_alarm_title),
-                    style = MaterialTheme.typography.titleMedium,
+                    stringResource(R.string.dashboard_alarm_notifications_blocked),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.weight(1f),
                 )
-                Switch(checked = config.enabled, onCheckedChange = onEnabledChange)
-            }
-            Text(
-                stringResource(
-                    if (config.enabled) R.string.dashboard_alarm_body_on else R.string.dashboard_alarm_body_off,
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                stringResource(R.string.dashboard_alarm_target_label, sliderValue.toInt()),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Slider(
-                value = sliderValue,
-                onValueChange = { sliderValue = it },
-                onValueChangeFinished = { onTargetChange(sliderValue.toInt()) },
-                valueRange = ChargeAlarmConfig.MIN_TARGET_PERCENT.toFloat()..ChargeAlarmConfig.MAX_TARGET_PERCENT.toFloat(),
-                // Range 50..100 in steps of 5 → 9 interior stops.
-                steps = ALARM_SLIDER_STEPS,
-            )
-            if (config.enabled && notificationsBlocked) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.Default.WarningAmber,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                    )
-                    Text(
-                        stringResource(R.string.dashboard_alarm_notifications_blocked),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(onClick = onFixNotifications) {
-                        Text(stringResource(R.string.dashboard_alarm_notifications_fix_action))
-                    }
+                TextButton(onClick = onFixNotifications) {
+                    Text(stringResource(R.string.dashboard_alarm_notifications_fix_action))
                 }
             }
         }

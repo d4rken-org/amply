@@ -2,13 +2,8 @@ package eu.darken.amply.main.ui.setup
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.twotone.OpenInNew
 import androidx.compose.material.icons.twotone.ContentCopy
@@ -16,8 +11,6 @@ import androidx.compose.material.icons.twotone.Email
 import androidx.compose.material.icons.twotone.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -32,10 +25,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import eu.darken.amply.R
+import eu.darken.amply.common.compose.AmplyCard
+import eu.darken.amply.common.compose.AmplyCardDefaults
+import eu.darken.amply.common.compose.AmplyCardHeader
+import eu.darken.amply.common.compose.AmplyCardTone
+import eu.darken.amply.common.compose.AmplyCodeBlock
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
 
@@ -59,82 +56,66 @@ fun UnsupportedDeviceCard(
 ) {
     var showDialog by remember { mutableStateOf(false) }
 
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        ),
+    AmplyCard(
+        modifier = modifier,
+        tone = AmplyCardTone.SurfaceHigh,
+        verticalArrangement = Arrangement.spacedBy(AmplyCardDefaults.ItemSpacing),
     ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+        AmplyCardHeader(
+            title = stringResource(R.string.setup_unsupported_title),
+            icon = Icons.TwoTone.Info,
+            titleStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+        )
+        Text(
+            text = stringResource(R.string.setup_unsupported_body, manufacturer),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Text(
+            text = stringResource(R.string.setup_unsupported_shares_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        // Primary path: the guided wizard, which produces the far more useful setting-discovery report.
+        Button(
+            onClick = onOpenWizard,
+            modifier = Modifier.fillMaxWidth(),
         ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    Icons.TwoTone.Info,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-                Text(
-                    text = stringResource(R.string.setup_unsupported_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
+            Icon(Icons.AutoMirrored.TwoTone.OpenInNew, contentDescription = null)
             Text(
-                text = stringResource(R.string.setup_unsupported_body, manufacturer),
-                style = MaterialTheme.typography.bodyMedium,
+                stringResource(R.string.setup_unsupported_wizard_action),
+                Modifier.padding(start = 8.dp),
             )
-            Text(
-                text = stringResource(R.string.setup_unsupported_shares_note),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            // Primary path: the guided wizard, which produces the far more useful setting-discovery report.
-            Button(
-                onClick = onOpenWizard,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(Icons.AutoMirrored.TwoTone.OpenInNew, contentDescription = null)
-                Text(
-                    stringResource(R.string.setup_unsupported_wizard_action),
-                    Modifier.padding(start = 8.dp),
-                )
-            }
-            // Secondary: send just the non-privileged device metadata (no Shizuku needed).
-            OutlinedButton(
-                onClick = {
-                    onPrepareReport()
-                    showDialog = true
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(stringResource(R.string.setup_unsupported_request_action))
-            }
+        }
+        // Secondary: send just the non-privileged device metadata (no Shizuku needed).
+        OutlinedButton(
+            onClick = {
+                onPrepareReport()
+                showDialog = true
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(stringResource(R.string.setup_unsupported_request_action))
+        }
 
-            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+        HorizontalDivider(Modifier.padding(vertical = 4.dp))
 
+        Text(
+            text = stringResource(R.string.setup_unsupported_email_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedButton(
+            onClick = onEmail,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(Icons.TwoTone.Email, contentDescription = null)
             Text(
-                text = stringResource(R.string.setup_unsupported_email_note),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                stringResource(R.string.setup_unsupported_email_action),
+                Modifier.padding(start = 8.dp),
             )
-            OutlinedButton(
-                onClick = onEmail,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(Icons.TwoTone.Email, contentDescription = null)
-                Text(
-                    stringResource(R.string.setup_unsupported_email_action),
-                    Modifier.padding(start = 8.dp),
-                )
-            }
-            TextButton(onClick = onHelp, modifier = Modifier.align(Alignment.End)) {
-                Text(stringResource(R.string.setup_unsupported_help_action))
-            }
+        }
+        TextButton(onClick = onHelp, modifier = Modifier.align(Alignment.End)) {
+            Text(stringResource(R.string.setup_unsupported_help_action))
         }
     }
 
@@ -145,23 +126,11 @@ fun UnsupportedDeviceCard(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(stringResource(R.string.setup_unsupported_dialog_body))
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                        ),
-                    ) {
-                        SelectionContainer {
-                            Text(
-                                text = reportPreview ?: "…",
-                                modifier = Modifier
-                                    .heightIn(max = 220.dp)
-                                    .verticalScroll(rememberScrollState())
-                                    .padding(12.dp),
-                                style = MaterialTheme.typography.bodySmall,
-                                fontFamily = FontFamily.Monospace,
-                            )
-                        }
-                    }
+                    AmplyCodeBlock(
+                        text = reportPreview ?: "…",
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                        maxHeight = 220.dp,
+                    )
                     TextButton(
                         onClick = onCopyReport,
                         enabled = reportPreview != null,

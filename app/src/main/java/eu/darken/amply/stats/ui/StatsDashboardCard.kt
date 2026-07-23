@@ -1,25 +1,18 @@
 package eu.darken.amply.stats.ui
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.ShowChart
-import androidx.compose.material3.Card
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import eu.darken.amply.R
+import eu.darken.amply.common.compose.AmplyNavigationCard
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.stats.core.ChargeSessionSummary
@@ -40,60 +33,39 @@ fun StatsDashboardCard(
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Card(modifier = modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier
-                .clickable(onClick = onOpen)
-                .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.ShowChart,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+    AmplyNavigationCard(
+        onClick = onOpen,
+        onClickLabel = stringResource(R.string.dashboard_stats_view_action),
+        title = stringResource(R.string.dashboard_stats_title),
+        icon = Icons.AutoMirrored.Filled.ShowChart,
+        modifier = modifier,
+    ) {
+        when {
+            !enabled -> Text(
+                stringResource(R.string.dashboard_stats_promo),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            lastSession != null -> {
+                val range = StatsFormat.percentRange(lastSession.startPercent, lastSession.endPercent)
+                val duration = StatsFormat.duration(lastSession.durationMillis)
+                val summary = if (duration != null) "$range  ·  $duration" else range
+                Text(
+                    stringResource(R.string.dashboard_stats_last, summary),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    stringResource(R.string.dashboard_stats_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f),
-                )
-                Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = stringResource(R.string.dashboard_stats_view_action),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            when {
-                !enabled -> Text(
-                    stringResource(R.string.dashboard_stats_promo),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                lastSession != null -> {
-                    val range = StatsFormat.percentRange(lastSession.startPercent, lastSession.endPercent)
-                    val duration = StatsFormat.duration(lastSession.durationMillis)
-                    val summary = if (duration != null) "$range  ·  $duration" else range
-                    Text(
-                        stringResource(R.string.dashboard_stats_last, summary),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        pluralStringResource(R.plurals.dashboard_stats_session_count, sessionCount, sessionCount),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                else -> Text(
-                    stringResource(R.string.dashboard_stats_recording_empty),
-                    style = MaterialTheme.typography.bodyMedium,
+                    pluralStringResource(R.plurals.dashboard_stats_session_count, sessionCount, sessionCount),
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            else -> Text(
+                stringResource(R.string.dashboard_stats_recording_empty),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

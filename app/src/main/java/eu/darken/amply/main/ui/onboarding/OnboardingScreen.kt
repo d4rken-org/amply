@@ -26,8 +26,6 @@ import androidx.compose.material.icons.twotone.BatteryChargingFull
 import androidx.compose.material.icons.twotone.Bolt
 import androidx.compose.material.icons.twotone.Restore
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -39,7 +37,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -48,7 +45,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.PaddingValues
 import eu.darken.amply.R
+import eu.darken.amply.common.compose.AmplyCard
+import eu.darken.amply.common.compose.AmplyCardTone
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
 
@@ -176,27 +176,27 @@ private fun OnboardingWelcomePage(onNext: () -> Unit) = OnboardingScaffold(
         )
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    // Exception to the uniform card inset: the rows own their own horizontal padding, so this card
+    // keeps only the vertical inset and passes 0 horizontal.
+    AmplyCard(
+        tone = AmplyCardTone.SurfaceLow,
+        contentPadding = PaddingValues(vertical = 8.dp),
     ) {
-        Column(Modifier.padding(vertical = 8.dp)) {
-            FeatureRow(
-                icon = Icons.TwoTone.Restore,
-                title = stringResource(R.string.onboarding_feature_protection_title),
-                body = stringResource(R.string.onboarding_feature_protection_body),
-            )
-            FeatureRow(
-                icon = Icons.TwoTone.BatteryChargingFull,
-                title = stringResource(R.string.onboarding_feature_fullcharge_title),
-                body = stringResource(R.string.onboarding_feature_fullcharge_body),
-            )
-            FeatureRow(
-                icon = Icons.TwoTone.Bolt,
-                title = stringResource(R.string.onboarding_feature_shortcut_title),
-                body = stringResource(R.string.onboarding_feature_shortcut_body),
-            )
-        }
+        FeatureRow(
+            icon = Icons.TwoTone.Restore,
+            title = stringResource(R.string.onboarding_feature_protection_title),
+            body = stringResource(R.string.onboarding_feature_protection_body),
+        )
+        FeatureRow(
+            icon = Icons.TwoTone.BatteryChargingFull,
+            title = stringResource(R.string.onboarding_feature_fullcharge_title),
+            body = stringResource(R.string.onboarding_feature_fullcharge_body),
+        )
+        FeatureRow(
+            icon = Icons.TwoTone.Bolt,
+            title = stringResource(R.string.onboarding_feature_shortcut_title),
+            body = stringResource(R.string.onboarding_feature_shortcut_body),
+        )
     }
 }
 
@@ -217,22 +217,19 @@ private fun OnboardingCaveatsPage(onContinue: () -> Unit) = OnboardingScaffold(
     )
 
     CaveatCard(
-        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        tone = AmplyCardTone.TertiaryContainer,
         title = stringResource(R.string.onboarding_caveat_support_title),
         body = stringResource(R.string.onboarding_caveat_support_body),
     )
 
     CaveatCard(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        contentColor = MaterialTheme.colorScheme.onSurface,
+        tone = AmplyCardTone.SurfaceHigh,
         title = stringResource(R.string.onboarding_caveat_setup_title),
         body = stringResource(R.string.onboarding_caveat_setup_body),
     )
 
     CaveatCard(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        contentColor = MaterialTheme.colorScheme.onSurface,
+        tone = AmplyCardTone.SurfaceHigh,
         title = stringResource(R.string.onboarding_caveat_restore_title),
         body = stringResource(R.string.onboarding_caveat_restore_body),
     )
@@ -243,20 +240,14 @@ private const val ONBOARDING_PAGE_COUNT = 2
 
 @Composable
 private fun CaveatCard(
-    containerColor: Color,
-    contentColor: Color,
+    tone: AmplyCardTone,
     title: String,
     body: String,
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = containerColor, contentColor = contentColor),
-    ) {
-        Column(Modifier.padding(20.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(8.dp))
-            Text(body, style = MaterialTheme.typography.bodyMedium)
-        }
+    AmplyCard(tone = tone) {
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(8.dp))
+        Text(body, style = MaterialTheme.typography.bodyMedium)
     }
 }
 

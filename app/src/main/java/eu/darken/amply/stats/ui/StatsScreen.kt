@@ -1,7 +1,6 @@
 package eu.darken.amply.stats.ui
 
 import android.text.format.DateUtils
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,13 +14,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -36,7 +33,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import eu.darken.amply.R
+import eu.darken.amply.common.compose.AmplyCardHeader
+import eu.darken.amply.common.compose.AmplyCardToggleIndicator
+import eu.darken.amply.common.compose.AmplyClickableCard
 import eu.darken.amply.common.compose.AmplyPreview
+import eu.darken.amply.common.compose.AmplyToggleCard
 import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.stats.core.ChargeSessionSummary
 import eu.darken.amply.stats.core.ChargingType
@@ -152,47 +153,36 @@ private fun CaptureCard(
     lastCaptureWallMillis: Long?,
     onCaptureEnabledChange: (Boolean) -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    stringResource(R.string.stats_capture_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f),
-                )
-                Switch(checked = enabled, onCheckedChange = onCaptureEnabledChange)
-            }
+    AmplyToggleCard(checked = enabled, onCheckedChange = onCaptureEnabledChange) {
+        AmplyCardHeader(
+            title = stringResource(R.string.stats_capture_title),
+            trailing = { AmplyCardToggleIndicator(enabled) },
+        )
+        Text(
+            stringResource(R.string.stats_capture_subtitle),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (enabled) {
+            val lastText = lastCaptureWallMillis?.let {
+                DateUtils.getRelativeTimeSpanString(it).toString()
+            } ?: stringResource(R.string.stats_capture_never)
             Text(
-                stringResource(R.string.stats_capture_subtitle),
-                style = MaterialTheme.typography.bodyMedium,
+                stringResource(R.string.stats_capture_last_recorded, lastText),
+                style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (enabled) {
-                val lastText = lastCaptureWallMillis?.let {
-                    DateUtils.getRelativeTimeSpanString(it).toString()
-                } ?: stringResource(R.string.stats_capture_never)
-                Text(
-                    stringResource(R.string.stats_capture_last_recorded, lastText),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
     }
 }
 
 @Composable
 private fun SessionRow(session: ChargeSessionSummary, onClick: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .clickable(onClick = onClick)
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+    AmplyClickableCard(
+        onClick = onClick,
+        onClickLabel = stringResource(R.string.stats_session_open_action),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     DateUtils.getRelativeTimeSpanString(session.startedAtWallMillis).toString(),

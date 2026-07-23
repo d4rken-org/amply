@@ -1,28 +1,21 @@
 package eu.darken.amply.diagnostics.ui
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.twotone.ArrowBack
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -41,10 +34,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import eu.darken.amply.R
 import eu.darken.amply.charging.core.access.BackendStatus
+import eu.darken.amply.common.compose.AmplyCard
+import eu.darken.amply.common.compose.AmplyCardDefaults
+import eu.darken.amply.common.compose.AmplyCodeBlock
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.common.compose.asComposable
@@ -207,44 +202,39 @@ private fun ShizukuCard(
     onAllowShizuku: () -> Unit,
 ) {
     val ready = shizuku?.ready == true
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                stringResource(
-                    if (ready) {
-                        R.string.contribution_shizuku_ready_title
-                    } else {
-                        R.string.contribution_shizuku_required_title
-                    },
-                ),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Text(
-                shizuku?.detail?.asComposable() ?: stringResource(R.string.contribution_shizuku_checking),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            when {
-                shizuku == null || ready -> Unit
-                !shizuku.installed -> {
-                    Text(
-                        stringResource(R.string.contribution_shizuku_not_installed_body),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Button(onClick = onOpenShizuku) {
-                        Text(stringResource(R.string.contribution_install_shizuku))
-                    }
+    AmplyCard(verticalArrangement = Arrangement.spacedBy(AmplyCardDefaults.ItemSpacing)) {
+        Text(
+            stringResource(
+                if (ready) {
+                    R.string.contribution_shizuku_ready_title
+                } else {
+                    R.string.contribution_shizuku_required_title
+                },
+            ),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Text(
+            shizuku?.detail?.asComposable() ?: stringResource(R.string.contribution_shizuku_checking),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        when {
+            shizuku == null || ready -> Unit
+            !shizuku.installed -> {
+                Text(
+                    stringResource(R.string.contribution_shizuku_not_installed_body),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(onClick = onOpenShizuku) {
+                    Text(stringResource(R.string.contribution_install_shizuku))
                 }
-                shizuku.available && !shizuku.granted -> Button(onClick = onAllowShizuku) {
-                    Text(stringResource(R.string.contribution_allow_shizuku))
-                }
-                !shizuku.available -> Button(onClick = onOpenShizuku) {
-                    Text(stringResource(R.string.contribution_open_shizuku))
-                }
+            }
+            shizuku.available && !shizuku.granted -> Button(onClick = onAllowShizuku) {
+                Text(stringResource(R.string.contribution_allow_shizuku))
+            }
+            !shizuku.available -> Button(onClick = onOpenShizuku) {
+                Text(stringResource(R.string.contribution_open_shizuku))
             }
         }
     }
@@ -371,31 +361,26 @@ private fun ModeCard(
     mode: ModeSummary,
     onSetEffect: (Int, String) -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(mode.label, style = MaterialTheme.typography.titleMedium)
-            mode.changedFromPrevious?.let {
-                Text(
-                    stringResource(R.string.contribution_changed_count, it),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+    AmplyCard(verticalArrangement = Arrangement.spacedBy(AmplyCardDefaults.ItemSpacing)) {
+        Text(mode.label, style = MaterialTheme.typography.titleMedium)
+        mode.changedFromPrevious?.let {
             Text(
-                stringResource(R.string.contribution_effect_prompt),
+                stringResource(R.string.contribution_changed_count, it),
                 style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                EFFECT_CHOICES.forEach { (token, labelRes) ->
-                    FilterChip(
-                        selected = mode.effect == token,
-                        onClick = { onSetEffect(index, token) },
-                        label = { Text(stringResource(labelRes)) },
-                    )
-                }
+        }
+        Text(
+            stringResource(R.string.contribution_effect_prompt),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            EFFECT_CHOICES.forEach { (token, labelRes) ->
+                FilterChip(
+                    selected = mode.effect == token,
+                    onClick = { onSetEffect(index, token) },
+                    label = { Text(stringResource(labelRes)) },
+                )
             }
         }
     }
@@ -434,43 +419,38 @@ private fun ReviewRowCard(
     onRevealRow: (SettingId) -> Unit,
     onToggleInclude: (SettingId) -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            when {
-                row.disclosure == Disclosure.AUTO -> {
-                    Text(row.id.display, style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        stringResource(R.string.contribution_review_auto),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    ReviewValues(row.values)
+    AmplyCard(verticalArrangement = Arrangement.spacedBy(AmplyCardDefaults.ItemSpacing)) {
+        when {
+            row.disclosure == Disclosure.AUTO -> {
+                Text(row.id.display, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    stringResource(R.string.contribution_review_auto),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                ReviewValues(row.values)
+            }
+            !row.revealed -> {
+                // Whole row stays hidden until revealed — key name included, since a setting name can itself
+                // carry an identifier. Only after Reveal is the name shown (locally) and offered for inclusion.
+                Text(
+                    stringResource(R.string.contribution_review_hidden),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedButton(onClick = { onRevealRow(row.id) }) {
+                    Text(stringResource(R.string.contribution_review_reveal))
                 }
-                !row.revealed -> {
-                    // Whole row stays hidden until revealed — key name included, since a setting name can itself
-                    // carry an identifier. Only after Reveal is the name shown (locally) and offered for inclusion.
-                    Text(
-                        stringResource(R.string.contribution_review_hidden),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+            }
+            else -> {
+                Text(row.id.display, style = MaterialTheme.typography.titleSmall)
+                ReviewValues(row.values)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = row.included,
+                        onCheckedChange = { onToggleInclude(row.id) },
                     )
-                    OutlinedButton(onClick = { onRevealRow(row.id) }) {
-                        Text(stringResource(R.string.contribution_review_reveal))
-                    }
-                }
-                else -> {
-                    Text(row.id.display, style = MaterialTheme.typography.titleSmall)
-                    ReviewValues(row.values)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = row.included,
-                            onCheckedChange = { onToggleInclude(row.id) },
-                        )
-                        Text(stringResource(R.string.contribution_review_include))
-                    }
+                    Text(stringResource(R.string.contribution_review_include))
                 }
             }
         }
@@ -498,23 +478,7 @@ private fun LazyListScope.deliverStep(
     item { SectionTitle(stringResource(R.string.contribution_deliver_title)) }
     item { BodyText(stringResource(R.string.contribution_deliver_preview)) }
     item {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-        ) {
-            SelectionContainer {
-                Text(
-                    text = state.reportText ?: "",
-                    modifier = Modifier
-                        .heightIn(max = 260.dp)
-                        .verticalScroll(rememberScrollState())
-                        .padding(12.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                )
-            }
-        }
+        AmplyCodeBlock(text = state.reportText ?: "", maxHeight = 260.dp)
     }
     if (state.deliveryTooLargeBytes != null) {
         item { BodyText(stringResource(R.string.contribution_too_large)) }
