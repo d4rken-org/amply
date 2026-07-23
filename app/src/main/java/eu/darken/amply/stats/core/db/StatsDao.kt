@@ -32,6 +32,10 @@ interface StatsDao {
     @Query("SELECT * FROM charge_sessions WHERE endedAtWallMillis IS NOT NULL ORDER BY startedAtWallMillis DESC LIMIT :limit")
     fun finishedSessions(limit: Int): Flow<List<ChargeSessionEntity>>
 
+    /** Count of finished sessions, for the dashboard teaser. */
+    @Query("SELECT COUNT(*) FROM charge_sessions WHERE endedAtWallMillis IS NOT NULL")
+    fun finishedSessionCount(): Flow<Int>
+
     @Query("SELECT * FROM charge_sessions WHERE id = :id")
     fun sessionFlow(id: Long): Flow<ChargeSessionEntity?>
 

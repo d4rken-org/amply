@@ -22,6 +22,9 @@ class ChargeStatsRepository @Inject constructor(
     fun recentSessions(limit: Int = DEFAULT_SESSION_LIMIT): Flow<List<ChargeSessionSummary>> =
         database.get().statsDao().finishedSessions(limit).map { rows -> rows.map(::toSummary) }
 
+    /** Count of finished sessions (for the dashboard teaser). */
+    fun sessionCount(): Flow<Int> = database.get().statsDao().finishedSessionCount()
+
     fun session(id: Long): Flow<ChargeSessionSummary?> =
         database.get().statsDao().sessionFlow(id).map { it?.let(::toSummary) }
 

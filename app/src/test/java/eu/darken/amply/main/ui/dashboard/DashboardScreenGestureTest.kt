@@ -46,6 +46,7 @@ class DashboardScreenGestureTest {
                 onAlarmTargetChange = {},
                 onFixNotifications = {},
                 onOpenBatteryDetail = {},
+                onOpenStats = {},
                 onPinWidget = {},
                 onAddTile = {},
                 onDismissQuickAccess = {},
