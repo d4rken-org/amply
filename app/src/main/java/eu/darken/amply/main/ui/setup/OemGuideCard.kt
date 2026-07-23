@@ -3,14 +3,10 @@ package eu.darken.amply.main.ui.setup
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.twotone.BatteryChargingFull
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -21,6 +17,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import eu.darken.amply.R
+import eu.darken.amply.common.compose.AmplyCard
+import eu.darken.amply.common.compose.AmplyCardDefaults
+import eu.darken.amply.common.compose.AmplyCardHeader
+import eu.darken.amply.common.compose.AmplyCardTone
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
 
@@ -37,46 +37,29 @@ fun OemGuideCard(
     modifier: Modifier = Modifier,
     isLineageOs: Boolean = false,
 ) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-        ),
+    AmplyCard(
+        modifier = modifier,
+        tone = AmplyCardTone.SecondaryContainer,
+        verticalArrangement = Arrangement.spacedBy(AmplyCardDefaults.ItemSpacing),
     ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+        AmplyCardHeader(
+            title = stringResource(R.string.setup_oem_guide_title),
+            icon = Icons.TwoTone.BatteryChargingFull,
+            iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
+        )
+        Text(
+            stringResource(oemInstructions(manufacturer, isLineageOs)),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        FilledTonalButton(
+            onClick = onOpenSettings,
+            modifier = Modifier.align(Alignment.End),
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Icon(
-                    Icons.TwoTone.BatteryChargingFull,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                )
-                Text(
-                    stringResource(R.string.setup_oem_guide_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                )
-            }
+            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
             Text(
-                stringResource(oemInstructions(manufacturer, isLineageOs)),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                stringResource(R.string.setup_oem_guide_open_action),
+                modifier = Modifier.padding(start = 8.dp),
             )
-            FilledTonalButton(
-                onClick = onOpenSettings,
-                modifier = Modifier.align(Alignment.End),
-            ) {
-                Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
-                Text(
-                    stringResource(R.string.setup_oem_guide_open_action),
-                    modifier = Modifier.padding(start = 8.dp),
-                )
-            }
         }
     }
 }

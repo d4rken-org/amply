@@ -1,22 +1,17 @@
 package eu.darken.amply.main.ui.setup
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -24,10 +19,8 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import eu.darken.amply.R
@@ -38,6 +31,10 @@ import eu.darken.amply.charging.core.access.AccessSnapshot
 import eu.darken.amply.charging.core.access.BackendStatus
 import eu.darken.amply.common.AmplyLinks
 import eu.darken.amply.common.ca.toCaString
+import eu.darken.amply.common.compose.AmplyCard
+import eu.darken.amply.common.compose.AmplyCardHeader
+import eu.darken.amply.common.compose.AmplyCardTone
+import eu.darken.amply.common.compose.AmplyCodeBlock
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.main.ui.dashboard.DashboardUiState
@@ -63,159 +60,128 @@ fun AccessSetupGuide(
     val shizukuRunning = access?.shizuku?.available == true
     val shizukuReady = access?.shizuku?.ready == true
 
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (wssReady) {
-                MaterialTheme.colorScheme.secondaryContainer
-            } else {
-                MaterialTheme.colorScheme.surfaceContainerHigh
-            },
-        ),
+    AmplyCard(
+        modifier = modifier,
+        tone = if (wssReady) AmplyCardTone.SecondaryContainer else AmplyCardTone.SurfaceHigh,
     ) {
-        Column(Modifier.padding(20.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    // A wrench reads as "setup work"; the shield the status card uses implied protection
-                    // was already active. The ready state keeps the check to signal completion.
-                    imageVector = if (wssReady) Icons.Default.CheckCircle else Icons.Default.Build,
-                    contentDescription = null,
-                    tint = if (wssReady) {
-                        MaterialTheme.colorScheme.primary
+        AmplyCardHeader(
+            title = if (wssReady) {
+                stringResource(R.string.setup_access_ready_title)
+            } else {
+                stringResource(R.string.setup_access_setup_title)
+            },
+            // A wrench reads as "setup work"; the shield the status card uses implied protection
+            // was already active. The ready state keeps the check to signal completion.
+            icon = if (wssReady) Icons.Default.CheckCircle else Icons.Default.Build,
+            iconTint = if (wssReady) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            titleStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = if (wssReady) {
+                stringResource(R.string.setup_access_ready_body)
+            } else {
+                stringResource(R.string.setup_access_setup_body)
+            },
+            style = MaterialTheme.typography.bodyMedium,
+        )
+
+        if (!wssReady) {
+            Spacer(Modifier.height(20.dp))
+            Text(stringResource(R.string.setup_access_option_shizuku), style = MaterialTheme.typography.labelLarge)
+            Text(
+                stringResource(R.string.setup_access_shizuku_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            when {
+                shizukuReady -> Button(
+                    onClick = onGrantWss,
+                    enabled = !state.charging.grantingWss,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    if (state.charging.grantingWss) {
+                        CircularProgressIndicator(
+                            // Follow the (disabled) button's content color rather than a fixed onPrimary,
+                            // which would under-contrast against the disabled container in light themes.
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = LocalContentColor.current,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.setup_access_granting_shizuku))
                     } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-                Text(
-                    text = if (wssReady) {
-                        stringResource(R.string.setup_access_ready_title)
-                    } else {
-                        stringResource(R.string.setup_access_setup_title)
-                    },
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
-                )
+                        Text(stringResource(R.string.setup_access_grant_shizuku))
+                    }
+                }
+                shizukuRunning -> FilledTonalButton(
+                    onClick = onAllowShizuku,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.setup_access_allow_shizuku))
+                }
+                else -> FilledTonalButton(
+                    onClick = onOpenShizuku,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.setup_access_open_shizuku))
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+            Text(stringResource(R.string.setup_access_option_computer), style = MaterialTheme.typography.labelLarge)
+
+            // Primary computer path: the browser (WebUSB) helper, which grants over USB
+            // without a local ADB install. The link is opened on the *computer* the phone is
+            // plugged into — a phone cannot host itself — so we surface a copyable link, not
+            // an "open" action that would launch the phone's own browser.
+            Text(
+                stringResource(R.string.setup_access_webusb_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            AmplyCodeBlock(
+                text = AmplyLinks.WEB_ADB,
+                containerColor = MaterialTheme.colorScheme.surface,
+            )
+            Spacer(Modifier.height(4.dp))
+            FilledTonalButton(onClick = onCopyWebUsbLink, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.ContentCopy, contentDescription = null)
+                Text(stringResource(R.string.setup_access_copy_webusb), Modifier.padding(start = 8.dp))
+            }
+
+            // Fallback for users who already have ADB set up on that computer.
+            Spacer(Modifier.height(12.dp))
+            Text(
+                stringResource(R.string.setup_access_adb_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            AmplyCodeBlock(
+                text = adbCommand,
+                containerColor = MaterialTheme.colorScheme.surface,
+            )
+            Spacer(Modifier.height(4.dp))
+            FilledTonalButton(onClick = onCopyAdb, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.ContentCopy, contentDescription = null)
+                Text(stringResource(R.string.setup_access_copy_adb), Modifier.padding(start = 8.dp))
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                text = if (wssReady) {
-                    stringResource(R.string.setup_access_ready_body)
-                } else {
-                    stringResource(R.string.setup_access_setup_body)
-                },
-                style = MaterialTheme.typography.bodyMedium,
+                // An external `adb pm grant` fires no OS callback, but while this card is shown Amply
+                // polls for the grant (see monitorAccessWhileAwaitingGrant); the note reassures the user
+                // it is detected automatically, with manual Refresh as a fallback.
+                stringResource(R.string.setup_access_adb_refresh_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-
-            if (!wssReady) {
-                Spacer(Modifier.height(20.dp))
-                Text(stringResource(R.string.setup_access_option_shizuku), style = MaterialTheme.typography.labelLarge)
-                Text(
-                    stringResource(R.string.setup_access_shizuku_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(8.dp))
-                when {
-                    shizukuReady -> Button(
-                        onClick = onGrantWss,
-                        enabled = !state.charging.grantingWss,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        if (state.charging.grantingWss) {
-                            CircularProgressIndicator(
-                                // Follow the (disabled) button's content color rather than a fixed onPrimary,
-                                // which would under-contrast against the disabled container in light themes.
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                                color = LocalContentColor.current,
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(stringResource(R.string.setup_access_granting_shizuku))
-                        } else {
-                            Text(stringResource(R.string.setup_access_grant_shizuku))
-                        }
-                    }
-                    shizukuRunning -> FilledTonalButton(
-                        onClick = onAllowShizuku,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(stringResource(R.string.setup_access_allow_shizuku))
-                    }
-                    else -> FilledTonalButton(
-                        onClick = onOpenShizuku,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(stringResource(R.string.setup_access_open_shizuku))
-                    }
-                }
-
-                Spacer(Modifier.height(20.dp))
-                Text(stringResource(R.string.setup_access_option_computer), style = MaterialTheme.typography.labelLarge)
-
-                // Primary computer path: the browser (WebUSB) helper, which grants over USB
-                // without a local ADB install. The link is opened on the *computer* the phone is
-                // plugged into — a phone cannot host itself — so we surface a copyable link, not
-                // an "open" action that would launch the phone's own browser.
-                Text(
-                    stringResource(R.string.setup_access_webusb_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(8.dp))
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-                    SelectionContainer {
-                        Text(
-                            text = AmplyLinks.WEB_ADB,
-                            modifier = Modifier.padding(12.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                        )
-                    }
-                }
-                Spacer(Modifier.height(4.dp))
-                FilledTonalButton(onClick = onCopyWebUsbLink, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = null)
-                    Text(stringResource(R.string.setup_access_copy_webusb), Modifier.padding(start = 8.dp))
-                }
-
-                // Fallback for users who already have ADB set up on that computer.
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    stringResource(R.string.setup_access_adb_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(8.dp))
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-                    SelectionContainer {
-                        Text(
-                            text = adbCommand,
-                            modifier = Modifier.padding(12.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                        )
-                    }
-                }
-                Spacer(Modifier.height(4.dp))
-                FilledTonalButton(onClick = onCopyAdb, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = null)
-                    Text(stringResource(R.string.setup_access_copy_adb), Modifier.padding(start = 8.dp))
-                }
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    // An external `adb pm grant` fires no OS callback, but while this card is shown Amply
-                    // polls for the grant (see monitorAccessWhileAwaitingGrant); the note reassures the user
-                    // it is detected automatically, with manual Refresh as a fallback.
-                    stringResource(R.string.setup_access_adb_refresh_note),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
     }
 }

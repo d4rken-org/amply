@@ -24,8 +24,6 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.twotone.Settings
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
@@ -38,7 +36,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -49,7 +46,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -70,7 +66,12 @@ import eu.darken.amply.charging.core.settlingTarget
 import eu.darken.amply.common.ca.CaString
 import eu.darken.amply.common.ca.caString
 import eu.darken.amply.common.ca.toCaString
+import eu.darken.amply.common.compose.AmplyCard
+import eu.darken.amply.common.compose.AmplyCardHeader
+import eu.darken.amply.common.compose.AmplyCardToggleIndicator
+import eu.darken.amply.common.compose.AmplyCardTone
 import eu.darken.amply.common.compose.AmplyPreview
+import eu.darken.amply.common.compose.AmplyToggleCard
 import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.common.compose.asComposable
 import eu.darken.amply.fullcharge.core.ChargeSessionRecord
@@ -371,98 +372,95 @@ private fun StatusCard(
     val settling = state.charging.isSettling(now)
     val verified = observation is ChargeObservation.Verified
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-    ) {
-        Column(Modifier.padding(20.dp)) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (settling) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.tertiary,
-                    )
-                } else {
-                    Icon(
-                        imageVector = if (verified) Icons.Default.CheckCircle else Icons.Default.Security,
-                        contentDescription = null,
-                        tint = if (verified) Color(0xFF1A7F5A) else MaterialTheme.colorScheme.tertiary,
-                    )
-                }
-                Text(
-                    when {
-                        settling -> stringResource(R.string.dashboard_applying)
-                        presentation == SessionPresentation.ACTIVE ->
-                            stringResource(R.string.dashboard_session_once_title)
-                        else -> observation.title().asComposable()
-                    },
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            if (!settling) {
-                // One explanatory line: during a one-time charge, which policy comes back; otherwise
-                // what the current policy does. Phrased as definitions so it stays honest when the
-                // observation is only "last requested". Sits directly under the title; the
-                // provenance line below is closer to metadata.
-                val explanation = if (presentation == SessionPresentation.ACTIVE) {
-                    state.session?.let {
-                        stringResource(R.string.dashboard_session_returns, it.restorePolicy.shortLabel().asComposable())
-                    }
-                } else {
-                    observation.policyOrNull()?.description()?.asComposable()
-                }
-                explanation?.let {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        it,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            // Divider marks the boundary between "what the current policy is" (title + explanation)
-            // above and the provenance metadata below — where the reading comes from and which device.
-            Spacer(Modifier.height(12.dp))
-            HorizontalDivider()
-            Spacer(Modifier.height(12.dp))
-            Text(
-                observation.detail().asComposable(),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                stringResource(
-                    R.string.dashboard_device_line,
-                    state.charging.device.model,
-                    state.charging.device.sdk,
-                ),
-                style = MaterialTheme.typography.labelMedium,
-            )
+    AmplyCard(tone = AmplyCardTone.SurfaceContainer) {
+        // Custom header: state-dependent leading spinner/icon, hero titleLarge, and dynamic tint —
+        // not expressible via the standard AmplyCardHeader, so laid out inline.
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             if (settling) {
-                val target = state.charging.settlingTarget()?.shortLabel()?.asComposable()
-                    ?: stringResource(R.string.dashboard_settling_fallback_target)
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    stringResource(R.string.dashboard_waiting_target, target),
-                    style = MaterialTheme.typography.labelMedium,
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    strokeWidth = 2.dp,
                     color = MaterialTheme.colorScheme.tertiary,
                 )
             } else {
-                // The repository's apply message describes the request the settling line already
-                // narrates, so only show it once settling has resolved.
-                state.charging.message?.let {
-                    Text(
-                        it.asComposable(),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
+                Icon(
+                    imageVector = if (verified) Icons.Default.CheckCircle else Icons.Default.Security,
+                    contentDescription = null,
+                    tint = if (verified) Color(0xFF1A7F5A) else MaterialTheme.colorScheme.tertiary,
+                )
+            }
+            Text(
+                when {
+                    settling -> stringResource(R.string.dashboard_applying)
+                    presentation == SessionPresentation.ACTIVE ->
+                        stringResource(R.string.dashboard_session_once_title)
+                    else -> observation.title().asComposable()
+                },
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        if (!settling) {
+            // One explanatory line: during a one-time charge, which policy comes back; otherwise
+            // what the current policy does. Phrased as definitions so it stays honest when the
+            // observation is only "last requested". Sits directly under the title; the
+            // provenance line below is closer to metadata.
+            val explanation = if (presentation == SessionPresentation.ACTIVE) {
+                state.session?.let {
+                    stringResource(R.string.dashboard_session_returns, it.restorePolicy.shortLabel().asComposable())
                 }
+            } else {
+                observation.policyOrNull()?.description()?.asComposable()
+            }
+            explanation?.let {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        // Divider marks the boundary between "what the current policy is" (title + explanation)
+        // above and the provenance metadata below — where the reading comes from and which device.
+        Spacer(Modifier.height(12.dp))
+        HorizontalDivider()
+        Spacer(Modifier.height(12.dp))
+        Text(
+            observation.detail().asComposable(),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            stringResource(
+                R.string.dashboard_device_line,
+                state.charging.device.model,
+                state.charging.device.sdk,
+            ),
+            style = MaterialTheme.typography.labelMedium,
+        )
+        if (settling) {
+            val target = state.charging.settlingTarget()?.shortLabel()?.asComposable()
+                ?: stringResource(R.string.dashboard_settling_fallback_target)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                stringResource(R.string.dashboard_waiting_target, target),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.tertiary,
+            )
+        } else {
+            // The repository's apply message describes the request the settling line already
+            // narrates, so only show it once settling has resolved.
+            state.charging.message?.let {
+                Text(
+                    it.asComposable(),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
             }
         }
     }
@@ -478,54 +476,49 @@ private fun FullChargeCard(
     // Any session record offers the restore action; only an observed full-charge policy (verified
     // or last requested) claims the one-time charge is running.
     val active = presentation != SessionPresentation.NONE
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Text(
-                when (presentation) {
-                    SessionPresentation.NONE -> stringResource(R.string.dashboard_fullcharge_idle_title)
-                    SessionPresentation.ACTIVE -> stringResource(R.string.dashboard_fullcharge_active_title)
-                    SessionPresentation.RECORDED -> stringResource(R.string.dashboard_fullcharge_recorded_title)
-                },
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
+    AmplyCard(tone = AmplyCardTone.PrimaryContainer) {
+        Text(
             when (presentation) {
-                // The status card explains an ACTIVE session; repeating it here would duplicate.
-                SessionPresentation.ACTIVE -> Unit
-                SessionPresentation.NONE -> Text(
-                    stringResource(R.string.dashboard_fullcharge_idle_body),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                SessionPresentation.RECORDED -> Text(
-                    stringResource(R.string.dashboard_fullcharge_recorded_body),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            Button(
-                onClick = if (active) onRestore else onStart,
-                // Restore also writes, so it needs a working backend too — gating only on `active`
-                // would keep it enabled after Shizuku drops mid-session on a Shizuku-only adapter,
-                // where tapping it just fails. The Shizuku-required banner guides reconnection.
-                enabled = canControl,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(
-                    if (active) Icons.Default.PowerSettingsNew else Icons.Default.BatteryChargingFull,
-                    contentDescription = null,
-                )
-                Text(
-                    if (active) {
-                        stringResource(R.string.dashboard_fullcharge_restore)
-                    } else {
-                        stringResource(R.string.dashboard_fullcharge_start)
-                    },
-                    Modifier.padding(start = 8.dp),
-                )
-            }
+                SessionPresentation.NONE -> stringResource(R.string.dashboard_fullcharge_idle_title)
+                SessionPresentation.ACTIVE -> stringResource(R.string.dashboard_fullcharge_active_title)
+                SessionPresentation.RECORDED -> stringResource(R.string.dashboard_fullcharge_recorded_title)
+            },
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+        when (presentation) {
+            // The status card explains an ACTIVE session; repeating it here would duplicate.
+            SessionPresentation.ACTIVE -> Unit
+            SessionPresentation.NONE -> Text(
+                stringResource(R.string.dashboard_fullcharge_idle_body),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            SessionPresentation.RECORDED -> Text(
+                stringResource(R.string.dashboard_fullcharge_recorded_body),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Button(
+            onClick = if (active) onRestore else onStart,
+            // Restore also writes, so it needs a working backend too — gating only on `active`
+            // would keep it enabled after Shizuku drops mid-session on a Shizuku-only adapter,
+            // where tapping it just fails. The Shizuku-required banner guides reconnection.
+            enabled = canControl,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(
+                if (active) Icons.Default.PowerSettingsNew else Icons.Default.BatteryChargingFull,
+                contentDescription = null,
+            )
+            Text(
+                if (active) {
+                    stringResource(R.string.dashboard_fullcharge_restore)
+                } else {
+                    stringResource(R.string.dashboard_fullcharge_start)
+                },
+                Modifier.padding(start = 8.dp),
+            )
         }
     }
 }
@@ -545,14 +538,10 @@ private fun PolicyCard(
         }
         .map { it to it.choiceLabel() }
     val selectedPolicy = selectedPolicyFor(state.session, state.charging.observation)
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 20.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    stringResource(R.string.dashboard_policy_card_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f),
-                )
+    AmplyCard {
+        AmplyCardHeader(
+            title = stringResource(R.string.dashboard_policy_card_title),
+            trailing = {
                 TextButton(
                     onClick = onNativeSettings,
                     contentPadding = PaddingValues(horizontal = 8.dp),
@@ -568,33 +557,33 @@ private fun PolicyCard(
                         style = MaterialTheme.typography.labelLarge,
                     )
                 }
-            }
-            Spacer(Modifier.height(8.dp))
-            val choiceEnabled = state.charging.canApply && !state.charging.busy
-            if (choices.size <= 4) {
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    choices.forEachIndexed { index, (policy, label) ->
-                        SegmentedButton(
-                            selected = selectedPolicy == policy,
-                            onClick = { onApply(policy) },
-                            enabled = choiceEnabled,
-                            shape = SegmentedButtonDefaults.itemShape(index, choices.size),
-                        ) {
-                            Text(label)
-                        }
+            },
+        )
+        Spacer(Modifier.height(8.dp))
+        val choiceEnabled = state.charging.canApply && !state.charging.busy
+        if (choices.size <= 4) {
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                choices.forEachIndexed { index, (policy, label) ->
+                    SegmentedButton(
+                        selected = selectedPolicy == policy,
+                        onClick = { onApply(policy) },
+                        enabled = choiceEnabled,
+                        shape = SegmentedButtonDefaults.itemShape(index, choices.size),
+                    ) {
+                        Text(label)
                     }
                 }
-            } else {
-                // More options than a segmented row can fit legibly (Samsung: four limits + two modes).
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    choices.forEach { (policy, label) ->
-                        FilterChip(
-                            selected = selectedPolicy == policy,
-                            onClick = { onApply(policy) },
-                            enabled = choiceEnabled,
-                            label = { Text(label) },
-                        )
-                    }
+            }
+        } else {
+            // More options than a segmented row can fit legibly (Samsung: four limits + two modes).
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                choices.forEach { (policy, label) ->
+                    FilterChip(
+                        selected = selectedPolicy == policy,
+                        onClick = { onApply(policy) },
+                        enabled = choiceEnabled,
+                        label = { Text(label) },
+                    )
                 }
             }
         }
@@ -612,47 +601,38 @@ private fun QuickFullChargeCard(
     // When the gesture can neither be used nor turned off, dim the whole card so it reads as
     // disabled like the other controls, instead of showing a full-colour but inert toggle.
     val interactive = enabled || canControl
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier
-                .padding(start=20.dp,end=20.dp,top=12.dp,bottom=20.dp)
-                .alpha(if (interactive) 1f else 0.38f),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Default.Bolt, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Text(
-                    stringResource(R.string.dashboard_reconnect_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f),
-                )
-                if (enabled) {
-                    IconButton(onClick = onOpenSettings, enabled = interactive) {
-                        Icon(
-                            Icons.TwoTone.Settings,
-                            contentDescription = stringResource(R.string.dashboard_reconnect_settings_action),
-                        )
+    AmplyToggleCard(
+        checked = enabled,
+        onCheckedChange = onEnabledChange,
+        enabled = interactive,
+        contentAlpha = if (interactive) 1f else 0.38f,
+    ) {
+        AmplyCardHeader(
+            title = stringResource(R.string.dashboard_reconnect_title),
+            icon = Icons.Default.Bolt,
+            trailing = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (enabled) {
+                        IconButton(onClick = onOpenSettings, enabled = interactive) {
+                            Icon(
+                                Icons.TwoTone.Settings,
+                                contentDescription = stringResource(R.string.dashboard_reconnect_settings_action),
+                            )
+                        }
                     }
+                    AmplyCardToggleIndicator(checked = enabled, enabled = interactive)
                 }
-                Switch(
-                    checked = enabled,
-                    onCheckedChange = onEnabledChange,
-                    enabled = enabled || canControl,
-                )
-            }
-            Text(
-                when {
-                    enabled && anyLevel -> stringResource(R.string.dashboard_reconnect_body_on_any_level)
-                    enabled -> stringResource(R.string.dashboard_reconnect_body_on)
-                    else -> stringResource(R.string.dashboard_reconnect_body_off)
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+            },
+        )
+        Text(
+            when {
+                enabled && anyLevel -> stringResource(R.string.dashboard_reconnect_body_on_any_level)
+                enabled -> stringResource(R.string.dashboard_reconnect_body_on)
+                else -> stringResource(R.string.dashboard_reconnect_body_off)
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -697,39 +677,34 @@ private fun ShizukuBanner(
     onOpen: () -> Unit,
     onAllow: () -> Unit,
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
-    ) {
-        Column(Modifier.padding(16.dp)) {
+    AmplyCard(tone = AmplyCardTone.TertiaryContainer) {
+        Text(
+            stringResource(
+                if (requiredForControl) R.string.dashboard_shizuku_required_title
+                else R.string.dashboard_shizuku_title,
+            ),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            stringResource(
+                if (requiredForControl) R.string.dashboard_shizuku_required_body
+                else R.string.dashboard_shizuku_body,
+            ),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Spacer(Modifier.height(8.dp))
+        FilledTonalButton(
+            onClick = if (running) onAllow else onOpen,
+            modifier = Modifier.align(Alignment.End),
+        ) {
             Text(
-                stringResource(
-                    if (requiredForControl) R.string.dashboard_shizuku_required_title
-                    else R.string.dashboard_shizuku_title,
-                ),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
+                if (running) {
+                    stringResource(R.string.dashboard_shizuku_allow)
+                } else {
+                    stringResource(R.string.dashboard_shizuku_open)
+                },
             )
-            Text(
-                stringResource(
-                    if (requiredForControl) R.string.dashboard_shizuku_required_body
-                    else R.string.dashboard_shizuku_body,
-                ),
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Spacer(Modifier.height(8.dp))
-            FilledTonalButton(
-                onClick = if (running) onAllow else onOpen,
-                modifier = Modifier.align(Alignment.End),
-            ) {
-                Text(
-                    if (running) {
-                        stringResource(R.string.dashboard_shizuku_allow)
-                    } else {
-                        stringResource(R.string.dashboard_shizuku_open)
-                    },
-                )
-            }
         }
     }
 }

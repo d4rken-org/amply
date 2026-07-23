@@ -1,7 +1,6 @@
 package eu.darken.amply.battery.ui
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,7 +9,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -26,6 +24,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import eu.darken.amply.R
 import eu.darken.amply.battery.core.BatteryReadout
+import eu.darken.amply.common.compose.AmplyCard
+import eu.darken.amply.common.compose.AmplyCardDefaults
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
 
@@ -141,18 +141,13 @@ private fun ThermalSection(readout: BatteryReadout) {
 
 @Composable
 private fun DetailSection(title: String, content: @Composable () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                title,
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            content()
-        }
+    AmplyCard(verticalArrangement = Arrangement.spacedBy(AmplyCardDefaults.ItemSpacing)) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        content()
     }
 }
 

@@ -2,7 +2,6 @@ package eu.darken.amply.stats.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -27,6 +25,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import eu.darken.amply.R
+import eu.darken.amply.common.compose.AmplyCard
+import eu.darken.amply.common.compose.AmplyCardDefaults
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.common.compose.chart.ChartPoint
@@ -103,60 +103,53 @@ private fun CurveCard(curve: List<ChargeCurvePoint>) {
     val percentColor = MaterialTheme.colorScheme.primary
     val powerColor = MaterialTheme.colorScheme.tertiary
     val tempColor = MaterialTheme.colorScheme.error
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                stringResource(R.string.stats_detail_curve_title),
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(bottom = 4.dp),
-            )
-            LineChart(
-                series = listOf(
-                    ChartSeries(
-                        label = stringResource(R.string.stats_curve_series_percent),
-                        color = percentColor,
-                        points = curve.map { ChartPoint(it.elapsedFromStartMillis.toFloat(), it.percent?.toFloat()) },
-                    ),
-                    ChartSeries(
-                        label = stringResource(R.string.stats_curve_series_power),
-                        color = powerColor,
-                        points = curve.map { ChartPoint(it.elapsedFromStartMillis.toFloat(), it.powerMilliwatts?.toFloat()) },
-                    ),
-                    ChartSeries(
-                        label = stringResource(R.string.stats_curve_series_temperature),
-                        color = tempColor,
-                        points = curve.map { ChartPoint(it.elapsedFromStartMillis.toFloat(), it.temperatureTenthsC?.toFloat()) },
-                    ),
+    AmplyCard {
+        Text(
+            stringResource(R.string.stats_detail_curve_title),
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(bottom = 4.dp),
+        )
+        LineChart(
+            series = listOf(
+                ChartSeries(
+                    label = stringResource(R.string.stats_curve_series_percent),
+                    color = percentColor,
+                    points = curve.map { ChartPoint(it.elapsedFromStartMillis.toFloat(), it.percent?.toFloat()) },
                 ),
-                emptyLabel = stringResource(R.string.stats_curve_empty),
-            )
-        }
+                ChartSeries(
+                    label = stringResource(R.string.stats_curve_series_power),
+                    color = powerColor,
+                    points = curve.map { ChartPoint(it.elapsedFromStartMillis.toFloat(), it.powerMilliwatts?.toFloat()) },
+                ),
+                ChartSeries(
+                    label = stringResource(R.string.stats_curve_series_temperature),
+                    color = tempColor,
+                    points = curve.map { ChartPoint(it.elapsedFromStartMillis.toFloat(), it.temperatureTenthsC?.toFloat()) },
+                ),
+            ),
+            emptyLabel = stringResource(R.string.stats_curve_empty),
+        )
     }
 }
 
 @Composable
 private fun SummaryCard(summary: ChargeSessionSummary) {
     val notReported = stringResource(R.string.battery_value_not_reported)
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            DetailRow(stringResource(R.string.stats_detail_level), StatsFormat.percentRange(summary.startPercent, summary.endPercent))
-            DetailRow(stringResource(R.string.stats_detail_duration), StatsFormat.duration(summary.durationMillis) ?: notReported)
-            DetailRow(stringResource(R.string.stats_detail_charging_type), stringResource(chargingTypeLabel(summary.chargingType)))
-            DetailRow(stringResource(R.string.stats_detail_avg_power), StatsFormat.power(summary.avgPowerMilliwatts) ?: notReported)
-            DetailRow(stringResource(R.string.stats_detail_peak_power), StatsFormat.power(summary.peakPowerMilliwatts) ?: notReported)
-            DetailRow(
-                stringResource(R.string.stats_detail_temperature),
-                StatsFormat.temperatureRange(summary.minTemperatureTenthsC, summary.maxTemperatureTenthsC) ?: notReported,
-            )
-            DetailRow(
-                stringResource(R.string.stats_detail_limit_likely),
-                stringResource(if (summary.limitHit) R.string.stats_value_yes else R.string.stats_value_no),
-            )
-        }
+    AmplyCard(verticalArrangement = Arrangement.spacedBy(AmplyCardDefaults.ItemSpacing)) {
+        DetailRow(stringResource(R.string.stats_detail_level), StatsFormat.percentRange(summary.startPercent, summary.endPercent))
+        DetailRow(stringResource(R.string.stats_detail_duration), StatsFormat.duration(summary.durationMillis) ?: notReported)
+        DetailRow(stringResource(R.string.stats_detail_charging_type), stringResource(chargingTypeLabel(summary.chargingType)))
+        DetailRow(stringResource(R.string.stats_detail_avg_power), StatsFormat.power(summary.avgPowerMilliwatts) ?: notReported)
+        DetailRow(stringResource(R.string.stats_detail_peak_power), StatsFormat.power(summary.peakPowerMilliwatts) ?: notReported)
+        DetailRow(
+            stringResource(R.string.stats_detail_temperature),
+            StatsFormat.temperatureRange(summary.minTemperatureTenthsC, summary.maxTemperatureTenthsC) ?: notReported,
+        )
+        DetailRow(
+            stringResource(R.string.stats_detail_limit_likely),
+            stringResource(if (summary.limitHit) R.string.stats_value_yes else R.string.stats_value_no),
+        )
     }
 }
 
