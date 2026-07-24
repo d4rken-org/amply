@@ -1,0 +1,72 @@
+name: Labeler
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited]
+
+# pull_request_target runs with the base repo's token so labels can be applied to PRs from forks.
+# No PR head code is checked out or executed here — only the changed-file list and the PR title are
+# read via the API — so the write-scoped token is never exposed to untrusted code.
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: labeler-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    name: Apply labels
+    runs-on: ubuntu-latest
+    steps:
+      # Area / flavor / build labels from the changed paths (config: .github/labeler.yml).
+      # sync-labels keeps these in step with the current diff (a reverted path drops its label).
+      - name: Label by changed paths
+        uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 #v7.0.0
+        with:
+          sync-labels: true
+
+      # Exactly one mutually-exclusive TYPE label, from the title convention
+      # (.claude/rules/commit-guidelines.md): a "Fix:" prefix -> bug; a docs-only diff ->
+      # documentation; anything else -> enhancement. The other two type labels are removed so an
+      # edited title/diff can't leave a stale type. Path labels above are left untouched.
+      - name: Label by title and diff
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 #v9.0.0
+        with:
+          script: |
+            const TYPE_LABELS = ["bug", "documentation", "enhancement"];
+            const pr = context.payload.pull_request;
+            const { owner, repo } = context.repo;
+            const issue_number = pr.number;
+
+            let type;
+            if (/^Fix:/i.test(pr.title || "")) {
+              type = "bug";
+            } else {
+              const files = await github.paginate(github.rest.pulls.listFiles, {
+                owner,
+                repo,
+                pull_number: issue_number,
+              });
+              const docsOnly = files.length > 0 && files.every((f) => f.filename.endsWith(".md"));
+              type = docsOnly ? "documentation" : "enhancement";
+            }
+
+            const current = (
+              await github.paginate(github.rest.issues.listLabelsOnIssue, { owner, repo, issue_number })
+            ).map((l) => l.name);
+
+            for (const stale of TYPE_LABELS) {
+              if (stale !== type && current.includes(stale)) {
+                // Tolerate a concurrent run having already removed it (404).
+                await github.rest.issues
+                  .removeLabel({ owner, repo, issue_number, name: stale })
+                  .catch((e) => {
+                    if (e.status !== 404) throw e;
+                  });
+              }
+            }
+            if (!current.includes(type)) {
+              await github.rest.issues.addLabels({ owner, repo, issue_number, labels: [type] });
+            }
