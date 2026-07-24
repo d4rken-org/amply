@@ -25,6 +25,7 @@ import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingRepository
 import eu.darken.amply.charging.core.ChargingState
+import eu.darken.amply.charging.core.SETTLING_WINDOW_MILLIS
 import eu.darken.amply.common.AmplyLinks
 import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
@@ -62,9 +63,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -190,11 +194,46 @@ class DashboardViewModel @Inject constructor(
 
     init {
         refresh()
+        observeSettlingDeadline()
     }
 
     fun refresh() = viewModelScope.launch {
         refreshNotificationsBlocked()
         repository.refresh()
+    }
+
+    /**
+     * Fire the post-settling refresh from the ViewModel rather than the status card's composition.
+     * The card previously drove this from a LaunchedEffect, which is cancelled the instant the
+     * dashboard leaves the screen — e.g. tapping the (now clickable) status card through to battery
+     * details mid-"applying" — stranding the pending marker until the user returns. Owning the
+     * deadline here promotes to Verified / clears pending regardless of what's on screen.
+     * `flatMapLatest` restarts the timer whenever the pending request changes; the WorkManager
+     * SettleScheduler stays the across-process-death backstop.
+     */
+    private fun observeSettlingDeadline() = viewModelScope.launch {
+        repository.state
+            .map { it.pending }
+            .distinctUntilChanged()
+            .flatMapLatest { pending ->
+                if (pending == null) {
+                    emptyFlow()
+                } else {
+                    flow {
+                        // Re-check the wall-clock remaining after each sleep: a backward clock
+                        // adjustment must not fire the refresh before the window (shared with the
+                        // repository's wall-clock expiry) has truly elapsed and then fail to rearm,
+                        // since the unchanged pending request is deduped upstream.
+                        while (true) {
+                            val remaining = pending.requestedAt + SETTLING_WINDOW_MILLIS - System.currentTimeMillis()
+                            if (remaining <= 0) break
+                            delay(remaining)
+                        }
+                        emit(Unit)
+                    }
+                }
+            }
+            .collect { refresh() }
     }
 
     /** Re-read whether alarm alerts would actually reach the user (permission, global toggle, and

@@ -405,9 +405,9 @@
     <string name="monitor_notification_title">Amply is watching the battery</string>
     <string name="monitor_notification_body">Keeping an eye on your charge level.</string>
 
-    <!-- Battery info card + detail screen -->
-    <string name="battery_info_title">Battery</string>
-    <string name="battery_info_details_action">Details</string>
+    <!-- Battery reading (shown in the dashboard hero) + detail screen -->
+    <string name="dashboard_battery_line">Battery: %1$s</string>
+    <string name="dashboard_battery_details_action">Open battery details</string>
     <string name="battery_info_summary">%1$s · %2$s · %3$s</string>
     <string name="battery_value_not_reported">Not reported</string>
     <string name="battery_value_unknown">Unknown</string>
