@@ -272,6 +272,7 @@ class MainActivity : ComponentActivity() {
                             onPinWidget = viewModel::requestPinWidget,
                             onAddTile = viewModel::requestAddTile,
                             onDismissQuickAccess = viewModel::dismissQuickAccess,
+                            onDismissInterruption = viewModel::dismissInterruption,
                             onNativeSettings = viewModel::openNativeSettings,
                             onOpenShizuku = viewModel::openShizuku,
                             onAllowShizuku = viewModel::requestShizukuPermission,

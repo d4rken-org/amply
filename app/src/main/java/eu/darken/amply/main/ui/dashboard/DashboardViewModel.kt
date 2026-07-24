@@ -36,7 +36,10 @@ import eu.darken.amply.fullcharge.core.ChargeSessionManager
 import eu.darken.amply.fullcharge.core.ChargeSessionRecord
 import eu.darken.amply.fullcharge.core.ChargeSessionService
 import eu.darken.amply.fullcharge.core.FullChargeStore
+import eu.darken.amply.fullcharge.core.InterruptionEvent
+import eu.darken.amply.fullcharge.core.InterruptionStore
 import eu.darken.amply.fullcharge.core.ServiceDispatch
+import eu.darken.amply.fullcharge.core.SessionNotifications
 import eu.darken.amply.main.core.DeviceSupportReport
 import eu.darken.amply.main.core.DeviceSupportReporter
 import eu.darken.amply.main.core.OnboardingSettings
@@ -102,6 +105,8 @@ data class DashboardUiState(
     val notificationsBlocked: Boolean = false,
     /** Everything the stats card needs: capture switch, pipeline health, and the Room teaser data. */
     val stats: StatsDashboardState = StatsDashboardState(),
+    /** A pending "Amply was interrupted while owing a restore" warning, or null when there is none. */
+    val interruption: InterruptionEvent? = null,
 )
 
 @HiltViewModel
@@ -118,6 +123,7 @@ class DashboardViewModel @Inject constructor(
     private val statsPreferences: StatsPreferences,
     private val statsRepository: ChargeStatsRepository,
     private val captureServiceHealth: CaptureServiceHealth,
+    private val interruptionStore: InterruptionStore,
     private val watchers: Set<@JvmSuppressWildcards ChargeMonitorWatcher>,
 ) : ViewModel() {
     private val deviceReport = MutableStateFlow<DeviceSupportReport?>(null)
@@ -133,12 +139,22 @@ class DashboardViewModel @Inject constructor(
     ) { enabled, anyLevel -> enabled to anyLevel }
 
     // Grouped so the outer combine keeps one slot each: the live battery readout, the alarm config,
-    // and the notifications-blocked flag.
+    // the notifications-blocked flag, and the interrupted-session warning.
     private val unprivilegedExtras = combine(
         batteryReadoutSource.readouts(),
         chargeAlarmStore.config,
         notificationsBlocked,
-    ) { readout, alarm, blocked -> Triple(readout, alarm, blocked) }
+        interruptionStore.event,
+    ) { readout, alarm, blocked, interruption ->
+        UnprivilegedExtras(readout, alarm, blocked, interruption)
+    }
+
+    private data class UnprivilegedExtras(
+        val readout: BatteryReadout?,
+        val alarm: ChargeAlarmConfig,
+        val notificationsBlocked: Boolean,
+        val interruption: InterruptionEvent?,
+    )
 
     // Battery-statistics dashboard teaser. The session/count reads (which open the stats Room DB)
     // run only while capture is enabled — when it's off the card shows a promo, so a user who never
@@ -173,14 +189,15 @@ class DashboardViewModel @Inject constructor(
         tileRequestPending,
         unprivilegedExtras,
         statsDashboard,
-    ) { base, quickAccess, checked, tilePending, (readout, alarm, blocked), stats ->
+    ) { base, quickAccess, checked, tilePending, extras, stats ->
         base.copy(
             quickAccess = quickAccess,
             quickAccessChecked = checked,
             tileRequestPending = tilePending,
-            batteryReadout = readout,
-            alarm = alarm,
-            notificationsBlocked = blocked,
+            batteryReadout = extras.readout,
+            alarm = extras.alarm,
+            notificationsBlocked = extras.notificationsBlocked,
+            interruption = extras.interruption,
             stats = stats,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
@@ -327,7 +344,13 @@ class DashboardViewModel @Inject constructor(
     fun applyPolicy(policy: ChargePolicy) = viewModelScope.launch {
         log(TAG, Logging.Priority.INFO) { "applyPolicy(${policy.stableId})" }
         if (fullChargeStore.currentSession() != null) sessionManager.cancelWithoutRestore()
-        repository.applyPersistent(policy)
+        val result = repository.applyPersistent(policy)
+        if (result.success) {
+            // An explicit policy choice supersedes any non-successful interruption warning and its
+            // lingering recovery notification.
+            interruptionStore.clearPending()
+            SessionNotifications.cancelRecovery(context)
+        }
         // The persistent policy is an any-level arming input; nudge a running gesture monitor so
         // arming and notification copy react now instead of on the next broadcast/30s poll.
         if (fullChargeStore.isQuickFullChargeEnabled()) {
@@ -445,6 +468,8 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun dismissQuickAccess() = viewModelScope.launch { quickAccessStore.dismiss() }
+
+    fun dismissInterruption() = viewModelScope.launch { interruptionStore.clear() }
 
     fun requestPinWidget() {
         // The pin dialog is modal once shown, but rapid taps before it appears would queue

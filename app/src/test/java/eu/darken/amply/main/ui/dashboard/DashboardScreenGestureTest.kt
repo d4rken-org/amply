@@ -75,6 +75,7 @@ class DashboardScreenGestureTest {
                 onPinWidget = {},
                 onAddTile = {},
                 onDismissQuickAccess = {},
+                onDismissInterruption = {},
                 onNativeSettings = {},
                 onOpenShizuku = {},
                 onAllowShizuku = {},

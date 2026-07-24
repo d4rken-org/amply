@@ -387,6 +387,17 @@
     <string name="dashboard_quickaccess_widget_manual">Widget pinning isn\'t available here. Long-press your home screen and add the Amply widget from the widget picker.</string>
     <string name="dashboard_quickaccess_tile_manual">Open Quick Settings, tap the edit button, and drag the Amply tile into place.</string>
 
+    <!-- Interrupted-session warning card -->
+    <string name="dashboard_interruption_title_restored">Charge limit restored after interruption</string>
+    <string name="dashboard_interruption_title_pending">Charge limit needs attention</string>
+    <string name="dashboard_interruption_title_unconfirmed">Charge limit restore unconfirmed</string>
+    <string name="dashboard_interruption_reason_user">Amply was stopped while it was watching a temporary full charge.</string>
+    <string name="dashboard_interruption_reason_other">Amply was interrupted while it was watching a temporary full charge.</string>
+    <string name="dashboard_interruption_outcome_restored">Your charge limit has been restored now.</string>
+    <string name="dashboard_interruption_outcome_pending">Your charge limit could not be restored yet — Amply keeps retrying. Check the current policy below.</string>
+    <string name="dashboard_interruption_outcome_unconfirmed">Your charge limit was written again, but the charging hardware has not confirmed it. Check the current policy below.</string>
+    <string name="dashboard_interruption_dismiss_action">Dismiss</string>
+
     <!-- Charge alarm (dashboard card + notification) -->
     <string name="dashboard_alarm_title">Charge alarm</string>
     <string name="dashboard_alarm_body_on">Amply will alert you to unplug when charging reaches your target. Works without any special setup.</string>

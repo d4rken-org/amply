@@ -104,6 +104,7 @@ private fun DashboardShot(state: DashboardUiState) = PreviewWrapper {
         onOpenSupportIssue = {},
         onEmailSupport = {},
         onHelp = {},
+        onDismissInterruption = {},
     )
 }
 
