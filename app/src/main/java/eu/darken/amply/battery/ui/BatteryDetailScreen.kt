@@ -81,7 +81,7 @@ private fun ChargingSection(readout: BatteryReadout) {
         )
         DetailRow(
             stringResource(R.string.battery_detail_status),
-            stringResource(batteryStatusLabel(readout.status)),
+            stringResource(batteryStatusLabel(readout.status, readout.plugged)),
         )
         DetailRow(
             stringResource(R.string.battery_detail_power_source),

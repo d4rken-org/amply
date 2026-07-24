@@ -55,19 +55,24 @@ class ChargeStatsRepository @Inject constructor(
     fun session(id: Long): Flow<ChargeSessionSummary?> =
         database.get().statsDao().sessionFlow(id).map { it?.let(::toSummary) }
 
-    suspend fun curve(id: Long, maxPoints: Int = DEFAULT_CURVE_POINTS): List<ChargeCurvePoint> {
-        val samples = database.get().statsDao().samplesForSessionNow(id)
-        val start = samples.firstOrNull()?.elapsedRealtimeMillis ?: 0L
-        val points = samples.map { sample ->
-            ChargeCurvePoint(
-                elapsedFromStartMillis = sample.elapsedRealtimeMillis - start,
-                percent = sample.percent,
-                powerMilliwatts = sample.powerMilliwatts,
-                temperatureTenthsC = sample.temperatureTenthsC,
-            )
+    /**
+     * A session's full curve as a live flow, so the detail screen keeps updating while the session
+     * is still open (samples land every recorder tick). Unbounded on purpose — unlike the dashboard's
+     * bounded [currentSession] window it is only subscribed while a detail screen is open.
+     */
+    fun curveFlow(id: Long, maxPoints: Int = DEFAULT_CURVE_POINTS): Flow<List<ChargeCurvePoint>> =
+        database.get().statsDao().samplesForSession(id).map { samples ->
+            val start = samples.firstOrNull()?.elapsedRealtimeMillis ?: 0L
+            val points = samples.map { sample ->
+                ChargeCurvePoint(
+                    elapsedFromStartMillis = sample.elapsedRealtimeMillis - start,
+                    percent = sample.percent,
+                    powerMilliwatts = sample.powerMilliwatts,
+                    temperatureTenthsC = sample.temperatureTenthsC,
+                )
+            }
+            StatsDownsampler.decimate(points, maxPoints)
         }
-        return StatsDownsampler.decimate(points, maxPoints)
-    }
 
     /** Wipe all statistics (serialized through the recorder so it can't race an in-flight sample). */
     fun clearAll() = recorder.clear()
