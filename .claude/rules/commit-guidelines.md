@@ -61,3 +61,25 @@ user-facing behavior change" plus a brief internal note.
 
 **Technical Context** — what the diff can't show: *why* this approach, root cause for fixes, non-obvious side effects,
 and review guidance. Keep it scannable; don't restate the diff.
+
+### Labels
+
+PRs are labeled automatically by `.github/workflows/labeler.yml` (config `.github/labeler.yml`). It runs on
+open/edit/synchronize, so labels appear a short time after opening and update when the title or diff changes:
+
+- **Area labels** from the changed paths — `Translations`, `FOSS`, `Google Play`, `Build/Deploy`. These are synced
+  to the current diff (a reverted path drops its label).
+- **One exclusive type label** from the title + diff — a `Fix:` title prefix → `bug`; a docs-only (`*.md`) diff →
+  `documentation`; anything else → `enhancement`. The workflow keeps exactly one of these three.
+
+**After opening a PR, check the applied labels and adjust — don't assume they're complete or correct:**
+
+- The workflow **cannot** infer device/OEM labels (`ROM: *`, `api: NN`, `device support`, `Shizuku`). Add those by
+  hand when the change is device- or ROM-specific.
+- The type heuristic keys on the `Fix:` prefix, so a bug fix written with a bare descriptive title (no prefix) lands
+  as `enhancement` — correct it manually. Same for any other misclassification.
+- The labeler runs from the **default branch**, so a PR that itself edits the labeler workflow/config isn't labeled
+  by its own version — label such a PR by hand.
+- It is **PR-only**; issues are still labeled manually (see the issue label taxonomy).
+
+Because it only ever manages the labels above, manually-added labels (device/OEM/`triage`/etc.) are left untouched.
