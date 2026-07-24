@@ -33,6 +33,26 @@ data class ChargeCurvePoint(
     val temperatureTenthsC: Int?,
 )
 
+/**
+ * The in-progress charge session for the dashboard's live card. Carries only what Room owns
+ * authoritatively — the session's start, its "partial" nature, and a bounded recent curve. The live
+ * "now" values (current level, temperature, power) are read from the dashboard's fresh battery
+ * readout instead, so the live card and the battery hero above it can never disagree.
+ */
+data class StatsLiveSession(
+    val startedAtWallMillis: Long,
+    /**
+     * Boot-scoped monotonic start ([android.os.SystemClock.elapsedRealtime]). Elapsed "charging for" is
+     * derived from this against the current elapsed-realtime, so a wall-clock/NTP adjustment can't make
+     * the duration negative or jump — and it shares the curve's clock.
+     */
+    val startedElapsedRealtimeMillis: Long,
+    val startPercent: Int?,
+    /** True when capture began mid-charge — the card frames it as "since …", not a full history. */
+    val partial: Boolean,
+    val curve: List<ChargeCurvePoint>,
+)
+
 /** Maps a raw [android.os.BatteryManager.EXTRA_PLUGGED] bitmask to a [ChargingType]. */
 object ChargingTypes {
     // Literal for DOCK avoids a hard API-33 symbol reference (BATTERY_PLUGGED_DOCK).

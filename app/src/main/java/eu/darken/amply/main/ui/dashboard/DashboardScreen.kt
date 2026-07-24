@@ -85,6 +85,7 @@ import eu.darken.amply.battery.ui.formatTemperature
 import eu.darken.amply.main.ui.setup.AccessSetupGuide
 import eu.darken.amply.main.ui.setup.OemGuideCard
 import eu.darken.amply.main.ui.setup.UnsupportedDeviceCard
+import eu.darken.amply.stats.ui.StatsCurrentSessionCard
 import eu.darken.amply.stats.ui.StatsDashboardCard
 import kotlinx.coroutines.delay
 
@@ -145,12 +146,34 @@ fun DashboardScreen(
             // Derived once and shared by the status + full-charge cards so they can never disagree
             // about whether the one-time charge is actually in effect.
             val sessionPresentation = SessionPresentation.from(state.session, state.charging.observation)
+            // Live charge session sits right under the hero, but only while actually plugged in — a
+            // stale open row must never claim "Charging now" unplugged. When it shows, the compact
+            // stats card lower down is suppressed to avoid two stats cards.
+            val liveSession = state.statsCurrentSession
+            val liveReadout = state.batteryReadout
+            val liveCharge = if (state.statsEnabled && liveSession != null &&
+                liveReadout != null && (liveReadout.plugged ?: 0) != 0
+            ) {
+                liveSession to liveReadout
+            } else {
+                null
+            }
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = sidePadding, end = sidePadding, top = 8.dp, bottom = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item { StatusCard(state, sessionPresentation, onOpenBatteryDetail) }
+
+                if (liveCharge != null) {
+                    item {
+                        StatsCurrentSessionCard(
+                            live = liveCharge.first,
+                            battery = liveCharge.second,
+                            onOpen = onOpenStats,
+                        )
+                    }
+                }
 
                 if (state.charging.observation is ChargeObservation.Unsupported) {
                     // Unsupported devices cannot use the Pixel policy/charge controls; showing them
@@ -200,13 +223,15 @@ fun DashboardScreen(
                             onFixNotifications = onFixNotifications,
                         )
                     }
-                    item {
-                        StatsDashboardCard(
-                            enabled = state.statsEnabled,
-                            lastSession = state.statsLastSession,
-                            sessionCount = state.statsSessionCount,
-                            onOpen = onOpenStats,
-                        )
+                    if (liveCharge == null) {
+                        item {
+                            StatsDashboardCard(
+                                enabled = state.statsEnabled,
+                                lastSession = state.statsLastSession,
+                                sessionCount = state.statsSessionCount,
+                                onOpen = onOpenStats,
+                            )
+                        }
                     }
                     if (state.charging.contributionWanted) {
                         item {
@@ -272,13 +297,15 @@ fun DashboardScreen(
                             onFixNotifications = onFixNotifications,
                         )
                     }
-                    item {
-                        StatsDashboardCard(
-                            enabled = state.statsEnabled,
-                            lastSession = state.statsLastSession,
-                            sessionCount = state.statsSessionCount,
-                            onOpen = onOpenStats,
-                        )
+                    if (liveCharge == null) {
+                        item {
+                            StatsDashboardCard(
+                                enabled = state.statsEnabled,
+                                lastSession = state.statsLastSession,
+                                sessionCount = state.statsSessionCount,
+                                onOpen = onOpenStats,
+                            )
+                        }
                     }
                     // Promote the widget/tile shortcuts only once setup is done (the setup guide above
                     // has disappeared) and while at least one shortcut is still undiscovered.

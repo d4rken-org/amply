@@ -181,6 +181,67 @@ class StatsSessionEngineTest {
     }
 
     @Test
+    fun `isDiscardable drops a contentless immediate seal (the toggle-on-off artifact)`() {
+        val opened = StatsSessionEngine.open(sample(elapsed = 0, percent = 50), partial = true)
+        val sealed = StatsSessionEngine.seal(
+            opened, StatsSealReason.DISABLED, endWallMillis = 0, endElapsedMillis = 0, endPercent = 50,
+        )
+        StatsSessionEngine.isDiscardable(sealed) shouldBe true
+    }
+
+    @Test
+    fun `isDiscardable retains a short but nonzero-duration single-sample unplug`() {
+        // A genuine plug pulled within one cadence window: one sample, but real elapsed time.
+        val opened = StatsSessionEngine.open(sample(elapsed = 0, percent = 50), partial = false)
+        val sealed = StatsSessionEngine.seal(
+            opened, StatsSealReason.UNPLUGGED, endWallMillis = 10_000, endElapsedMillis = 10_000, endPercent = 50,
+        )
+        StatsSessionEngine.isDiscardable(sealed) shouldBe false
+    }
+
+    @Test
+    fun `isDiscardable retains a zero-duration session that gained charge`() {
+        val opened = StatsSessionEngine.open(sample(elapsed = 0, percent = 50), partial = false)
+        val sealed = StatsSessionEngine.seal(
+            opened, StatsSealReason.DISABLED, endWallMillis = 0, endElapsedMillis = 0, endPercent = 60,
+        )
+        StatsSessionEngine.isDiscardable(sealed) shouldBe false
+    }
+
+    @Test
+    fun `isDiscardable still drops a contentless artifact that latched limit evidence at an OEM hold`() {
+        // Toggling capture on/off while the device is being held at an OEM limit latches
+        // limitHitEvidence on the single opening sample, but the row still spans no time and has no
+        // curve — it is the same empty artifact and must not survive.
+        val opened = StatsSessionEngine.open(sample(elapsed = 0, percent = 50, limit = true), partial = false)
+        val sealed = StatsSessionEngine.seal(
+            opened, StatsSealReason.DISABLED, endWallMillis = 0, endElapsedMillis = 0, endPercent = 50,
+        )
+        StatsSessionEngine.isDiscardable(sealed) shouldBe true
+    }
+
+    @Test
+    fun `isDiscardable retains a real hold session that accrued elapsed time`() {
+        // A genuine limit-hold session accrues duration and samples, so it is kept.
+        var s = StatsSessionEngine.open(sample(elapsed = 0, percent = 80, limit = true), partial = false)
+        s = StatsSessionEngine.fold(s, sample(elapsed = 30_000, percent = 80, limit = true))
+        val sealed = StatsSessionEngine.seal(
+            s, StatsSealReason.UNPLUGGED, endWallMillis = 30_000, endElapsedMillis = 30_000, endPercent = 80,
+        )
+        StatsSessionEngine.isDiscardable(sealed) shouldBe false
+    }
+
+    @Test
+    fun `isDiscardable retains a multi-sample session`() {
+        var s = StatsSessionEngine.open(sample(elapsed = 0, percent = 50), partial = false)
+        s = StatsSessionEngine.fold(s, sample(elapsed = 10_000, percent = 50))
+        val sealed = StatsSessionEngine.seal(
+            s, StatsSealReason.UNPLUGGED, endWallMillis = 10_000, endElapsedMillis = 10_000, endPercent = 50,
+        )
+        StatsSessionEngine.isDiscardable(sealed) shouldBe false
+    }
+
+    @Test
     fun `a doze gap is clamped so it cannot overweight one reading`() {
         // 1000 mW then a 1-hour gap: only MAX_WEIGHT_GAP_MILLIS of it is credited.
         var s = StatsSessionEngine.open(sample(elapsed = 0, power = 1000), partial = false)

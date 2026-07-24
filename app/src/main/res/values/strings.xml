@@ -476,6 +476,8 @@
     <string name="dashboard_stats_promo">See detailed charge history, speed, and temperature</string>
     <string name="dashboard_stats_last">Last charge: %1$s</string>
     <string name="dashboard_stats_recording_empty">Recording — no completed session yet</string>
+    <string name="dashboard_stats_live_title">Charging now</string>
+    <string name="dashboard_stats_live_since">Recording since %1$s</string>
     <plurals name="dashboard_stats_session_count">
         <item quantity="one">%1$d recorded session</item>
         <item quantity="other">%1$d recorded sessions</item>
@@ -496,8 +498,11 @@
     <string name="stats_session_limit_likely">Limit likely reached</string>
     <string name="stats_session_open_action">View session</string>
     <string name="stats_detail_title">Charge session</string>
+    <string name="stats_detail_started">Started</string>
+    <string name="stats_detail_ended">Ended</string>
     <string name="stats_detail_curve_title">Charge curve</string>
     <string name="stats_curve_empty">No curve data for this session</string>
+    <string name="stats_curve_axis_time_desc">Elapsed time</string>
     <string name="stats_curve_series_percent">Level</string>
     <string name="stats_curve_series_power">Power</string>
     <string name="stats_curve_series_temperature">Temperature</string>

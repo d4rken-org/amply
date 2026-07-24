@@ -8,6 +8,7 @@ import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.test.core.app.ApplicationProvider
@@ -16,6 +17,7 @@ import eu.darken.amply.battery.core.BatteryReadout
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargingState
 import eu.darken.amply.common.ca.toCaString
+import eu.darken.amply.stats.core.StatsLiveSession
 import io.kotest.matchers.shouldBe
 import org.junit.Rule
 import org.junit.Test
@@ -123,6 +125,44 @@ class DashboardScreenGestureTest {
     fun `battery reading is shown on a supported device`() {
         render(state = DashboardUiState(onboardingComplete = true))
         compose.onNode(heroCard()).assertExists()
+    }
+
+    private fun liveSession() = StatsLiveSession(
+        startedAtWallMillis = 0L,
+        startedElapsedRealtimeMillis = 0L,
+        startPercent = 40,
+        partial = false,
+        curve = emptyList(),
+    )
+
+    @Test
+    fun `live charge session shows under the hero while plugged in`() {
+        render(
+            state = DashboardUiState(
+                onboardingComplete = true,
+                statsEnabled = true,
+                statsCurrentSession = liveSession(),
+                batteryReadout = BatteryReadout(
+                    levelPercent = 78,
+                    plugged = BatteryManager.BATTERY_PLUGGED_AC,
+                ),
+            ),
+        )
+        compose.onNodeWithText(string(R.string.dashboard_stats_live_title)).assertExists()
+    }
+
+    @Test
+    fun `stale open session does not claim charging while unplugged`() {
+        render(
+            state = DashboardUiState(
+                onboardingComplete = true,
+                statsEnabled = true,
+                statsCurrentSession = liveSession(),
+                // Not plugged (plugged == null): the live card must be suppressed.
+                batteryReadout = BatteryReadout(levelPercent = 78, plugged = 0),
+            ),
+        )
+        compose.onNodeWithText(string(R.string.dashboard_stats_live_title)).assertDoesNotExist()
     }
 
     @Test
