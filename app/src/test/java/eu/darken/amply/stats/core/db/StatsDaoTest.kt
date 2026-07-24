@@ -38,10 +38,10 @@ class StatsDaoTest {
         database.close()
     }
 
-    private fun openSession(startWall: Long = 1_000L) = ChargeSessionEntity(
+    private fun openSession(startWall: Long = 1_000L, bootId: Long = 7) = ChargeSessionEntity(
         startedAtWallMillis = startWall,
         startedElapsedRealtimeMillis = startWall,
-        bootId = 7,
+        bootId = bootId,
         startPercent = 40,
     )
 
@@ -70,6 +70,59 @@ class StatsDaoTest {
 
         dao.deleteAllSessions()
         dao.samplesForSessionNow(id) shouldBe emptyList()
+    }
+
+    @Test
+    fun `deleteSession removes only that session and cascades its samples`() = runTest {
+        val keep = dao.insertSession(openSession(startWall = 1_000L))
+        val drop = dao.insertSession(openSession(startWall = 2_000L))
+        dao.insertSample(sample(keep, wall = 1_100L))
+        dao.insertSample(sample(drop, wall = 2_100L))
+        dao.insertSample(sample(drop, wall = 2_200L))
+
+        dao.deleteSession(drop)
+
+        dao.sessionById(drop) shouldBe null
+        dao.sessionById(keep)!!.id shouldBe keep
+        dao.samplesForSessionNow(drop) shouldBe emptyList()
+        dao.samplesForSessionNow(keep).size shouldBe 1
+    }
+
+    @Test
+    fun `openSessionFlow emits the open row then null once sealed`() = runTest {
+        dao.openSessionFlow(bootId = 7).first() shouldBe null
+        val id = dao.insertSession(openSession())
+        dao.openSessionFlow(bootId = 7).first()!!.id shouldBe id
+        dao.updateSession(dao.sessionById(id)!!.copy(endedAtWallMillis = 9_000L, endedElapsedRealtimeMillis = 9_000L))
+        dao.openSessionFlow(bootId = 7).first() shouldBe null
+    }
+
+    @Test
+    fun `openSessionFlow ignores a dangling open row from a previous boot`() = runTest {
+        // A crash before a reboot can leave an open row with the old bootId; it must not surface as the
+        // current charge until startup repair seals it.
+        dao.insertSession(openSession(startWall = 10_000L, bootId = 6))
+        val current = dao.insertSession(openSession(startWall = 1_000L, bootId = 7))
+        dao.openSessionFlow(bootId = 7).first()!!.id shouldBe current
+    }
+
+    @Test
+    fun `openSessionFlow picks the newest by id even when elapsed is smaller`() = runTest {
+        // Same boot: a later session with a smaller elapsed start must still win on id order.
+        val older = dao.insertSession(openSession(startWall = 10_000L))
+        val newer = dao.insertSession(openSession(startWall = 5_000L))
+        newer shouldBe (older + 1) // autoincrement is monotonic
+        val picked = dao.openSessionFlow(bootId = 7).first()!!
+        picked.id shouldBe newer
+        picked.startedElapsedRealtimeMillis shouldBe 5_000L
+    }
+
+    @Test
+    fun `recentSamplesForSession returns the last N ascending`() = runTest {
+        val id = dao.insertSession(openSession())
+        (1..5).forEach { dao.insertSample(sample(id, wall = it * 1_000L)) }
+        dao.recentSamplesForSession(id, limit = 3).first().map { it.wallMillis } shouldBe
+            listOf(3_000L, 4_000L, 5_000L)
     }
 
     @Test

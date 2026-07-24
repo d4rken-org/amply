@@ -54,6 +54,7 @@ import eu.darken.amply.battery.core.BatteryReadoutSource
 import eu.darken.amply.monitor.core.ChargeMonitorWatcher
 import eu.darken.amply.stats.core.ChargeSessionSummary
 import eu.darken.amply.stats.core.ChargeStatsRepository
+import eu.darken.amply.stats.core.StatsLiveSession
 import eu.darken.amply.stats.core.StatsPreferences
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -96,6 +97,8 @@ data class DashboardUiState(
     /** Most recent finished charge session, for the dashboard teaser (null when none yet). */
     val statsLastSession: ChargeSessionSummary? = null,
     val statsSessionCount: Int = 0,
+    /** The in-progress charge session (null unless capture is on and a session is open). */
+    val statsCurrentSession: StatsLiveSession? = null,
 )
 
 @HiltViewModel
@@ -138,12 +141,15 @@ class DashboardViewModel @Inject constructor(
     // turned stats on never gets an empty stats.db created just by opening the dashboard.
     private val statsDashboard = statsPreferences.captureEnabled.flatMapLatest { enabled ->
         if (!enabled) {
-            flowOf(StatsDashboard(enabled = false, lastSession = null, count = 0))
+            flowOf(StatsDashboard(enabled = false, lastSession = null, count = 0, live = null))
         } else {
             combine(
                 statsRepository.recentSessions(limit = 1),
                 statsRepository.sessionCount(),
-            ) { recent, count -> StatsDashboard(enabled = true, lastSession = recent.firstOrNull(), count = count) }
+                statsRepository.currentSession(),
+            ) { recent, count, live ->
+                StatsDashboard(enabled = true, lastSession = recent.firstOrNull(), count = count, live = live)
+            }
         }
     }
 
@@ -180,6 +186,7 @@ class DashboardViewModel @Inject constructor(
             statsEnabled = stats.enabled,
             statsLastSession = stats.lastSession,
             statsSessionCount = stats.count,
+            statsCurrentSession = stats.live,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
 
@@ -187,6 +194,7 @@ class DashboardViewModel @Inject constructor(
         val enabled: Boolean,
         val lastSession: ChargeSessionSummary?,
         val count: Int,
+        val live: StatsLiveSession?,
     )
 
     val adbGrantCommand: String

@@ -1,5 +1,9 @@
 package eu.darken.amply.stats.ui
 
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import eu.darken.amply.stats.core.ChargingType
 import java.util.Locale
 
@@ -20,6 +24,13 @@ object StatsFormat {
     fun temperature(tenthsC: Int?): String? =
         tenthsC?.let { String.format(Locale.getDefault(), "%.1f °C", it / 10.0) }
 
+    /** Elapsed-time axis tick: seconds under a minute (so short sessions still show a scale), else m/h. */
+    fun elapsedAxis(millis: Long): String {
+        if (millis < 0) return "0s"
+        if (millis < 60_000L) return "${millis / 1000L}s"
+        return duration(millis) ?: "0m"
+    }
+
     fun percentRange(start: Int?, end: Int?): String {
         val from = start?.let { "$it%" } ?: "—"
         val to = end?.let { "$it%" } ?: "—"
@@ -33,6 +44,35 @@ object StatsFormat {
             minText != null && maxText != null -> "$minText – $maxText"
             else -> minText ?: maxText
         }
+    }
+
+    /**
+     * Absolute local date+time for a session's wall-clock timestamp. Zone and locale are resolved per
+     * call (not captured in a cached formatter) so a timezone or locale change mid-process is honoured.
+     * Overload with explicit [zone]/[locale] exists for deterministic tests.
+     */
+    fun dateTime(
+        millis: Long,
+        zone: ZoneId = ZoneId.systemDefault(),
+        locale: Locale = Locale.getDefault(),
+    ): String = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM)
+        .withLocale(locale)
+        .withZone(zone)
+        .format(Instant.ofEpochMilli(millis))
+
+    // --- Chart legend "min→max unit" spans; null when the metric has no data ---
+
+    fun percentSpan(min: Int?, max: Int?): String? =
+        if (min == null || max == null) null else "$min→$max%"
+
+    fun powerSpan(minMilliwatts: Int?, maxMilliwatts: Int?): String? {
+        if (minMilliwatts == null || maxMilliwatts == null) return null
+        return String.format(Locale.getDefault(), "%.1f→%.1f W", minMilliwatts / 1000.0, maxMilliwatts / 1000.0)
+    }
+
+    fun temperatureSpan(minTenthsC: Int?, maxTenthsC: Int?): String? {
+        if (minTenthsC == null || maxTenthsC == null) return null
+        return String.format(Locale.getDefault(), "%.1f→%.1f °C", minTenthsC / 10.0, maxTenthsC / 10.0)
     }
 }
 

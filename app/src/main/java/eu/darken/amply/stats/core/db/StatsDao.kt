@@ -25,6 +25,15 @@ interface StatsDao {
     @Query("SELECT * FROM charge_sessions WHERE endedAtWallMillis IS NULL ORDER BY startedElapsedRealtimeMillis DESC")
     suspend fun openSessions(): List<ChargeSessionEntity>
 
+    /**
+     * The single newest open session of the CURRENT boot as a live flow, for the dashboard's
+     * current-charge card. Restricted to [bootId] so a dangling row left open by a pre-reboot crash
+     * can't be shown as "charging now" in the window before startup repair seals it. Ordered by
+     * [ChargeSessionEntity.id] (monotonic autoincrement), NOT elapsed-realtime, which resets on reboot.
+     */
+    @Query("SELECT * FROM charge_sessions WHERE endedAtWallMillis IS NULL AND bootId = :bootId ORDER BY id DESC LIMIT 1")
+    fun openSessionFlow(bootId: Long): Flow<ChargeSessionEntity?>
+
     @Query("SELECT * FROM charge_sessions WHERE id = :id")
     suspend fun sessionById(id: Long): ChargeSessionEntity?
 
@@ -39,6 +48,10 @@ interface StatsDao {
     @Query("SELECT * FROM charge_sessions WHERE id = :id")
     fun sessionFlow(id: Long): Flow<ChargeSessionEntity?>
 
+    /** Delete one session; its [BatterySampleEntity] rows cascade (FK onDelete=CASCADE). */
+    @Query("DELETE FROM charge_sessions WHERE id = :id")
+    suspend fun deleteSession(id: Long)
+
     @Query("DELETE FROM charge_sessions")
     suspend fun deleteAllSessions()
 
@@ -49,6 +62,22 @@ interface StatsDao {
 
     @Query("SELECT * FROM battery_samples WHERE sessionId = :sessionId ORDER BY elapsedRealtimeMillis ASC")
     fun samplesForSession(sessionId: Long): Flow<List<BatterySampleEntity>>
+
+    /**
+     * The most recent [limit] samples of a session (re-sorted ascending), as a live flow for the
+     * dashboard's compact current-charge curve. Bounded on purpose: an open session can last days at
+     * an OEM charge limit, so an unbounded reload on every append would grow O(n). The detail screen
+     * still reads the full curve via [samplesForSessionNow].
+     */
+    @Query(
+        """
+        SELECT * FROM (
+            SELECT * FROM battery_samples WHERE sessionId = :sessionId
+            ORDER BY elapsedRealtimeMillis DESC LIMIT :limit
+        ) ORDER BY elapsedRealtimeMillis ASC
+        """,
+    )
+    fun recentSamplesForSession(sessionId: Long, limit: Int): Flow<List<BatterySampleEntity>>
 
     /** Raw samples for a session as a plain list (curve rendering decimates in memory). */
     @Query("SELECT * FROM battery_samples WHERE sessionId = :sessionId ORDER BY elapsedRealtimeMillis ASC")

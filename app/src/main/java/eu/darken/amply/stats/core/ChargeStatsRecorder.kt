@@ -201,7 +201,14 @@ class ChargeStatsRecorder @Inject constructor(
     ) {
         val current = openSession ?: return
         val sealed = StatsSessionEngine.seal(current, reason, endWallMillis, endElapsedMillis, endPercent)
-        database.get().statsDao().updateSession(sealed)
+        val dao = database.get().statsDao()
+        // A session that captured nothing (e.g. record-toggled on then off while already plugged) is
+        // deleted rather than kept as a spurious 0-minute history row; its samples cascade.
+        if (StatsSessionEngine.isDiscardable(sealed)) {
+            dao.deleteSession(sealed.id)
+        } else {
+            dao.updateSession(sealed)
+        }
         openSession = null
         lastRecordedElapsed = null
         lastRecordedPercent = null
@@ -246,7 +253,11 @@ class ChargeStatsRecorder @Inject constructor(
         val open = dao.openSessions()
         if (open.isEmpty()) return
         val currentBoot = bootIdSource.current()
-        open.forEach { dao.updateSession(sealFromLastKnown(it, currentBoot)) }
+        open.forEach { row ->
+            val sealed = sealFromLastKnown(row, currentBoot)
+            // Drop a dangling row that never captured anything (same rule as a live seal).
+            if (StatsSessionEngine.isDiscardable(sealed)) dao.deleteSession(sealed.id) else dao.updateSession(sealed)
+        }
         open.maxOfOrNull { it.runningLastWallMillis ?: it.startedAtWallMillis }?.let { purgeOldSamples(it) }
     }
 

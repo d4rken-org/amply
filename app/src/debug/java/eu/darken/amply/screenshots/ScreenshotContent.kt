@@ -87,6 +87,7 @@ private fun DashboardShot(state: DashboardUiState) = PreviewWrapper {
         onFixNotifications = {},
         onOpenBatteryDetail = {},
         onOpenStats = {},
+        onOpenLiveSession = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
