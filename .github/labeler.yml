@@ -1,0 +1,34 @@
+# Path-based PR labels, applied by actions/labeler (see .github/workflows/labeler.yml).
+# These describe WHERE the change is. The mutually-exclusive TYPE label
+# (enhancement / bug / documentation) is decided from the PR title + diff in that workflow, not
+# here, so "documentation" is intentionally NOT a path label. Every name below must already exist
+# in the repo (this config never creates labels).
+
+"Translations":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "app/src/**/res/values-*/**"
+
+"FOSS":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "app/src/foss/**"
+
+"Google Play":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "app/src/gplay/**"
+
+"Build/Deploy":
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/**"
+          - "buildSrc/**"
+          - "gradle/**"
+          - "gradlew"
+          - "gradlew.bat"
+          - "tools/release/**"
+          - "fastlane/**"
+          - "**/*.gradle"
+          - "**/*.gradle.kts"
+          - "gradle.properties"
