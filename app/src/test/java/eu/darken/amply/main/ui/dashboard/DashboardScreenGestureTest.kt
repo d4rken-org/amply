@@ -63,6 +63,7 @@ class DashboardScreenGestureTest {
                 onFixNotifications = {},
                 onOpenBatteryDetail = onOpenBatteryDetail,
                 onOpenStats = {},
+                onOpenLiveSession = {},
                 onPinWidget = {},
                 onAddTile = {},
                 onDismissQuickAccess = {},
@@ -128,6 +129,7 @@ class DashboardScreenGestureTest {
     }
 
     private fun liveSession() = StatsLiveSession(
+        id = 1,
         startedAtWallMillis = 0L,
         startedElapsedRealtimeMillis = 0L,
         startPercent = 40,

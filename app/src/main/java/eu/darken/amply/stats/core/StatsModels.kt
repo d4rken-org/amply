@@ -40,6 +40,7 @@ data class ChargeCurvePoint(
  * readout instead, so the live card and the battery hero above it can never disagree.
  */
 data class StatsLiveSession(
+    val id: Long,
     val startedAtWallMillis: Long,
     /**
      * Boot-scoped monotonic start ([android.os.SystemClock.elapsedRealtime]). Elapsed "charging for" is

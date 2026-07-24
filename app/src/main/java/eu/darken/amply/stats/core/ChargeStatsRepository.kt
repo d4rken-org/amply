@@ -85,6 +85,7 @@ class ChargeStatsRepository @Inject constructor(
             )
         }
         return StatsLiveSession(
+            id = row.id,
             startedAtWallMillis = row.startedAtWallMillis,
             startedElapsedRealtimeMillis = row.startedElapsedRealtimeMillis,
             startPercent = row.startPercent,
