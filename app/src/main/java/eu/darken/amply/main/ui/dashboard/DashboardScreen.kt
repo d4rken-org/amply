@@ -77,6 +77,9 @@ import eu.darken.amply.common.compose.AmplyToggleCard
 import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.common.compose.asComposable
 import eu.darken.amply.fullcharge.core.ChargeSessionRecord
+import eu.darken.amply.fullcharge.core.InterruptionEvent
+import eu.darken.amply.fullcharge.core.InterruptionOutcome
+import eu.darken.amply.fullcharge.core.InterruptionReason
 import eu.darken.amply.fullcharge.core.policyOrNull
 import eu.darken.amply.main.core.formatReport
 import eu.darken.amply.battery.core.BatteryReadout
@@ -113,6 +116,7 @@ fun DashboardScreen(
     onPinWidget: () -> Unit,
     onAddTile: () -> Unit,
     onDismissQuickAccess: () -> Unit,
+    onDismissInterruption: () -> Unit,
     onNativeSettings: () -> Unit,
     onOpenShizuku: () -> Unit,
     onAllowShizuku: () -> Unit,
@@ -203,6 +207,13 @@ fun DashboardScreen(
                         )
                     }
                 } else {
+                    // Interrupted-session warning sits right under the hero, but only on a device
+                    // whose support is positively resolved (a live adapter is selected). Silent
+                    // otherwise — a warning about a restore Amply cannot even perform would confuse.
+                    val interruption = state.interruption
+                    if (interruption != null && state.charging.controlEnabled) {
+                        item { InterruptionCard(interruption, onDismissInterruption) }
+                    }
                     // Shizuku-only adapters (OnePlus/ColorOS) can't use WSS at all, so the WSS/ADB
                     // setup guide would ask for an ineffective grant — the dedicated
                     // "Shizuku required" banner below covers their setup instead.
@@ -740,6 +751,46 @@ private fun ShizukuBanner(
     }
 }
 
+@Composable
+private fun InterruptionCard(
+    event: InterruptionEvent,
+    onDismiss: () -> Unit,
+) {
+    // Tertiary-container "attention" tone, matching the ShizukuBanner. Copy is deliberately neutral —
+    // the reason never asserts a force-stop, only that Amply was stopped/interrupted.
+    AmplyCard(tone = AmplyCardTone.TertiaryContainer) {
+        Text(
+            stringResource(
+                when (event.outcome) {
+                    InterruptionOutcome.RESTORED_LATE -> R.string.dashboard_interruption_title_restored
+                    InterruptionOutcome.STILL_PENDING -> R.string.dashboard_interruption_title_pending
+                    InterruptionOutcome.UNCONFIRMED -> R.string.dashboard_interruption_title_unconfirmed
+                },
+            ),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+        val reason = stringResource(
+            when (event.reason) {
+                InterruptionReason.USER_STOPPED -> R.string.dashboard_interruption_reason_user
+                InterruptionReason.OTHER -> R.string.dashboard_interruption_reason_other
+            },
+        )
+        val outcome = stringResource(
+            when (event.outcome) {
+                InterruptionOutcome.RESTORED_LATE -> R.string.dashboard_interruption_outcome_restored
+                InterruptionOutcome.STILL_PENDING -> R.string.dashboard_interruption_outcome_pending
+                InterruptionOutcome.UNCONFIRMED -> R.string.dashboard_interruption_outcome_unconfirmed
+            },
+        )
+        Text("$reason $outcome", style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.height(8.dp))
+        TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
+            Text(stringResource(R.string.dashboard_interruption_dismiss_action))
+        }
+    }
+}
+
 private fun ChargeObservation.title(): CaString = when (this) {
     is ChargeObservation.Verified -> if (backend == BackendKind.BATTERY_HARDWARE) {
         caString { it.getString(R.string.dashboard_status_verified_active, policy.shortLabel().get(it)) }
@@ -802,6 +853,13 @@ private fun DashboardScreenPreview() = PreviewWrapper {
             quickFullChargeEnabled = true,
             // Presence check done, nothing discovered yet — renders the quick-access promotion.
             quickAccessChecked = true,
+            // A resolved interruption: the warning card sits under the hero until dismissed.
+            interruption = InterruptionEvent(
+                occurredAtMillis = 0L,
+                reason = InterruptionReason.USER_STOPPED,
+                outcome = InterruptionOutcome.RESTORED_LATE,
+                workId = "preview",
+            ),
             // Held at the 80% limit: paired with the policy so the reading reads as the effect.
             batteryReadout = BatteryReadout(
                 levelPercent = 80,
@@ -852,6 +910,7 @@ private fun DashboardScreenPreview() = PreviewWrapper {
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
+        onDismissInterruption = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
@@ -945,6 +1004,7 @@ private fun DashboardScreenLiveChargePreview() = PreviewWrapper {
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
+        onDismissInterruption = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
@@ -1020,6 +1080,7 @@ private fun DashboardScreenApplyingPreview() = PreviewWrapper {
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
+        onDismissInterruption = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
@@ -1091,6 +1152,7 @@ private fun DashboardScreenSessionActivePreview() = PreviewWrapper {
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
+        onDismissInterruption = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
@@ -1164,6 +1226,7 @@ private fun DashboardScreenSessionRecordedPreview() = PreviewWrapper {
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
+        onDismissInterruption = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
@@ -1225,6 +1288,7 @@ private fun DashboardScreenWssOnlyPreview() = PreviewWrapper {
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
+        onDismissInterruption = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
@@ -1293,6 +1357,7 @@ private fun DashboardScreenSamsungPreview() = PreviewWrapper {
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
+        onDismissInterruption = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
@@ -1362,6 +1427,7 @@ private fun DashboardScreenOnePlusNeedsShizukuPreview() = PreviewWrapper {
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
+        onDismissInterruption = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
@@ -1416,6 +1482,7 @@ private fun DashboardScreenUnsupportedPreview() = PreviewWrapper {
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
+        onDismissInterruption = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
