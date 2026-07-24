@@ -387,6 +387,17 @@
     <string name="dashboard_quickaccess_widget_manual">Widget pinning isn\'t available here. Long-press your home screen and add the Amply widget from the widget picker.</string>
     <string name="dashboard_quickaccess_tile_manual">Open Quick Settings, tap the edit button, and drag the Amply tile into place.</string>
 
+    <!-- Interrupted-session warning card -->
+    <string name="dashboard_interruption_title_restored">Charge limit restored after interruption</string>
+    <string name="dashboard_interruption_title_pending">Charge limit needs attention</string>
+    <string name="dashboard_interruption_title_unconfirmed">Charge limit restore unconfirmed</string>
+    <string name="dashboard_interruption_reason_user">Amply was stopped while it was watching a temporary full charge.</string>
+    <string name="dashboard_interruption_reason_other">Amply was interrupted while it was watching a temporary full charge.</string>
+    <string name="dashboard_interruption_outcome_restored">Your charge limit has been restored now.</string>
+    <string name="dashboard_interruption_outcome_pending">Your charge limit could not be restored yet — Amply keeps retrying. Check the current policy below.</string>
+    <string name="dashboard_interruption_outcome_unconfirmed">Your charge limit was written again, but the charging hardware has not confirmed it. Check the current policy below.</string>
+    <string name="dashboard_interruption_dismiss_action">Dismiss</string>
+
     <!-- Charge alarm (dashboard card + notification) -->
     <string name="dashboard_alarm_title">Charge alarm</string>
     <string name="dashboard_alarm_body_on">Amply will alert you to unplug when charging reaches your target. Works without any special setup.</string>
@@ -429,6 +440,7 @@
     <string name="battery_status_charging">Charging</string>
     <string name="battery_status_discharging">Discharging</string>
     <string name="battery_status_not_charging">Not charging</string>
+    <string name="battery_status_plugged_not_charging">Plugged in, not charging</string>
     <string name="battery_status_full">Full</string>
     <string name="battery_health_good">Good</string>
     <string name="battery_health_overheat">Overheating</string>
@@ -473,11 +485,16 @@
     <string name="settings_stats_subtitle">Detailed charge history, speed, and temperature</string>
     <string name="dashboard_stats_title">Battery statistics</string>
     <string name="dashboard_stats_view_action">View</string>
-    <string name="dashboard_stats_promo">See detailed charge history, speed, and temperature</string>
+    <string name="dashboard_stats_promo">Record every charge to see charging speed, power, and temperature curves — plus a history of past sessions</string>
     <string name="dashboard_stats_last">Last charge: %1$s</string>
     <string name="dashboard_stats_recording_empty">Recording — no completed session yet</string>
+    <string name="dashboard_stats_loading">Loading…</string>
+    <string name="dashboard_stats_unavailable">Statistics are unavailable right now</string>
     <string name="dashboard_stats_live_title">On the charger</string>
     <string name="dashboard_stats_live_since">Since %1$s</string>
+    <string name="dashboard_stats_live_starting">Charger detected — recording is starting…</string>
+    <string name="dashboard_stats_live_start_failed">Charger detected — recording couldn\'t start</string>
+    <string name="dashboard_stats_retry_action">Retry</string>
     <plurals name="dashboard_stats_session_count">
         <item quantity="one">%1$d recorded session</item>
         <item quantity="other">%1$d recorded sessions</item>
@@ -515,6 +532,7 @@
     <string name="stats_detail_temperature">Temperature range</string>
     <string name="stats_detail_limit_likely">Limit likely reached</string>
     <string name="stats_detail_partial_note">This session is partial: recording started mid-charge, or was interrupted by a restart or reboot, so its duration and curve may be incomplete.</string>
+    <string name="stats_detail_missing">This session is no longer available</string>
     <string name="stats_value_yes">Yes</string>
     <string name="stats_value_no">No</string>
     <string name="stats_charging_type_ac">AC charger</string>

@@ -267,9 +267,12 @@ class MainActivity : ComponentActivity() {
                                 detailOrigin = SettingsDestination.DASHBOARD
                                 destination = SettingsDestination.STATS_SESSION_DETAIL
                             },
+                            // Re-dispatch the charge service after a failed start (stats card retry).
+                            onRetryCapture = { viewModel.nudgeChargeService() },
                             onPinWidget = viewModel::requestPinWidget,
                             onAddTile = viewModel::requestAddTile,
                             onDismissQuickAccess = viewModel::dismissQuickAccess,
+                            onDismissInterruption = viewModel::dismissInterruption,
                             onNativeSettings = viewModel::openNativeSettings,
                             onOpenShizuku = viewModel::openShizuku,
                             onAllowShizuku = viewModel::requestShizukuPermission,

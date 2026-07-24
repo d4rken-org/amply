@@ -37,7 +37,9 @@ import eu.darken.amply.stats.core.StatsSealReason
 
 /**
  * One session's charge curve (percent / power / temperature over time) plus its numeric summary.
- * State-hoisted; a null [state] shows a spinner while the ViewModel resolves the selection.
+ * State-hoisted; a null [state] shows a spinner while the ViewModel resolves the selection, and a
+ * resolved state without a summary means the session no longer exists (discarded or cleared) — a
+ * notice, never an eternal spinner. An open session's curve/summary keep updating live.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,8 +62,7 @@ fun StatsSessionDetailScreen(
             )
         },
     ) { padding ->
-        val summary = state?.summary
-        if (state == null || summary == null) {
+        if (state == null) {
             Box(
                 Modifier
                     .padding(padding)
@@ -69,6 +70,22 @@ fun StatsSessionDetailScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 CircularProgressIndicator()
+            }
+            return@Scaffold
+        }
+        val summary = state.summary
+        if (summary == null) {
+            Box(
+                Modifier
+                    .padding(padding)
+                    .fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    stringResource(R.string.stats_detail_missing),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             return@Scaffold
         }

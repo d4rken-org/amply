@@ -8,6 +8,7 @@ import eu.darken.amply.charging.core.ChargingPreferences
 import eu.darken.amply.fullcharge.core.FullChargeStore
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -16,6 +17,8 @@ class ChargeSessionManager @Inject constructor(
     private val repository: ChargingRepository,
     private val preferences: ChargingPreferences,
     private val sessionStore: FullChargeStore,
+    private val processIdentity: ProcessIdentity,
+    private val bootCountProvider: BootCountProvider,
 ) {
     private val mutex = Mutex()
 
@@ -74,8 +77,20 @@ class ChargeSessionManager @Inject constructor(
         }
         val restorePolicy = (decision as SessionStartDecision.Start).restorePolicy
 
-        // Persist recovery state before removing the limit.
-        sessionStore.startSession(restorePolicy, nowMillis)
+        // Persist recovery state before removing the limit. Stamp this process's identity so a later
+        // pickup can tell whether the session survived a process death (interruption detection), and a
+        // stable work id that survives ownership adoption so a later restore can resolve the warning.
+        sessionStore.startSession(
+            restorePolicy = restorePolicy,
+            startedAtMillis = nowMillis,
+            workId = UUID.randomUUID().toString(),
+            provenance = WorkProvenance(
+                token = processIdentity.token,
+                pid = processIdentity.pid,
+                bootCount = bootCountProvider.current(),
+                createdAtMillis = nowMillis,
+            ),
+        )
         val result = repository.applyTemporary(overridePolicy)
         if (result.success) {
             result

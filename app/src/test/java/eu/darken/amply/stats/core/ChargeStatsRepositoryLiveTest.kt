@@ -1,0 +1,121 @@
+package eu.darken.amply.stats.core
+
+import android.content.Context
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import eu.darken.amply.battery.core.BatteryReader
+import eu.darken.amply.common.AppDataStore
+import eu.darken.amply.stats.core.db.BatterySampleEntity
+import eu.darken.amply.stats.core.db.ChargeSessionEntity
+import eu.darken.amply.stats.core.db.StatsDatabase
+import io.kotest.matchers.nulls.shouldBeNull
+import io.kotest.matchers.nulls.shouldNotBeNull
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
+import org.junit.After
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+/**
+ * The live-detail read paths against an in-memory Room instance: [ChargeStatsRepository.curveFlow]
+ * must reflect newly landed samples (an open session's detail keeps updating), and
+ * [ChargeStatsRepository.session] must resolve to null once the row is gone (the detail screen
+ * shows its missing notice instead of an eternal spinner).
+ */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
+class ChargeStatsRepositoryLiveTest {
+
+    private lateinit var database: StatsDatabase
+    private lateinit var repository: ChargeStatsRepository
+
+    @Before
+    fun setup() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        database = Room.inMemoryDatabaseBuilder(context, StatsDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val bootIdSource = BootIdSource(context)
+        val recorder = ChargeStatsRecorder(
+            database = { database },
+            preferences = StatsPreferences(AppDataStore(context)),
+            bootIdSource = bootIdSource,
+            batteryReader = BatteryReader(context),
+        )
+        repository = ChargeStatsRepository(
+            database = { database },
+            recorder = recorder,
+            bootIdSource = bootIdSource,
+        )
+    }
+
+    @After
+    fun teardown() {
+        database.close()
+    }
+
+    private suspend fun insertOpenSession(): Long = database.statsDao().insertSession(
+        ChargeSessionEntity(
+            startedAtWallMillis = 1_000L,
+            startedElapsedRealtimeMillis = 1_000L,
+            bootId = 7,
+            startPercent = 40,
+        ),
+    )
+
+    private fun sample(sessionId: Long, elapsed: Long, percent: Int) = BatterySampleEntity(
+        sessionId = sessionId,
+        wallMillis = elapsed,
+        elapsedRealtimeMillis = elapsed,
+        bootId = 7,
+        percent = percent,
+        powerMilliwatts = 9_000,
+        temperatureTenthsC = 300,
+    )
+
+    @Test
+    fun `curve flow updates an active collector as samples land`() = runBlocking {
+        val id = insertOpenSession()
+        database.statsDao().insertSample(sample(id, elapsed = 1_000L, percent = 40))
+
+        // One continuously active collector: a one-shot snapshot flow would fail this — the second
+        // emission must arrive on the SAME subscription after the insert (Room invalidation).
+        val emissions = Channel<List<Int?>>(Channel.UNLIMITED)
+        val collector = launch(Dispatchers.IO) {
+            repository.curveFlow(id).collect { points -> emissions.send(points.map { it.percent }) }
+        }
+        try {
+            withTimeout(10_000L) {
+                awaitEmission(emissions, listOf(40))
+                database.statsDao().insertSample(sample(id, elapsed = 31_000L, percent = 41))
+                awaitEmission(emissions, listOf(40, 41))
+            }
+        } finally {
+            collector.cancelAndJoin()
+        }
+    }
+
+    private suspend fun awaitEmission(channel: Channel<List<Int?>>, expected: List<Int?>) {
+        while (channel.receive() != expected) {
+            // Skip intermediate emissions until the expected curve arrives (withTimeout bounds this).
+        }
+    }
+
+    @Test
+    fun `deleted session resolves to a null summary, not a hang`() = runTest {
+        val id = insertOpenSession()
+        repository.session(id).first().shouldNotBeNull()
+
+        database.statsDao().deleteSession(id)
+        repository.session(id).first().shouldBeNull()
+    }
+}

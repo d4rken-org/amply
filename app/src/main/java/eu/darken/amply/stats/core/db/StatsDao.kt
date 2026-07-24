@@ -67,7 +67,7 @@ interface StatsDao {
      * The most recent [limit] samples of a session (re-sorted ascending), as a live flow for the
      * dashboard's compact current-charge curve. Bounded on purpose: an open session can last days at
      * an OEM charge limit, so an unbounded reload on every append would grow O(n). The detail screen
-     * still reads the full curve via [samplesForSessionNow].
+     * still reads the full curve via [samplesForSession].
      */
     @Query(
         """

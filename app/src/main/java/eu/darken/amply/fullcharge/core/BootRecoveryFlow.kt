@@ -54,10 +54,30 @@ class BootRecoveryFlow(private val hooks: Hooks) {
         SUPERSEDED,
     }
 
-    suspend fun run(): Outcome {
+    /**
+     * Outcome plus the facts an interruption assessor needs to decide whether the flow actually did
+     * restore work: [restoreAttempted] (the flow called [Hooks.restoreSession]), [rewrites] (re-write
+     * attempts issued, including a failed final one), and [retryRemaining] (a pending target is still
+     * persisted on exit, so a later start will retry).
+     */
+    data class Result(
+        val outcome: Outcome,
+        val restoreAttempted: Boolean,
+        val rewrites: Int,
+        val retryRemaining: Boolean,
+    )
+
+    suspend fun run(): Result {
+        var restoreAttempted = false
+        var rewrites = 0
         val sessionTarget = hooks.currentSessionTarget()
         val pendingTarget = hooks.pendingTarget()
-        val target = pendingTarget ?: sessionTarget ?: return Outcome.NOTHING_TO_DO
+        val target = pendingTarget ?: sessionTarget ?: return Result(
+            outcome = Outcome.NOTHING_TO_DO,
+            restoreAttempted = false,
+            rewrites = 0,
+            retryRemaining = false,
+        )
         var staleIntended: ChargePolicy? = null
         if (pendingTarget != null) {
             // The pending target is always the newest intent: setPersistentPolicy persists it
@@ -76,17 +96,22 @@ class BootRecoveryFlow(private val hooks: Hooks) {
         } else {
             hooks.setPendingTarget(target)
             log(TAG) { "Recovery: restoring ${target.stableId}" }
+            restoreAttempted = true
             if (!hooks.restoreSession()) {
                 log(TAG, Logging.Priority.ERROR) { "Restore failed; session remains persisted" }
                 hooks.notifyFailure(writeFailed = true)
                 hooks.clearPendingTarget()
-                return Outcome.RESTORE_FAILED
+                return Result(
+                    outcome = Outcome.RESTORE_FAILED,
+                    restoreAttempted = true,
+                    rewrites = rewrites,
+                    retryRemaining = false,
+                )
             }
         }
 
         val startedAt = hooks.elapsedRealtime()
         var lastWriteAt = startedAt
-        var rewrites = 0
         while (true) {
             hooks.tick()
             val intended = hooks.intendedTarget()
@@ -95,7 +120,12 @@ class BootRecoveryFlow(private val hooks: Hooks) {
                 // were converging; never write the boot target over a newer choice.
                 log(TAG) { "Boot recovery superseded by ${intended.stableId}" }
                 hooks.clearPendingTarget()
-                return Outcome.SUPERSEDED
+                return Result(
+                    outcome = Outcome.SUPERSEDED,
+                    restoreAttempted = restoreAttempted,
+                    rewrites = rewrites,
+                    retryRemaining = false,
+                )
             }
             val now = hooks.elapsedRealtime()
             val snapshot = hooks.batterySnapshot()
@@ -121,14 +151,24 @@ class BootRecoveryFlow(private val hooks: Hooks) {
                         // write) should be retried by the next service start.
                         log(TAG, Logging.Priority.ERROR) { "Boot recovery re-write failed" }
                         hooks.notifyFailure(writeFailed = true)
-                        return Outcome.GAVE_UP
+                        return Result(
+                            outcome = Outcome.GAVE_UP,
+                            restoreAttempted = restoreAttempted,
+                            rewrites = rewrites,
+                            retryRemaining = true,
+                        )
                     }
                     lastWriteAt = hooks.elapsedRealtime()
                 }
                 RecoveryDecision.DONE_OK -> {
                     log(TAG) { "Boot recovery finished for ${target.stableId}" }
                     hooks.clearPendingTarget()
-                    return Outcome.CONVERGED
+                    return Result(
+                        outcome = Outcome.CONVERGED,
+                        restoreAttempted = restoreAttempted,
+                        rewrites = rewrites,
+                        retryRemaining = false,
+                    )
                 }
                 RecoveryDecision.GIVE_UP -> {
                     log(TAG, Logging.Priority.ERROR) {
@@ -136,7 +176,12 @@ class BootRecoveryFlow(private val hooks: Hooks) {
                     }
                     hooks.notifyFailure(writeFailed = false)
                     hooks.clearPendingTarget()
-                    return Outcome.GAVE_UP
+                    return Result(
+                        outcome = Outcome.GAVE_UP,
+                        restoreAttempted = restoreAttempted,
+                        rewrites = rewrites,
+                        retryRemaining = false,
+                    )
                 }
             }
         }

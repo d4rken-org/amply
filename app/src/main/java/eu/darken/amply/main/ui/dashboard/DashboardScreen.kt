@@ -77,6 +77,9 @@ import eu.darken.amply.common.compose.AmplyToggleCard
 import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.common.compose.asComposable
 import eu.darken.amply.fullcharge.core.ChargeSessionRecord
+import eu.darken.amply.fullcharge.core.InterruptionEvent
+import eu.darken.amply.fullcharge.core.InterruptionOutcome
+import eu.darken.amply.fullcharge.core.InterruptionReason
 import eu.darken.amply.fullcharge.core.policyOrNull
 import eu.darken.amply.main.core.formatReport
 import eu.darken.amply.battery.core.BatteryReadout
@@ -85,8 +88,11 @@ import eu.darken.amply.battery.ui.formatTemperature
 import eu.darken.amply.main.ui.setup.AccessSetupGuide
 import eu.darken.amply.main.ui.setup.OemGuideCard
 import eu.darken.amply.main.ui.setup.UnsupportedDeviceCard
-import eu.darken.amply.stats.ui.StatsCurrentSessionCard
+import eu.darken.amply.stats.core.ChargeCurvePoint
+import eu.darken.amply.stats.core.StatsLiveSession
+import eu.darken.amply.stats.ui.StatsCardPresentation
 import eu.darken.amply.stats.ui.StatsDashboardCard
+import eu.darken.amply.stats.ui.StatsDashboardState
 import kotlinx.coroutines.delay
 
 @Composable
@@ -106,9 +112,11 @@ fun DashboardScreen(
     onOpenBatteryDetail: () -> Unit,
     onOpenStats: () -> Unit,
     onOpenLiveSession: (Long) -> Unit,
+    onRetryCapture: () -> Unit,
     onPinWidget: () -> Unit,
     onAddTile: () -> Unit,
     onDismissQuickAccess: () -> Unit,
+    onDismissInterruption: () -> Unit,
     onNativeSettings: () -> Unit,
     onOpenShizuku: () -> Unit,
     onAllowShizuku: () -> Unit,
@@ -147,18 +155,11 @@ fun DashboardScreen(
             // Derived once and shared by the status + full-charge cards so they can never disagree
             // about whether the one-time charge is actually in effect.
             val sessionPresentation = SessionPresentation.from(state.session, state.charging.observation)
-            // Live charge session sits right under the hero, but only while actually plugged in — a
-            // stale open row must never claim "Charging now" unplugged. When it shows, the compact
-            // stats card lower down is suppressed to avoid two stats cards.
-            val liveSession = state.statsCurrentSession
-            val liveReadout = state.batteryReadout
-            val liveCharge = if (state.statsEnabled && liveSession != null &&
-                liveReadout != null && (liveReadout.plugged ?: 0) != 0
-            ) {
-                liveSession to liveReadout
-            } else {
-                null
-            }
+            // The single stats card sits in one fixed slot (shared tail below); only its content
+            // adapts. "On the charger" is decided by the raw battery readout, never the recorder's
+            // DB row — see StatsCardPresentation for the truth rules.
+            val statsPresentation = StatsCardPresentation.from(state.stats, state.batteryReadout)
+            val unsupported = state.charging.observation is ChargeObservation.Unsupported
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = sidePadding, end = sidePadding, top = 8.dp, bottom = 8.dp),
@@ -166,17 +167,7 @@ fun DashboardScreen(
             ) {
                 item { StatusCard(state, sessionPresentation, onOpenBatteryDetail) }
 
-                if (liveCharge != null) {
-                    item {
-                        StatsCurrentSessionCard(
-                            live = liveCharge.first,
-                            battery = liveCharge.second,
-                            onOpen = { onOpenLiveSession(liveCharge.first.id) },
-                        )
-                    }
-                }
-
-                if (state.charging.observation is ChargeObservation.Unsupported) {
+                if (unsupported) {
                     // Unsupported devices cannot use the Pixel policy/charge controls; showing them
                     // greyed-out (and a "Pixel settings" action) only confuses non-Pixel users. Offer
                     // a contribution path instead, and keep only the restore card if a session lingers.
@@ -215,41 +206,14 @@ fun DashboardScreen(
                             isLineageOs = state.charging.device.lineageOsVersion != null,
                         )
                     }
-                    item {
-                        ChargeAlarmCard(
-                            config = state.alarm,
-                            notificationsBlocked = state.notificationsBlocked,
-                            onEnabledChange = onAlarmEnabledChange,
-                            onTargetChange = onAlarmTargetChange,
-                            onFixNotifications = onFixNotifications,
-                        )
-                    }
-                    if (liveCharge == null) {
-                        item {
-                            StatsDashboardCard(
-                                enabled = state.statsEnabled,
-                                lastSession = state.statsLastSession,
-                                sessionCount = state.statsSessionCount,
-                                onOpen = onOpenStats,
-                            )
-                        }
-                    }
-                    if (state.charging.contributionWanted) {
-                        item {
-                            UnsupportedDeviceCard(
-                                manufacturer = state.charging.device.manufacturer
-                                    .ifBlank { stringResource(R.string.dashboard_manufacturer_fallback) },
-                                reportPreview = state.deviceReport?.let(::formatReport),
-                                onOpenWizard = onOpenContribution,
-                                onPrepareReport = onPrepareSupportReport,
-                                onCopyReport = onCopySupportReport,
-                                onOpenIssue = onOpenSupportIssue,
-                                onEmail = onEmailSupport,
-                                onHelp = onHelp,
-                            )
-                        }
-                    }
                 } else {
+                    // Interrupted-session warning sits right under the hero, but only on a device
+                    // whose support is positively resolved (a live adapter is selected). Silent
+                    // otherwise — a warning about a restore Amply cannot even perform would confuse.
+                    val interruption = state.interruption
+                    if (interruption != null && state.charging.controlEnabled) {
+                        item { InterruptionCard(interruption, onDismissInterruption) }
+                    }
                     // Shizuku-only adapters (OnePlus/ColorOS) can't use WSS at all, so the WSS/ADB
                     // setup guide would ask for an ineffective grant — the dedicated
                     // "Shizuku required" banner below covers their setup instead.
@@ -289,25 +253,45 @@ fun DashboardScreen(
                             )
                         }
                     }
-                    item {
-                        ChargeAlarmCard(
-                            config = state.alarm,
-                            notificationsBlocked = state.notificationsBlocked,
-                            onEnabledChange = onAlarmEnabledChange,
-                            onTargetChange = onAlarmTargetChange,
-                            onFixNotifications = onFixNotifications,
-                        )
-                    }
-                    if (liveCharge == null) {
+                }
+
+                // Shared tail: the alarm and the single stats card render on every device class —
+                // one lexical slot each, so the supported/unsupported branches can't drift apart.
+                item {
+                    ChargeAlarmCard(
+                        config = state.alarm,
+                        notificationsBlocked = state.notificationsBlocked,
+                        onEnabledChange = onAlarmEnabledChange,
+                        onTargetChange = onAlarmTargetChange,
+                        onFixNotifications = onFixNotifications,
+                    )
+                }
+                item {
+                    StatsDashboardCard(
+                        presentation = statsPresentation,
+                        onOpenStats = onOpenStats,
+                        onOpenLiveSession = onOpenLiveSession,
+                        onRetryCapture = onRetryCapture,
+                    )
+                }
+
+                if (unsupported) {
+                    if (state.charging.contributionWanted) {
                         item {
-                            StatsDashboardCard(
-                                enabled = state.statsEnabled,
-                                lastSession = state.statsLastSession,
-                                sessionCount = state.statsSessionCount,
-                                onOpen = onOpenStats,
+                            UnsupportedDeviceCard(
+                                manufacturer = state.charging.device.manufacturer
+                                    .ifBlank { stringResource(R.string.dashboard_manufacturer_fallback) },
+                                reportPreview = state.deviceReport?.let(::formatReport),
+                                onOpenWizard = onOpenContribution,
+                                onPrepareReport = onPrepareSupportReport,
+                                onCopyReport = onCopySupportReport,
+                                onOpenIssue = onOpenSupportIssue,
+                                onEmail = onEmailSupport,
+                                onHelp = onHelp,
                             )
                         }
                     }
+                } else {
                     // Promote the widget/tile shortcuts only once setup is done (the setup guide above
                     // has disappeared) and while at least one shortcut is still undiscovered.
                     if (shouldShowQuickAccess(
@@ -519,7 +503,7 @@ private fun StatusCard(
 private fun batterySummaryLine(readout: BatteryReadout): String {
     val notReported = stringResource(R.string.battery_value_not_reported)
     val level = readout.levelPercent?.let { "$it%" } ?: notReported
-    val status = stringResource(batteryStatusLabel(readout.status))
+    val status = stringResource(batteryStatusLabel(readout.status, readout.plugged))
     val temperature = formatTemperature(readout.temperatureTenthsC) ?: notReported
     return stringResource(R.string.battery_info_summary, level, status, temperature)
 }
@@ -767,6 +751,46 @@ private fun ShizukuBanner(
     }
 }
 
+@Composable
+private fun InterruptionCard(
+    event: InterruptionEvent,
+    onDismiss: () -> Unit,
+) {
+    // Tertiary-container "attention" tone, matching the ShizukuBanner. Copy is deliberately neutral —
+    // the reason never asserts a force-stop, only that Amply was stopped/interrupted.
+    AmplyCard(tone = AmplyCardTone.TertiaryContainer) {
+        Text(
+            stringResource(
+                when (event.outcome) {
+                    InterruptionOutcome.RESTORED_LATE -> R.string.dashboard_interruption_title_restored
+                    InterruptionOutcome.STILL_PENDING -> R.string.dashboard_interruption_title_pending
+                    InterruptionOutcome.UNCONFIRMED -> R.string.dashboard_interruption_title_unconfirmed
+                },
+            ),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+        val reason = stringResource(
+            when (event.reason) {
+                InterruptionReason.USER_STOPPED -> R.string.dashboard_interruption_reason_user
+                InterruptionReason.OTHER -> R.string.dashboard_interruption_reason_other
+            },
+        )
+        val outcome = stringResource(
+            when (event.outcome) {
+                InterruptionOutcome.RESTORED_LATE -> R.string.dashboard_interruption_outcome_restored
+                InterruptionOutcome.STILL_PENDING -> R.string.dashboard_interruption_outcome_pending
+                InterruptionOutcome.UNCONFIRMED -> R.string.dashboard_interruption_outcome_unconfirmed
+            },
+        )
+        Text("$reason $outcome", style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.height(8.dp))
+        TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
+            Text(stringResource(R.string.dashboard_interruption_dismiss_action))
+        }
+    }
+}
+
 private fun ChargeObservation.title(): CaString = when (this) {
     is ChargeObservation.Verified -> if (backend == BackendKind.BATTERY_HARDWARE) {
         caString { it.getString(R.string.dashboard_status_verified_active, policy.shortLabel().get(it)) }
@@ -829,6 +853,13 @@ private fun DashboardScreenPreview() = PreviewWrapper {
             quickFullChargeEnabled = true,
             // Presence check done, nothing discovered yet — renders the quick-access promotion.
             quickAccessChecked = true,
+            // A resolved interruption: the warning card sits under the hero until dismissed.
+            interruption = InterruptionEvent(
+                occurredAtMillis = 0L,
+                reason = InterruptionReason.USER_STOPPED,
+                outcome = InterruptionOutcome.RESTORED_LATE,
+                workId = "preview",
+            ),
             // Held at the 80% limit: paired with the policy so the reading reads as the effect.
             batteryReadout = BatteryReadout(
                 levelPercent = 80,
@@ -855,7 +886,7 @@ private fun DashboardScreenPreview() = PreviewWrapper {
                     shizuku = BackendStatus(
                         available = true,
                         granted = true,
-                        detail = "Shizuku connected".toCaString()
+                        detail = "Shizuku connected".toCaString(),
                     ),
                 ),
                 observation = ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.SHIZUKU),
@@ -875,9 +906,105 @@ private fun DashboardScreenPreview() = PreviewWrapper {
         onOpenBatteryDetail = {},
         onOpenStats = {},
         onOpenLiveSession = {},
+        onRetryCapture = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
+        onDismissInterruption = {},
+        onNativeSettings = {},
+        onOpenShizuku = {},
+        onAllowShizuku = {},
+        onGrantWss = {},
+        onCopyAdb = {},
+        onCopyWebUsbLink = {},
+        onPrepareSupportReport = {},
+        onCopySupportReport = {},
+        onOpenContribution = {},
+        onOpenSupportIssue = {},
+        onEmailSupport = {},
+        onHelp = {},
+    )
+}
+
+// On the charger with capture enabled: the stats card in its fixed slot renders the live session.
+@AmplyPreview
+@Composable
+private fun DashboardScreenLiveChargePreview() = PreviewWrapper {
+    DashboardScreen(
+        state = DashboardUiState(
+            onboardingComplete = true,
+            batteryReadout = BatteryReadout(
+                levelPercent = 78,
+                status = android.os.BatteryManager.BATTERY_STATUS_CHARGING,
+                plugged = android.os.BatteryManager.BATTERY_PLUGGED_AC,
+                temperatureTenthsC = 312,
+                voltageMillivolts = 4_100,
+                currentNowMicroamps = 2_050_000,
+            ),
+            stats = StatsDashboardState(
+                enabled = true,
+                sessionCount = 3,
+                live = StatsLiveSession(
+                    id = 1,
+                    startedAtWallMillis = 0L,
+                    startedElapsedRealtimeMillis = 0L,
+                    startPercent = 42,
+                    partial = true,
+                    curve = (0..12).map { i ->
+                        ChargeCurvePoint(
+                            elapsedFromStartMillis = i * 300_000L,
+                            percent = (42 + i * 3).coerceAtMost(100),
+                            powerMilliwatts = (18_000 - i * 700).coerceAtLeast(2_000),
+                            temperatureTenthsC = 300 + i,
+                        )
+                    },
+                ),
+            ),
+            charging = ChargingState(
+                device = DeviceInfo("Google", "Pixel 8", 36, "preview"),
+                adapterName = "Pixel Charge Control".toCaString(),
+                adapterId = "pixel",
+                supportedPolicies = listOf(
+                    ChargePolicy.FixedLimit(80),
+                    ChargePolicy.Adaptive,
+                    ChargePolicy.Unrestricted,
+                ),
+                reconnectSupported = true,
+                controlEnabled = true,
+                access = AccessSnapshot(
+                    direct = BackendStatus(
+                        available = true,
+                        granted = true,
+                        detail = "Charge-control access granted".toCaString(),
+                    ),
+                    shizuku = BackendStatus(
+                        available = true,
+                        granted = true,
+                        detail = "Shizuku connected".toCaString(),
+                    ),
+                ),
+                observation = ChargeObservation.Verified(ChargePolicy.Unrestricted, BackendKind.SHIZUKU),
+            ),
+        ),
+        adbCommand = "adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS",
+        onRefresh = {},
+        onSettings = {},
+        onStartFull = {},
+        onRestore = {},
+        onApply = {},
+        onQuickFullChargeChange = {},
+        onOpenReconnectSettings = {},
+        onAlarmEnabledChange = {},
+        onAlarmTargetChange = {},
+        onFixNotifications = {},
+        onOpenBatteryDetail = {},
+        onOpenStats = {},
+        onOpenLiveSession = {},
+        onRetryCapture = {},
+        onPinWidget = {},
+        onAddTile = {},
+        onDismissQuickAccess = {},
+        onDismissInterruption = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
@@ -949,9 +1076,11 @@ private fun DashboardScreenApplyingPreview() = PreviewWrapper {
         onOpenBatteryDetail = {},
         onOpenStats = {},
         onOpenLiveSession = {},
+        onRetryCapture = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
+        onDismissInterruption = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
@@ -1019,9 +1148,11 @@ private fun DashboardScreenSessionActivePreview() = PreviewWrapper {
         onOpenBatteryDetail = {},
         onOpenStats = {},
         onOpenLiveSession = {},
+        onRetryCapture = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
+        onDismissInterruption = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
@@ -1091,9 +1222,11 @@ private fun DashboardScreenSessionRecordedPreview() = PreviewWrapper {
         onOpenBatteryDetail = {},
         onOpenStats = {},
         onOpenLiveSession = {},
+        onRetryCapture = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
+        onDismissInterruption = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
@@ -1151,9 +1284,11 @@ private fun DashboardScreenWssOnlyPreview() = PreviewWrapper {
         onOpenBatteryDetail = {},
         onOpenStats = {},
         onOpenLiveSession = {},
+        onRetryCapture = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
+        onDismissInterruption = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
@@ -1218,9 +1353,11 @@ private fun DashboardScreenSamsungPreview() = PreviewWrapper {
         onOpenBatteryDetail = {},
         onOpenStats = {},
         onOpenLiveSession = {},
+        onRetryCapture = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
+        onDismissInterruption = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
@@ -1286,9 +1423,11 @@ private fun DashboardScreenOnePlusNeedsShizukuPreview() = PreviewWrapper {
         onOpenBatteryDetail = {},
         onOpenStats = {},
         onOpenLiveSession = {},
+        onRetryCapture = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
+        onDismissInterruption = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},
@@ -1339,9 +1478,11 @@ private fun DashboardScreenUnsupportedPreview() = PreviewWrapper {
         onOpenBatteryDetail = {},
         onOpenStats = {},
         onOpenLiveSession = {},
+        onRetryCapture = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
+        onDismissInterruption = {},
         onNativeSettings = {},
         onOpenShizuku = {},
         onAllowShizuku = {},

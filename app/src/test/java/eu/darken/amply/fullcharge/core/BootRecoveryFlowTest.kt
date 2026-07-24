@@ -22,7 +22,11 @@ class BootRecoveryFlowTest {
     fun `nothing to do without session or pending target`() = runTest {
         val hooks = FakeHooks(sessionTarget = null)
 
-        BootRecoveryFlow(hooks).run() shouldBe BootRecoveryFlow.Outcome.NOTHING_TO_DO
+        val result = BootRecoveryFlow(hooks).run()
+        result.outcome shouldBe BootRecoveryFlow.Outcome.NOTHING_TO_DO
+        result.restoreAttempted shouldBe false
+        result.rewrites shouldBe 0
+        result.retryRemaining shouldBe false
         hooks.restoreCalls shouldBe 0
     }
 
@@ -30,7 +34,10 @@ class BootRecoveryFlowTest {
     fun `restore failure notifies as write failure and skips convergence`() = runTest {
         val hooks = FakeHooks(restoreResult = false)
 
-        BootRecoveryFlow(hooks).run() shouldBe BootRecoveryFlow.Outcome.RESTORE_FAILED
+        val result = BootRecoveryFlow(hooks).run()
+        result.outcome shouldBe BootRecoveryFlow.Outcome.RESTORE_FAILED
+        result.restoreAttempted shouldBe true
+        result.rewrites shouldBe 0
         hooks.failures shouldContainExactlyInAnyOrder listOf(true)
         hooks.rewrites.shouldBeEmpty()
         hooks.pending shouldBe null
@@ -40,16 +47,41 @@ class BootRecoveryFlowTest {
     fun `hardware confirmation clears the pending target`() = runTest {
         val hooks = FakeHooks(observation = { hardwareLongLife })
 
-        BootRecoveryFlow(hooks).run() shouldBe BootRecoveryFlow.Outcome.CONVERGED
+        // Converged with the hardware already confirming: a real restore happened but no re-writes.
+        val result = BootRecoveryFlow(hooks).run()
+        result.outcome shouldBe BootRecoveryFlow.Outcome.CONVERGED
+        result.restoreAttempted shouldBe true
+        result.rewrites shouldBe 0
+        result.retryRemaining shouldBe false
         hooks.pending shouldBe null
         hooks.rewrites.shouldBeEmpty()
+    }
+
+    @Test
+    fun `converging a pending-only target without work reports no restore and no rewrites`() = runTest {
+        // A resumed pending target already confirmed by the hardware: no restore call, no re-writes,
+        // so an interruption assessor can tell nothing was actually done.
+        val hooks = FakeHooks(
+            sessionTarget = null,
+            pending = fixedLimit,
+            observation = { hardwareLongLife },
+        )
+
+        val result = BootRecoveryFlow(hooks).run()
+        result.outcome shouldBe BootRecoveryFlow.Outcome.CONVERGED
+        result.restoreAttempted shouldBe false
+        result.rewrites shouldBe 0
     }
 
     @Test
     fun `persistent divergence rewrites then gives up with a convergence notification`() = runTest {
         val hooks = FakeHooks()
 
-        BootRecoveryFlow(hooks).run() shouldBe BootRecoveryFlow.Outcome.GAVE_UP
+        // Convergence budget exhausted: the pending target is cleared, so no retry remains.
+        val result = BootRecoveryFlow(hooks).run()
+        result.outcome shouldBe BootRecoveryFlow.Outcome.GAVE_UP
+        result.rewrites shouldBe BootRecoveryEngine.MAX_REWRITES
+        result.retryRemaining shouldBe false
         hooks.rewrites shouldHaveSize BootRecoveryEngine.MAX_REWRITES
         hooks.failures shouldContainExactlyInAnyOrder listOf(false)
         hooks.pending shouldBe null
@@ -59,7 +91,11 @@ class BootRecoveryFlowTest {
     fun `rewrite failure notifies as write failure and preserves the pending target for retry`() = runTest {
         val hooks = FakeHooks(rewriteResult = false)
 
-        BootRecoveryFlow(hooks).run() shouldBe BootRecoveryFlow.Outcome.GAVE_UP
+        // A re-write failure keeps the pending target for a later retry.
+        val result = BootRecoveryFlow(hooks).run()
+        result.outcome shouldBe BootRecoveryFlow.Outcome.GAVE_UP
+        result.retryRemaining shouldBe true
+        result.rewrites shouldBe 1
         hooks.failures shouldContainExactlyInAnyOrder listOf(true)
         hooks.pending shouldBe fixedLimit
     }
@@ -68,7 +104,7 @@ class BootRecoveryFlowTest {
     fun `a newer policy choice supersedes recovery without re-writes`() = runTest {
         val hooks = FakeHooks(intended = { ChargePolicy.Adaptive })
 
-        BootRecoveryFlow(hooks).run() shouldBe BootRecoveryFlow.Outcome.SUPERSEDED
+        BootRecoveryFlow(hooks).run().outcome shouldBe BootRecoveryFlow.Outcome.SUPERSEDED
         hooks.rewrites.shouldBeEmpty()
         hooks.failures.shouldBeEmpty()
         hooks.pending shouldBe null
@@ -80,7 +116,10 @@ class BootRecoveryFlowTest {
             snapshot = BatterySnapshot(plugged = false, percent = 80, chargingState = 4),
         )
 
-        BootRecoveryFlow(hooks).run() shouldBe BootRecoveryFlow.Outcome.CONVERGED
+        val result = BootRecoveryFlow(hooks).run()
+        result.outcome shouldBe BootRecoveryFlow.Outcome.CONVERGED
+        result.restoreAttempted shouldBe true
+        result.rewrites shouldBe 1
         hooks.rewrites shouldHaveSize 1
         hooks.failures.shouldBeEmpty()
         hooks.pending shouldBe null
@@ -109,7 +148,7 @@ class BootRecoveryFlowTest {
                 observation = { ChargeObservation.Verified(ChargePolicy.Unrestricted, BackendKind.BATTERY_HARDWARE) },
             )
 
-            BootRecoveryFlow(hooks).run() shouldBe BootRecoveryFlow.Outcome.CONVERGED
+            BootRecoveryFlow(hooks).run().outcome shouldBe BootRecoveryFlow.Outcome.CONVERGED
             hooks.restoreCalls shouldBe 0
             hooks.staleSessionDrops shouldBe 1
             hooks.sessionTarget shouldBe null
@@ -129,7 +168,7 @@ class BootRecoveryFlowTest {
             observation = { ChargeObservation.Verified(ChargePolicy.Unrestricted, BackendKind.BATTERY_HARDWARE) },
         )
 
-        BootRecoveryFlow(hooks).run() shouldBe BootRecoveryFlow.Outcome.CONVERGED
+        BootRecoveryFlow(hooks).run().outcome shouldBe BootRecoveryFlow.Outcome.CONVERGED
         hooks.restoreCalls shouldBe 0
         hooks.staleSessionDrops shouldBe 1
         hooks.pending shouldBe null
@@ -146,7 +185,7 @@ class BootRecoveryFlowTest {
             intended = { if (intendedCalls++ == 0) ChargePolicy.Unrestricted else ChargePolicy.Adaptive },
         )
 
-        BootRecoveryFlow(hooks).run() shouldBe BootRecoveryFlow.Outcome.SUPERSEDED
+        BootRecoveryFlow(hooks).run().outcome shouldBe BootRecoveryFlow.Outcome.SUPERSEDED
         hooks.rewrites.shouldBeEmpty()
         hooks.pending shouldBe null
     }
@@ -159,7 +198,7 @@ class BootRecoveryFlowTest {
             observation = { hardwareLongLife },
         )
 
-        BootRecoveryFlow(hooks).run() shouldBe BootRecoveryFlow.Outcome.CONVERGED
+        BootRecoveryFlow(hooks).run().outcome shouldBe BootRecoveryFlow.Outcome.CONVERGED
         hooks.restoreCalls shouldBe 0
         hooks.staleSessionDrops shouldBe 0
         hooks.pending shouldBe null
