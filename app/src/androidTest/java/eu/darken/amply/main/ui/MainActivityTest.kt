@@ -29,9 +29,9 @@ class MainActivityTest {
         // Next is pinned at the bottom, so it must be visible without scrolling. It reveals the
         // caveats page with its caveat cards, still without the setup guide.
         composeRule.onNodeWithText(str(R.string.onboarding_next_action)).assertIsDisplayed().performClick()
+        composeRule.onNodeWithText(str(R.string.onboarding_caveat_compat_title)).assertIsDisplayed()
         composeRule.onNodeWithText(str(R.string.onboarding_caveat_support_title)).assertIsDisplayed()
         composeRule.onNodeWithText(str(R.string.onboarding_caveat_setup_title)).assertIsDisplayed()
-        composeRule.onNodeWithText(str(R.string.onboarding_caveat_restore_title)).assertExists()
         composeRule.onNodeWithText(str(R.string.onboarding_continue_action)).assertIsDisplayed()
         composeRule.onNodeWithText("Option 1 · Shizuku").assertDoesNotExist()
 

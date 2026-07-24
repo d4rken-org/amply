@@ -218,6 +218,12 @@ private fun OnboardingCaveatsPage(onContinue: () -> Unit) = OnboardingScaffold(
 
     CaveatCard(
         tone = AmplyCardTone.TertiaryContainer,
+        title = stringResource(R.string.onboarding_caveat_compat_title),
+        body = stringResource(R.string.onboarding_caveat_compat_body),
+    )
+
+    CaveatCard(
+        tone = AmplyCardTone.SurfaceHigh,
         title = stringResource(R.string.onboarding_caveat_support_title),
         body = stringResource(R.string.onboarding_caveat_support_body),
     )
@@ -226,12 +232,6 @@ private fun OnboardingCaveatsPage(onContinue: () -> Unit) = OnboardingScaffold(
         tone = AmplyCardTone.SurfaceHigh,
         title = stringResource(R.string.onboarding_caveat_setup_title),
         body = stringResource(R.string.onboarding_caveat_setup_body),
-    )
-
-    CaveatCard(
-        tone = AmplyCardTone.SurfaceHigh,
-        title = stringResource(R.string.onboarding_caveat_restore_title),
-        body = stringResource(R.string.onboarding_caveat_restore_body),
     )
 }
 
