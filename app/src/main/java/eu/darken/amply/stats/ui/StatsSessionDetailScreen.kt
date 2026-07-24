@@ -23,15 +23,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import eu.darken.amply.R
 import eu.darken.amply.common.compose.AmplyCard
 import eu.darken.amply.common.compose.AmplyCardDefaults
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
-import eu.darken.amply.common.compose.chart.ChartPoint
-import eu.darken.amply.common.compose.chart.ChartSeries
-import eu.darken.amply.common.compose.chart.LineChart
 import eu.darken.amply.stats.core.ChargeCurvePoint
 import eu.darken.amply.stats.core.ChargeSessionSummary
 import eu.darken.amply.stats.core.ChargingType
@@ -100,9 +98,6 @@ fun StatsSessionDetailScreen(
 
 @Composable
 private fun CurveCard(curve: List<ChargeCurvePoint>) {
-    val percentColor = MaterialTheme.colorScheme.primary
-    val powerColor = MaterialTheme.colorScheme.tertiary
-    val tempColor = MaterialTheme.colorScheme.error
     AmplyCard {
         Text(
             stringResource(R.string.stats_detail_curve_title),
@@ -110,26 +105,7 @@ private fun CurveCard(curve: List<ChargeCurvePoint>) {
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(bottom = 4.dp),
         )
-        LineChart(
-            series = listOf(
-                ChartSeries(
-                    label = stringResource(R.string.stats_curve_series_percent),
-                    color = percentColor,
-                    points = curve.map { ChartPoint(it.elapsedFromStartMillis.toFloat(), it.percent?.toFloat()) },
-                ),
-                ChartSeries(
-                    label = stringResource(R.string.stats_curve_series_power),
-                    color = powerColor,
-                    points = curve.map { ChartPoint(it.elapsedFromStartMillis.toFloat(), it.powerMilliwatts?.toFloat()) },
-                ),
-                ChartSeries(
-                    label = stringResource(R.string.stats_curve_series_temperature),
-                    color = tempColor,
-                    points = curve.map { ChartPoint(it.elapsedFromStartMillis.toFloat(), it.temperatureTenthsC?.toFloat()) },
-                ),
-            ),
-            emptyLabel = stringResource(R.string.stats_curve_empty),
-        )
+        StatsCurveChart(curve = curve)
     }
 }
 
@@ -137,6 +113,10 @@ private fun CurveCard(curve: List<ChargeCurvePoint>) {
 private fun SummaryCard(summary: ChargeSessionSummary) {
     val notReported = stringResource(R.string.battery_value_not_reported)
     AmplyCard(verticalArrangement = Arrangement.spacedBy(AmplyCardDefaults.ItemSpacing)) {
+        DetailRow(stringResource(R.string.stats_detail_started), StatsFormat.dateTime(summary.startedAtWallMillis))
+        summary.endedAtWallMillis?.let { ended ->
+            DetailRow(stringResource(R.string.stats_detail_ended), StatsFormat.dateTime(ended))
+        }
         DetailRow(stringResource(R.string.stats_detail_level), StatsFormat.percentRange(summary.startPercent, summary.endPercent))
         DetailRow(stringResource(R.string.stats_detail_duration), StatsFormat.duration(summary.durationMillis) ?: notReported)
         DetailRow(stringResource(R.string.stats_detail_charging_type), stringResource(chargingTypeLabel(summary.chargingType)))
@@ -166,7 +146,14 @@ private fun DetailRow(label: String, value: String) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f),
         )
-        Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+        // Weighted + end-aligned so a long value (e.g. an absolute date) wraps instead of clipping.
+        Text(
+            value,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 

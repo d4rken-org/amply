@@ -109,6 +109,9 @@ class MainActivity : ComponentActivity() {
                     // Battery statistics is reachable from both the dashboard card and the settings hub;
                     // remember which so back returns there.
                     var statsOrigin by rememberSaveable { mutableStateOf(SettingsDestination.SETTINGS) }
+                    // Where the session-detail screen returns to: the stats list when opened from it, or
+                    // the dashboard when deep-linked from the live "on the charger" card.
+                    var detailOrigin by rememberSaveable { mutableStateOf(SettingsDestination.STATS) }
                     val leaveWizard = {
                         contributionViewModel.exitWizard()
                         destination = wizardOrigin
@@ -212,7 +215,7 @@ class MainActivity : ComponentActivity() {
                             // it was opened from (dashboard card or settings hub).
                             SettingsDestination.STATS_SESSION_DETAIL -> {
                                 statsViewModel.closeSession()
-                                destination = SettingsDestination.STATS
+                                destination = detailOrigin
                             }
                             SettingsDestination.STATS -> destination = statsOrigin
                             else -> destination = SettingsDestination.SETTINGS
@@ -256,6 +259,13 @@ class MainActivity : ComponentActivity() {
                             onOpenStats = {
                                 statsOrigin = SettingsDestination.DASHBOARD
                                 destination = SettingsDestination.STATS
+                            },
+                            onOpenLiveSession = { id ->
+                                // Deep-link straight to the in-progress session's detail; back returns
+                                // to the dashboard the card lives on.
+                                statsViewModel.openSession(id)
+                                detailOrigin = SettingsDestination.DASHBOARD
+                                destination = SettingsDestination.STATS_SESSION_DETAIL
                             },
                             onPinWidget = viewModel::requestPinWidget,
                             onAddTile = viewModel::requestAddTile,
@@ -364,6 +374,7 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onOpenSession = { id ->
                                     statsViewModel.openSession(id)
+                                    detailOrigin = SettingsDestination.STATS
                                     destination = SettingsDestination.STATS_SESSION_DETAIL
                                 },
                                 onClearData = statsViewModel::clearData,
@@ -375,7 +386,7 @@ class MainActivity : ComponentActivity() {
                                 state = statsDetail,
                                 onBack = {
                                     statsViewModel.closeSession()
-                                    destination = SettingsDestination.STATS
+                                    destination = detailOrigin
                                 },
                             )
                         }

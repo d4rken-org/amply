@@ -46,6 +46,29 @@ object StatsSessionEngine {
         else -> StatsTransition.Seal(StatsSealReason.UNPLUGGED)
     }
 
+    /**
+     * True when a just-sealed session captured nothing worth keeping, so the recorder should delete it
+     * rather than persist a spurious history row. This is exactly the "toggle record on then off while
+     * already plugged" artifact: enabling mid-charge opens a session on the immediate tick, and the
+     * following disable seals it with `end == start`.
+     *
+     * Deliberately keyed on the sealed *outcome*, not the sample count alone — a genuine plug that is
+     * pulled within one cadence window (< 20 s) also has a single sample yet records a real duration
+     * and/or a level change, and must be retained. A session is discardable only when it spans no
+     * time, gained no charge, and recorded at most the opening sample. The sticky limit/override flags
+     * are intentionally NOT a reason to keep it: a single instantaneous sample that merely observed an
+     * OEM limit or an active override, with zero elapsed time and no curve, is still the empty toggle
+     * artifact (a real hold/override session accrues elapsed time, so it fails the zero-duration test).
+     */
+    fun isDiscardable(sealed: ChargeSessionEntity): Boolean {
+        val end = sealed.endedElapsedRealtimeMillis ?: sealed.startedElapsedRealtimeMillis
+        val zeroDuration = end - sealed.startedElapsedRealtimeMillis <= 0
+        val noLevelGain = sealed.startPercent == null ||
+            sealed.endPercent == null ||
+            sealed.endPercent == sealed.startPercent
+        return zeroDuration && noLevelGain && sealed.runningSampleCount <= 1
+    }
+
     fun open(sample: StatsSample, partial: Boolean): ChargeSessionEntity = ChargeSessionEntity(
         startedAtWallMillis = sample.wallMillis,
         startedElapsedRealtimeMillis = sample.elapsedRealtimeMillis,
