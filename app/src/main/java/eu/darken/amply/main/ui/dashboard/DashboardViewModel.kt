@@ -28,6 +28,7 @@ import eu.darken.amply.charging.core.ChargingState
 import eu.darken.amply.charging.core.SETTLING_WINDOW_MILLIS
 import eu.darken.amply.common.AmplyLinks
 import eu.darken.amply.common.debug.logging.Logging
+import eu.darken.amply.common.debug.logging.asLog
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
 import eu.darken.amply.common.flow.combine as combine6
@@ -52,25 +53,31 @@ import eu.darken.amply.alarm.core.ChargeAlarmStore
 import eu.darken.amply.battery.core.BatteryReadout
 import eu.darken.amply.battery.core.BatteryReadoutSource
 import eu.darken.amply.monitor.core.ChargeMonitorWatcher
+import eu.darken.amply.stats.core.CaptureServiceHealth
 import eu.darken.amply.stats.core.ChargeSessionSummary
 import eu.darken.amply.stats.core.ChargeStatsRepository
 import eu.darken.amply.stats.core.StatsLiveSession
 import eu.darken.amply.stats.core.StatsPreferences
+import eu.darken.amply.stats.ui.StatsDashboardState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -93,12 +100,8 @@ data class DashboardUiState(
     val alarm: ChargeAlarmConfig = ChargeAlarmConfig(),
     /** True when the OS/channel would suppress the charge-alarm alert (permission off or blocked). */
     val notificationsBlocked: Boolean = false,
-    val statsEnabled: Boolean = false,
-    /** Most recent finished charge session, for the dashboard teaser (null when none yet). */
-    val statsLastSession: ChargeSessionSummary? = null,
-    val statsSessionCount: Int = 0,
-    /** The in-progress charge session (null unless capture is on and a session is open). */
-    val statsCurrentSession: StatsLiveSession? = null,
+    /** Everything the stats card needs: capture switch, pipeline health, and the Room teaser data. */
+    val stats: StatsDashboardState = StatsDashboardState(),
 )
 
 @HiltViewModel
@@ -114,6 +117,7 @@ class DashboardViewModel @Inject constructor(
     private val chargeAlarmStore: ChargeAlarmStore,
     private val statsPreferences: StatsPreferences,
     private val statsRepository: ChargeStatsRepository,
+    private val captureServiceHealth: CaptureServiceHealth,
     private val watchers: Set<@JvmSuppressWildcards ChargeMonitorWatcher>,
 ) : ViewModel() {
     private val deviceReport = MutableStateFlow<DeviceSupportReport?>(null)
@@ -139,19 +143,13 @@ class DashboardViewModel @Inject constructor(
     // Battery-statistics dashboard teaser. The session/count reads (which open the stats Room DB)
     // run only while capture is enabled — when it's off the card shows a promo, so a user who never
     // turned stats on never gets an empty stats.db created just by opening the dashboard.
-    private val statsDashboard = statsPreferences.captureEnabled.flatMapLatest { enabled ->
-        if (!enabled) {
-            flowOf(StatsDashboard(enabled = false, lastSession = null, count = 0, live = null))
-        } else {
-            combine(
-                statsRepository.recentSessions(limit = 1),
-                statsRepository.sessionCount(),
-                statsRepository.currentSession(),
-            ) { recent, count, live ->
-                StatsDashboard(enabled = true, lastSession = recent.firstOrNull(), count = count, live = live)
-            }
-        }
-    }
+    private val statsDashboard = statsDashboardStates(
+        captureEnabled = statsPreferences.captureEnabled,
+        health = captureServiceHealth.state,
+        recentSessions = { statsRepository.recentSessions(limit = 1) },
+        sessionCount = { statsRepository.sessionCount() },
+        currentSession = { statsRepository.currentSession() },
+    )
 
     val state = combine6(
         combine(
@@ -183,19 +181,9 @@ class DashboardViewModel @Inject constructor(
             batteryReadout = readout,
             alarm = alarm,
             notificationsBlocked = blocked,
-            statsEnabled = stats.enabled,
-            statsLastSession = stats.lastSession,
-            statsSessionCount = stats.count,
-            statsCurrentSession = stats.live,
+            stats = stats,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
-
-    private data class StatsDashboard(
-        val enabled: Boolean,
-        val lastSession: ChargeSessionSummary?,
-        val count: Int,
-        val live: StatsLiveSession?,
-    )
 
     val adbGrantCommand: String
         get() = "adb shell pm grant ${context.packageName} android.permission.WRITE_SECURE_SETTINGS"
@@ -314,7 +302,13 @@ class DashboardViewModel @Inject constructor(
             )
             if (action != null) {
                 log(TAG) { "Foreground nudge (trigger=$trigger): starting service with $action" }
-                ContextCompat.startForegroundService(context, ServiceDispatch.startIntent(context, action))
+                try {
+                    ContextCompat.startForegroundService(context, ServiceDispatch.startIntent(context, action))
+                    captureServiceHealth.reportDispatched()
+                } catch (e: Exception) {
+                    captureServiceHealth.reportFailed()
+                    throw e
+                }
             }
             // Record only after a start that didn't throw, so a failed dispatch is retried with
             // unchanged semantics on the next resume.
@@ -674,3 +668,49 @@ fun shouldMonitorAccess(state: DashboardUiState, onDashboard: Boolean): Boolean 
         onDashboard &&
         state.charging.observation !is ChargeObservation.Unsupported &&
         state.charging.access?.direct?.ready != true
+
+/**
+ * The stats slice of the dashboard state, extracted so its semantics are JVM-testable without the
+ * ViewModel: disabled emits the promo default without touching the providers (no stats.db creation);
+ * enabling emits a loading marker before Room's first answer; any pipeline failure downgrades to
+ * `unavailable` instead of cancelling the caller's whole state flow. The Room-backed flows are
+ * built through the providers *inside* the collected flow, so even a synchronous construction
+ * failure (broken stats.db) lands in the catch rather than escaping [flatMapLatest].
+ */
+internal fun statsDashboardStates(
+    captureEnabled: Flow<Boolean>,
+    health: Flow<CaptureServiceHealth.NudgeOutcome>,
+    recentSessions: () -> Flow<List<ChargeSessionSummary>>,
+    sessionCount: () -> Flow<Int>,
+    currentSession: () -> Flow<StatsLiveSession?>,
+): Flow<StatsDashboardState> = captureEnabled.flatMapLatest { enabled ->
+    if (!enabled) {
+        flowOf(StatsDashboardState())
+    } else {
+        flow {
+            emitAll(
+                combine(
+                    recentSessions(),
+                    sessionCount(),
+                    currentSession(),
+                    health,
+                ) { recent, count, live, nudge ->
+                    StatsDashboardState(
+                        enabled = true,
+                        startFailed = nudge == CaptureServiceHealth.NudgeOutcome.FAILED,
+                        lastSession = recent.firstOrNull(),
+                        sessionCount = count,
+                        live = live,
+                    )
+                },
+            )
+        }
+            .onStart { emit(StatsDashboardState(enabled = true, loading = true)) }
+            .catch { e ->
+                log(STATS_FLOW_TAG, Logging.Priority.ERROR) { "Stats dashboard flow failed: ${e.asLog()}" }
+                emit(StatsDashboardState(enabled = true, unavailable = true))
+            }
+    }
+}
+
+private val STATS_FLOW_TAG = logTag("Dashboard", "VM", "Stats")

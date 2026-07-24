@@ -429,6 +429,7 @@
     <string name="battery_status_charging">Charging</string>
     <string name="battery_status_discharging">Discharging</string>
     <string name="battery_status_not_charging">Not charging</string>
+    <string name="battery_status_plugged_not_charging">Plugged in, not charging</string>
     <string name="battery_status_full">Full</string>
     <string name="battery_health_good">Good</string>
     <string name="battery_health_overheat">Overheating</string>
@@ -473,11 +474,16 @@
     <string name="settings_stats_subtitle">Detailed charge history, speed, and temperature</string>
     <string name="dashboard_stats_title">Battery statistics</string>
     <string name="dashboard_stats_view_action">View</string>
-    <string name="dashboard_stats_promo">See detailed charge history, speed, and temperature</string>
+    <string name="dashboard_stats_promo">Record every charge to see charging speed, power, and temperature curves — plus a history of past sessions</string>
     <string name="dashboard_stats_last">Last charge: %1$s</string>
     <string name="dashboard_stats_recording_empty">Recording — no completed session yet</string>
+    <string name="dashboard_stats_loading">Loading…</string>
+    <string name="dashboard_stats_unavailable">Statistics are unavailable right now</string>
     <string name="dashboard_stats_live_title">On the charger</string>
     <string name="dashboard_stats_live_since">Since %1$s</string>
+    <string name="dashboard_stats_live_starting">Charger detected — recording is starting…</string>
+    <string name="dashboard_stats_live_start_failed">Charger detected — recording couldn\'t start</string>
+    <string name="dashboard_stats_retry_action">Retry</string>
     <plurals name="dashboard_stats_session_count">
         <item quantity="one">%1$d recorded session</item>
         <item quantity="other">%1$d recorded sessions</item>
@@ -514,6 +520,7 @@
     <string name="stats_detail_temperature">Temperature range</string>
     <string name="stats_detail_limit_likely">Limit likely reached</string>
     <string name="stats_detail_partial_note">This session is partial: recording started mid-charge, or was interrupted by a restart or reboot, so its duration and curve may be incomplete.</string>
+    <string name="stats_detail_missing">This session is no longer available</string>
     <string name="stats_value_yes">Yes</string>
     <string name="stats_value_no">No</string>
     <string name="stats_charging_type_ac">AC charger</string>

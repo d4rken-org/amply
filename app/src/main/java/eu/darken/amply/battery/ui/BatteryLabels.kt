@@ -9,11 +9,20 @@ import eu.darken.amply.R
  * constants fall back to a generic label rather than crashing or hiding the row.
  */
 
+/**
+ * A bare "Not charging" on a connected device (held at a charge limit — Amply's core scenario)
+ * reads as if the charger weren't detected, so that combination gets an explicit "plugged in"
+ * wording. Other statuses pass through: "Charging"/"Full" already imply a connection.
+ */
 @StringRes
-internal fun batteryStatusLabel(status: Int?): Int = when (status) {
+internal fun batteryStatusLabel(status: Int?, plugged: Int?): Int = when (status) {
     BatteryManager.BATTERY_STATUS_CHARGING -> R.string.battery_status_charging
     BatteryManager.BATTERY_STATUS_DISCHARGING -> R.string.battery_status_discharging
-    BatteryManager.BATTERY_STATUS_NOT_CHARGING -> R.string.battery_status_not_charging
+    BatteryManager.BATTERY_STATUS_NOT_CHARGING -> if ((plugged ?: 0) != 0) {
+        R.string.battery_status_plugged_not_charging
+    } else {
+        R.string.battery_status_not_charging
+    }
     BatteryManager.BATTERY_STATUS_FULL -> R.string.battery_status_full
     else -> R.string.battery_value_unknown
 }

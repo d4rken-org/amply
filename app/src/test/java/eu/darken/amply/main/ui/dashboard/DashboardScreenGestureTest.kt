@@ -2,12 +2,17 @@ package eu.darken.amply.main.ui.dashboard
 
 import android.app.Application
 import android.os.BatteryManager
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
@@ -18,6 +23,8 @@ import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargingState
 import eu.darken.amply.common.ca.toCaString
 import eu.darken.amply.stats.core.StatsLiveSession
+import eu.darken.amply.stats.ui.STATS_CARD_TEST_TAG
+import eu.darken.amply.stats.ui.StatsDashboardState
 import io.kotest.matchers.shouldBe
 import org.junit.Rule
 import org.junit.Test
@@ -64,6 +71,7 @@ class DashboardScreenGestureTest {
                 onOpenBatteryDetail = onOpenBatteryDetail,
                 onOpenStats = {},
                 onOpenLiveSession = {},
+                onRetryCapture = {},
                 onPinWidget = {},
                 onAddTile = {},
                 onDismissQuickAccess = {},
@@ -137,20 +145,30 @@ class DashboardScreenGestureTest {
         curve = emptyList(),
     )
 
+    private fun scrollToStatsCard() =
+        compose.onNode(hasScrollAction()).performScrollToNode(hasTestTag(STATS_CARD_TEST_TAG))
+
     @Test
-    fun `live charge session shows under the hero while plugged in`() {
+    fun `live charge shows in the stats card while plugged in`() {
         render(
             state = DashboardUiState(
                 onboardingComplete = true,
-                statsEnabled = true,
-                statsCurrentSession = liveSession(),
+                stats = StatsDashboardState(enabled = true, live = liveSession()),
                 batteryReadout = BatteryReadout(
                     levelPercent = 78,
                     plugged = BatteryManager.BATTERY_PLUGGED_AC,
                 ),
             ),
         )
+        // Before scrolling the initial viewport shows the hero region: a regression re-inserting
+        // the old under-hero live card would surface here (post-scroll it would be disposed by the
+        // LazyColumn and invisible to the count below).
+        compose.onNodeWithText(string(R.string.dashboard_stats_live_title)).assertDoesNotExist()
+        scrollToStatsCard()
         compose.onNodeWithText(string(R.string.dashboard_stats_live_title)).assertExists()
+        // One surface: while live-titled there is no second "Battery statistics" card anywhere.
+        compose.onAllNodesWithText(string(R.string.dashboard_stats_title)).assertCountEquals(0)
+        compose.onAllNodesWithText(string(R.string.dashboard_stats_live_title)).assertCountEquals(1)
     }
 
     @Test
@@ -158,13 +176,74 @@ class DashboardScreenGestureTest {
         render(
             state = DashboardUiState(
                 onboardingComplete = true,
-                statsEnabled = true,
-                statsCurrentSession = liveSession(),
-                // Not plugged (plugged == null): the live card must be suppressed.
+                stats = StatsDashboardState(enabled = true, live = liveSession()),
+                // Not plugged: the raw readout wins over the stale open row.
                 batteryReadout = BatteryReadout(levelPercent = 78, plugged = 0),
             ),
         )
+        // Scroll to the (idle) stats card first so the negative assertion can't pass merely
+        // because the slot is off-screen and uncomposed.
+        scrollToStatsCard()
         compose.onNodeWithText(string(R.string.dashboard_stats_live_title)).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.dashboard_stats_recording_empty)).assertExists()
+    }
+
+    @Test
+    fun `plugged in without a recorder row shows the starting state`() {
+        render(
+            state = DashboardUiState(
+                onboardingComplete = true,
+                stats = StatsDashboardState(enabled = true),
+                batteryReadout = BatteryReadout(
+                    levelPercent = 78,
+                    plugged = BatteryManager.BATTERY_PLUGGED_AC,
+                ),
+            ),
+        )
+        scrollToStatsCard()
+        compose.onNodeWithText(string(R.string.dashboard_stats_live_title)).assertExists()
+        compose.onNodeWithText(string(R.string.dashboard_stats_live_starting)).assertExists()
+    }
+
+    @Test
+    fun `stats card sits in its fixed slot below the alarm card`() {
+        render(
+            state = DashboardUiState(
+                onboardingComplete = true,
+                stats = StatsDashboardState(enabled = true, live = liveSession()),
+                batteryReadout = BatteryReadout(
+                    levelPercent = 78,
+                    plugged = BatteryManager.BATTERY_PLUGGED_AC,
+                ),
+            ),
+        )
+        // Going live must not teleport the card: it stays in the shared tail, directly after the
+        // alarm card, instead of jumping under the hero.
+        scrollToStatsCard()
+        val alarmTop = compose.onNodeWithText(string(R.string.dashboard_alarm_title))
+            .getUnclippedBoundsInRoot().top
+        val statsTop = compose.onNodeWithTag(STATS_CARD_TEST_TAG)
+            .getUnclippedBoundsInRoot().top
+        (alarmTop < statsTop) shouldBe true
+    }
+
+    @Test
+    fun `unsupported devices show the live charge in the same slot`() {
+        render(
+            state = DashboardUiState(
+                onboardingComplete = true,
+                charging = ChargingState(
+                    observation = ChargeObservation.Unsupported("Not a supported device".toCaString()),
+                ),
+                stats = StatsDashboardState(enabled = true, live = liveSession()),
+                batteryReadout = BatteryReadout(
+                    levelPercent = 78,
+                    plugged = BatteryManager.BATTERY_PLUGGED_AC,
+                ),
+            ),
+        )
+        scrollToStatsCard()
+        compose.onNodeWithText(string(R.string.dashboard_stats_live_title)).assertExists()
     }
 
     @Test
