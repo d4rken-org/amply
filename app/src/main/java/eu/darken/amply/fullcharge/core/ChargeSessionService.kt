@@ -38,6 +38,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
+import java.util.UUID
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -47,6 +48,9 @@ class ChargeSessionService : Service() {
     @Inject lateinit var adapterRegistry: AdapterRegistry
     @Inject lateinit var repository: ChargingRepository
     @Inject lateinit var preferences: ChargingPreferences
+    @Inject lateinit var interruptionAssessor: InterruptionAssessor
+    @Inject lateinit var processIdentity: ProcessIdentity
+    @Inject lateinit var bootCountProvider: BootCountProvider
 
     // Optional, permission-free battery observers (charge alarm, …), contributed via @IntoSet.
     @Inject lateinit var watchers: Set<@JvmSuppressWildcards ChargeMonitorWatcher>
@@ -73,6 +77,10 @@ class ChargeSessionService : Service() {
     @Volatile private var monitorReady = false
     private var settingObserverRegistered = false
     @Volatile private var restoring = false
+    // One-shot interruption assessment for a freshly resumed persisted session: set when
+    // beginOrResume picks up an existing session, consumed by the first battery evaluation, and
+    // cleared on any session start/clear so a stale assessment can never leak into a later session.
+    @Volatile private var pendingSessionAssessment: InterruptionAssessor.PickupAssessment? = null
 
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -171,8 +179,11 @@ class ChargeSessionService : Service() {
     }
 
     private suspend fun beginOrResume() {
-        if (fullChargeStore.currentSession() == null) {
+        val existing = fullChargeStore.currentSession()
+        if (existing == null) {
             log(TAG) { "Starting a one-time full-charge session" }
+            // A brand-new session in this process is not an interruption; drop any stale assessment.
+            pendingSessionAssessment = null
             val result = manager.begin()
             if (!result.success) {
                 log(TAG, Logging.Priority.WARN) { "Unable to start full-charge session: ${result.message}" }
@@ -181,6 +192,10 @@ class ChargeSessionService : Service() {
                 SurfaceUpdater.updateNow(this)
                 return
             }
+        } else {
+            // Resuming a persisted session: assess whether this process is picking up work a dead
+            // process left behind. Threaded (one-shot) into the first battery evaluation below.
+            pendingSessionAssessment = interruptionAssessor.captureSessionPickup(existing)
         }
         quickGesture.reset()
         registerSettingObserver()
@@ -311,6 +326,9 @@ class ChargeSessionService : Service() {
         val session = fullChargeStore.currentSession()
 
         if (session != null) {
+            // One-shot: only the first evaluation after a pickup carries an interruption assessment.
+            val assessment = pendingSessionAssessment
+            pendingSessionAssessment = null
             val full = status == BatteryManager.BATTERY_STATUS_FULL || percent >= 100
             val decision = SessionDecisionEngine.decide(
                 session = session,
@@ -320,7 +338,13 @@ class ChargeSessionService : Service() {
             )
             when (decision) {
                 SessionDecision.MARK_CONNECTED -> {
-                    manager.markConnected()
+                    // markConnectedAndAdopt folds CONNECTED + owner adoption into one edit when this
+                    // is an assessed pickup; otherwise the plain markConnected path applies.
+                    if (assessment != null) {
+                        interruptionAssessor.onSessionDecision(assessment, decision)
+                    } else {
+                        manager.markConnected()
+                    }
                     startAsForeground(SessionNotifications.session(this, connected = true))
                 }
                 // Restore is safety-critical and holds commandMutex: run it BEFORE any optional
@@ -331,12 +355,15 @@ class ChargeSessionService : Service() {
                 SessionDecision.RESTORE_DISCONNECTED,
                 SessionDecision.RESTORE_ARM_TIMEOUT,
                 SessionDecision.RESTORE_SAFETY_TIMEOUT -> {
-                    restoreAndContinue()
+                    restoreAndContinue(assessment)
                     return
                 }
-                SessionDecision.CONTINUE -> startAsForeground(
-                    SessionNotifications.session(this, connected = plugged || session.connectedSeen),
-                )
+                SessionDecision.CONTINUE -> {
+                    if (assessment != null) interruptionAssessor.onSessionDecision(assessment, decision)
+                    startAsForeground(
+                        SessionNotifications.session(this, connected = plugged || session.connectedSeen),
+                    )
+                }
             }
             // Non-restore session tick: let watchers observe it (the alarm claims the cycle here).
             dispatchWatchers(plugged, percent, status, sessionOwned = true, battery, observedAtElapsed)
@@ -485,12 +512,25 @@ class ChargeSessionService : Service() {
         unregisterSettingObserver()
         startAsForeground(SessionNotifications.recovering(this))
         recoveryJob = scope.launch {
-            val outcome = BootRecoveryFlow(recoveryHooks).run()
-            log(TAG) { "Boot recovery outcome: $outcome" }
-            commandMutex.withLock {
-                // continueGestureOrStop() awaits a surface update on every terminal branch, so no path here
-                // leaves the widget/tile un-pushed (some paths push more than once — updateAll is idempotent).
-                continueGestureOrStop()
+            // Assess whether this recovery is picking up work a dead process left behind, BEFORE the
+            // flow mutates the pending target.
+            val pickup = interruptionAssessor.captureRecoveryPickup()
+            val result = BootRecoveryFlow(recoveryHooks).run()
+            log(TAG) { "Boot recovery outcome: ${result.outcome}" }
+            // A converged recovery restored the protective policy, so clear any lingering alarm.
+            if (result.outcome == BootRecoveryFlow.Outcome.CONVERGED) {
+                SessionNotifications.cancelRecovery(this@ChargeSessionService)
+            }
+            try {
+                interruptionAssessor.onRecoveryFinished(pickup, result)
+            } finally {
+                // In finally so an interruption-bookkeeping failure can never strand the recovering
+                // foreground state.
+                commandMutex.withLock {
+                    // continueGestureOrStop() awaits a surface update on every terminal branch, so no path here
+                    // leaves the widget/tile un-pushed (some paths push more than once — updateAll is idempotent).
+                    continueGestureOrStop()
+                }
             }
         }
     }
@@ -498,8 +538,12 @@ class ChargeSessionService : Service() {
     private val recoveryHooks = object : BootRecoveryFlow.Hooks {
         override suspend fun currentSessionTarget() = fullChargeStore.currentSession()?.restorePolicy
         override suspend fun pendingTarget() = fullChargeStore.pendingRecoveryTarget()
-        override suspend fun setPendingTarget(policy: ChargePolicy) =
-            fullChargeStore.setPendingRecoveryTarget(policy)
+        override suspend fun setPendingTarget(policy: ChargePolicy) {
+            // A session-only recovery seeds the pending target from the session it is recovering, so it
+            // continues the SAME owed work — inherit the session's work id; otherwise mint a fresh one.
+            val workId = fullChargeStore.currentSession()?.workId ?: UUID.randomUUID().toString()
+            fullChargeStore.setPendingRecoveryTarget(policy, workId, currentWorkProvenance())
+        }
 
         override suspend fun clearPendingTarget() = fullChargeStore.clearPendingRecoveryTarget()
         override suspend fun restoreSession() = manager.restore().success
@@ -536,11 +580,16 @@ class ChargeSessionService : Service() {
         override fun elapsedRealtime() = SystemClock.elapsedRealtime()
     }
 
-    private suspend fun restoreAndContinue() {
+    private suspend fun restoreAndContinue(
+        assessment: InterruptionAssessor.PickupAssessment? = null,
+    ) {
         log(TAG) { "Restoring the saved charging policy" }
         restoring = true
         monitorReady = false
         unregisterSettingObserver()
+        // Read the stable work id before the restore clears the session record, so a later upgrade of
+        // a still-pending interruption event can be matched to it (the owner token is not stable).
+        val restoreWorkId = fullChargeStore.currentSession()?.workId
         val result = try {
             manager.restore()
         } finally {
@@ -550,6 +599,7 @@ class ChargeSessionService : Service() {
         }
         if (!result.success) {
             log(TAG, Logging.Priority.ERROR) { "Charging-policy restoration failed: ${result.message}" }
+            interruptionAssessor.onSessionRestoreFinished(assessment, success = false)
             // The session stays persisted for a retry on the next start (foreground nudge, manual
             // restore, boot). Resuming monitoring here would immediately re-evaluate the same
             // restore condition and loop on the failing write, so stop instead — in a finally, so
@@ -562,6 +612,11 @@ class ChargeSessionService : Service() {
             }
             return
         }
+        // Restore succeeded: cancel any lingering "needs attention" notification, upgrade a prior
+        // still-pending interruption event for this work, and record the catch-up outcome.
+        SessionNotifications.cancelRecovery(this)
+        interruptionAssessor.onRestoreSucceeded(restoreWorkId)
+        interruptionAssessor.onSessionRestoreFinished(assessment, success = true)
         quickGesture.reset()
         SurfaceUpdater.updateNow(this)
         continueGestureOrStop()
@@ -580,8 +635,9 @@ class ChargeSessionService : Service() {
         }
         // Persist the intended end state as the recovery target BEFORE the risky write and before dropping
         // the session, so a failed write or a mid-write process death still converges here on next boot
-        // instead of leaving charging in whatever transient state the session had.
-        fullChargeStore.setPendingRecoveryTarget(policy)
+        // instead of leaving charging in whatever transient state the session had. An explicit persistent
+        // choice is new owed work, so it gets a fresh work id.
+        fullChargeStore.setPendingRecoveryTarget(policy, UUID.randomUUID().toString(), currentWorkProvenance())
         restoring = true
         monitorReady = false
         try {
@@ -594,6 +650,10 @@ class ChargeSessionService : Service() {
             val result = repository.reapplyPersistent(policy)
             if (result.success) {
                 fullChargeStore.clearPendingRecoveryTarget()
+                // An explicit persistent choice is the desired end state; clear any non-successful
+                // interruption warning it supersedes and drop the recovery notification.
+                SessionNotifications.cancelRecovery(this)
+                interruptionAssessor.onExplicitPolicyWrite()
             } else {
                 log(TAG, Logging.Priority.ERROR) { "Persistent policy write failed: ${result.message}" }
                 SessionNotifications.showRecovery(this)
@@ -607,6 +667,14 @@ class ChargeSessionService : Service() {
         continueGestureOrStop()
     }
 
+    /** Stamp persisted recovery work with this process's identity + the current boot count. */
+    private fun currentWorkProvenance() = WorkProvenance(
+        token = processIdentity.token,
+        pid = processIdentity.pid,
+        bootCount = bootCountProvider.current(),
+        createdAtMillis = System.currentTimeMillis(),
+    )
+
     // The gesture's arming preconditions (hardware charging-state 4) are Pixel-specific; on
     // adapters without that signal the monitor would never arm and must not run.
     private fun reconnectGestureAvailable() =
@@ -614,6 +682,8 @@ class ChargeSessionService : Service() {
 
     private fun stopMonitoring() {
         monitorReady = false
+        // Drop any un-consumed pickup assessment so it can never leak into a later session/monitor run.
+        pendingSessionAssessment = null
         // A rapid disable/re-enable can reuse this service instance; neither stale gesture state
         // (an old reconnect window) nor already-queued evaluations from this run may survive into
         // the next monitoring run.

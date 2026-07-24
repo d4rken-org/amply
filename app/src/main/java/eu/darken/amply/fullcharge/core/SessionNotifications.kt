@@ -186,9 +186,11 @@ object SessionNotifications {
             .build()
     }
 
-    // TODO known gap: this notification (RECOVERY_ID) is not cancelled when a later restore succeeds;
-    // it lingers until swiped. Should cancel on successful restore. See "Known gaps" in
-    // .claude/rules/privileged-access.md.
+    /** Cancel the "charge limit needs attention" notification once a later restore/convergence succeeds. */
+    fun cancelRecovery(context: Context) {
+        NotificationManagerCompat.from(context).cancel(RECOVERY_ID)
+    }
+
     fun showRecovery(context: Context, bodyRes: Int = R.string.recovery_notification_body) {
         ensureChannels(context)
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(
