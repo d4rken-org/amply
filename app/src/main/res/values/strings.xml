@@ -523,6 +523,7 @@
     <string name="stats_curve_series_percent">Level</string>
     <string name="stats_curve_series_power">Power</string>
     <string name="stats_curve_series_temperature">Temperature</string>
+    <string name="stats_curve_series_temperature_shape_only">Temperature (shape only)</string>
     <string name="stats_detail_level">Level</string>
     <string name="stats_detail_duration">Duration</string>
     <string name="stats_detail_charging_type">Connection</string>

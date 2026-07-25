@@ -136,7 +136,7 @@ private fun ColumnScope.LiveBody(
     // A curve is only meaningful once a few minutes of points exist — before that it's a flat/near-
     // degenerate line, so keep the card compact and text-only until then.
     if (elapsedMillis >= CHART_MIN_ELAPSED_MILLIS && live.session.curve.size >= 2) {
-        StatsCurveChart(curve = live.session.curve, chartHeight = 84.dp)
+        StatsCurveChart(curve = live.session.curve, chartHeight = 84.dp, showAxes = false)
     }
 
     // Small bottom-right caption noting a mid-charge start (so the start%/elapsed aren't read as a

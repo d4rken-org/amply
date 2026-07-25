@@ -9,7 +9,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-REF_DIR="$PROJECT_DIR/app/src/screenshotTestGplayDebug/reference"
+REF_BASE="$PROJECT_DIR/app/src/screenshotTestGplayDebug/reference"
+# Only the Play Store composables (PlayStoreScreenshotsKt) feed the store listing. The engineering chart
+# regression shots (ChartScreenshotsKt) render into a sibling dir and are deliberately excluded here.
+REF_DIR="$REF_BASE/eu/darken/amply/screenshots/PlayStoreScreenshotsKt"
 
 # One capture per (composable × locale). 6 composables, en-US only (light + dark are encoded in the
 # @PlayStoreLocales annotations) → 6 PNGs. Bump this when adding composables or locales.
