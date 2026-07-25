@@ -24,11 +24,12 @@ data class StatsDashboardState(
 )
 
 /**
- * What the single dashboard stats card shows. The card sits in one fixed slot; only its content
- * adapts through these states.
+ * What the single dashboard stats card shows. There is exactly one card; its content adapts through
+ * these states. Where it sits is a separate, purely plug-driven decision made by the dashboard (see
+ * `DashboardScreen`) — content state and slot must not be conflated.
  *
  * Truth rules:
- * - "On the charger" is decided by the RAW battery readout ([BatteryReadout.plugged]), never by the
+ * - "On the charger" is decided by the RAW battery readout ([BatteryReadout.onCharger]), never by the
  *   recorder's DB row: a stale open row must not claim [Live] while unplugged, and a missing row
  *   must not hide that the phone is on the charger ([ConnectedWithoutSession]).
  * - A null `plugged` (not reported) collapses conservatively to not-connected — the card never
@@ -73,7 +74,7 @@ sealed interface StatsCardPresentation {
             !stats.enabled -> Promo
             stats.unavailable -> Unavailable
             stats.loading -> Loading
-            readout != null && (readout.plugged ?: 0) != 0 -> when (val live = stats.live) {
+            readout != null && readout.onCharger -> when (val live = stats.live) {
                 null -> ConnectedWithoutSession(battery = readout, startFailed = stats.startFailed)
                 else -> Live(session = live, battery = readout)
             }

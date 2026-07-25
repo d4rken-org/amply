@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
@@ -155,24 +156,52 @@ fun DashboardScreen(
             // Derived once and shared by the status + full-charge cards so they can never disagree
             // about whether the one-time charge is actually in effect.
             val sessionPresentation = SessionPresentation.from(state.session, state.charging.observation)
-            // The single stats card sits in one fixed slot (shared tail below); only its content
-            // adapts. "On the charger" is decided by the raw battery readout, never the recorder's
-            // DB row — see StatsCardPresentation for the truth rules.
+            // There is one stats card; only its content adapts. "On the charger" is decided by the raw
+            // battery readout, never the recorder's DB row — see StatsCardPresentation for the truth
+            // rules.
             val statsPresentation = StatsCardPresentation.from(state.stats, state.batteryReadout)
+            // Its slot is a separate, purely plug-driven decision: on the charger it is promoted to the
+            // second card (below the interruption warning and the setup guide, which are rarer and
+            // actionable), otherwise it stays in the shared tail. Deliberately independent of the
+            // content state — a promo/loading/unavailable card is promoted too, so the slot never
+            // changes underneath the user as the stats DB answers.
+            val statsPromoted = state.batteryReadout?.onCharger == true
             val unsupported = state.charging.observation is ChargeObservation.Unsupported
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = sidePadding, end = sidePadding, top = 8.dp, bottom = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                item { StatusCard(state, sessionPresentation, onOpenBatteryDetail) }
+                // Every card carries a stable key. Without one a LazyColumn identifies items by index, so
+                // the stats card changing slot would renumber everything after it and throw away their
+                // remembered state — e.g. the alarm card's in-flight slider drag would snap back if the
+                // charger were plugged in mid-gesture. Keys are unique per render: the pairs that appear
+                // in both the supported and unsupported branches are mutually exclusive.
+                //
+                // One construction site for the stats card — only its slot varies (see statsPromoted),
+                // so the supported/unsupported branches below can't drift apart.
+                val statsItem: LazyListScope.() -> Unit = {
+                    item(key = "dashboard.stats") {
+                        StatsDashboardCard(
+                            presentation = statsPresentation,
+                            onOpenStats = onOpenStats,
+                            onOpenLiveSession = onOpenLiveSession,
+                            onRetryCapture = onRetryCapture,
+                        )
+                    }
+                }
+
+                item(key = "dashboard.hero") { StatusCard(state, sessionPresentation, onOpenBatteryDetail) }
 
                 if (unsupported) {
+                    // Promoted slot: no interruption card or setup guide exists on this branch, so on
+                    // the charger the stats card follows the hero directly.
+                    if (statsPromoted) statsItem()
                     // Unsupported devices cannot use the Pixel policy/charge controls; showing them
                     // greyed-out (and a "Pixel settings" action) only confuses non-Pixel users. Offer
                     // a contribution path instead, and keep only the restore card if a session lingers.
                     if (state.session != null) {
-                        item {
+                        item(key = "dashboard.fullcharge") {
                             FullChargeCard(
                                 presentation = sessionPresentation,
                                 canControl = state.charging.controlEnabled &&
@@ -186,7 +215,7 @@ fun DashboardScreen(
                     // after it was enabled), keep the card so the user can turn it — and its foreground
                     // service — off. The card renders as disable-only when control isn't available.
                     if (state.quickFullChargeEnabled) {
-                        item {
+                        item(key = "dashboard.reconnect") {
                             QuickFullChargeCard(
                                 enabled = true,
                                 anyLevel = state.quickFullChargeAnyLevel,
@@ -198,7 +227,7 @@ fun DashboardScreen(
                         }
                     }
                     // Point unsupported devices at their OEM's own charge-protection setting.
-                    item {
+                    item(key = "dashboard.oemguide") {
                         OemGuideCard(
                             manufacturer = state.charging.device.manufacturer
                                 .ifBlank { stringResource(R.string.dashboard_manufacturer_fallback) },
@@ -212,13 +241,13 @@ fun DashboardScreen(
                     // otherwise — a warning about a restore Amply cannot even perform would confuse.
                     val interruption = state.interruption
                     if (interruption != null && state.charging.controlEnabled) {
-                        item { InterruptionCard(interruption, onDismissInterruption) }
+                        item(key = "dashboard.interruption") { InterruptionCard(interruption, onDismissInterruption) }
                     }
                     // Shizuku-only adapters (OnePlus/ColorOS) can't use WSS at all, so the WSS/ADB
                     // setup guide would ask for an ineffective grant — the dedicated
                     // "Shizuku required" banner below covers their setup instead.
                     if (!state.charging.writeRequiresShizuku && state.charging.access?.direct?.ready != true) {
-                        item {
+                        item(key = "dashboard.setupguide") {
                             AccessSetupGuide(
                                 state = state,
                                 adbCommand = adbCommand,
@@ -231,7 +260,11 @@ fun DashboardScreen(
                         }
                     }
 
-                    item {
+                    // Promoted slot: below the interruption warning and the setup guide above, so a
+                    // restore that is still owed and an unfinished setup keep the top of the list.
+                    if (statsPromoted) statsItem()
+
+                    item(key = "dashboard.fullcharge") {
                         FullChargeCard(
                             presentation = sessionPresentation,
                             canControl = state.charging.canApply,
@@ -239,11 +272,11 @@ fun DashboardScreen(
                             onRestore = onRestore,
                         )
                     }
-                    item { PolicyCard(state, onApply, onNativeSettings) }
+                    item(key = "dashboard.policy") { PolicyCard(state, onApply, onNativeSettings) }
                     // Hidden where the adapter lacks the gesture's hardware signal (non-Pixel) —
                     // unless it is still switched on and needs a way to be turned off.
                     if (state.charging.reconnectSupported || state.quickFullChargeEnabled) {
-                        item {
+                        item(key = "dashboard.reconnect") {
                             QuickFullChargeCard(
                                 enabled = state.quickFullChargeEnabled,
                                 anyLevel = state.quickFullChargeAnyLevel,
@@ -255,9 +288,10 @@ fun DashboardScreen(
                     }
                 }
 
-                // Shared tail: the alarm and the single stats card render on every device class —
-                // one lexical slot each, so the supported/unsupported branches can't drift apart.
-                item {
+                // Shared tail: the alarm renders on every device class, and the stats card joins it here
+                // whenever it wasn't promoted above — one lexical slot each, so the supported and
+                // unsupported branches can't drift apart.
+                item(key = "dashboard.alarm") {
                     ChargeAlarmCard(
                         config = state.alarm,
                         notificationsBlocked = state.notificationsBlocked,
@@ -266,18 +300,11 @@ fun DashboardScreen(
                         onFixNotifications = onFixNotifications,
                     )
                 }
-                item {
-                    StatsDashboardCard(
-                        presentation = statsPresentation,
-                        onOpenStats = onOpenStats,
-                        onOpenLiveSession = onOpenLiveSession,
-                        onRetryCapture = onRetryCapture,
-                    )
-                }
+                if (!statsPromoted) statsItem()
 
                 if (unsupported) {
                     if (state.charging.contributionWanted) {
-                        item {
+                        item(key = "dashboard.unsupported") {
                             UnsupportedDeviceCard(
                                 manufacturer = state.charging.device.manufacturer
                                     .ifBlank { stringResource(R.string.dashboard_manufacturer_fallback) },
@@ -302,7 +329,7 @@ fun DashboardScreen(
                             quickAccess = state.quickAccess,
                         )
                     ) {
-                        item {
+                        item(key = "dashboard.quickaccess") {
                             QuickAccessCard(
                                 widgetAdded = state.quickAccess.widgetAdded,
                                 tileAdded = state.quickAccess.tileAdded,
@@ -320,7 +347,7 @@ fun DashboardScreen(
                         // disabled until it is connected.
                         state.charging.controlEnabled &&
                             state.charging.writeRequiresShizuku &&
-                            access?.shizuku?.ready != true -> item {
+                            access?.shizuku?.ready != true -> item(key = "dashboard.shizukubanner") {
                             ShizukuBanner(
                                 running = access?.shizuku?.available == true,
                                 requiredForControl = true,
@@ -332,7 +359,7 @@ fun DashboardScreen(
                         // (computer) path: durable control is present but Shizuku isn't, so exact
                         // readback/diagnostics are missing. Sync-readback adapters verify through
                         // any backend, so the readback pitch would be wrong there.
-                        access?.direct?.ready == true && !access.canVerify && !state.charging.syncVerification -> item {
+                        access?.direct?.ready == true && !access.canVerify && !state.charging.syncVerification -> item(key = "dashboard.shizukubanner") {
                             ShizukuBanner(
                                 running = access.shizuku.available,
                                 requiredForControl = false,
@@ -926,7 +953,8 @@ private fun DashboardScreenPreview() = PreviewWrapper {
     )
 }
 
-// On the charger with capture enabled: the stats card in its fixed slot renders the live session.
+// On the charger with capture enabled: the stats card is promoted to the second slot and renders the
+// live session (the unplugged preview above shows the same card in its tail slot).
 @AmplyPreview
 @Composable
 private fun DashboardScreenLiveChargePreview() = PreviewWrapper {
