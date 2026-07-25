@@ -18,25 +18,55 @@ import eu.darken.amply.stats.core.ChargeCurvePoint
 import kotlin.math.roundToInt
 
 /**
- * A live curve is only worth drawing once the session has both enough points and enough elapsed time
- * to have a shape — before that it is a flat or single-point line that reads as "nothing is
- * happening". Shared by the dashboard's charging card and the hub's teaser so the two can never
- * disagree about when a curve appears.
+ * A live curve is only worth drawing once the session has both enough elapsed time and actual
+ * variation to show. Without the variation check a session held at an OEM limit draws flat lines —
+ * and because the compact chart self-normalizes each series, a series with no range renders at the
+ * canvas midpoint, so those flat lines stack into what looks like a plotted trend but is really the
+ * "no range" fallback.
+ *
+ * Variation must come from an **adjacent** pair of non-null samples in one series, not merely two
+ * distinct values anywhere in it: `LineChart` breaks its path at nulls, so `[40, null, 41]` becomes
+ * two single-point segments and draws no line at all. (A series whose *only* non-null sample is a
+ * single point does render, as a dot — but a lone dot is not a curve either.)
+ *
+ * Shared by the dashboard's charging card and the hub's teaser so the two can never disagree about
+ * when a curve appears.
  */
-fun shouldShowLiveCurve(curvePoints: Int, elapsedMillis: Long): Boolean =
-    curvePoints >= MIN_CURVE_POINTS && elapsedMillis >= CHART_MIN_ELAPSED_MILLIS
+fun shouldShowLiveCurve(curve: List<ChargeCurvePoint>, elapsedMillis: Long): Boolean =
+    elapsedMillis >= CHART_MIN_ELAPSED_MILLIS && curve.hasDrawableVariation()
+
+private fun List<ChargeCurvePoint>.hasDrawableVariation(): Boolean =
+    hasVariation { it.percent } ||
+        hasVariation { it.powerMilliwatts } ||
+        hasVariation { it.temperatureTenthsC }
+
+private fun List<ChargeCurvePoint>.hasVariation(select: (ChargeCurvePoint) -> Int?): Boolean =
+    zipWithNext().any { (first, second) ->
+        val a = select(first)
+        val b = select(second)
+        a != null && b != null && a != b
+    }
 
 /** Withhold the live curve until the session has a few minutes of points to draw a meaningful shape. */
 const val CHART_MIN_ELAPSED_MILLIS = 180_000L
-
-private const val MIN_CURVE_POINTS = 2
 
 /**
  * The shared level / power / temperature charge curve. On the session-detail screen ([showAxes] true) it
  * carries a real left Y-axis in battery-% (nice ticks + gridlines) and a sparse right Y-axis in watts,
  * with end-of-curve value labels; temperature stays self-normalized (shape only, so it can share the plot
- * without a third axis). The dashboard's live card ([showAxes] false) drops both axes and the time labels
- * — elapsed time already shows in the card header — keeping only the end labels for a compact readout.
+ * without a third axis).
+ *
+ * The compact live variant ([showAxes] false) drops the axes, the time labels **and** the end-of-curve
+ * labels: its hosts already render the current level, power and temperature above the chart, and the end
+ * labels come from the last recorded sample, which lags that reading by a recorder tick — so they read as
+ * a contradiction rather than a readout. Dropping them also frees the right gutter, letting the curve use
+ * the full width. The chart stays described for accessibility either way.
+ *
+ * [percentRangeLabel] is the level series' legend range. It **defaults to the plotted curve's own span**,
+ * which is what a full session curve wants; a live host whose curve is a bounded recent window passes its
+ * *session* range instead, and passes `null` when it has none — an explicitly absent range shows no label
+ * rather than silently falling back to the window's span, which would make one legend entry mean two
+ * different things depending on data availability.
  */
 @Composable
 fun StatsCurveChart(
@@ -44,12 +74,12 @@ fun StatsCurveChart(
     modifier: Modifier = Modifier,
     chartHeight: Dp = 180.dp,
     showAxes: Boolean = true,
+    percentRangeLabel: String? = curvePercentSpan(curve),
 ) {
     val percentColor = MaterialTheme.colorScheme.primary
     val powerColor = MaterialTheme.colorScheme.tertiary
     val tempColor = MaterialTheme.colorScheme.error
 
-    val percents = curve.mapNotNull { it.percent }
     val powers = curve.mapNotNull { it.powerMilliwatts }
     val temps = curve.mapNotNull { it.temperatureTenthsC }
 
@@ -90,12 +120,18 @@ fun StatsCurveChart(
         null
     }
 
-    val descriptionPairs = listOfNotNull(
-        percentEnd?.let { "$percentLabel: $it" },
-        powerEnd?.let { "$powerLabel: $it" },
-        tempEnd?.let { "$tempLabel: $it" },
-    )
-    val chartDescription = descriptionPairs.takeIf { it.isNotEmpty() }?.joinToString(", ")
+    // Only the axes variant describes its endpoints. Dropping the compact end labels but still
+    // announcing those same lagging values would move the contradiction from the screen into the
+    // screen reader; the compact chart's legend is real text, so it is already read aloud.
+    val chartDescription = if (showAxes) {
+        listOfNotNull(
+            percentEnd?.let { "$percentLabel: $it" },
+            powerEnd?.let { "$powerLabel: $it" },
+            tempEnd?.let { "$tempLabel: $it" },
+        ).takeIf { it.isNotEmpty() }?.joinToString(", ")
+    } else {
+        null
+    }
 
     LineChart(
         modifier = modifier,
@@ -104,8 +140,8 @@ fun StatsCurveChart(
                 label = percentLabel,
                 color = percentColor,
                 points = curve.map { ChartPoint(it.elapsedFromStartMillis.toFloat(), it.percent?.toFloat()) },
-                rangeLabel = StatsFormat.percentSpan(percents.minOrNull(), percents.maxOrNull()),
-                endLabel = percentEnd,
+                rangeLabel = percentRangeLabel,
+                endLabel = if (showAxes) percentEnd else null,
                 axisSide = if (showAxes) YAxisSide.LEFT else null,
             ),
             ChartSeries(
@@ -113,7 +149,7 @@ fun StatsCurveChart(
                 color = powerColor,
                 points = curve.map { ChartPoint(it.elapsedFromStartMillis.toFloat(), it.powerMilliwatts?.toFloat()) },
                 rangeLabel = StatsFormat.powerSpan(powers.minOrNull(), powers.maxOrNull()),
-                endLabel = powerEnd,
+                endLabel = if (showAxes) powerEnd else null,
                 axisSide = if (showAxes) YAxisSide.RIGHT else null,
             ),
             ChartSeries(
@@ -121,7 +157,7 @@ fun StatsCurveChart(
                 color = tempColor,
                 points = curve.map { ChartPoint(it.elapsedFromStartMillis.toFloat(), it.temperatureTenthsC?.toFloat()) },
                 rangeLabel = StatsFormat.temperatureSpan(temps.minOrNull(), temps.maxOrNull()),
-                endLabel = tempEnd,
+                endLabel = if (showAxes) tempEnd else null,
             ),
         ),
         emptyLabel = stringResource(R.string.stats_curve_empty),
@@ -136,6 +172,12 @@ fun StatsCurveChart(
         rightAxis = rightAxis,
         chartContentDescription = chartDescription,
     )
+}
+
+/** The level span of the plotted samples — the default legend range when a host supplies none. */
+private fun curvePercentSpan(curve: List<ChargeCurvePoint>): String? {
+    val percents = curve.mapNotNull { it.percent }
+    return StatsFormat.percentSpan(percents.minOrNull(), percents.maxOrNull())
 }
 
 private fun previewCurve() = (0..12).map { i ->
@@ -156,5 +198,12 @@ private fun StatsCurveChartAxesPreview() = PreviewWrapper {
 @AmplyPreview
 @Composable
 private fun StatsCurveChartCompactPreview() = PreviewWrapper {
-    StatsCurveChart(curve = previewCurve(), chartHeight = 84.dp, showAxes = false)
+    // As a live host renders it: no axes, no end labels, and a session range the bounded window can't
+    // derive on its own (the curve starts at 42%, the session at 12%).
+    StatsCurveChart(
+        curve = previewCurve(),
+        chartHeight = 84.dp,
+        showAxes = false,
+        percentRangeLabel = StatsFormat.percentSpan(12, 90),
+    )
 }

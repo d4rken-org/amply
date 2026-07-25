@@ -3,12 +3,14 @@ package eu.darken.amply.main.ui.dashboard
 import android.app.Application
 import android.os.BatteryManager
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import eu.darken.amply.R
 import eu.darken.amply.battery.core.BatteryReadout
+import eu.darken.amply.stats.core.ChargeCurvePoint
 import eu.darken.amply.stats.core.ChargeSessionSummary
 import eu.darken.amply.stats.core.ChargingType
 import eu.darken.amply.stats.core.StatsLiveSession
@@ -80,11 +82,23 @@ class ChargingCardTest {
         sealReason = null,
     )
 
+    // A curve whose window does NOT reach back to the session start (60% .. 70% for a session that
+    // began at 40%) — the case that separates the session range from the plotted window's span.
+    private val windowedCurve = (0..6).map { i ->
+        ChargeCurvePoint(
+            elapsedFromStartMillis = 3_600_000L + i * 60_000L,
+            percent = 60 + i,
+            powerMilliwatts = 12_000 - i * 500,
+            temperatureTenthsC = 300 + i,
+        )
+    }
+
     private fun render(
         presentation: ChargingCardPresentation,
         readout: BatteryReadout? = charging,
         onOpenHub: () -> Unit = {},
         onRetryCapture: () -> Unit = {},
+        nowElapsedRealtimeMillis: Long = 4_320_000L,
     ) {
         compose.setContent {
             ChargingCard(
@@ -92,7 +106,7 @@ class ChargingCardTest {
                 readout = readout,
                 onOpenHub = onOpenHub,
                 onRetryCapture = onRetryCapture,
-                nowElapsedRealtimeMillis = 4_320_000L,
+                nowElapsedRealtimeMillis = nowElapsedRealtimeMillis,
             )
         }
     }
@@ -180,9 +194,111 @@ class ChargingCardTest {
     fun `a live card opens the hub, not the session`() {
         var opened = false
         render(ChargingCardPresentation.Live(session = liveSession), onOpenHub = { opened = true })
-        compose.onNodeWithText("40% → 78%").assertExists()
         compose.onNodeWithTag(CHARGING_CARD_TEST_TAG).performClick()
         compose.runOnIdle { opened shouldBe true }
+    }
+
+    // Every value has exactly one home: elapsed in the header, current values in the reading line, the
+    // session's level range in the chart legend. The row that used to repeat them is gone.
+
+    @Test
+    fun `the live session's elapsed time sits in the header, not a row of its own`() {
+        render(ChargingCardPresentation.Live(session = liveSession))
+        compose.onNodeWithText("1h 12m").assertExists()
+        compose.onNodeWithText("40% → 78%").assertDoesNotExist()
+    }
+
+    @Test
+    fun `the header elapsed is decorative — tapping it opens the hub like the rest of the card`() {
+        var opened = false
+        render(ChargingCardPresentation.Live(session = liveSession), onOpenHub = { opened = true })
+        compose.onNodeWithText("1h 12m").performClick()
+        compose.runOnIdle { opened shouldBe true }
+    }
+
+    @Test
+    fun `a multi-day hold renders its full duration in the header`() {
+        // 123h 59m: StatsFormat.duration never rolls over into days, so the header must survive the
+        // longest string it can produce rather than assuming a two-digit hour.
+        render(
+            ChargingCardPresentation.Live(session = liveSession),
+            readout = holding,
+            nowElapsedRealtimeMillis = 446_340_000L,
+        )
+        compose.onNodeWithText("123h 59m").assertExists()
+    }
+
+    @Test
+    fun `the curve legend states the session range, not the plotted window's span`() {
+        render(ChargingCardPresentation.Live(session = liveSession.copy(curve = windowedCurve)))
+        val level = string(R.string.stats_curve_series_percent)
+        // Session start (40) → live reading (78), even though the plotted samples only span 60..66.
+        compose.onNodeWithText("$level  40→78%").assertExists()
+        compose.onNodeWithText("$level  60→66%").assertDoesNotExist()
+    }
+
+    @Test
+    fun `the compact chart does not announce the curve's lagging end values`() {
+        // The end labels were dropped because they trail the live reading by a recorder tick; leaving
+        // them in the content description would just move that contradiction into the screen reader.
+        render(ChargingCardPresentation.Live(session = liveSession.copy(curve = windowedCurve)))
+        val level = string(R.string.stats_curve_series_percent)
+        // 66% is the curve's last sample; the card's reading says 78%.
+        compose.onNodeWithContentDescription("$level: 66%", substring = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun `the curve appears the moment the session crosses the reveal threshold`() {
+        // Composed one second short of the threshold: a fixed minute-long tick would hold the curve
+        // back until 3m59s, so the first delay is aligned to the next whole session-minute instead.
+        val startElapsed = android.os.SystemClock.elapsedRealtime() - 179_000L
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            ChargingCard(
+                presentation = ChargingCardPresentation.Live(
+                    session = liveSession.copy(
+                        startedElapsedRealtimeMillis = startElapsed,
+                        curve = windowedCurve,
+                    ),
+                ),
+                readout = charging,
+                onOpenHub = {},
+                onRetryCapture = {},
+                nowElapsedRealtimeMillis = startElapsed + 179_000L,
+            )
+        }
+        compose.mainClock.advanceTimeByFrame()
+        val level = string(R.string.stats_curve_series_percent)
+        compose.onNodeWithText(level, substring = true).assertDoesNotExist()
+
+        org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(1_000))
+        compose.mainClock.advanceTimeBy(1_000)
+
+        compose.onNodeWithText("$level  40→78%").assertExists()
+    }
+
+    @Test
+    fun `a flat curve draws nothing rather than a fake trend`() {
+        // A device parked at its limit: samples keep arriving, nothing moves. Self-normalizing a series
+        // with no range puts it at the canvas midpoint, so drawing this would fake a plotted trend.
+        val flat = (0..6).map { i ->
+            ChargeCurvePoint(
+                elapsedFromStartMillis = i * 60_000L,
+                percent = 80,
+                powerMilliwatts = 12_000,
+                temperatureTenthsC = 300,
+            )
+        }
+        render(
+            ChargingCardPresentation.Live(session = liveSession.copy(startPercent = 80, curve = flat)),
+            readout = holding,
+        )
+        compose.onNodeWithText(string(R.string.stats_curve_series_percent), substring = true)
+            .assertDoesNotExist()
+        // And with no chart there is no level range anywhere on the card — the accepted cost of
+        // reclaiming the row. The header's elapsed time and the reading line still carry the session.
+        compose.onNodeWithText("80% → 80%").assertDoesNotExist()
+        compose.onNodeWithText("1h 12m").assertExists()
     }
 
     @Test

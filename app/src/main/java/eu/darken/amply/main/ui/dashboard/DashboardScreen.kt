@@ -1,5 +1,6 @@
 package eu.darken.amply.main.ui.dashboard
 
+import android.os.SystemClock
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -122,6 +123,9 @@ fun DashboardScreen(
     onOpenSupportIssue: () -> Unit,
     onEmailSupport: () -> Unit,
     onHelp: () -> Unit,
+    // Injectable so a screenshot/preview fixture can render a live session at a believable age instead
+    // of at "0m" — the screen is otherwise pure, and this is the one value it reads from the clock.
+    nowElapsedRealtimeMillis: Long = SystemClock.elapsedRealtime(),
 ) {
     Scaffold(
         topBar = {
@@ -176,6 +180,7 @@ fun DashboardScreen(
                             readout = state.batteryReadout,
                             onOpenHub = onOpenBatteryHub,
                             onRetryCapture = onRetryCapture,
+                            nowElapsedRealtimeMillis = nowElapsedRealtimeMillis,
                         )
                     }
                 }

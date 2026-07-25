@@ -12,11 +12,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -34,8 +29,8 @@ import eu.darken.amply.stats.core.StatsLiveSession
 import eu.darken.amply.stats.core.StatsSealReason
 import eu.darken.amply.stats.ui.StatsCurveChart
 import eu.darken.amply.stats.ui.StatsFormat
+import eu.darken.amply.stats.ui.rememberLiveElapsedMillis
 import eu.darken.amply.stats.ui.shouldShowLiveCurve
-import kotlinx.coroutines.delay
 
 /**
  * The hub's compact current-or-last charge. Tapping opens that session's full detail; the states with
@@ -85,18 +80,9 @@ private fun LiveTeaser(
     onOpenSession: (Long) -> Unit,
     modifier: Modifier,
 ) {
-    // Battery readouts drive recomposition, but identical consecutive readouts are conflated upstream
-    // — the minute tick keeps the elapsed text moving even when nothing else changes. Same backstop
-    // the dashboard's charging card uses; StatsLiveSession carries a start, never a duration.
-    var tickedNow by remember { mutableLongStateOf(nowElapsedRealtimeMillis) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(LIVE_TICK_MILLIS)
-            tickedNow = SystemClock.elapsedRealtime()
-        }
-    }
-    val now = maxOf(tickedNow, nowElapsedRealtimeMillis)
-    val elapsedMillis = (now - session.startedElapsedRealtimeMillis).coerceAtLeast(0)
+    // Shared with the dashboard's charging card so the two clocks can't drift apart; StatsLiveSession
+    // carries a start, never a duration.
+    val elapsedMillis = rememberLiveElapsedMillis(session, nowElapsedRealtimeMillis)
 
     TeaserCard(
         onClick = { onOpenSession(session.id) },
@@ -104,8 +90,16 @@ private fun LiveTeaser(
         detail = StatsFormat.duration(elapsedMillis),
         modifier = modifier,
     ) {
-        if (shouldShowLiveCurve(session.curve.size, elapsedMillis)) {
-            StatsCurveChart(curve = session.curve, chartHeight = 84.dp, showAxes = false)
+        if (shouldShowLiveCurve(session.curve, elapsedMillis)) {
+            StatsCurveChart(
+                curve = session.curve,
+                chartHeight = 84.dp,
+                showAxes = false,
+                // No range in the legend: this card's headline already states it. Explicitly null
+                // rather than omitted — the default would fall back to the plotted window's span,
+                // which on a long session narrows to something the headline contradicts.
+                percentRangeLabel = null,
+            )
         }
         if (session.partial) {
             PartialNote()
@@ -183,9 +177,6 @@ private fun PartialNote() = Text(
     style = MaterialTheme.typography.labelMedium,
     color = MaterialTheme.colorScheme.primary,
 )
-
-/** Backstop cadence for the live elapsed text when battery readouts stop changing. */
-private const val LIVE_TICK_MILLIS = 60_000L
 
 internal val previewCurve = (0..12).map { i ->
     ChargeCurvePoint(

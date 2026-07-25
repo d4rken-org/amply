@@ -107,8 +107,15 @@ private fun DashboardShot(state: DashboardUiState) = PreviewWrapper {
         onEmailSupport = {},
         onHelp = {},
         onDismissInterruption = {},
+        // Fixture sessions start at elapsed-realtime 0, so pin "now" to give them a believable age:
+        // otherwise every shot claims a charge that started this instant, and the charge curve — which
+        // is withheld until a session has a few minutes of shape — never appears at all.
+        nowElapsedRealtimeMillis = LIVE_SESSION_AGE_MILLIS,
     )
 }
+
+/** 1h 15m into a charge: long enough for the curve to have earned its place on the card. */
+private const val LIVE_SESSION_AGE_MILLIS = 4_500_000L
 
 private fun pixelDevice() = DeviceInfo("Google", "Pixel 8", 36, "preview")
 
@@ -155,20 +162,33 @@ private fun charging() = holdingAtLimit().copy(
     currentNowMicroamps = 2_050_000,
 )
 
+// A real charge, not three straight lines: the compact card self-normalizes every series, so linear
+// fixture data makes level and temperature resolve to the identical shape and draw on top of each
+// other — three legend entries, two visible curves. These follow an actual CC/CV charge instead:
+// level tapers as it approaches the limit, power falls away with it, temperature peaks mid-charge.
+private val LEVEL_CURVE = listOf(41, 45, 49, 53, 57, 61, 64, 67, 70, 73, 75, 77, 78, 79, 80)
+private val POWER_CURVE = listOf(
+    19_000, 18_800, 18_400, 17_900, 17_100, 16_000, 14_500, 12_500,
+    10_500, 8_500, 6_800, 5_200, 4_000, 3_200, 2_500,
+)
+private val TEMPERATURE_CURVE = listOf(
+    300, 304, 308, 311, 313, 314, 315, 315, 314, 314, 313, 313, 312, 312, 311,
+)
+
 private fun liveStats() = StatsDashboardState(
     enabled = true,
     live = StatsLiveSession(
         id = 1,
         startedAtWallMillis = 0L,
         startedElapsedRealtimeMillis = 0L,
-        startPercent = 41,
+        startPercent = LEVEL_CURVE.first(),
         partial = false,
-        curve = (0..14).map { i ->
+        curve = LEVEL_CURVE.indices.map { i ->
             ChargeCurvePoint(
                 elapsedFromStartMillis = i * 300_000L,
-                percent = (41 + i * 2).coerceAtMost(80),
-                powerMilliwatts = (19_000 - i * 900).coerceAtLeast(2_500),
-                temperatureTenthsC = 300 + i,
+                percent = LEVEL_CURVE[i],
+                powerMilliwatts = POWER_CURVE[i],
+                temperatureTenthsC = TEMPERATURE_CURVE[i],
             )
         },
     ),

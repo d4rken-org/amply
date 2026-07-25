@@ -58,6 +58,9 @@ object AmplyCardDefaults {
      * title↔body gap doesn't read as cramped once the trailing control is floated out of the row. */
     val HeaderContentSpacing = 4.dp
 
+    /** Width a header title always keeps, however wide the trailing content wants to be. */
+    val MinHeaderTitleWidth = 96.dp
+
     val ContentPaddingValues = PaddingValues(ContentPadding)
 }
 
@@ -290,7 +293,12 @@ fun AmplyCardHeader(
         val gap = 8.dp.roundToPx()
         val bottomInset = AmplyCardDefaults.HeaderContentSpacing.roundToPx()
         val loose = constraints.copy(minWidth = 0, minHeight = 0)
-        val trailingPlaceable = measurables[1].measure(loose)
+        // Cap the trailing content so it can never starve the title: text trailing content (a status
+        // line) would otherwise grow with its string — a multi-day "123h 59m" at a large font scale —
+        // and squeeze the title into a vertical stack of wrapped characters.
+        val trailingMaxWidth = (constraints.maxWidth - AmplyCardDefaults.MinHeaderTitleWidth.roundToPx() - gap)
+            .coerceAtLeast(0)
+        val trailingPlaceable = measurables[1].measure(loose.copy(maxWidth = trailingMaxWidth))
         val titleMaxWidth = (constraints.maxWidth - trailingPlaceable.width - gap).coerceAtLeast(0)
         val titlePlaceable = measurables[0].measure(loose.copy(maxWidth = titleMaxWidth))
         // Header reports the title height plus a little breathing room below; the (taller) trailing
@@ -312,6 +320,12 @@ fun AmplyCardHeader(
  * Navigation card: the whole card opens a destination ([onClick]) with an [onClickLabel] for
  * accessibility, a standard header, and a decorative RTL-aware trailing chevron.
  *
+ * [headerStatus] adds a short status line beside the chevron. It is deliberately a **String**, not a
+ * composable slot: the header sits inside the card's own click target, so anything interactive there
+ * would have to opt out of the surface's tap — typing it as text makes that impossible rather than
+ * merely discouraged. Being floated, it costs the card no vertical height (see [AmplyCardHeader]), so
+ * it suits a value that would otherwise need a row of its own.
+ *
  * The surface owns the primary tap. Content may add at most a small trailing text action for a
  * *secondary* destination or side effect (never a duplicate of [onClick]); anything richer — switches,
  * multiple buttons, a whole control row — belongs in [AmplyToggleCard] or a plain [AmplyCard]. A
@@ -327,6 +341,7 @@ fun AmplyNavigationCard(
     icon: ImageVector? = null,
     iconTint: Color = MaterialTheme.colorScheme.primary,
     tone: AmplyCardTone = AmplyCardTone.Default,
+    headerStatus: String? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     AmplyClickableCard(
@@ -341,11 +356,32 @@ fun AmplyNavigationCard(
             icon = icon,
             iconTint = iconTint,
             trailing = {
-                Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (headerStatus != null) {
+                        Text(
+                            headerStatus,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            // Truncate rather than wrap: the header's height is the title's, so a
+                            // second status line would overflow it instead of growing the card.
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            // Weighted so the chevron is measured first and keeps its width — an
+                            // unweighted text is measured against the whole row and can starve the
+                            // navigation affordance to nothing. fill = false keeps a short status
+                            // snug against the chevron instead of stretching to the cap.
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             },
         )
         content()
@@ -418,6 +454,32 @@ private fun AmplyCardPreview() = PreviewWrapper {
         ) {
             Text(
                 "Whole card is the tap target; chevron is decorative.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        AmplyNavigationCard(
+            onClick = {},
+            onClickLabel = "Open details",
+            title = "With header status",
+            icon = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            headerStatus = "2h 14m",
+        ) {
+            Text(
+                "Status floats beside the chevron and costs no height.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        AmplyNavigationCard(
+            onClick = {},
+            onClickLabel = "Open details",
+            title = "A title long enough to compete for the header row",
+            icon = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            headerStatus = "123h 59m",
+        ) {
+            Text(
+                "The title keeps its reserved minimum; the status truncates.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
