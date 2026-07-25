@@ -137,7 +137,11 @@ Adding or widening a live adapter requires physical qualification, not just a se
 4. **Validate sessions** — full charge, early disconnect, manual restore, arm + safety timeouts, process death,
    force-stop, notification denial, real reboot + deferred `BOOT_COMPLETED` redelivery. Confirm exact restore of the
    prior value **including a previously-absent key**, and that an unknown/malformed value **refuses** the session
-   without mutating the setting.
+   without mutating the setting. Also confirm the interrupted-session surface both ways: a **force-stop that leaves a
+   restore owed** must, on next open, restore the limit *and* show the dashboard interruption card, while a **reboot**
+   must restore via boot recovery and show **no** card (the boot-count guard). A device that holds at its limit often
+   reports `NOT_CHARGING`, which ends a session immediately — drive the lifecycle with `adb shell dumpsys battery set
+   status 2 / set level N` (then `dumpsys battery reset`) so the session behaves as it would mid-charge.
 5. **Minified build** — repeat the smoke path on an R8 `foss` beta (past runs caught R8-only startup/reflection
    breakage that debug builds hid).
 
@@ -155,7 +159,7 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
 
 | OEM | Tested device / build | Hardware evidence | Coverage | Landed |
 |---|---|---|---|---|
-| Pixel | Pixel 8 `shiba` A17/API37; Pixel 9 Pro `caiman` A16/API36; Pixel 7a `lynx` A16/API36 | Full — sysfs `charging_policy` follows writes (~11–12s) | Access tiers, sessions, boot recovery, wireless hold, at-threshold, reconnect gesture, natural 100% | 2026-07-15/-19/-20 |
+| Pixel | Pixel 8 `shiba` A17/API37; Pixel 9 Pro `caiman` A16/API36; Pixel 7a `lynx` A16/API36 | Full — sysfs `charging_policy` follows writes (~11–12s) | Access tiers, sessions, boot recovery, wireless hold, at-threshold, reconnect gesture, natural 100%, interrupted-session detection (7a) | 2026-07-15/-19/-20/-25 |
 | Samsung | Galaxy Tab A9+ SM-X210 One UI 8.0; Galaxy S20 FE SM-G781B One UI 4.1 | Full — sync readback + HAL enforcement | Modern multi-mode + legacy toggle, session E2E, native-change cancel, reboot recovery, R8 beta | 2026-07-21 |
 | Xiaomi | Xiaomi 13T `2306EPN60G` HyperOS 2.0 (`ro.mi.os.version.code=2`) | **Partial** — mapping/readback/session verified; the adaptive 80% hold could not be triggered, so daemon-level hardware enforcement is **not yet demonstrated** | Read matrix, both-direction writes, session at 100%, unknown-value refusal, R8 beta | 2026-07-21 |
 | OnePlus (Oplus) | OnePlus Nord CE4 Lite `CPH2621` ColorOS 15 (`ro.build.version.oplusrom=V15.0.0`) | Full — enforcement directly observable (device holds at 80%); external writes stick | Two mutually-exclusive `system` keys (Charging limit / Smart charging), WSS-only write rejected + Shizuku write succeeds for all three policies, WSS-only UX (controls disabled + Shizuku-required banner) | 2026-07-21 |
@@ -202,5 +206,3 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
   the 80% hold is physically observed.
 - **Pixel** — wireless at-threshold hold/charge-past and the widget under Shizuku-only remain unexercised (both share
   the verified wired mechanism).
-- **Recovery notification** — the "Charge limit needs attention" notification is not cancelled when a later restore
-  succeeds; it lingers until swiped (cosmetic; `SessionNotifications.showRecovery`).
