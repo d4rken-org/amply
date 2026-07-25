@@ -8,7 +8,11 @@ enum class SettingsDestination {
     SUPPORT,
     ACKNOWLEDGEMENTS,
     RECONNECT_GESTURE,
-    BATTERY_DETAIL,
-    STATS,
+
+    /** "Battery & charging" — the single telemetry destination (live readout + charge teaser). */
+    BATTERY,
+
+    /** The recorded-session list, reached from [BATTERY]'s top bar. */
+    CHARGE_HISTORY,
     STATS_SESSION_DETAIL,
 }

@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import eu.darken.amply.common.debug.logging.Logging
+import eu.darken.amply.common.debug.logging.asLog
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
 import eu.darken.amply.fullcharge.core.ChargeSessionService
@@ -19,6 +20,7 @@ import eu.darken.amply.stats.core.ChargeStatsRecorder
 import eu.darken.amply.stats.core.ChargeStatsRepository
 import eu.darken.amply.stats.core.StatsPreferences
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
@@ -27,15 +29,30 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-data class StatsUiState(
+/**
+ * The capture switch and its "last recorded" caption. Deliberately DataStore-only: the hub collects
+ * this on every visit, and it must never be the thing that creates `stats.db` (see [chargeHistoryStates]).
+ */
+data class CaptureUiState(
     val captureEnabled: Boolean = false,
     val lastCaptureWallMillis: Long? = null,
-    val sessions: List<ChargeSessionSummary> = emptyList(),
 )
+
+/**
+ * The recorded-session list. Three states, because a Room failure must not be indistinguishable from
+ * "nothing recorded yet" — the empty copy is a claim about the user's data, not about our own health.
+ */
+sealed interface ChargeHistoryState {
+    data object Loading : ChargeHistoryState
+    data object Unavailable : ChargeHistoryState
+    data class Ready(val sessions: List<ChargeSessionSummary>) : ChargeHistoryState
+}
 
 /**
  * Detail-screen state: null while the selection is still resolving (spinner); resolved with a null
@@ -56,13 +73,18 @@ class StatsViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
-    val state: StateFlow<StatsUiState> = combine(
+    val captureState: StateFlow<CaptureUiState> = combine(
         preferences.captureEnabled,
         preferences.lastCaptureWallMillis,
-        repository.recentSessions(),
-    ) { enabled, lastCapture, sessions ->
-        StatsUiState(captureEnabled = enabled, lastCaptureWallMillis = lastCapture, sessions = sessions)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), StatsUiState())
+    ) { enabled, lastCapture ->
+        CaptureUiState(captureEnabled = enabled, lastCaptureWallMillis = lastCapture)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), CaptureUiState())
+
+    // Collected only by the history screen. Deliberately NOT gated on captureEnabled: switching capture
+    // off must not hide (or make unclearable) what was already recorded.
+    val historyState: StateFlow<ChargeHistoryState> = chargeHistoryStates(
+        recentSessions = { repository.recentSessions() },
+    ).stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), ChargeHistoryState.Loading)
 
     // Backed by SavedStateHandle so the open detail screen survives process death: the restored
     // Activity comes back to STATS_SESSION_DETAIL (a saved destination), and the id it needs is
@@ -144,3 +166,29 @@ class StatsViewModel @Inject constructor(
         const val KEY_SELECTED_SESSION = "stats.selected_session_id"
     }
 }
+
+/**
+ * The history slice, extracted so its semantics are JVM-testable without the ViewModel — and so the
+ * one property that matters is checkable: [recentSessions] is a **provider**, invoked inside the
+ * flow, not a flow built at construction.
+ *
+ * That is not a style preference. `ChargeStatsRepository.recentSessions()` calls `database.get()`
+ * eagerly, so `repository.recentSessions().stateIn(…)` would open the Room database the moment this
+ * ViewModel is instantiated — including for a user who never enabled capture and only opened the
+ * battery hub. `SharingStarted.WhileSubscribed` defers collection, never construction.
+ *
+ * Building the provider's flow inside [flow] also means a synchronous construction failure (a broken
+ * `stats.db`) lands in [catch] rather than escaping to the collector.
+ */
+internal fun chargeHistoryStates(
+    recentSessions: () -> Flow<List<ChargeSessionSummary>>,
+): Flow<ChargeHistoryState> = flow<ChargeHistoryState> {
+    emitAll(recentSessions().map { sessions -> ChargeHistoryState.Ready(sessions) })
+}
+    .onStart { emit(ChargeHistoryState.Loading) }
+    .catch { e ->
+        log(HISTORY_FLOW_TAG, Logging.Priority.ERROR) { "Charge history flow failed: ${e.asLog()}" }
+        emit(ChargeHistoryState.Unavailable)
+    }
+
+private val HISTORY_FLOW_TAG = logTag("Stats", "VM", "History")

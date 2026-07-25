@@ -3,7 +3,6 @@ package eu.darken.amply.main.ui.dashboard
 import eu.darken.amply.stats.core.CaptureServiceHealth.NudgeOutcome
 import eu.darken.amply.stats.core.ChargeSessionSummary
 import eu.darken.amply.stats.core.ChargingType
-import eu.darken.amply.stats.ui.StatsDashboardState
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow

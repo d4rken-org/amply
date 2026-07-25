@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Bolt
@@ -49,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
@@ -70,7 +70,6 @@ import eu.darken.amply.common.ca.caString
 import eu.darken.amply.common.ca.toCaString
 import eu.darken.amply.common.compose.AmplyCard
 import eu.darken.amply.common.compose.AmplyCardHeader
-import eu.darken.amply.common.compose.AmplyClickableCard
 import eu.darken.amply.common.compose.AmplyCardToggleIndicator
 import eu.darken.amply.common.compose.AmplyCardTone
 import eu.darken.amply.common.compose.AmplyPreview
@@ -84,16 +83,11 @@ import eu.darken.amply.fullcharge.core.InterruptionReason
 import eu.darken.amply.fullcharge.core.policyOrNull
 import eu.darken.amply.main.core.formatReport
 import eu.darken.amply.battery.core.BatteryReadout
-import eu.darken.amply.battery.ui.batteryStatusLabel
-import eu.darken.amply.battery.ui.formatTemperature
 import eu.darken.amply.main.ui.setup.AccessSetupGuide
 import eu.darken.amply.main.ui.setup.OemGuideCard
 import eu.darken.amply.main.ui.setup.UnsupportedDeviceCard
 import eu.darken.amply.stats.core.ChargeCurvePoint
 import eu.darken.amply.stats.core.StatsLiveSession
-import eu.darken.amply.stats.ui.StatsCardPresentation
-import eu.darken.amply.stats.ui.StatsDashboardCard
-import eu.darken.amply.stats.ui.StatsDashboardState
 import kotlinx.coroutines.delay
 
 @Composable
@@ -110,9 +104,7 @@ fun DashboardScreen(
     onAlarmEnabledChange: (Boolean) -> Unit,
     onAlarmTargetChange: (Int) -> Unit,
     onFixNotifications: () -> Unit,
-    onOpenBatteryDetail: () -> Unit,
-    onOpenStats: () -> Unit,
-    onOpenLiveSession: (Long) -> Unit,
+    onOpenBatteryHub: () -> Unit,
     onRetryCapture: () -> Unit,
     onPinWidget: () -> Unit,
     onAddTile: () -> Unit,
@@ -156,47 +148,44 @@ fun DashboardScreen(
             // Derived once and shared by the status + full-charge cards so they can never disagree
             // about whether the one-time charge is actually in effect.
             val sessionPresentation = SessionPresentation.from(state.session, state.charging.observation)
-            // There is one stats card; only its content adapts. "On the charger" is decided by the raw
-            // battery readout, never the recorder's DB row — see StatsCardPresentation for the truth
-            // rules.
-            val statsPresentation = StatsCardPresentation.from(state.stats, state.batteryReadout)
-            // Its slot is a separate, purely plug-driven decision: on the charger it is promoted to the
-            // second card (below the interruption warning and the setup guide, which are rarer and
-            // actionable), otherwise it stays in the shared tail. Deliberately independent of the
-            // content state — a promo/loading/unavailable card is promoted too, so the slot never
-            // changes underneath the user as the stats DB answers.
-            val statsPromoted = state.batteryReadout?.onCharger == true
+            // Only the charging card's session body adapts; its live reading and its slot do not. "On
+            // the charger" is decided by the raw battery readout, never the recorder's DB row — see
+            // ChargingCardPresentation for the truth rules.
+            val chargingPresentation = ChargingCardPresentation.from(state.stats, state.batteryReadout)
             val unsupported = state.charging.observation is ChargeObservation.Unsupported
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = sidePadding, end = sidePadding, top = 8.dp, bottom = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                // Every card carries a stable key. Without one a LazyColumn identifies items by index, so
-                // the stats card changing slot would renumber everything after it and throw away their
-                // remembered state — e.g. the alarm card's in-flight slider drag would snap back if the
-                // charger were plugged in mid-gesture. Keys are unique per render: the pairs that appear
-                // in both the supported and unsupported branches are mutually exclusive.
+                // Every card carries a stable key so a card appearing or disappearing above (the
+                // interruption warning, the setup guide) can't renumber the rest and throw away their
+                // remembered state — e.g. the alarm card's in-flight slider drag. Keys are unique per
+                // render: the pairs that appear in both the supported and unsupported branches are
+                // mutually exclusive.
                 //
-                // One construction site for the stats card — only its slot varies (see statsPromoted),
-                // so the supported/unsupported branches below can't drift apart.
-                val statsItem: LazyListScope.() -> Unit = {
-                    item(key = "dashboard.stats") {
-                        StatsDashboardCard(
-                            presentation = statsPresentation,
-                            onOpenStats = onOpenStats,
-                            onOpenLiveSession = onOpenLiveSession,
+                // One construction site for the charging card, so the supported/unsupported branches
+                // below can't drift apart. Its slot is fixed: it used to be promoted out of the tail
+                // while plugged in, which meant the list visibly reshuffled under the user every time a
+                // charger was connected. The card now carries a live reading in every state, so there is
+                // nothing left to promote it for.
+                val chargingItem: LazyListScope.() -> Unit = {
+                    item(key = "dashboard.charging") {
+                        ChargingCard(
+                            presentation = chargingPresentation,
+                            readout = state.batteryReadout,
+                            onOpenHub = onOpenBatteryHub,
                             onRetryCapture = onRetryCapture,
                         )
                     }
                 }
 
-                item(key = "dashboard.hero") { StatusCard(state, sessionPresentation, onOpenBatteryDetail) }
+                item(key = "dashboard.hero") { StatusCard(state, sessionPresentation) }
 
                 if (unsupported) {
-                    // Promoted slot: no interruption card or setup guide exists on this branch, so on
-                    // the charger the stats card follows the hero directly.
-                    if (statsPromoted) statsItem()
+                    // No interruption card or setup guide exists on this branch, so the charging card
+                    // follows the hero directly.
+                    chargingItem()
                     // Unsupported devices cannot use the Pixel policy/charge controls; showing them
                     // greyed-out (and a "Pixel settings" action) only confuses non-Pixel users. Offer
                     // a contribution path instead, and keep only the restore card if a session lingers.
@@ -260,9 +249,9 @@ fun DashboardScreen(
                         }
                     }
 
-                    // Promoted slot: below the interruption warning and the setup guide above, so a
-                    // restore that is still owed and an unfinished setup keep the top of the list.
-                    if (statsPromoted) statsItem()
+                    // Below the interruption warning and the setup guide above, so a restore that is
+                    // still owed and an unfinished setup keep the top of the list.
+                    chargingItem()
 
                     item(key = "dashboard.fullcharge") {
                         FullChargeCard(
@@ -288,9 +277,7 @@ fun DashboardScreen(
                     }
                 }
 
-                // Shared tail: the alarm renders on every device class, and the stats card joins it here
-                // whenever it wasn't promoted above — one lexical slot each, so the supported and
-                // unsupported branches can't drift apart.
+                // Shared tail: the alarm renders on every device class.
                 item(key = "dashboard.alarm") {
                     ChargeAlarmCard(
                         config = state.alarm,
@@ -300,7 +287,6 @@ fun DashboardScreen(
                         onFixNotifications = onFixNotifications,
                     )
                 }
-                if (!statsPromoted) statsItem()
 
                 if (unsupported) {
                     if (state.charging.contributionWanted) {
@@ -376,18 +362,20 @@ fun DashboardScreen(
 
 private val DASHBOARD_MAX_WIDTH = 600.dp
 
+/** The hero is no longer identifiable by a clickable battery line, so tests anchor on this instead. */
+const val HERO_CARD_TEST_TAG = "dashboard.hero.card"
+
 @Composable
 private fun StatusCard(
     state: DashboardUiState,
     presentation: SessionPresentation,
-    onOpenBatteryDetail: () -> Unit,
 ) {
     val observation = state.charging.observation
     val pending = state.charging.pending
 
     // Drive a live clock so the "applying…" cue and its spinner clear promptly at the end of the window.
     // The repository refresh at the deadline is owned by DashboardViewModel so it survives navigation
-    // away from the dashboard (tapping through to battery details); this clock is presentation-only.
+    // away from the dashboard (opening the battery hub); this clock is presentation-only.
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(pending) {
         if (pending != null) {
@@ -402,11 +390,10 @@ private fun StatusCard(
     val settling = state.charging.isSettling(now)
     val verified = observation is ChargeObservation.Verified
 
-    AmplyClickableCard(
-        onClick = onOpenBatteryDetail,
-        onClickLabel = stringResource(R.string.dashboard_battery_details_action),
-        tone = AmplyCardTone.SurfaceContainer,
-    ) {
+    // Not clickable. The card states the policy; the measurements (and the way through to them) live
+    // in the charging card below. A whole-card tap here used to land on voltage and cycle counts,
+    // which is not what "Limited to 80%" promises.
+    AmplyCard(tone = AmplyCardTone.SurfaceContainer, modifier = Modifier.testTag(HERO_CARD_TEST_TAG)) {
         // Custom header: state-dependent leading spinner/icon, hero titleLarge, and dynamic tint —
         // not expressible via the standard AmplyCardHeader, so laid out inline.
         Row(
@@ -458,29 +445,17 @@ private fun StatusCard(
                 )
             }
         }
-        // Live battery telemetry — the observable effect of the policy (e.g. held at 82%, not
-        // charging). Always shown; an absent/unreadable readout renders "Not reported …", matching
-        // the removed standalone battery card. Carries the card's navigation affordance (the whole
-        // card taps through to the full battery details), and has its own top spacing because the
-        // explanation line above is absent while settling or on unsupported/unknown devices.
-        val readout = state.batteryReadout ?: BatteryReadout.UNKNOWN
+        // What the battery is observably doing — the payoff line for the policy above. Read off the
+        // public broadcast alone rather than from the policy, because the title is often only a
+        // last-requested claim; restating it here would look like corroboration. Has its own top
+        // spacing because the explanation line above is absent while settling or on unsupported
+        // devices. The raw numbers live in the charging card below, not here.
         Spacer(Modifier.height(8.dp))
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                stringResource(R.string.dashboard_battery_line, batterySummaryLine(readout)),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f),
-            )
-            Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        Text(
+            batteryEffectLine(BatteryEffect.from(state.batteryReadout)),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         // Divider marks the boundary between "what the current policy is" (title + explanation +
         // live battery reading) above and the provenance metadata below — where the reading comes
         // from and which device.
@@ -524,15 +499,22 @@ private fun StatusCard(
     }
 }
 
-/** "82% · Charging · 31.4 °C" — the compact battery reading shown in the hero, reusing the shared
- * battery status/temperature formatting. Each absent value renders its own "Not reported"/"Unknown". */
+/** Renders a [BatteryEffect] — the mapping decides *what* is true, this only says it in words. */
 @Composable
-private fun batterySummaryLine(readout: BatteryReadout): String {
-    val notReported = stringResource(R.string.battery_value_not_reported)
-    val level = readout.levelPercent?.let { "$it%" } ?: notReported
-    val status = stringResource(batteryStatusLabel(readout.status, readout.plugged))
-    val temperature = formatTemperature(readout.temperatureTenthsC) ?: notReported
-    return stringResource(R.string.battery_info_summary, level, status, temperature)
+private fun batteryEffectLine(effect: BatteryEffect): String {
+    if (effect is BatteryEffect.Unknown) return stringResource(R.string.dashboard_effect_unknown)
+    val level = effect.percent?.let { "$it%" } ?: stringResource(R.string.battery_value_not_reported)
+    return stringResource(
+        when (effect) {
+            is BatteryEffect.Charging -> R.string.dashboard_effect_charging
+            is BatteryEffect.ConnectedNotCharging -> R.string.dashboard_effect_connected_not_charging
+            is BatteryEffect.Connected -> R.string.dashboard_effect_connected
+            is BatteryEffect.Full -> R.string.dashboard_effect_full
+            is BatteryEffect.OnBattery -> R.string.dashboard_effect_on_battery
+            BatteryEffect.Unknown -> error("handled above")
+        },
+        level,
+    )
 }
 
 @Composable
@@ -930,9 +912,7 @@ private fun DashboardScreenPreview() = PreviewWrapper {
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
-        onOpenBatteryDetail = {},
-        onOpenStats = {},
-        onOpenLiveSession = {},
+        onOpenBatteryHub = {},
         onRetryCapture = {},
         onPinWidget = {},
         onAddTile = {},
@@ -953,8 +933,8 @@ private fun DashboardScreenPreview() = PreviewWrapper {
     )
 }
 
-// On the charger with capture enabled: the stats card is promoted to the second slot and renders the
-// live session (the unplugged preview above shows the same card in its tail slot).
+// On the charger with capture enabled: the charging card renders the live session (the preview above
+// shows the same card, in the same slot, off the charger).
 @AmplyPreview
 @Composable
 private fun DashboardScreenLiveChargePreview() = PreviewWrapper {
@@ -1025,9 +1005,7 @@ private fun DashboardScreenLiveChargePreview() = PreviewWrapper {
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
-        onOpenBatteryDetail = {},
-        onOpenStats = {},
-        onOpenLiveSession = {},
+        onOpenBatteryHub = {},
         onRetryCapture = {},
         onPinWidget = {},
         onAddTile = {},
@@ -1101,9 +1079,7 @@ private fun DashboardScreenApplyingPreview() = PreviewWrapper {
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
-        onOpenBatteryDetail = {},
-        onOpenStats = {},
-        onOpenLiveSession = {},
+        onOpenBatteryHub = {},
         onRetryCapture = {},
         onPinWidget = {},
         onAddTile = {},
@@ -1173,9 +1149,7 @@ private fun DashboardScreenSessionActivePreview() = PreviewWrapper {
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
-        onOpenBatteryDetail = {},
-        onOpenStats = {},
-        onOpenLiveSession = {},
+        onOpenBatteryHub = {},
         onRetryCapture = {},
         onPinWidget = {},
         onAddTile = {},
@@ -1247,9 +1221,7 @@ private fun DashboardScreenSessionRecordedPreview() = PreviewWrapper {
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
-        onOpenBatteryDetail = {},
-        onOpenStats = {},
-        onOpenLiveSession = {},
+        onOpenBatteryHub = {},
         onRetryCapture = {},
         onPinWidget = {},
         onAddTile = {},
@@ -1309,9 +1281,7 @@ private fun DashboardScreenWssOnlyPreview() = PreviewWrapper {
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
-        onOpenBatteryDetail = {},
-        onOpenStats = {},
-        onOpenLiveSession = {},
+        onOpenBatteryHub = {},
         onRetryCapture = {},
         onPinWidget = {},
         onAddTile = {},
@@ -1378,9 +1348,7 @@ private fun DashboardScreenSamsungPreview() = PreviewWrapper {
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
-        onOpenBatteryDetail = {},
-        onOpenStats = {},
-        onOpenLiveSession = {},
+        onOpenBatteryHub = {},
         onRetryCapture = {},
         onPinWidget = {},
         onAddTile = {},
@@ -1448,9 +1416,7 @@ private fun DashboardScreenOnePlusNeedsShizukuPreview() = PreviewWrapper {
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
-        onOpenBatteryDetail = {},
-        onOpenStats = {},
-        onOpenLiveSession = {},
+        onOpenBatteryHub = {},
         onRetryCapture = {},
         onPinWidget = {},
         onAddTile = {},
@@ -1503,9 +1469,7 @@ private fun DashboardScreenUnsupportedPreview() = PreviewWrapper {
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
-        onOpenBatteryDetail = {},
-        onOpenStats = {},
-        onOpenLiveSession = {},
+        onOpenBatteryHub = {},
         onRetryCapture = {},
         onPinWidget = {},
         onAddTile = {},
