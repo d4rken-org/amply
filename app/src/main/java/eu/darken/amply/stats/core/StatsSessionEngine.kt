@@ -19,6 +19,49 @@ sealed interface StatsTransition {
 }
 
 /**
+ * Current battery state observed at process start, used to reconcile a session left open by a
+ * process death. Deliberately *not* a [StatsSample]: that type's contract is "built from the exact
+ * intent the charge-session service evaluated", while this comes from an independent sticky read
+ * before any service tick exists.
+ */
+data class ResumeProbe(
+    val elapsedRealtimeMillis: Long,
+    val bootId: Long,
+    val plugged: Boolean,
+    val percent: Int?,
+)
+
+/** Outcome of reconciling a dangling open session against a [ResumeProbe]. */
+sealed interface ResumeDecision {
+
+    /** Reattach [session] — the same plug event is still in progress, as far as can be told. */
+    data class Resume(val session: ChargeSessionEntity) : ResumeDecision
+
+    /** Seal the row instead; [reason] is for diagnostics only. */
+    data class Reject(val reason: Reason) : ResumeDecision
+
+    enum class Reason {
+        /** Row is already sealed — nothing to reconcile. */
+        CLOSED,
+
+        /** No external power now, so whatever charge was underway has ended. */
+        UNPLUGGED,
+
+        /** Boot identity is unknown on either side, so a same-boot claim can't be made. */
+        BOOT_UNKNOWN,
+
+        /** A reboot happened; elapsed-realtime readings from two boots can't be compared. */
+        BOOT_MISMATCH,
+
+        /** Probe predates the row's last sample — the clock base can't be the one we recorded against. */
+        TIME_WENT_BACKWARDS,
+
+        /** Charge level fell while we weren't looking, so the device discharged in the gap. */
+        LEVEL_DROPPED,
+    }
+}
+
+/**
  * Pure charge-session segmentation and online aggregation. Holds no state itself: the open session
  * is a [ChargeSessionEntity] the recorder loads from (and persists to) Room, so every decision
  * survives process death and is JVM-unit-testable without Android or a database.
@@ -68,6 +111,51 @@ object StatsSessionEngine {
             sealed.endPercent == sealed.startPercent
         return zeroDuration && noLevelGain && sealed.runningSampleCount <= 1
     }
+
+    /**
+     * Reconcile a session left open by a process death against the battery state observed at the next
+     * process start. Resuming keeps the real plug-in time and one history row for one physical charge;
+     * the alternative (always sealing) restarts the session at process-launch time, which reads as a
+     * wrong "Since …" and splits one charge into two rows.
+     *
+     * Continuity here is **inferred, not observed** — nothing survived the gap to witness it. A replug
+     * at an equal-or-higher level is indistinguishable from an uninterrupted plug, and a level *drop*
+     * while plugged is possible (heavy load, weak charger, thermal throttling, an OEM hold). So these
+     * guards are best-effort and deliberately biased toward merging: an occasional merged plug cycle
+     * beats fragmenting real sessions. Two things keep that bias honest, both applied on [Resume]:
+     * the row is flagged [ChargeSessionEntity.partial], and the last power/temperature readings are
+     * dropped so [fold] credits **nothing** for the unobserved gap (see the null handling in
+     * [creditInterval]). A wrong merge therefore costs an over-long duration — never invented
+     * power/temperature averages.
+     */
+    fun evaluateResume(row: ChargeSessionEntity, probe: ResumeProbe): ResumeDecision {
+        val lastObserved = row.runningLastElapsedRealtimeMillis ?: row.startedElapsedRealtimeMillis
+        val reason = when {
+            row.endedAtWallMillis != null -> ResumeDecision.Reason.CLOSED
+            !probe.plugged -> ResumeDecision.Reason.UNPLUGGED
+            // Checked before equality: the sentinel compares equal to itself across *different* boots.
+            probe.bootId == BootIdSource.UNAVAILABLE ||
+                row.bootId == BootIdSource.UNAVAILABLE -> ResumeDecision.Reason.BOOT_UNKNOWN
+            probe.bootId != row.bootId -> ResumeDecision.Reason.BOOT_MISMATCH
+            probe.elapsedRealtimeMillis < lastObserved -> ResumeDecision.Reason.TIME_WENT_BACKWARDS
+            droppedLevel(row.runningLastPercent, probe.percent) -> ResumeDecision.Reason.LEVEL_DROPPED
+            else -> null
+        }
+        if (reason != null) return ResumeDecision.Reject(reason)
+        return ResumeDecision.Resume(
+            row.copy(
+                // The curve has a hole and the continuity is inferred — never present this as a clean
+                // plug→unplug history.
+                partial = true,
+                runningLastPowerMilliwatts = null,
+                runningLastTemperatureTenthsC = null,
+            ),
+        )
+    }
+
+    /** True only when both readings exist and the level fell — a missing reading is not evidence. */
+    private fun droppedLevel(lastPercent: Int?, probePercent: Int?): Boolean =
+        lastPercent != null && probePercent != null && probePercent < lastPercent
 
     fun open(sample: StatsSample, partial: Boolean): ChargeSessionEntity = ChargeSessionEntity(
         startedAtWallMillis = sample.wallMillis,

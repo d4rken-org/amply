@@ -1,6 +1,8 @@
 package eu.darken.amply.stats.core
 
 import android.content.Context
+import android.provider.Settings
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import eu.darken.amply.battery.core.BatteryReader
@@ -10,7 +12,10 @@ import eu.darken.amply.stats.core.db.ChargeSessionEntity
 import eu.darken.amply.stats.core.db.StatsDatabase
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
@@ -20,10 +25,13 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.io.File
 
 /**
  * The live-detail read paths against an in-memory Room instance: [ChargeStatsRepository.curveFlow]
@@ -35,8 +43,12 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class ChargeStatsRepositoryLiveTest {
 
+    @get:Rule
+    val tempFolder = TemporaryFolder()
+
     private lateinit var database: StatsDatabase
     private lateinit var repository: ChargeStatsRepository
+    private lateinit var dataStoreScope: CoroutineScope
 
     @Before
     fun setup() {
@@ -44,12 +56,22 @@ class ChargeStatsRepositoryLiveTest {
         database = Room.inMemoryDatabaseBuilder(context, StatsDatabase::class.java)
             .allowMainThreadQueries()
             .build()
+        // Own temp file per test, matching the project's other DataStore tests. A DataStore over the
+        // app's real path would be shared with every other Robolectric class in the same JVM.
+        dataStoreScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         val bootIdSource = BootIdSource(context)
         val recorder = ChargeStatsRecorder(
             database = { database },
-            preferences = StatsPreferences(AppDataStore(context)),
+            preferences = StatsPreferences(
+                AppDataStore(
+                    PreferenceDataStoreFactory.create(scope = dataStoreScope) {
+                        File(tempFolder.root, "stats-${System.nanoTime()}.preferences_pb")
+                    },
+                ),
+            ),
             bootIdSource = bootIdSource,
             batteryReader = BatteryReader(context),
+            dispatcher = Dispatchers.IO,
         )
         repository = ChargeStatsRepository(
             database = { database },
@@ -60,6 +82,7 @@ class ChargeStatsRepositoryLiveTest {
 
     @After
     fun teardown() {
+        dataStoreScope.cancel()
         database.close()
     }
 
@@ -117,5 +140,38 @@ class ChargeStatsRepositoryLiveTest {
 
         database.statsDao().deleteSession(id)
         repository.session(id).first().shouldBeNull()
+    }
+
+    @Test
+    fun `current session flow reports a partial flip on the same row`() = runBlocking {
+        // Resuming a session after a process restart flips `partial` in place. Keying the flow on the
+        // row id alone would suppress that forever for an already-subscribed collector, because the
+        // row is captured inside flatMapLatest — the dashboard would keep rendering the stale copy.
+        Settings.Global.putInt(
+            ApplicationProvider.getApplicationContext<Context>().contentResolver,
+            Settings.Global.BOOT_COUNT,
+            7,
+        )
+        val id = insertOpenSession()
+        database.statsDao().insertSample(sample(id, elapsed = 1_000L, percent = 40))
+
+        val emissions = Channel<Boolean?>(Channel.UNLIMITED)
+        val collector = launch(Dispatchers.IO) {
+            repository.currentSession().collect { emissions.send(it?.partial) }
+        }
+        try {
+            withTimeout(10_000L) {
+                while (emissions.receive() != false) {
+                    // Await the initial non-partial state before flipping it.
+                }
+                val row = database.statsDao().sessionById(id)!!
+                database.statsDao().updateSession(row.copy(partial = true))
+                while (emissions.receive() != true) {
+                    // Await the flip on the SAME subscription.
+                }
+            }
+        } finally {
+            collector.cancelAndJoin()
+        }
     }
 }

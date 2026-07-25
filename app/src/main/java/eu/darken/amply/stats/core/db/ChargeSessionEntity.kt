@@ -40,8 +40,10 @@ data class ChargeSessionEntity(
 
     /**
      * True when the session does not represent a clean plug→unplug: capture was enabled mid-charge,
-     * started already at 100%, or the session was sealed by process recovery / reboot. The UI labels
-     * these as partial rather than presenting them as complete histories.
+     * started already at 100%, the session was sealed by process recovery / reboot, or it was resumed
+     * after a process restart (start time and totals are real, but the curve has a gap and continuity
+     * across that gap is inferred rather than observed). The UI labels these as partial rather than
+     * presenting them as complete histories.
      */
     val partial: Boolean = false,
 

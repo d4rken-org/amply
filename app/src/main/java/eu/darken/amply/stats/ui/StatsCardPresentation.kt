@@ -33,8 +33,11 @@ data class StatsDashboardState(
  *   must not hide that the phone is on the charger ([ConnectedWithoutSession]).
  * - A null `plugged` (not reported) collapses conservatively to not-connected — the card never
  *   claims a charger it can't observe.
- * - Previous-boot rows are already excluded by the recorder's boot-scoped query; a same-boot row
- *   surviving process death can briefly present as [Live] until the recorder's first tick seals it.
+ * - Previous-boot rows are already excluded by the recorder's boot-scoped query.
+ * - A row is not enough to claim [Live]: capture must also be running. When the last service-start
+ *   attempt failed, no ticks are arriving, so an open row (including one the recorder resumed after a
+ *   process restart, which stays open indefinitely by design) would otherwise render as a live
+ *   session frozen at its last values — and hide the retry action that could fix it.
  */
 sealed interface StatsCardPresentation {
 
@@ -54,8 +57,9 @@ sealed interface StatsCardPresentation {
     ) : StatsCardPresentation
 
     /**
-     * Capture on and the charger is connected, but no recorder row exists yet — install-while-
-     * plugged, service-start latency, or a failed start ([startFailed]).
+     * Capture on and the charger is connected, but there is no session to show live — no recorder row
+     * yet (install-while-plugged, service-start latency), or capture isn't running because the last
+     * start attempt failed ([startFailed]), in which case any open row is frozen and not shown.
      */
     data class ConnectedWithoutSession(
         val battery: BatteryReadout,
@@ -75,7 +79,11 @@ sealed interface StatsCardPresentation {
             stats.loading -> Loading
             readout != null && (readout.plugged ?: 0) != 0 -> when (val live = stats.live) {
                 null -> ConnectedWithoutSession(battery = readout, startFailed = stats.startFailed)
-                else -> Live(session = live, battery = readout)
+                // A failed start means no ticks: show the retry rather than a frozen "live" session.
+                else -> when {
+                    stats.startFailed -> ConnectedWithoutSession(battery = readout, startFailed = true)
+                    else -> Live(session = live, battery = readout)
+                }
             }
             else -> Idle(lastSession = stats.lastSession, sessionCount = stats.sessionCount)
         }
