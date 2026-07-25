@@ -1,6 +1,7 @@
 package eu.darken.amply.stats.core
 
 import android.content.Context
+import android.os.BatteryManager
 import android.provider.Settings
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.room.Room
@@ -11,6 +12,7 @@ import eu.darken.amply.stats.core.db.BatterySampleEntity
 import eu.darken.amply.stats.core.db.ChargeSessionEntity
 import eu.darken.amply.stats.core.db.StatsDatabase
 import io.kotest.matchers.nulls.shouldBeNull
+import io.kotest.matchers.shouldBe
 import io.kotest.matchers.nulls.shouldNotBeNull
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -95,12 +97,18 @@ class ChargeStatsRepositoryLiveTest {
         ),
     )
 
-    private fun sample(sessionId: Long, elapsed: Long, percent: Int) = BatterySampleEntity(
+    private fun sample(
+        sessionId: Long,
+        elapsed: Long,
+        percent: Int,
+        batteryStatus: Int? = BatteryManager.BATTERY_STATUS_CHARGING,
+    ) = BatterySampleEntity(
         sessionId = sessionId,
         wallMillis = elapsed,
         elapsedRealtimeMillis = elapsed,
         bootId = 7,
         percent = percent,
+        batteryStatus = batteryStatus,
         powerMilliwatts = 9_000,
         temperatureTenthsC = 300,
     )
@@ -125,6 +133,25 @@ class ChargeStatsRepositoryLiveTest {
         } finally {
             collector.cancelAndJoin()
         }
+    }
+
+    @Test
+    fun `a curve never plots power from a sample that was not charging`() = runTest {
+        // Rows written before the recorder gained its direction gate stored an unsigned magnitude on
+        // every sample, charging or not. Reading them back verbatim would draw discharge draw as a
+        // charge rate, so the read path filters on the status the row already carries.
+        val id = insertOpenSession()
+        val dao = database.statsDao()
+        dao.insertSample(sample(id, elapsed = 1_000L, percent = 40))
+        dao.insertSample(
+            sample(id, elapsed = 2_000L, percent = 41, batteryStatus = BatteryManager.BATTERY_STATUS_DISCHARGING),
+        )
+        dao.insertSample(sample(id, elapsed = 3_000L, percent = 42, batteryStatus = null))
+
+        val curve = repository.curveFlow(id).first()
+        curve.map { it.percent } shouldBe listOf(40, 41, 42)
+        // Only the charging sample keeps its power; the other two report none rather than a wrong one.
+        curve.map { it.powerMilliwatts } shouldBe listOf(9_000, null, null)
     }
 
     private suspend fun awaitEmission(channel: Channel<List<Int?>>, expected: List<Int?>) {

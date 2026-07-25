@@ -1,5 +1,6 @@
 package eu.darken.amply.stats.core
 
+import android.os.BatteryManager
 import kotlin.math.abs
 
 /**
@@ -23,5 +24,29 @@ object StatsPowerCalculator {
         val mw = voltageMillivolts.toLong() * abs(currentNowMicroamps.toLong()) / 1_000_000L
         if (mw < 0 || mw > MAX_PLAUSIBLE_MILLIWATTS) return null
         return mw.toInt()
+    }
+
+    /**
+     * [milliwatts], but `null` unless the battery is actually taking charge — the single gate every
+     * caller must go through before showing or storing a figure as *charge* power.
+     *
+     * [milliwatts] is unsigned, so a device drawing more than its charger supplies produces the same
+     * positive number as one charging at that rate; without this gate that draw is indistinguishable
+     * from charge power in a curve, a peak, or a headline. Direction cannot be recovered from the
+     * current's sign either — that sign is OEM-defined (see [eu.darken.amply.battery.core.BatteryReadout]),
+     * so [batteryStatus] is the only trustworthy signal.
+     *
+     * Requiring [plugged] as well as `BATTERY_STATUS_CHARGING` also drops the reading at a protection
+     * hold and at full, where the number is noise rather than a charge rate.
+     */
+    fun chargeMilliwatts(
+        batteryStatus: Int?,
+        plugged: Boolean,
+        voltageMillivolts: Int?,
+        currentNowMicroamps: Int?,
+    ): Int? {
+        if (!plugged) return null
+        if (batteryStatus != BatteryManager.BATTERY_STATUS_CHARGING) return null
+        return milliwatts(voltageMillivolts, currentNowMicroamps)
     }
 }

@@ -4,15 +4,18 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import eu.darken.amply.stats.core.StatsPowerCalculator
 
 /**
  * One raw battery observation persisted for a charge curve. Belongs to a [ChargeSessionEntity]
  * ([sessionId], cascade-deleted with its session). Retention purges old rows by [wallMillis]; the
  * owning session's summary is unaffected because it is accumulated online, not recomputed from these.
  *
- * [powerMilliwatts] is battery-terminal power (battery voltage × |current|), not charger/input
- * power, and cannot distinguish charging from discharging by itself — the owning session's phase and
- * the [chargingStatus]/[batteryStatus] provide direction.
+ * [powerMilliwatts] is battery-terminal *charge* power (battery voltage × |current|), not charger/
+ * input power. Because the magnitude carries no direction, it is recorded **only while the battery is
+ * actually taking charge** (see [StatsPowerCalculator.chargeMilliwatts]) — otherwise draw would be
+ * stored as if it were a charge rate. [voltageMillivolts], [currentNowMicroamps] and [batteryStatus]
+ * are always kept, so the raw observation survives even where the derived field is null.
  */
 @Entity(
     tableName = "battery_samples",
@@ -49,6 +52,9 @@ data class BatterySampleEntity(
     val temperatureTenthsC: Int? = null,
     val voltageMillivolts: Int? = null,
     val currentNowMicroamps: Int? = null,
-    /** Precomputed battery-terminal power magnitude in milliwatts; null if inputs were absent. */
+    /**
+     * Precomputed battery-terminal charge power in milliwatts; null if the inputs were absent **or**
+     * the battery was not taking charge at the time.
+     */
     val powerMilliwatts: Int? = null,
 )

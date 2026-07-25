@@ -1,5 +1,6 @@
 package eu.darken.amply.stats.core
 
+import android.os.BatteryManager
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 
@@ -43,5 +44,94 @@ class StatsPowerCalculatorTest {
     fun `long math avoids int overflow`() {
         // 4300 * 3_000_000 = 12_900_000_000 which overflows Int; result 12_900 mW.
         StatsPowerCalculator.milliwatts(4300, 3_000_000) shouldBe 12_900
+    }
+
+    // The direction gate. `milliwatts` is unsigned, so without this the same number means "charging
+    // at 8 W" and "draining at 8 W" — and the sign of currentNow can't disambiguate, being
+    // OEM-defined. Everything that shows or stores charge power goes through here.
+
+    @Test
+    fun `charge power is reported while charging on a charger`() {
+        StatsPowerCalculator.chargeMilliwatts(
+            batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
+            plugged = true,
+            voltageMillivolts = 4000,
+            currentNowMicroamps = 2_000_000,
+        ) shouldBe 8000
+    }
+
+    @Test
+    fun `discharge draw is never reported as charge power`() {
+        // Plugged in but losing charge (load exceeds the supply): the magnitude is real, but calling
+        // it charge power would invert its meaning.
+        StatsPowerCalculator.chargeMilliwatts(
+            batteryStatus = BatteryManager.BATTERY_STATUS_DISCHARGING,
+            plugged = true,
+            voltageMillivolts = 4000,
+            currentNowMicroamps = -2_000_000,
+        ) shouldBe null
+    }
+
+    @Test
+    fun `a limit hold reports no charge power`() {
+        StatsPowerCalculator.chargeMilliwatts(
+            batteryStatus = BatteryManager.BATTERY_STATUS_NOT_CHARGING,
+            plugged = true,
+            voltageMillivolts = 4000,
+            currentNowMicroamps = 0,
+        ) shouldBe null
+    }
+
+    @Test
+    fun `a full battery reports no charge power`() {
+        StatsPowerCalculator.chargeMilliwatts(
+            batteryStatus = BatteryManager.BATTERY_STATUS_FULL,
+            plugged = true,
+            voltageMillivolts = 4000,
+            currentNowMicroamps = 100_000,
+        ) shouldBe null
+    }
+
+    @Test
+    fun `an unknown or absent status reports no charge power`() {
+        StatsPowerCalculator.chargeMilliwatts(
+            batteryStatus = BatteryManager.BATTERY_STATUS_UNKNOWN,
+            plugged = true,
+            voltageMillivolts = 4000,
+            currentNowMicroamps = 2_000_000,
+        ) shouldBe null
+        StatsPowerCalculator.chargeMilliwatts(
+            batteryStatus = null,
+            plugged = true,
+            voltageMillivolts = 4000,
+            currentNowMicroamps = 2_000_000,
+        ) shouldBe null
+    }
+
+    @Test
+    fun `a claimed charging status off the charger is not trusted`() {
+        StatsPowerCalculator.chargeMilliwatts(
+            batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
+            plugged = false,
+            voltageMillivolts = 4000,
+            currentNowMicroamps = 2_000_000,
+        ) shouldBe null
+    }
+
+    @Test
+    fun `the magnitude rules still apply through the gate`() {
+        StatsPowerCalculator.chargeMilliwatts(
+            batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
+            plugged = true,
+            voltageMillivolts = 4000,
+            currentNowMicroamps = null,
+        ) shouldBe null
+        // Implausible reading (bad OEM units) is rejected here too.
+        StatsPowerCalculator.chargeMilliwatts(
+            batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
+            plugged = true,
+            voltageMillivolts = 4000,
+            currentNowMicroamps = 100_000_000,
+        ) shouldBe null
     }
 }

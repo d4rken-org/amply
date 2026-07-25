@@ -1,5 +1,6 @@
 package eu.darken.amply.stats.core
 
+import android.os.BatteryManager
 import dagger.Lazy
 import eu.darken.amply.stats.core.db.BatterySampleEntity
 import eu.darken.amply.stats.core.db.ChargeSessionEntity
@@ -70,12 +71,31 @@ class ChargeStatsRepository @Inject constructor(
                 ChargeCurvePoint(
                     elapsedFromStartMillis = sample.elapsedRealtimeMillis - start,
                     percent = sample.percent,
-                    powerMilliwatts = sample.powerMilliwatts,
+                    powerMilliwatts = sample.chargePowerMilliwatts(),
                     temperatureTenthsC = sample.temperatureTenthsC,
                 )
             }
             StatsDownsampler.decimate(points, maxPoints)
         }
+
+    /**
+     * A sample's power, but only where it is charge power.
+     *
+     * The recorder now withholds it at the source, so for anything captured since this is a no-op.
+     * It exists for rows written before that gate: those stored an unsigned magnitude on every
+     * sample, including ones taken while the battery was draining, and plotting those in a charge
+     * curve would show draw as charging. Filtering on the sample's own [BatterySampleEntity.batteryStatus]
+     * — which was always recorded — makes old sessions read as honestly as new ones.
+     *
+     * Only the *curve* is repaired this way. A pre-gate session's stored `avgPowerMilliwatts` and
+     * `runningPeakPowerMilliwatts` were accumulated online at record time and are deliberately left
+     * as they are: they cannot be recomputed once the raw samples age out of retention, and no
+     * migration is worth writing for data that only exists on pre-launch test devices. Such a session
+     * can therefore show a corrected curve beside a slightly-off average — it ages out, every new
+     * session is clean, and "Clear statistics data" is there for anyone who would rather not wait.
+     */
+    private fun BatterySampleEntity.chargePowerMilliwatts(): Int? =
+        powerMilliwatts.takeIf { batteryStatus == BatteryManager.BATTERY_STATUS_CHARGING }
 
     /** Wipe all statistics (serialized through the recorder so it can't race an in-flight sample). */
     fun clearAll() = recorder.clear()
@@ -88,7 +108,7 @@ class ChargeStatsRepository @Inject constructor(
             ChargeCurvePoint(
                 elapsedFromStartMillis = sample.elapsedRealtimeMillis - start,
                 percent = sample.percent,
-                powerMilliwatts = sample.powerMilliwatts,
+                powerMilliwatts = sample.chargePowerMilliwatts(),
                 temperatureTenthsC = sample.temperatureTenthsC,
             )
         }
