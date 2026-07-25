@@ -27,6 +27,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.File
 
@@ -114,6 +115,12 @@ class ChargeStatsRecorderTest {
         }
         @Suppress("DEPRECATION")
         context.sendStickyBroadcast(intent)
+    }
+
+    /** Seeds the live current property the reader queries off the intent. */
+    private fun setCurrentNowMicroamps(microamps: Int) {
+        val manager = context.getSystemService(BatteryManager::class.java)
+        shadowOf(manager).setIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW, microamps)
     }
 
     private suspend fun insertOpenSession(
@@ -290,6 +297,69 @@ class ChargeStatsRecorderTest {
         database.statsDao().openSessions().map { it.id } shouldBe listOf(id)
         database.statsDao().sessionById(id)?.startedAtWallMillis shouldBe WALL_START
     }
+
+    // The recorder's power gate. Both cases seed real voltage AND current, and assert those raw
+    // inputs landed on the sample — so a null power proves the direction gate fired, not that
+    // Robolectric had nothing to report.
+    @Test
+    fun `power is not recorded for a sample that was not charging`(): Unit = runBlocking {
+        enableCapture()
+        setBootCount(BOOT_ID.toInt())
+        setBattery(plugged = true, percent = 55)
+        setCurrentNowMicroamps(-2_000_000)
+        val id = insertOpenSession()
+
+        val recorder = startRecorder()
+        awaitResumed(id)
+        // Plugged in but losing charge: the load exceeds what the charger supplies.
+        recorder.offer(electricalTick(BatteryManager.BATTERY_STATUS_DISCHARGING))
+        await { database.statsDao().samplesForSessionNow(id).any { it.percent == 56 } }
+
+        val sample = database.statsDao().samplesForSessionNow(id).first { it.percent == 56 }
+        // The inputs were there…
+        sample.voltageMillivolts shouldBe 4_000
+        sample.currentNowMicroamps shouldBe -2_000_000
+        sample.batteryStatus shouldBe BatteryManager.BATTERY_STATUS_DISCHARGING
+        // …so this null is the gate, not a missing reading. 4000 mV x 2 A would have stored 8000 mW.
+        sample.powerMilliwatts shouldBe null
+    }
+
+    @Test
+    fun `power is recorded while charging`(): Unit = runBlocking {
+        enableCapture()
+        setBootCount(BOOT_ID.toInt())
+        setBattery(plugged = true, percent = 55)
+        setCurrentNowMicroamps(2_000_000)
+        val id = insertOpenSession()
+
+        val recorder = startRecorder()
+        awaitResumed(id)
+        recorder.offer(electricalTick(BatteryManager.BATTERY_STATUS_CHARGING))
+        await { database.statsDao().samplesForSessionNow(id).any { it.percent == 56 } }
+
+        database.statsDao().samplesForSessionNow(id).first { it.percent == 56 }
+            .powerMilliwatts shouldBe 8_000
+    }
+
+    /**
+     * A tick carrying its own battery intent — the recorder reads the electrical values from that
+     * intent, not from a second sticky read, so a tick without one has no voltage or current at all.
+     */
+    private fun electricalTick(batteryStatus: Int) = RawStatsTick(
+        plugged = true,
+        percent = 56,
+        batteryStatus = batteryStatus,
+        sessionActive = false,
+        batteryIntent = Intent(Intent.ACTION_BATTERY_CHANGED).apply {
+            putExtra(BatteryManager.EXTRA_PLUGGED, BatteryManager.BATTERY_PLUGGED_AC)
+            putExtra(BatteryManager.EXTRA_LEVEL, 56)
+            putExtra(BatteryManager.EXTRA_SCALE, 100)
+            putExtra(BatteryManager.EXTRA_STATUS, batteryStatus)
+            putExtra(BatteryManager.EXTRA_VOLTAGE, 4_000)
+        },
+        observedElapsedRealtimeMillis = 60_000,
+        wallMillis = WALL_START + 60_000,
+    )
 
     private companion object {
         const val BOOT_ID = 7L

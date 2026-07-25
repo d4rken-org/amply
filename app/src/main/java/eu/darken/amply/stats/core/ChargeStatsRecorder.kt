@@ -148,7 +148,16 @@ class ChargeStatsRecorder @Inject constructor(
             temperatureTenthsC = readout.temperatureTenthsC,
             voltageMillivolts = readout.voltageMillivolts,
             currentNowMicroamps = readout.currentNowMicroamps,
-            powerMilliwatts = StatsPowerCalculator.milliwatts(readout.voltageMillivolts, readout.currentNowMicroamps),
+            // Charge power only: an unsigned magnitude recorded while the battery is not gaining
+            // charge would land in the curve, the peak, and the average as if it were a charge rate.
+            // The inputs stay on the sample (voltage/current/status), so nothing is lost — only the
+            // derived field is withheld where it would mean something it doesn't.
+            powerMilliwatts = StatsPowerCalculator.chargeMilliwatts(
+                batteryStatus = tick.batteryStatus,
+                plugged = tick.plugged,
+                voltageMillivolts = readout.voltageMillivolts,
+                currentNowMicroamps = readout.currentNowMicroamps,
+            ),
             full = full,
             overrideActive = tick.sessionActive,
             limitHeldNow = StatsLimitHitDetector.heldNow(

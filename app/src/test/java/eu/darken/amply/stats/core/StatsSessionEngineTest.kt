@@ -1,6 +1,7 @@
 package eu.darken.amply.stats.core
 
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import org.junit.jupiter.api.Test
 
 class StatsSessionEngineTest {
@@ -119,6 +120,27 @@ class StatsSessionEngineTest {
         )
         // Only the first 10s (at 2000 mW) is credited; the null-power tail contributes nothing.
         sealed.avgPowerMilliwatts shouldBe 2000
+    }
+
+    @Test
+    fun `a session that never charged reports no power rather than zero`() {
+        // Reachable now that power is only recorded while the battery is actually taking charge: a
+        // device that never reports BATTERY_STATUS_CHARGING yields a session with no power at all.
+        // The average must be absent (rendering "Not reported"), not 0 mW, and must not divide by
+        // a zero credited duration.
+        var s = StatsSessionEngine.open(sample(elapsed = 0, power = null, temp = 250), partial = false)
+        s = StatsSessionEngine.fold(s, sample(elapsed = 10_000, power = null, temp = 260))
+        val sealed = StatsSessionEngine.seal(
+            s,
+            StatsSealReason.UNPLUGGED,
+            endWallMillis = 20_000,
+            endElapsedMillis = 20_000,
+            endPercent = 60,
+        )
+        sealed.avgPowerMilliwatts shouldBe null
+        sealed.runningPeakPowerMilliwatts shouldBe null
+        // Temperature is unaffected — only the power series is gated.
+        sealed.avgTemperatureTenthsC shouldNotBe null
     }
 
     @Test

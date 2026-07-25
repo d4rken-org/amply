@@ -21,7 +21,10 @@ data class StatsSample(
     val temperatureTenthsC: Int?,
     val voltageMillivolts: Int?,
     val currentNowMicroamps: Int?,
-    /** Battery-terminal power magnitude (mW), precomputed by [StatsPowerCalculator]; null if absent. */
+    /**
+     * Battery-terminal charge power (mW), precomputed by [StatsPowerCalculator.chargeMilliwatts];
+     * null when the inputs were absent or the battery was not taking charge.
+     */
     val powerMilliwatts: Int?,
     /** [android.os.BatteryManager.BATTERY_STATUS_FULL] or level ≥ 100. */
     val full: Boolean,
