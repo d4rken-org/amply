@@ -416,13 +416,32 @@
     <string name="monitor_notification_title">Amply is watching the battery</string>
     <string name="monitor_notification_body">Keeping an eye on your charge level.</string>
 
-    <!-- Battery reading (shown in the dashboard hero) + detail screen -->
-    <string name="dashboard_battery_line">Battery: %1$s</string>
-    <string name="dashboard_battery_details_action">Open battery details</string>
+    <!-- What the battery is observably doing, shown under the policy in the dashboard hero -->
+    <string name="dashboard_effect_charging">Charging · %1$s</string>
+    <!-- Deliberately not "paused": a not-charging state can also be thermal or a weak supply -->
+    <string name="dashboard_effect_connected_not_charging">Connected · not charging · %1$s</string>
+    <!-- Power is present but the charge status is unreported: claim the connection only -->
+    <string name="dashboard_effect_connected">Connected · %1$s</string>
+    <string name="dashboard_effect_full">Full · %1$s</string>
+    <string name="dashboard_effect_on_battery">On battery · %1$s</string>
+    <string name="dashboard_effect_unknown">Power state not reported</string>
+
+    <!-- Battery reading + hub screen -->
     <string name="battery_info_summary">%1$s · %2$s · %3$s</string>
+    <string name="battery_info_summary_power">%1$s · %2$s · %3$s · %4$s</string>
     <string name="battery_value_not_reported">Not reported</string>
     <string name="battery_value_unknown">Unknown</string>
-    <string name="battery_detail_title">Battery details</string>
+    <string name="battery_hub_title">Battery &amp; charging</string>
+    <string name="battery_hub_history_action">Charge history</string>
+    <string name="battery_hub_section_now">Now</string>
+    <string name="battery_hub_section_charge">Charge</string>
+    <string name="battery_hub_section_charge_live">This charge</string>
+    <string name="battery_hub_section_charge_last">Last charge</string>
+    <string name="battery_hub_teaser_none">No charge recorded yet</string>
+    <string name="battery_hub_teaser_indeterminate">Can\'t read the battery right now</string>
+    <string name="battery_hub_teaser_loading">Loading…</string>
+    <string name="battery_hub_teaser_unavailable">Statistics are unavailable right now</string>
+    <string name="battery_hub_teaser_open_action">View charge session</string>
     <string name="battery_detail_section_charging">Charging</string>
     <string name="battery_detail_section_health">Health</string>
     <string name="battery_detail_section_electrical">Electrical</string>
@@ -481,29 +500,31 @@
     <string name="widget_label_tap">Tap to set a limit</string>
 
     <!-- Battery statistics -->
-    <string name="dashboard_stats_title">Battery statistics</string>
-    <string name="dashboard_stats_view_action">View</string>
-    <string name="dashboard_stats_promo">Record every charge to see charging speed, power, and temperature curves — plus a history of past sessions</string>
+    <string name="dashboard_charging_title_charging">Charging</string>
+    <string name="dashboard_charging_title_connected">Connected</string>
+    <string name="dashboard_charging_title_idle">Battery</string>
+    <string name="dashboard_charging_open_action">Open battery &amp; charging</string>
+    <string name="dashboard_charging_history_hint">Turn on charge recording to also see speed, power, and temperature curves here</string>
     <string name="dashboard_stats_last">Last charge: %1$s</string>
     <string name="dashboard_stats_recording_empty">Recording — no completed session yet</string>
     <string name="dashboard_stats_loading">Loading…</string>
     <string name="dashboard_stats_unavailable">Statistics are unavailable right now</string>
-    <string name="dashboard_stats_live_title">On the charger</string>
+    <string name="dashboard_charging_indeterminate">Can\'t read the battery right now</string>
     <string name="dashboard_stats_live_since">Since %1$s</string>
     <string name="dashboard_stats_live_starting">Charger detected — recording is starting…</string>
     <string name="dashboard_stats_live_start_failed">Charger detected — recording couldn\'t start</string>
     <string name="dashboard_stats_retry_action">Retry</string>
-    <string name="dashboard_stats_history_action">History</string>
     <plurals name="dashboard_stats_session_count">
         <item quantity="one">%1$d recorded session</item>
         <item quantity="other">%1$d recorded sessions</item>
     </plurals>
-    <string name="stats_title">Battery statistics</string>
+    <string name="charge_history_title">Charge history</string>
+    <string name="charge_history_loading">Loading…</string>
+    <string name="charge_history_unavailable">Charge history is unavailable right now</string>
     <string name="stats_capture_title">Record statistics</string>
     <string name="stats_capture_subtitle">Records each charge in detail — level, charging speed, and temperature over time. While on, Amply keeps a permanent notification and runs continuously; you can turn it off any time.</string>
     <string name="stats_capture_last_recorded">Last recorded %1$s</string>
     <string name="stats_capture_never">not yet — recording starts on your next charge</string>
-    <string name="stats_sessions_header">Charge sessions</string>
     <string name="stats_empty">No charge sessions recorded yet. Plug in while recording is on to capture one.</string>
     <string name="stats_clear_action">Clear statistics data</string>
     <string name="stats_clear_confirm_title">Clear statistics?</string>

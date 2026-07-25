@@ -11,6 +11,7 @@ import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -35,8 +36,6 @@ import eu.darken.amply.fullcharge.core.InterruptionEvent
 import eu.darken.amply.fullcharge.core.InterruptionOutcome
 import eu.darken.amply.fullcharge.core.InterruptionReason
 import eu.darken.amply.stats.core.StatsLiveSession
-import eu.darken.amply.stats.ui.STATS_CARD_TEST_TAG
-import eu.darken.amply.stats.ui.StatsDashboardState
 import io.kotest.matchers.shouldBe
 import org.junit.Rule
 import org.junit.Test
@@ -55,22 +54,17 @@ class DashboardScreenGestureTest {
 
     private fun string(res: Int): String = context.getString(res)
 
-    // The hero is a single merged clickable node whose concatenated text always contains the battery
-    // line's literal prefix. Derived from the resource with an empty arg ("Battery: ") so it tracks
-    // the string and is independent of the (locale-dependent) reading. `onNode` with this matcher
-    // fails on ambiguity, so an accidental second battery surface would surface as a test failure.
-    private fun heroCard() =
-        hasText(context.getString(R.string.dashboard_battery_line, ""), substring = true) and hasClickAction()
+    // The hero no longer carries a battery line or a click action to be identified by, so it anchors
+    // on its test tag instead.
+    private fun heroCard() = hasTestTag(HERO_CARD_TEST_TAG)
 
     private fun render(
         state: DashboardUiState,
-        onOpenBatteryDetail: () -> Unit = {},
-        onOpenReconnectSettings: () -> Unit = {},
+            onOpenReconnectSettings: () -> Unit = {},
     ) {
         compose.setContent {
             DashboardScreenForTest(
                 state = state,
-                onOpenBatteryDetail = onOpenBatteryDetail,
                 onOpenReconnectSettings = onOpenReconnectSettings,
             )
         }
@@ -96,29 +90,37 @@ class DashboardScreenGestureTest {
     }
 
     @Test
-    fun `tapping the status card opens battery details`() {
-        var opened = false
+    fun `the hero states the policy and is not a navigation surface`() {
         render(
             state = DashboardUiState(
                 onboardingComplete = true,
                 batteryReadout = BatteryReadout(
                     levelPercent = 82,
                     status = BatteryManager.BATTERY_STATUS_CHARGING,
+                    plugged = BatteryManager.BATTERY_PLUGGED_AC,
                     temperatureTenthsC = 314,
                 ),
             ),
-            onOpenBatteryDetail = { opened = true },
         )
 
-        compose.onNode(heroCard()).performClick()
-
-        compose.runOnIdle { opened shouldBe true }
+        // It says what the battery is doing...
+        compose.onNodeWithText(context.getString(R.string.dashboard_effect_charging, "82%")).assertExists()
+        // ...but tapping "Limited to 80%" must not navigate anywhere.
+        compose.onNode(heroCard()).assertHasNoClickAction()
     }
 
     @Test
-    fun `battery reading is shown on a supported device`() {
+    fun `an unreported plug state claims neither connected nor on battery`() {
         render(state = DashboardUiState(onboardingComplete = true))
-        compose.onNode(heroCard()).assertExists()
+        compose.onNodeWithText(string(R.string.dashboard_effect_unknown)).assertExists()
+    }
+
+    @Test
+    fun `the reading is shown on a supported device`() {
+        render(state = DashboardUiState(onboardingComplete = true))
+        // Default state has no access granted, so the setup guide sits between the hero and the card.
+        scrollToChargingCard()
+        compose.onNodeWithTag(CHARGING_CARD_TEST_TAG).assertExists()
     }
 
     private fun liveSession() = StatsLiveSession(
@@ -130,8 +132,8 @@ class DashboardScreenGestureTest {
         curve = emptyList(),
     )
 
-    private fun scrollToStatsCard() =
-        compose.onNode(hasScrollAction()).performScrollToNode(hasTestTag(STATS_CARD_TEST_TAG))
+    private fun scrollToChargingCard() =
+        compose.onNode(hasScrollAction()).performScrollToNode(hasTestTag(CHARGING_CARD_TEST_TAG))
 
     // Access already granted, so the (large) setup guide doesn't sit between the hero and the promoted
     // stats card — otherwise the promotion assertions would fail on layout, not on order.
@@ -146,7 +148,7 @@ class DashboardScreenGestureTest {
         observation = ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.SHIZUKU),
     )
 
-    private fun pluggedReadout(status: Int? = null) = BatteryReadout(
+    private fun pluggedReadout(status: Int? = BatteryManager.BATTERY_STATUS_CHARGING) = BatteryReadout(
         levelPercent = 78,
         status = status,
         plugged = BatteryManager.BATTERY_PLUGGED_AC,
@@ -154,7 +156,7 @@ class DashboardScreenGestureTest {
 
     private fun topOf(matcher: SemanticsMatcher) = compose.onNode(matcher).getUnclippedBoundsInRoot().top
 
-    private fun statsCardTop() = compose.onNodeWithTag(STATS_CARD_TEST_TAG).getUnclippedBoundsInRoot().top
+    private fun chargingCardTop() = compose.onNodeWithTag(CHARGING_CARD_TEST_TAG).getUnclippedBoundsInRoot().top
 
     @Test
     fun `live charge shows in the stats card while plugged in`() {
@@ -167,11 +169,11 @@ class DashboardScreenGestureTest {
             ),
         )
         // Promoted to the second slot, so it is on screen without scrolling.
-        compose.onNodeWithTag(STATS_CARD_TEST_TAG).assertIsDisplayed()
-        compose.onNodeWithText(string(R.string.dashboard_stats_live_title)).assertExists()
+        compose.onNodeWithTag(CHARGING_CARD_TEST_TAG).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.dashboard_charging_title_charging)).assertExists()
         // One surface: while live-titled there is no second "Battery statistics" card anywhere.
-        compose.onAllNodesWithText(string(R.string.dashboard_stats_title)).assertCountEquals(0)
-        compose.onAllNodesWithText(string(R.string.dashboard_stats_live_title)).assertCountEquals(1)
+        compose.onAllNodesWithText(string(R.string.dashboard_charging_title_idle)).assertCountEquals(0)
+        compose.onAllNodesWithText(string(R.string.dashboard_charging_title_charging)).assertCountEquals(1)
     }
 
     // Ordering assertions need every compared card composed at once, which a LazyColumn only guarantees
@@ -180,7 +182,7 @@ class DashboardScreenGestureTest {
     // separately, at the real screen height, where the fold actually means something.
     @Test
     @Config(qualifiers = "+h2400dp")
-    fun `plugged in promotes the stats card out of the tail and above the charge controls`() {
+    fun `the charging card sits second, above the charge controls and the alarm`() {
         render(
             state = DashboardUiState(
                 onboardingComplete = true,
@@ -189,12 +191,12 @@ class DashboardScreenGestureTest {
                 batteryReadout = pluggedReadout(),
             ),
         )
-        val statsTop = statsCardTop()
+        val chargingTop = chargingCardTop()
         // Second, not first: the hero keeps the top slot.
-        (topOf(heroCard()) < statsTop) shouldBe true
-        (statsTop < topOf(hasText(string(R.string.dashboard_fullcharge_idle_title)))) shouldBe true
+        (topOf(heroCard()) < chargingTop) shouldBe true
+        (chargingTop < topOf(hasText(string(R.string.dashboard_fullcharge_idle_title)))) shouldBe true
         // ...and it really left the tail.
-        (statsTop < topOf(hasText(string(R.string.dashboard_alarm_title)))) shouldBe true
+        (chargingTop < topOf(hasText(string(R.string.dashboard_alarm_title)))) shouldBe true
     }
 
     @Test
@@ -209,27 +211,28 @@ class DashboardScreenGestureTest {
                 batteryReadout = pluggedReadout(status = BatteryManager.BATTERY_STATUS_NOT_CHARGING),
             ),
         )
-        compose.onNodeWithTag(STATS_CARD_TEST_TAG).assertIsDisplayed()
+        compose.onNodeWithTag(CHARGING_CARD_TEST_TAG).assertIsDisplayed()
     }
 
     @Test
-    fun `capture off is promoted too while plugged in`() {
+    fun `the reading shows even with capture switched off`() {
         render(
             state = DashboardUiState(
                 onboardingComplete = true,
                 charging = supportedCharging(),
-                // Promo (capture disabled) and the loading/unavailable states share the slot with the
-                // live card, so it never moves under the user as the stats DB answers.
+                // Capture off: the card is still the telemetry surface, so it still occupies its slot
+                // and still reports the charger — only the session body becomes a hint.
                 stats = StatsDashboardState(enabled = false),
                 batteryReadout = pluggedReadout(),
             ),
         )
-        compose.onNodeWithText(string(R.string.dashboard_stats_promo)).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.dashboard_charging_history_hint)).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.dashboard_charging_title_charging)).assertIsDisplayed()
     }
 
     @Test
     @Config(qualifiers = "+h2400dp")
-    fun `the setup guide and interruption warning stay above the promoted card`() {
+    fun `the setup guide and interruption warning stay above the charging card`() {
         render(
             state = DashboardUiState(
                 onboardingComplete = true,
@@ -250,9 +253,9 @@ class DashboardScreenGestureTest {
         )
         val interruptionTop = topOf(hasText(string(R.string.dashboard_interruption_title_restored)))
         val guideTop = topOf(hasText(string(R.string.setup_access_setup_title)))
-        val statsTop = statsCardTop()
+        val chargingTop = chargingCardTop()
         (interruptionTop < guideTop) shouldBe true
-        (guideTop < statsTop) shouldBe true
+        (guideTop < chargingTop) shouldBe true
     }
 
     @Test
@@ -267,13 +270,13 @@ class DashboardScreenGestureTest {
         )
         // Scroll to the (idle) stats card first so the negative assertion can't pass merely
         // because the slot is off-screen and uncomposed.
-        scrollToStatsCard()
-        compose.onNodeWithText(string(R.string.dashboard_stats_live_title)).assertDoesNotExist()
+        scrollToChargingCard()
+        compose.onNodeWithText(string(R.string.dashboard_charging_title_charging)).assertDoesNotExist()
         compose.onNodeWithText(string(R.string.dashboard_stats_recording_empty)).assertExists()
     }
 
     @Test
-    fun `plugged in without a recorder row shows the starting state and is promoted`() {
+    fun `plugged in without a recorder row shows the starting state`() {
         render(
             state = DashboardUiState(
                 onboardingComplete = true,
@@ -282,12 +285,12 @@ class DashboardScreenGestureTest {
                 batteryReadout = pluggedReadout(),
             ),
         )
-        compose.onNodeWithText(string(R.string.dashboard_stats_live_title)).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.dashboard_charging_title_charging)).assertIsDisplayed()
         compose.onNodeWithText(string(R.string.dashboard_stats_live_starting)).assertExists()
     }
 
     @Test
-    fun `a failed capture start is promoted with its retry action`() {
+    fun `a failed capture start offers its retry action`() {
         render(
             state = DashboardUiState(
                 onboardingComplete = true,
@@ -300,12 +303,12 @@ class DashboardScreenGestureTest {
         compose.onNodeWithText(string(R.string.dashboard_stats_retry_action)).assertIsDisplayed()
     }
 
-    // The interesting case is the card actually moving inside a live composition (plugging in), not two
-    // separate renders: that is what the LazyColumn keys have to survive, and it must never leave two
-    // stats cards behind.
+    // The card used to jump between slots on plug/unplug, so the list visibly reshuffled under the
+    // user. Asserted inside one live composition rather than across two renders, because that is where
+    // a reintroduced slot swap would actually show up.
     @Test
     @Config(qualifiers = "+h2400dp")
-    fun `plugging in and out moves the single stats card between its slots`() {
+    fun `plugging in and out never moves the charging card`() {
         val plugged = mutableStateOf(false)
         compose.setContent {
             DashboardScreenForTest(
@@ -322,38 +325,21 @@ class DashboardScreenGestureTest {
         }
         val alarm = hasText(string(R.string.dashboard_alarm_title))
 
-        compose.onAllNodesWithTag(STATS_CARD_TEST_TAG).assertCountEquals(1)
-        (topOf(alarm) < statsCardTop()) shouldBe true
+        compose.onAllNodesWithTag(CHARGING_CARD_TEST_TAG).assertCountEquals(1)
+        (chargingCardTop() < topOf(alarm)) shouldBe true
 
         compose.runOnIdle { plugged.value = true }
-        compose.onAllNodesWithTag(STATS_CARD_TEST_TAG).assertCountEquals(1)
-        (statsCardTop() < topOf(alarm)) shouldBe true
+        compose.onAllNodesWithTag(CHARGING_CARD_TEST_TAG).assertCountEquals(1)
+        (chargingCardTop() < topOf(alarm)) shouldBe true
 
         compose.runOnIdle { plugged.value = false }
-        compose.onAllNodesWithTag(STATS_CARD_TEST_TAG).assertCountEquals(1)
-        (topOf(alarm) < statsCardTop()) shouldBe true
-    }
-
-    @Test
-    fun `unplugged keeps the stats card in its tail slot below the alarm card`() {
-        render(
-            state = DashboardUiState(
-                onboardingComplete = true,
-                charging = supportedCharging(),
-                stats = StatsDashboardState(enabled = true, live = liveSession()),
-                batteryReadout = BatteryReadout(levelPercent = 78, plugged = 0),
-            ),
-        )
-        // Off the charger the card is a teaser, not a live readout: it stays in the shared tail,
-        // directly after the (adjacent, so reliably co-composed) alarm card.
-        scrollToStatsCard()
-        val alarmTop = topOf(hasText(string(R.string.dashboard_alarm_title)))
-        (alarmTop < statsCardTop()) shouldBe true
+        compose.onAllNodesWithTag(CHARGING_CARD_TEST_TAG).assertCountEquals(1)
+        (chargingCardTop() < topOf(alarm)) shouldBe true
     }
 
     @Test
     @Config(qualifiers = "+h2400dp")
-    fun `unsupported devices promote the live charge too`() {
+    fun `unsupported devices place the charging card right under the hero`() {
         render(
             state = DashboardUiState(
                 onboardingComplete = true,
@@ -366,15 +352,15 @@ class DashboardScreenGestureTest {
         )
         // The unsupported branch has no interruption card or setup guide, so the card follows the hero
         // directly — ahead of the OEM guide and the alarm card that end this branch.
-        compose.onNodeWithText(string(R.string.dashboard_stats_live_title)).assertExists()
-        val statsTop = statsCardTop()
-        (topOf(heroCard()) < statsTop) shouldBe true
-        (statsTop < topOf(hasText(string(R.string.setup_oem_guide_title)))) shouldBe true
-        (statsTop < topOf(hasText(string(R.string.dashboard_alarm_title)))) shouldBe true
+        compose.onNodeWithText(string(R.string.dashboard_charging_title_charging)).assertExists()
+        val chargingTop = chargingCardTop()
+        (topOf(heroCard()) < chargingTop) shouldBe true
+        (chargingTop < topOf(hasText(string(R.string.setup_oem_guide_title)))) shouldBe true
+        (chargingTop < topOf(hasText(string(R.string.dashboard_alarm_title)))) shouldBe true
     }
 
     @Test
-    fun `battery reading is shown on an unsupported device`() {
+    fun `the reading is shown on an unsupported device`() {
         render(
             state = DashboardUiState(
                 onboardingComplete = true,
@@ -383,7 +369,7 @@ class DashboardScreenGestureTest {
                 ),
             ),
         )
-        compose.onNode(heroCard()).assertExists()
+        compose.onNodeWithTag(CHARGING_CARD_TEST_TAG).assertExists()
     }
 }
 
@@ -393,7 +379,6 @@ class DashboardScreenGestureTest {
 @Composable
 private fun DashboardScreenForTest(
     state: DashboardUiState,
-    onOpenBatteryDetail: () -> Unit = {},
     onOpenReconnectSettings: () -> Unit = {},
 ) {
     DashboardScreen(
@@ -409,9 +394,7 @@ private fun DashboardScreenForTest(
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
-        onOpenBatteryDetail = onOpenBatteryDetail,
-        onOpenStats = {},
-        onOpenLiveSession = {},
+        onOpenBatteryHub = {},
         onRetryCapture = {},
         onPinWidget = {},
         onAddTile = {},

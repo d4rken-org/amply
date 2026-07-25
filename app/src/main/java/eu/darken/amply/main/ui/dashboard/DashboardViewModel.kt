@@ -61,7 +61,6 @@ import eu.darken.amply.stats.core.ChargeSessionSummary
 import eu.darken.amply.stats.core.ChargeStatsRepository
 import eu.darken.amply.stats.core.StatsLiveSession
 import eu.darken.amply.stats.core.StatsPreferences
-import eu.darken.amply.stats.ui.StatsDashboardState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -218,8 +217,8 @@ class DashboardViewModel @Inject constructor(
     /**
      * Fire the post-settling refresh from the ViewModel rather than the status card's composition.
      * The card previously drove this from a LaunchedEffect, which is cancelled the instant the
-     * dashboard leaves the screen — e.g. tapping the (now clickable) status card through to battery
-     * details mid-"applying" — stranding the pending marker until the user returns. Owning the
+     * dashboard leaves the screen — e.g. opening the battery hub mid-"applying" — stranding the
+     * pending marker until the user returns. Owning the
      * deadline here promotes to Verified / clears pending regardless of what's on screen.
      * `flatMapLatest` restarts the timer whenever the pending request changes; the WorkManager
      * SettleScheduler stays the across-process-death backstop.

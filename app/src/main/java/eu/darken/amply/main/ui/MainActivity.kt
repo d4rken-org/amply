@@ -44,11 +44,12 @@ import dagger.hilt.android.AndroidEntryPoint
 import eu.darken.amply.R
 import eu.darken.amply.common.AmplyLinks
 import eu.darken.amply.common.theming.AmplyTheme
-import eu.darken.amply.battery.ui.BatteryDetailScreen
 import eu.darken.amply.charging.core.DeviceInfo
 import eu.darken.amply.charging.core.adapter.OemChargingShortcuts
 import eu.darken.amply.diagnostics.ui.ContributionWizardScreen
 import eu.darken.amply.diagnostics.ui.ContributionWizardViewModel
+import eu.darken.amply.main.ui.battery.BatteryHubScreen
+import eu.darken.amply.main.ui.battery.ChargeTeaserState
 import eu.darken.amply.main.ui.dashboard.DashboardScreen
 import eu.darken.amply.main.ui.dashboard.DashboardViewModel
 import eu.darken.amply.main.ui.dashboard.shouldMonitorAccess
@@ -60,7 +61,7 @@ import eu.darken.amply.main.ui.settings.SettingsDestination
 import eu.darken.amply.main.ui.settings.SettingsScreen
 import eu.darken.amply.main.ui.settings.SettingsViewModel
 import eu.darken.amply.main.ui.settings.SupportScreen
-import eu.darken.amply.stats.ui.StatsScreen
+import eu.darken.amply.stats.ui.ChargeHistoryScreen
 import eu.darken.amply.stats.ui.StatsSessionDetailScreen
 import eu.darken.amply.stats.ui.StatsViewModel
 
@@ -106,9 +107,9 @@ class MainActivity : ComponentActivity() {
                     var destination by rememberSaveable { mutableStateOf(SettingsDestination.DASHBOARD) }
                     // Where a back-out of the contribution wizard returns to (set on each entry).
                     var wizardOrigin by rememberSaveable { mutableStateOf(SettingsDestination.DASHBOARD) }
-                    // Where the session-detail screen returns to: the stats list when opened from it, or
-                    // the dashboard when deep-linked from the live "on the charger" card.
-                    var detailOrigin by rememberSaveable { mutableStateOf(SettingsDestination.STATS) }
+                    // Where the session-detail screen returns to: the history list when opened from it,
+                    // or the battery hub when opened from its charge teaser.
+                    var detailOrigin by rememberSaveable { mutableStateOf(SettingsDestination.CHARGE_HISTORY) }
                     val leaveWizard = {
                         contributionViewModel.exitWizard()
                         destination = wizardOrigin
@@ -116,6 +117,15 @@ class MainActivity : ComponentActivity() {
                     val enterWizard = { origin: SettingsDestination ->
                         wizardOrigin = origin
                         destination = SettingsDestination.DIAGNOSTICS
+                    }
+                    // Two surfaces open a session detail (the hub's teaser and the history list), and
+                    // each needs the id, the origin, and the destination set together — split across
+                    // call sites, a forgotten origin assignment silently sends Back to whichever screen
+                    // was used last time.
+                    val openSession = { id: Long, origin: SettingsDestination ->
+                        statsViewModel.openSession(id)
+                        detailOrigin = origin
+                        destination = SettingsDestination.STATS_SESSION_DETAIL
                     }
                 var notificationAction by remember { mutableStateOf<NotificationAction?>(null) }
                 val notificationLauncher = rememberLauncherForActivityResult(
@@ -204,14 +214,13 @@ class MainActivity : ComponentActivity() {
                         when (destination) {
                             // The wizard clears its raw session and returns to whichever surface opened it.
                             SettingsDestination.DIAGNOSTICS -> leaveWizard()
-                            // These are entered from the dashboard, not the settings hub — the stats list
-                            // included, since the dashboard card is its only entry point.
+                            // These are entered from the dashboard, not the settings hub.
                             SettingsDestination.SETTINGS,
                             SettingsDestination.RECONNECT_GESTURE,
-                            SettingsDestination.BATTERY_DETAIL,
-                            SettingsDestination.STATS -> destination = SettingsDestination.DASHBOARD
-                            // The session detail returns to the stats list, or to the dashboard when it was
-                            // deep-linked from the live card.
+                            SettingsDestination.BATTERY -> destination = SettingsDestination.DASHBOARD
+                            // The history list is only reachable from the battery hub's top bar.
+                            SettingsDestination.CHARGE_HISTORY -> destination = SettingsDestination.BATTERY
+                            // The session detail returns to whichever surface opened it.
                             SettingsDestination.STATS_SESSION_DETAIL -> {
                                 statsViewModel.closeSession()
                                 destination = detailOrigin
@@ -253,16 +262,8 @@ class MainActivity : ComponentActivity() {
                             },
                             onAlarmTargetChange = viewModel::setChargeAlarmTarget,
                             onFixNotifications = viewModel::openNotificationSettings,
-                            onOpenBatteryDetail = { destination = SettingsDestination.BATTERY_DETAIL },
-                            onOpenStats = { destination = SettingsDestination.STATS },
-                            onOpenLiveSession = { id ->
-                                // Deep-link straight to the in-progress session's detail; back returns
-                                // to the dashboard the card lives on.
-                                statsViewModel.openSession(id)
-                                detailOrigin = SettingsDestination.DASHBOARD
-                                destination = SettingsDestination.STATS_SESSION_DETAIL
-                            },
-                            // Re-dispatch the charge service after a failed start (stats card retry).
+                            onOpenBatteryHub = { destination = SettingsDestination.BATTERY },
+                            // Re-dispatch the charge service after a failed start (charging card retry).
                             onRetryCapture = { viewModel.nudgeChargeService() },
                             onPinWidget = viewModel::requestPinWidget,
                             onAddTile = viewModel::requestAddTile,
@@ -347,20 +348,23 @@ class MainActivity : ComponentActivity() {
                             onBack = { destination = SettingsDestination.DASHBOARD },
                             onAnyLevelChange = viewModel::setQuickFullChargeAnyLevel,
                         )
-                        SettingsDestination.BATTERY_DETAIL -> BatteryDetailScreen(
-                            readout = state.batteryReadout,
-                            onBack = { destination = SettingsDestination.DASHBOARD },
-                        )
-                        // Collect the stats state only while its screens are shown, so the stats Room DB
-                        // isn't opened just by having the dashboard up — a user who never enables
-                        // statistics never creates stats.db.
-                        SettingsDestination.STATS -> {
-                            val statsState by statsViewModel.state.collectAsState()
-                            StatsScreen(
-                                state = statsState,
-                                // Only the dashboard's stats card opens this screen, so back always
-                                // returns there.
+                        // The hub reads the battery straight from the dashboard state (already
+                        // collected) and takes only the capture switch from the stats ViewModel —
+                        // deliberately not its history flow, which is what would open stats.db.
+                        SettingsDestination.BATTERY -> {
+                            val capture by statsViewModel.captureState.collectAsState()
+                            BatteryHubScreen(
+                                readout = state.batteryReadout,
+                                // The switch reads from the already-resolved dashboard state, not from
+                                // captureState: that flow is only subscribed when this screen opens, so
+                                // its first emission is the `false` default and the toggle would render
+                                // off for a frame beside a teaser saying a charge is being recorded.
+                                // Same preference, one resolved source, no disagreement on screen.
+                                captureEnabled = state.stats.enabled,
+                                lastCaptureWallMillis = capture.lastCaptureWallMillis,
+                                teaser = ChargeTeaserState.from(state.stats, state.batteryReadout),
                                 onBack = { destination = SettingsDestination.DASHBOARD },
+                                onOpenHistory = { destination = SettingsDestination.CHARGE_HISTORY },
                                 onCaptureEnabledChange = { enabled ->
                                     if (enabled) {
                                         runWithNotifications(NotificationAction.ENABLE_STATS)
@@ -368,10 +372,19 @@ class MainActivity : ComponentActivity() {
                                         statsViewModel.setCaptureEnabled(false)
                                     }
                                 },
+                                onOpenSession = { id -> openSession(id, SettingsDestination.BATTERY) },
+                            )
+                        }
+                        // The Room-backed session list is collected only here, so the stats DB isn't
+                        // opened just by visiting the hub — a user who never enables statistics never
+                        // creates stats.db by looking at their battery.
+                        SettingsDestination.CHARGE_HISTORY -> {
+                            val historyState by statsViewModel.historyState.collectAsState()
+                            ChargeHistoryScreen(
+                                state = historyState,
+                                onBack = { destination = SettingsDestination.BATTERY },
                                 onOpenSession = { id ->
-                                    statsViewModel.openSession(id)
-                                    detailOrigin = SettingsDestination.STATS
-                                    destination = SettingsDestination.STATS_SESSION_DETAIL
+                                    openSession(id, SettingsDestination.CHARGE_HISTORY)
                                 },
                                 onClearData = statsViewModel::clearData,
                             )

@@ -316,7 +316,7 @@ fun AmplyCardHeader(
  * *secondary* destination or side effect (never a duplicate of [onClick]); anything richer — switches,
  * multiple buttons, a whole control row — belongs in [AmplyToggleCard] or a plain [AmplyCard]. A
  * nested action must not bubble to the surface: assert both routes separately in tests, as
- * `StatsDashboardCard`'s "History" and "Retry" actions do.
+ * `ChargingCard`'s "Retry" action does.
  */
 @Composable
 fun AmplyNavigationCard(

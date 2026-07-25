@@ -17,9 +17,13 @@ import eu.darken.amply.charging.core.access.BackendStatus
 import eu.darken.amply.common.ca.toCaString
 import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.common.theming.ThemeState
+import eu.darken.amply.battery.core.BatteryReadout
 import eu.darken.amply.fullcharge.core.ChargeSessionRecord
 import eu.darken.amply.main.ui.dashboard.DashboardScreen
 import eu.darken.amply.main.ui.dashboard.DashboardUiState
+import eu.darken.amply.main.ui.dashboard.StatsDashboardState
+import eu.darken.amply.stats.core.ChargeCurvePoint
+import eu.darken.amply.stats.core.StatsLiveSession
 import eu.darken.amply.main.ui.settings.GeneralSettingsScreen
 import eu.darken.amply.main.ui.settings.ReconnectGestureSettingsScreen
 
@@ -85,9 +89,7 @@ private fun DashboardShot(state: DashboardUiState) = PreviewWrapper {
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
-        onOpenBatteryDetail = {},
-        onOpenStats = {},
-        onOpenLiveSession = {},
+        onOpenBatteryHub = {},
         onRetryCapture = {},
         onPinWidget = {},
         onAddTile = {},
@@ -129,11 +131,56 @@ private fun grantedAccess() = AccessSnapshot(
     ),
 )
 
+// The charging card renders a live reading in every state, so a state without a batteryReadout shows
+// "Not reported" three times over, and one without stats shows the capture promo. Both would be a
+// misleading thing to ship as a store screenshot — these fixtures give the showcase states real data.
+private fun holdingAtLimit() = BatteryReadout(
+    levelPercent = 80,
+    // Held at the limit: connected but not taking charge, which is the whole point of the app.
+    status = android.os.BatteryManager.BATTERY_STATUS_NOT_CHARGING,
+    plugged = android.os.BatteryManager.BATTERY_PLUGGED_AC,
+    health = android.os.BatteryManager.BATTERY_HEALTH_GOOD,
+    technology = "Li-ion",
+    temperatureTenthsC = 298,
+    voltageMillivolts = 4_120,
+    currentNowMicroamps = 0,
+    chargeCounterMicroampHours = 3_800_000,
+    cycleCount = 142,
+)
+
+private fun charging() = holdingAtLimit().copy(
+    levelPercent = 72,
+    status = android.os.BatteryManager.BATTERY_STATUS_CHARGING,
+    temperatureTenthsC = 312,
+    currentNowMicroamps = 2_050_000,
+)
+
+private fun liveStats() = StatsDashboardState(
+    enabled = true,
+    live = StatsLiveSession(
+        id = 1,
+        startedAtWallMillis = 0L,
+        startedElapsedRealtimeMillis = 0L,
+        startPercent = 41,
+        partial = false,
+        curve = (0..14).map { i ->
+            ChargeCurvePoint(
+                elapsedFromStartMillis = i * 300_000L,
+                percent = (41 + i * 2).coerceAtMost(80),
+                powerMilliwatts = (19_000 - i * 900).coerceAtLeast(2_500),
+                temperatureTenthsC = 300 + i,
+            )
+        },
+    ),
+)
+
 // Pixel, set up and verified at 80%: the headline showcase.
 private fun readyState() = DashboardUiState(
     onboardingComplete = true,
     quickFullChargeEnabled = true,
     quickAccessChecked = true,
+    batteryReadout = holdingAtLimit(),
+    stats = liveStats(),
     charging = ChargingState(
         device = pixelDevice(),
         adapterName = "Pixel Charge Control".toCaString(),
@@ -149,6 +196,9 @@ private fun readyState() = DashboardUiState(
 // A one-time full charge in progress: session-aware hero plus the restore card.
 private fun sessionState() = DashboardUiState(
     onboardingComplete = true,
+    // Charging past the limit for once — this shot is about the one-time full charge.
+    batteryReadout = charging(),
+    stats = liveStats(),
     session = ChargeSessionRecord(
         restorePolicy = ChargePolicy.FixedLimit(80),
         startedAtMillis = 0L,
@@ -169,6 +219,8 @@ private fun sessionState() = DashboardUiState(
 // Samsung One UI 8 multi-mode: four fixed limits plus pause-at-full, shown as chips.
 private fun samsungState() = DashboardUiState(
     onboardingComplete = true,
+    batteryReadout = holdingAtLimit(),
+    stats = liveStats(),
     charging = ChargingState(
         device = DeviceInfo("samsung", "SM-X210", 36, "preview", oneUiVersion = 80000, hasProtectBattery = true),
         adapterName = "Samsung battery protection".toCaString(),
@@ -201,7 +253,10 @@ private fun samsungState() = DashboardUiState(
 
 // Pixel before access is granted: the dashboard leads with the setup guide.
 private fun setupNeededState() = DashboardUiState(
+    // Capture is off here: this shot is about the setup guide, and the charging card showing its
+    // "turn on charge recording" hint is the honest pre-setup state.
     onboardingComplete = true,
+    batteryReadout = charging(),
     charging = ChargingState(
         device = pixelDevice(),
         adapterName = "Pixel Charge Control".toCaString(),

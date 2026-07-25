@@ -18,6 +18,20 @@ import eu.darken.amply.stats.core.ChargeCurvePoint
 import kotlin.math.roundToInt
 
 /**
+ * A live curve is only worth drawing once the session has both enough points and enough elapsed time
+ * to have a shape — before that it is a flat or single-point line that reads as "nothing is
+ * happening". Shared by the dashboard's charging card and the hub's teaser so the two can never
+ * disagree about when a curve appears.
+ */
+fun shouldShowLiveCurve(curvePoints: Int, elapsedMillis: Long): Boolean =
+    curvePoints >= MIN_CURVE_POINTS && elapsedMillis >= CHART_MIN_ELAPSED_MILLIS
+
+/** Withhold the live curve until the session has a few minutes of points to draw a meaningful shape. */
+const val CHART_MIN_ELAPSED_MILLIS = 180_000L
+
+private const val MIN_CURVE_POINTS = 2
+
+/**
  * The shared level / power / temperature charge curve. On the session-detail screen ([showAxes] true) it
  * carries a real left Y-axis in battery-% (nice ticks + gridlines) and a sparse right Y-axis in watts,
  * with end-of-curve value labels; temperature stays self-normalized (shape only, so it can share the plot
