@@ -5,8 +5,6 @@ import android.os.SystemClock
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.BatteryChargingFull
@@ -14,11 +12,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -40,8 +33,8 @@ import eu.darken.amply.stats.core.StatsLiveSession
 import eu.darken.amply.stats.core.StatsSealReason
 import eu.darken.amply.stats.ui.StatsCurveChart
 import eu.darken.amply.stats.ui.StatsFormat
+import eu.darken.amply.stats.ui.rememberLiveElapsedMillis
 import eu.darken.amply.stats.ui.shouldShowLiveCurve
-import kotlinx.coroutines.delay
 
 const val CHARGING_CARD_TEST_TAG = "dashboard.charging.card"
 
@@ -56,6 +49,11 @@ const val CHARGING_CARD_TEST_TAG = "dashboard.charging.card"
  *
  * The card holds a fixed slot on the dashboard and always opens the battery hub — one card, one
  * destination. Retry is the sole in-card action (a repair, not navigation) and must not bubble.
+ *
+ * Each value appears exactly once. The header carries the session's elapsed time (floated beside the
+ * chevron, so it costs no height), the reading line carries the current values, and the chart's legend
+ * carries the session's level range — the card deliberately does not repeat any of them in a row of
+ * its own.
  */
 @Composable
 fun ChargingCard(
@@ -65,7 +63,7 @@ fun ChargingCard(
     onRetryCapture: () -> Unit,
     modifier: Modifier = Modifier,
     // Monotonic (never negative, immune to clock changes) and shares the curve's clock; re-evaluated
-    // on each recomposition and backstopped by a minute tick while live (see LiveBody).
+    // on each recomposition and backstopped by a minute tick while live (see rememberLiveElapsedMillis).
     nowElapsedRealtimeMillis: Long = SystemClock.elapsedRealtime(),
 ) {
     // An absent readout renders every field as "Not reported" rather than hiding the line — the card
@@ -77,6 +75,13 @@ fun ChargingCard(
     // so the headline only says "Charging" when the platform positively reports it.
     val onCharger = battery.onCharger
     val charging = onCharger && battery.status == BatteryManager.BATTERY_STATUS_CHARGING
+    // Elapsed belongs to the live session, so it is computed here (where the header needs it) and
+    // handed down to the body, which gates the curve on the very same value.
+    val elapsedMillis = if (presentation is ChargingCardPresentation.Live) {
+        rememberLiveElapsedMillis(presentation.session, nowElapsedRealtimeMillis)
+    } else {
+        null
+    }
     AmplyNavigationCard(
         onClick = onOpenHub,
         onClickLabel = stringResource(R.string.dashboard_charging_open_action),
@@ -89,6 +94,7 @@ fun ChargingCard(
         ),
         icon = if (onCharger) Icons.Filled.BatteryChargingFull else Icons.AutoMirrored.Filled.ShowChart,
         modifier = modifier.testTag(CHARGING_CARD_TEST_TAG),
+        headerStatus = elapsedMillis?.let { StatsFormat.duration(it) },
     ) {
         Text(
             batteryNowLine(battery),
@@ -101,7 +107,7 @@ fun ChargingCard(
             ChargingCardPresentation.Unavailable -> BodyText(stringResource(R.string.dashboard_stats_unavailable))
             ChargingCardPresentation.Indeterminate ->
                 BodyText(stringResource(R.string.dashboard_charging_indeterminate))
-            is ChargingCardPresentation.Live -> LiveBody(presentation, battery, nowElapsedRealtimeMillis)
+            is ChargingCardPresentation.Live -> LiveBody(presentation, battery, elapsedMillis ?: 0L)
             is ChargingCardPresentation.ConnectedWithoutSession -> ConnectedBody(presentation, onRetryCapture)
             is ChargingCardPresentation.Idle -> IdleBody(presentation)
         }
@@ -141,47 +147,22 @@ private fun BodyText(text: String) = Text(
 private fun ColumnScope.LiveBody(
     live: ChargingCardPresentation.Live,
     battery: BatteryReadout,
-    nowElapsedRealtimeMillis: Long,
+    elapsedMillis: Long,
 ) {
-    // Fresh battery readouts normally drive recomposition (~3s), but identical consecutive readouts
-    // are conflated upstream — the minute tick keeps "charging for" moving even without new data.
-    // maxOf picks whichever clock read is fresher; both are monotonic elapsed-realtime.
-    var tickedNow by remember { mutableLongStateOf(nowElapsedRealtimeMillis) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(LIVE_TICK_MILLIS)
-            tickedNow = SystemClock.elapsedRealtime()
-        }
-    }
-    val now = maxOf(tickedNow, nowElapsedRealtimeMillis)
-
-    val elapsedMillis = (now - live.session.startedElapsedRealtimeMillis).coerceAtLeast(0)
-    val elapsed = StatsFormat.duration(elapsedMillis)
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            StatsFormat.percentRange(live.session.startPercent, battery.levelPercent),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+    if (shouldShowLiveCurve(live.session.curve, elapsedMillis)) {
+        StatsCurveChart(
+            curve = live.session.curve,
+            chartHeight = 84.dp,
+            showAxes = false,
+            // The session's own range, not the plotted window's: the live curve is a bounded recent
+            // window that ages the start out of a long session, so its span would quietly narrow from
+            // "40→80%" to "79→80%" while the charge is still the same charge.
+            percentRangeLabel = StatsFormat.percentSpan(live.session.startPercent, battery.levelPercent),
         )
-        if (elapsed != null) {
-            Text(
-                elapsed,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
     }
 
-    if (shouldShowLiveCurve(live.session.curve.size, elapsedMillis)) {
-        StatsCurveChart(curve = live.session.curve, chartHeight = 84.dp, showAxes = false)
-    }
-
-    // Small bottom-right caption noting a mid-charge start (so the start%/elapsed aren't read as a
-    // full charge history).
+    // Small bottom-right caption noting a mid-charge start (so the elapsed time and the level range
+    // aren't read as a full charge history).
     if (live.session.partial) {
         Text(
             stringResource(R.string.dashboard_stats_live_since, StatsFormat.dateTime(live.session.startedAtWallMillis)),
@@ -233,9 +214,6 @@ private fun IdleBody(idle: ChargingCardPresentation.Idle) {
         BodyText(stringResource(R.string.dashboard_stats_recording_empty))
     }
 }
-
-/** Backstop cadence for the live elapsed text when battery readouts stop changing. */
-private const val LIVE_TICK_MILLIS = 60_000L
 
 private val previewCurve = (0..12).map { i ->
     ChargeCurvePoint(
