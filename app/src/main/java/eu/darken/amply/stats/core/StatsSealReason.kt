@@ -9,7 +9,12 @@ enum class StatsSealReason {
     /** Charger removed — the normal, complete end of a session. */
     UNPLUGGED,
 
-    /** Reopened an open session after a process restart within the same boot; curve has a gap. */
+    /**
+     * Found open after a process restart and *not* resumable — the charge it recorded could not be
+     * shown to still be running (unplugged since, level dropped, unknown boot). A restart that is
+     * consistent with the same plug event reattaches the row instead of sealing it, so this reason
+     * means the evidence failed, not merely that the process died.
+     */
     INTERRUPTED,
 
     /** Open session found after a reboot; elapsed-time continuity across power-off can't be trusted. */

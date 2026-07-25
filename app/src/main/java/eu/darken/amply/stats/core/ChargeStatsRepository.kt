@@ -35,14 +35,17 @@ class ChargeStatsRepository @Inject constructor(
      * The in-progress charge session of the current boot, or null when nothing is open, as a live flow
      * for the dashboard card. The curve is a bounded recent window (decimated) so a session that stays
      * open for days at an OEM charge limit never triggers an unbounded reload on every appended sample.
-     * `distinctUntilChangedBy(id)` keeps the inner sample flow subscribed across the per-tick session-row
-     * updates (the open row's start fields are immutable, so only a change of session identity matters),
-     * avoiding a redundant curve re-query on every fold.
+     * `distinctUntilChangedBy` keeps the inner sample flow subscribed across the per-tick session-row
+     * updates, avoiding a redundant curve re-query on every fold. It keys on identity **plus every row
+     * field this flow actually renders**: `partial` flips when a session is resumed after a process
+     * restart, and since the row is captured inside `flatMapLatest`, an id-only key would pin the stale
+     * copy for the lifetime of the subscription. The remaining projected fields (the start columns) are
+     * immutable once the row exists.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     fun currentSession(): Flow<StatsLiveSession?> =
         database.get().statsDao().openSessionFlow(bootIdSource.current())
-            .distinctUntilChangedBy { it?.id }
+            .distinctUntilChangedBy { row -> row?.let { it.id to it.partial } }
             .flatMapLatest { row ->
                 if (row == null) {
                     flowOf(null)

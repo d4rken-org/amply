@@ -1,6 +1,7 @@
 package eu.darken.amply.stats.core
 
 import android.os.BatteryManager
+import android.os.SystemClock
 import androidx.room.withTransaction
 import dagger.Lazy
 import eu.darken.amply.battery.core.BatteryReadout
@@ -10,10 +11,11 @@ import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
 import eu.darken.amply.stats.core.db.BatterySampleEntity
 import eu.darken.amply.stats.core.db.ChargeSessionEntity
+import eu.darken.amply.stats.core.db.StatsDao
 import eu.darken.amply.stats.core.db.StatsDatabase
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
@@ -41,8 +43,9 @@ class ChargeStatsRecorder @Inject constructor(
     private val preferences: StatsPreferences,
     private val bootIdSource: BootIdSource,
     private val batteryReader: BatteryReader,
+    @StatsDispatcher dispatcher: CoroutineDispatcher,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val commands = Channel<Command>(Channel.UNLIMITED)
 
     // Mutated only by the single consumer coroutine below — no locking needed.
@@ -54,8 +57,8 @@ class ChargeStatsRecorder @Inject constructor(
 
     init {
         scope.launch {
-            // Runs before any command: seals sessions left open by an unclean shutdown, and seeds the
-            // capturing flag from the durable preference.
+            // Runs before any command: reconciles sessions left open by an unclean shutdown, and seeds
+            // the capturing flag from the durable preference.
             startupRepair()
             for (command in commands) {
                 try {
@@ -92,10 +95,12 @@ class ChargeStatsRecorder @Inject constructor(
         try {
             capturing = preferences.isCaptureEnabledNow()
             // Only touch the DB when we might have data — avoids creating an empty stats.db for users
-            // who never enabled statistics. A dangling open row can only exist after prior recording,
-            // which always stamps lastCapture.
-            if (preferences.lastCaptureWallMillis.first() == null) return
-            sealDanglingSessions()
+            // who never enabled statistics. The lastCapture stamp alone is not a sound existence test:
+            // it is written after the row is committed, so a process death in between leaves an open
+            // row with no stamp. Capture being enabled is therefore also sufficient — such a user gets
+            // a stats.db on the next tick anyway, so opening it here costs nothing.
+            if (!capturing && preferences.lastCaptureWallMillis.first() == null) return
+            reconcileDanglingSessions()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -243,22 +248,68 @@ class ChargeStatsRecorder @Inject constructor(
     }
 
     /**
-     * Seal every session left open by an unclean shutdown (process kill / reboot). Never resumes:
-     * losing the monitor mid-charge breaks curve/elapsed continuity, so the session is closed
-     * honestly and the next plug opens a fresh one. This also sidesteps having to trust the boot
-     * count — a resumed session would risk a negative post-reboot duration.
+     * Reconcile sessions left open by an unclean shutdown (process kill / reboot). The newest row is
+     * offered to [StatsSessionEngine.evaluateResume] against the battery state observed right now; if
+     * the same plug event is still underway it is reattached, keeping the true plug-in time and one
+     * history row per physical charge. Everything else is sealed as before.
+     *
+     * The probe happens here rather than on the first watcher tick on purpose. A held-open row would
+     * be rendered as a live session by the dashboard for as long as no tick arrives — which also
+     * suppresses the "couldn't start capture" retry when the foreground service fails to start — and
+     * would need leak guards on the disable/clear paths. Resolving synchronously costs one sticky
+     * broadcast read and leaves [onSample] untouched.
      */
-    private suspend fun sealDanglingSessions() {
+    private suspend fun reconcileDanglingSessions() {
         val dao = database.get().statsDao()
         val open = dao.openSessions()
         if (open.isEmpty()) return
         val currentBoot = bootIdSource.current()
-        open.forEach { row ->
-            val sealed = sealFromLastKnown(row, currentBoot)
-            // Drop a dangling row that never captured anything (same rule as a live seal).
-            if (StatsSessionEngine.isDiscardable(sealed)) dao.deleteSession(sealed.id) else dao.updateSession(sealed)
-        }
+        // Capture is off, so no tick is coming to advance a resumed row — seal everything, as before.
+        // Ordered by id (monotonic), matching the row `openSessionFlow` shows as live; `openSessions`
+        // orders by elapsed-realtime, which disagrees across a reboot.
+        val candidate = if (capturing) open.maxByOrNull { it.id } else null
+        val resumed = candidate?.let { resumeOrNull(it, currentBoot) }
+        open.filter { it.id != resumed?.id }.forEach { row -> sealDangling(dao, row, currentBoot) }
         open.maxOfOrNull { it.runningLastWallMillis ?: it.startedAtWallMillis }?.let { purgeOldSamples(it) }
+    }
+
+    /**
+     * Reattach [row] if the charge it recorded is still running, else null. In-memory state is
+     * installed only *after* the durable write returns: command failures are logged and swallowed
+     * (see the loop above), and a remembered-but-unwritten session would let a later tick open a
+     * second row against a row the database still has open.
+     */
+    private suspend fun resumeOrNull(row: ChargeSessionEntity, currentBoot: Long): ChargeSessionEntity? {
+        val readout = batteryReader.read()
+        val probe = ResumeProbe(
+            elapsedRealtimeMillis = SystemClock.elapsedRealtime(),
+            bootId = currentBoot,
+            plugged = (readout.plugged ?: 0) != 0,
+            percent = readout.levelPercent,
+        )
+        return when (val decision = StatsSessionEngine.evaluateResume(row, probe)) {
+            is ResumeDecision.Reject -> {
+                log(TAG) { "Not resuming session ${row.id}: ${decision.reason}" }
+                null
+            }
+
+            is ResumeDecision.Resume -> {
+                database.get().statsDao().updateSession(decision.session)
+                openSession = decision.session
+                // Continue the existing cadence instead of restarting it, so the resumed session
+                // doesn't force an extra curve point on top of the one it already has.
+                lastRecordedElapsed = decision.session.runningLastElapsedRealtimeMillis
+                lastRecordedPercent = decision.session.runningLastPercent
+                log(TAG, Logging.Priority.INFO) { "Resumed charge session ${decision.session.id}" }
+                decision.session
+            }
+        }
+    }
+
+    private suspend fun sealDangling(dao: StatsDao, row: ChargeSessionEntity, currentBoot: Long) {
+        val sealed = sealFromLastKnown(row, currentBoot)
+        // Drop a dangling row that never captured anything (same rule as a live seal).
+        if (StatsSessionEngine.isDiscardable(sealed)) dao.deleteSession(sealed.id) else dao.updateSession(sealed)
     }
 
     private fun sealFromLastKnown(row: ChargeSessionEntity, currentBoot: Long): ChargeSessionEntity {

@@ -248,4 +248,134 @@ class StatsSessionEngineTest {
         s = StatsSessionEngine.fold(s, sample(elapsed = 3_600_000, power = 1000))
         s.runningPowerWeightedDurationMillis shouldBe StatsSessionEngine.MAX_WEIGHT_GAP_MILLIS
     }
+
+    // --- evaluateResume: reconciling a session left open by a process death ---
+
+    /** An open row as it would be found at process start: opened at t=0, last seen at t=30s at 50%. */
+    private fun openRow(
+        bootId: Long = 1,
+        lastElapsed: Long? = 30_000,
+        lastPercent: Int? = 50,
+        partial: Boolean = false,
+        ended: Long? = null,
+    ) = StatsSessionEngine.open(sample(elapsed = 0, percent = 40, power = 1000, temp = 250), partial = partial)
+        .copy(
+            id = 7,
+            bootId = bootId,
+            endedAtWallMillis = ended,
+            runningLastElapsedRealtimeMillis = lastElapsed,
+            runningLastPercent = lastPercent,
+        )
+
+    private fun probe(
+        elapsed: Long = 60_000,
+        bootId: Long = 1,
+        plugged: Boolean = true,
+        percent: Int? = 55,
+    ) = ResumeProbe(
+        elapsedRealtimeMillis = elapsed,
+        bootId = bootId,
+        plugged = plugged,
+        percent = percent,
+    )
+
+    private fun rejectReason(decision: ResumeDecision) = (decision as ResumeDecision.Reject).reason
+
+    private fun resumed(decision: ResumeDecision) = (decision as ResumeDecision.Resume).session
+
+    @Test
+    fun `still plugged on the same boot at an equal or higher level resumes`() {
+        listOf(50, 55, 100).forEach { level ->
+            val decision = StatsSessionEngine.evaluateResume(openRow(), probe(percent = level))
+            resumed(decision).id shouldBe 7
+        }
+    }
+
+    @Test
+    fun `a resumed session keeps its start, so the card still shows the real plug-in time`() {
+        val row = openRow()
+        val session = resumed(StatsSessionEngine.evaluateResume(row, probe()))
+        session.startedAtWallMillis shouldBe row.startedAtWallMillis
+        session.startedElapsedRealtimeMillis shouldBe row.startedElapsedRealtimeMillis
+        session.startPercent shouldBe row.startPercent
+        session.runningSampleCount shouldBe row.runningSampleCount
+        session.runningPowerWeightedSum shouldBe row.runningPowerWeightedSum
+    }
+
+    @Test
+    fun `a resumed session is always partial - the gap is inferred, not observed`() {
+        resumed(StatsSessionEngine.evaluateResume(openRow(), probe())).partial shouldBe true
+    }
+
+    @Test
+    fun `resuming drops the last readings so the unobserved gap is never credited`() {
+        val row = openRow()
+        val session = resumed(StatsSessionEngine.evaluateResume(row, probe()))
+        session.runningLastPowerMilliwatts shouldBe null
+        session.runningLastTemperatureTenthsC shouldBe null
+
+        // Folding the first post-restart sample credits nothing for the dead-process gap...
+        val tick = sample(elapsed = 60_000, power = 2000, temp = 300)
+        val folded = StatsSessionEngine.fold(session, tick)
+        folded.runningPowerWeightedDurationMillis shouldBe 0
+        folded.runningTemperatureWeightedDurationMillis shouldBe 0
+
+        // ...whereas folding the row as-found would invent 30s of pre-death power/temperature across
+        // a window nothing observed. That is the difference the null-out buys.
+        val naive = StatsSessionEngine.fold(row, tick)
+        naive.runningPowerWeightedDurationMillis shouldBe 30_000
+        naive.runningPowerWeightedSum shouldBe 1000.0 * 30_000
+    }
+
+    @Test
+    fun `an unplugged probe refuses - the charge that was running has ended`() {
+        rejectReason(StatsSessionEngine.evaluateResume(openRow(), probe(plugged = false))) shouldBe
+            ResumeDecision.Reason.UNPLUGGED
+    }
+
+    @Test
+    fun `a different boot refuses`() {
+        rejectReason(StatsSessionEngine.evaluateResume(openRow(bootId = 1), probe(bootId = 2))) shouldBe
+            ResumeDecision.Reason.BOOT_MISMATCH
+    }
+
+    @Test
+    fun `an unknown boot id refuses even though the sentinel compares equal to itself`() {
+        val unknown = BootIdSource.UNAVAILABLE
+        // Both sides carry the sentinel, so an equality check alone would wave a real reboot through
+        // and splice two boots' elapsed-realtime readings into one bogus duration.
+        rejectReason(StatsSessionEngine.evaluateResume(openRow(bootId = unknown), probe(bootId = unknown))) shouldBe
+            ResumeDecision.Reason.BOOT_UNKNOWN
+    }
+
+    @Test
+    fun `a probe older than the last recorded sample refuses`() {
+        rejectReason(StatsSessionEngine.evaluateResume(openRow(lastElapsed = 30_000), probe(elapsed = 10_000))) shouldBe
+            ResumeDecision.Reason.TIME_WENT_BACKWARDS
+    }
+
+    @Test
+    fun `a dropped level refuses - the device discharged while we were gone`() {
+        rejectReason(StatsSessionEngine.evaluateResume(openRow(lastPercent = 50), probe(percent = 49))) shouldBe
+            ResumeDecision.Reason.LEVEL_DROPPED
+    }
+
+    @Test
+    fun `an absent level on either side is not treated as a drop`() {
+        resumed(StatsSessionEngine.evaluateResume(openRow(lastPercent = null), probe(percent = 10))).id shouldBe 7
+        resumed(StatsSessionEngine.evaluateResume(openRow(lastPercent = 90), probe(percent = null))).id shouldBe 7
+    }
+
+    @Test
+    fun `an already-sealed row is never resumed`() {
+        rejectReason(StatsSessionEngine.evaluateResume(openRow(ended = 99_000), probe())) shouldBe
+            ResumeDecision.Reason.CLOSED
+    }
+
+    @Test
+    fun `a row with no recorded sample falls back to its start time for the ordering check`() {
+        rejectReason(StatsSessionEngine.evaluateResume(openRow(lastElapsed = null), probe(elapsed = -1))) shouldBe
+            ResumeDecision.Reason.TIME_WENT_BACKWARDS
+        resumed(StatsSessionEngine.evaluateResume(openRow(lastElapsed = null), probe(elapsed = 0))).id shouldBe 7
+    }
 }

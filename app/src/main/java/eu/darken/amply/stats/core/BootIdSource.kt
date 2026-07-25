@@ -9,9 +9,14 @@ import javax.inject.Singleton
 /**
  * Reads the device boot count, used to tell a same-boot process restart (resume the open session)
  * from a reboot (seal it — elapsed-time continuity can't survive a power-off). The value can only
- * change across a reboot, which restarts this process, so it is read once and cached. A device that
- * doesn't report [Settings.Global.BOOT_COUNT] yields a constant sentinel; reboots then look like
- * same-boot restarts, which degrades to a partial/interrupted seal rather than anything unsafe.
+ * change across a reboot, which restarts this process, so it is read once and cached.
+ *
+ * A device that doesn't report [Settings.Global.BOOT_COUNT] yields the [UNAVAILABLE] sentinel, which
+ * two different boots would compare *equal* on. So the sentinel is not merely a degraded id — it is
+ * explicitly disqualifying: [StatsSessionEngine.evaluateResume] refuses to resume an open session
+ * when either side is [UNAVAILABLE], because a resume across an unnoticed reboot would splice two
+ * boots' [android.os.SystemClock.elapsedRealtime] readings into one bogus duration. Such a device
+ * always falls back to sealing, which is lossy but never wrong.
  */
 @Singleton
 class BootIdSource @Inject constructor(
@@ -22,10 +27,11 @@ class BootIdSource @Inject constructor(
     fun current(): Long = cached
 
     private fun read(): Long = runCatching {
-        Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, UNAVAILABLE).toLong()
-    }.getOrDefault(UNAVAILABLE.toLong())
+        Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, UNAVAILABLE.toInt()).toLong()
+    }.getOrDefault(UNAVAILABLE)
 
-    private companion object {
-        const val UNAVAILABLE = -1
+    companion object {
+        /** Boot identity could not be determined — never usable to prove two observations share a boot. */
+        const val UNAVAILABLE = -1L
     }
 }

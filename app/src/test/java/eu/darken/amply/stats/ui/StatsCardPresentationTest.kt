@@ -93,6 +93,15 @@ class StatsCardPresentationTest {
     }
 
     @Test
+    fun `a failed start never claims live, even with an open row`() {
+        // A row the recorder resumed after a process restart stays open indefinitely by design. If the
+        // service then can't start, no ticks arrive and that row is frozen — showing it as live would
+        // present stale numbers as current AND hide the retry that could fix it.
+        StatsCardPresentation.from(stats(live = liveSession, startFailed = true), plugged) shouldBe
+            StatsCardPresentation.ConnectedWithoutSession(battery = plugged, startFailed = true)
+    }
+
+    @Test
     fun `stale open row never claims live while unplugged`() {
         StatsCardPresentation.from(stats(live = liveSession, last = lastSession, count = 3), unplugged) shouldBe
             StatsCardPresentation.Idle(lastSession = lastSession, sessionCount = 3)
