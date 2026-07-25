@@ -41,13 +41,16 @@ import kotlinx.coroutines.delay
 const val STATS_CARD_TEST_TAG = "dashboard.stats.card"
 
 /**
- * The single dashboard stats card. It sits in one fixed slot; only its content adapts through
- * [StatsCardPresentation] — promo when capture is off, the in-progress session while on the
- * charger, an honest "no session yet / couldn't start" while connected without a recorder row,
- * and the last-session teaser otherwise. Session identity, start, and the compact curve come from
- * the live Room row; the current level / power / temperature come from the same fresh battery
- * readout the hero uses, so the two never disagree. Tapping opens the statistics screen, or the
- * in-progress session's detail while live.
+ * The single dashboard stats card. Its content adapts through [StatsCardPresentation] — promo when
+ * capture is off, the in-progress session while on the charger, an honest "no session yet / couldn't
+ * start" while connected without a recorder row, and the last-session teaser otherwise. Session
+ * identity, start, and the compact curve come from the live Room row; the current level / power /
+ * temperature come from the same fresh battery readout the hero uses, so the two never disagree.
+ * (Where the card sits on the dashboard is decided separately — see `DashboardScreen`.)
+ *
+ * Tapping opens the statistics screen, or the in-progress session's detail while live — which is why
+ * the live state also carries an explicit "History" action: it is the only state whose surface tap
+ * leads somewhere else. Both that and the retry action must not bubble to the card's own navigation.
  */
 @Composable
 fun StatsDashboardCard(
@@ -78,7 +81,7 @@ fun StatsDashboardCard(
             StatsCardPresentation.Promo -> BodyText(stringResource(R.string.dashboard_stats_promo))
             StatsCardPresentation.Loading -> BodyText(stringResource(R.string.dashboard_stats_loading))
             StatsCardPresentation.Unavailable -> BodyText(stringResource(R.string.dashboard_stats_unavailable))
-            is StatsCardPresentation.Live -> LiveBody(presentation, nowElapsedRealtimeMillis)
+            is StatsCardPresentation.Live -> LiveBody(presentation, nowElapsedRealtimeMillis, onOpenStats)
             is StatsCardPresentation.ConnectedWithoutSession -> ConnectedBody(presentation, onRetryCapture)
             is StatsCardPresentation.Idle -> IdleBody(presentation)
         }
@@ -96,6 +99,7 @@ private fun BodyText(text: String) = Text(
 private fun ColumnScope.LiveBody(
     live: StatsCardPresentation.Live,
     nowElapsedRealtimeMillis: Long,
+    onOpenStats: () -> Unit,
 ) {
     // Fresh battery readouts normally drive recomposition (~3s), but identical consecutive readouts
     // are conflated upstream — the minute tick keeps "charging for" moving even without new data.
@@ -137,6 +141,15 @@ private fun ColumnScope.LiveBody(
     // degenerate line, so keep the card compact and text-only until then.
     if (elapsedMillis >= CHART_MIN_ELAPSED_MILLIS && live.session.curve.size >= 2) {
         StatsCurveChart(curve = live.session.curve, chartHeight = 84.dp, showAxes = false)
+    }
+
+    // While live the card's own tap deep-links into this session, so the past-sessions list needs its
+    // own way in. Kept a plain text action (like Retry) rather than a second card.
+    TextButton(
+        onClick = onOpenStats,
+        modifier = Modifier.align(Alignment.End),
+    ) {
+        Text(stringResource(R.string.dashboard_stats_history_action))
     }
 
     // Small bottom-right caption noting a mid-charge start (so the start%/elapsed aren't read as a

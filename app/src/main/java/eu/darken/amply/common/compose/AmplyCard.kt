@@ -310,8 +310,13 @@ fun AmplyCardHeader(
 
 /**
  * Navigation card: the whole card opens a destination ([onClick]) with an [onClickLabel] for
- * accessibility, a standard header, and a decorative RTL-aware trailing chevron. Must contain no
- * independent interactive controls — the surface owns the single tap.
+ * accessibility, a standard header, and a decorative RTL-aware trailing chevron.
+ *
+ * The surface owns the primary tap. Content may add at most a small trailing text action for a
+ * *secondary* destination or side effect (never a duplicate of [onClick]); anything richer — switches,
+ * multiple buttons, a whole control row — belongs in [AmplyToggleCard] or a plain [AmplyCard]. A
+ * nested action must not bubble to the surface: assert both routes separately in tests, as
+ * `StatsDashboardCard`'s "History" and "Retry" actions do.
  */
 @Composable
 fun AmplyNavigationCard(

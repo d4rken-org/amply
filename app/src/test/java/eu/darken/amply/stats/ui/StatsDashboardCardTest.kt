@@ -108,6 +108,38 @@ class StatsDashboardCardTest {
     }
 
     @Test
+    fun `live body offers history without triggering the session deep link`() {
+        var opened = false
+        var openedId: Long? = null
+        render(
+            StatsCardPresentation.Live(session = liveSession, battery = pluggedBattery),
+            onOpenStats = { opened = true },
+            onOpenLiveSession = { openedId = it },
+        )
+        // The card's own tap goes to this session, so the past-sessions list needs its own action —
+        // which must not bubble to that navigation.
+        compose.onNodeWithText(string(R.string.dashboard_stats_history_action)).performClick()
+        compose.runOnIdle {
+            opened shouldBe true
+            openedId shouldBe null
+        }
+    }
+
+    // Everywhere but Live the card's own tap already opens the list, so a second affordance would be a
+    // duplicate — asserted per state because setContent can only run once per test.
+    @Test
+    fun `idle carries no history action`() {
+        render(StatsCardPresentation.Idle(lastSession = lastSession, sessionCount = 3))
+        compose.onNodeWithText(string(R.string.dashboard_stats_history_action)).assertDoesNotExist()
+    }
+
+    @Test
+    fun `connected-without-session carries no history action`() {
+        render(StatsCardPresentation.ConnectedWithoutSession(battery = pluggedBattery, startFailed = false))
+        compose.onNodeWithText(string(R.string.dashboard_stats_history_action)).assertDoesNotExist()
+    }
+
+    @Test
     fun `connected-without-session shows the starting note and opens the stats list`() {
         var opened = false
         render(

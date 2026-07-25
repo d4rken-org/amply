@@ -24,6 +24,14 @@ data class BatteryReadout(
     val chargeCounterMicroampHours: Int? = null,
     val cycleCount: Int? = null,
 ) {
+    /**
+     * External power is reported. A null (not reported) [plugged] collapses conservatively to false —
+     * nothing may claim a charger it can't observe. This is the single "on the charger" rule; it is
+     * deliberately independent of [status], because a device held at a charge limit reports
+     * `BATTERY_STATUS_NOT_CHARGING` while still connected.
+     */
+    val onCharger: Boolean get() = (plugged ?: 0) != 0
+
     companion object {
         val UNKNOWN = BatteryReadout()
     }

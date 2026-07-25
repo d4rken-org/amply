@@ -9,7 +9,6 @@ import androidx.compose.material.icons.twotone.Book
 import androidx.compose.material.icons.twotone.BugReport
 import androidx.compose.material.icons.twotone.Favorite
 import androidx.compose.material.icons.twotone.History
-import androidx.compose.material.icons.automirrored.twotone.ShowChart
 import androidx.compose.material.icons.twotone.Settings
 import androidx.compose.material.icons.twotone.SupportAgent
 import androidx.compose.material3.Icon
@@ -34,7 +33,6 @@ import eu.darken.amply.common.settings.SettingsNavigationItem
 fun SettingsScreen(
     onBack: () -> Unit,
     onGeneral: () -> Unit,
-    onStats: () -> Unit,
     showDiagnostics: Boolean,
     diagnosticsReady: Boolean,
     onDiagnostics: () -> Unit,
@@ -77,15 +75,8 @@ fun SettingsScreen(
                 )
             }
             item { SettingsDivider() }
-            item {
-                SettingsNavigationItem(
-                    title = stringResource(R.string.settings_stats_title),
-                    subtitle = stringResource(R.string.settings_stats_subtitle),
-                    icon = Icons.AutoMirrored.TwoTone.ShowChart,
-                    onClick = onStats,
-                )
-            }
-            item { SettingsDivider() }
+            // Battery statistics deliberately has no entry here — the dashboard's stats card is the
+            // single way in, so the capture switch lives next to the data it produces.
             if (showDiagnostics) {
                 item { SettingsCategoryHeader(stringResource(R.string.settings_category_advanced)) }
                 item {
@@ -159,7 +150,6 @@ private fun SettingsScreenPreview() = PreviewWrapper {
     SettingsScreen(
         onBack = {},
         onGeneral = {},
-        onStats = {},
         showDiagnostics = true,
         diagnosticsReady = true,
         onDiagnostics = {},

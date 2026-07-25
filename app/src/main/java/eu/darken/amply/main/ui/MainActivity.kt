@@ -106,9 +106,6 @@ class MainActivity : ComponentActivity() {
                     var destination by rememberSaveable { mutableStateOf(SettingsDestination.DASHBOARD) }
                     // Where a back-out of the contribution wizard returns to (set on each entry).
                     var wizardOrigin by rememberSaveable { mutableStateOf(SettingsDestination.DASHBOARD) }
-                    // Battery statistics is reachable from both the dashboard card and the settings hub;
-                    // remember which so back returns there.
-                    var statsOrigin by rememberSaveable { mutableStateOf(SettingsDestination.SETTINGS) }
                     // Where the session-detail screen returns to: the stats list when opened from it, or
                     // the dashboard when deep-linked from the live "on the charger" card.
                     var detailOrigin by rememberSaveable { mutableStateOf(SettingsDestination.STATS) }
@@ -207,17 +204,18 @@ class MainActivity : ComponentActivity() {
                         when (destination) {
                             // The wizard clears its raw session and returns to whichever surface opened it.
                             SettingsDestination.DIAGNOSTICS -> leaveWizard()
-                            // These are entered from the dashboard, not the settings hub.
+                            // These are entered from the dashboard, not the settings hub — the stats list
+                            // included, since the dashboard card is its only entry point.
                             SettingsDestination.SETTINGS,
                             SettingsDestination.RECONNECT_GESTURE,
-                            SettingsDestination.BATTERY_DETAIL -> destination = SettingsDestination.DASHBOARD
-                            // The session detail returns to the stats list; the list returns to wherever
-                            // it was opened from (dashboard card or settings hub).
+                            SettingsDestination.BATTERY_DETAIL,
+                            SettingsDestination.STATS -> destination = SettingsDestination.DASHBOARD
+                            // The session detail returns to the stats list, or to the dashboard when it was
+                            // deep-linked from the live card.
                             SettingsDestination.STATS_SESSION_DETAIL -> {
                                 statsViewModel.closeSession()
                                 destination = detailOrigin
                             }
-                            SettingsDestination.STATS -> destination = statsOrigin
                             else -> destination = SettingsDestination.SETTINGS
                         }
                     }
@@ -256,10 +254,7 @@ class MainActivity : ComponentActivity() {
                             onAlarmTargetChange = viewModel::setChargeAlarmTarget,
                             onFixNotifications = viewModel::openNotificationSettings,
                             onOpenBatteryDetail = { destination = SettingsDestination.BATTERY_DETAIL },
-                            onOpenStats = {
-                                statsOrigin = SettingsDestination.DASHBOARD
-                                destination = SettingsDestination.STATS
-                            },
+                            onOpenStats = { destination = SettingsDestination.STATS },
                             onOpenLiveSession = { id ->
                                 // Deep-link straight to the in-progress session's detail; back returns
                                 // to the dashboard the card lives on.
@@ -289,10 +284,6 @@ class MainActivity : ComponentActivity() {
                         SettingsDestination.SETTINGS -> SettingsScreen(
                             onBack = { destination = SettingsDestination.DASHBOARD },
                             onGeneral = { destination = SettingsDestination.GENERAL },
-                            onStats = {
-                                statsOrigin = SettingsDestination.SETTINGS
-                                destination = SettingsDestination.STATS
-                            },
                             // Offered whenever this device is one we want contribution data for (unsupported/lab),
                             // regardless of whether Shizuku is installed yet — the wizard nudges the install.
                             showDiagnostics = state.charging.contributionWanted,
@@ -367,7 +358,9 @@ class MainActivity : ComponentActivity() {
                             val statsState by statsViewModel.state.collectAsState()
                             StatsScreen(
                                 state = statsState,
-                                onBack = { destination = statsOrigin },
+                                // Only the dashboard's stats card opens this screen, so back always
+                                // returns there.
+                                onBack = { destination = SettingsDestination.DASHBOARD },
                                 onCaptureEnabledChange = { enabled ->
                                     if (enabled) {
                                         runWithNotifications(NotificationAction.ENABLE_STATS)

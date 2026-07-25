@@ -59,7 +59,7 @@ class StatsCardPresentationTest {
     )
 
     @Test
-    fun `disabled always promotes - even plugged with an open row`() {
+    fun `disabled always yields the promo card - even plugged with an open row`() {
         StatsCardPresentation.from(stats(enabled = false, live = liveSession), plugged) shouldBe
             StatsCardPresentation.Promo
         StatsCardPresentation.from(stats(enabled = false, last = lastSession), unplugged) shouldBe

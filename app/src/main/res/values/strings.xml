@@ -481,8 +481,6 @@
     <string name="widget_label_tap">Tap to set a limit</string>
 
     <!-- Battery statistics -->
-    <string name="settings_stats_title">Battery statistics</string>
-    <string name="settings_stats_subtitle">Detailed charge history, speed, and temperature</string>
     <string name="dashboard_stats_title">Battery statistics</string>
     <string name="dashboard_stats_view_action">View</string>
     <string name="dashboard_stats_promo">Record every charge to see charging speed, power, and temperature curves — plus a history of past sessions</string>
@@ -495,6 +493,7 @@
     <string name="dashboard_stats_live_starting">Charger detected — recording is starting…</string>
     <string name="dashboard_stats_live_start_failed">Charger detected — recording couldn\'t start</string>
     <string name="dashboard_stats_retry_action">Retry</string>
+    <string name="dashboard_stats_history_action">History</string>
     <plurals name="dashboard_stats_session_count">
         <item quantity="one">%1$d recorded session</item>
         <item quantity="other">%1$d recorded sessions</item>
