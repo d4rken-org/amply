@@ -367,15 +367,15 @@
     <string name="dashboard_policy_choice_pause">Pause</string>
     <string name="dashboard_policy_card_title">Charging policy</string>
     <string name="dashboard_native_settings">System settings</string>
-    <string name="dashboard_reconnect_title" formatted="false">Reconnect for 100%</string>
+    <string name="dashboard_reconnect_title">Reconnect gesture</string>
     <string name="dashboard_reconnect_body_on" formatted="false">At the 80% limit, unplug for at least 2 seconds and reconnect within 10. An ongoing notification keeps the gesture reliable.</string>
     <string name="dashboard_reconnect_body_on_any_level">At any charge level while a protective policy is set, unplug for at least 2 seconds and reconnect within 10. An ongoing notification keeps the gesture reliable.</string>
     <string name="dashboard_reconnect_body_off" formatted="false">Optionally use a quick unplug/replug at the 80% limit to charge fully once.</string>
     <string name="settings_charging_title">Charging</string>
     <string name="settings_charging_subtitle_on">Reconnect gesture on</string>
     <string name="settings_charging_subtitle_off">Reconnect gesture off</string>
-    <string name="settings_reconnect_category">Reconnect gesture</string>
-    <string name="settings_reconnect_enabled_title" formatted="false">Reconnect for 100%</string>
+    <string name="settings_reconnect_category">Quick full charge</string>
+    <string name="settings_reconnect_enabled_title">Reconnect gesture</string>
     <string name="settings_reconnect_enabled_body">Watch for a quick unplug and reconnect that starts a one-time full charge. Keeps an ongoing notification while it watches.</string>
     <string name="settings_reconnect_enabled_unavailable">Not available on this device</string>
     <string name="settings_reconnect_any_level_title">Any charge level</string>
