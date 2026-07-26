@@ -128,7 +128,7 @@ object SessionNotifications {
 
     fun gesture(
         context: Context,
-        armed: Boolean,
+        decision: QuickFullChargeDecision,
         anyLevel: Boolean = false,
         limitPercent: Int? = null,
     ): Notification {
@@ -139,17 +139,31 @@ object SessionNotifications {
             Intent(context, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        // Armed copy is the same regardless of arming basis — it is the time-critical "reconnect
-        // now" instruction and the arming already happened. Only the passive "waiting" copy
-        // distinguishes any-level from a limit hold, and names the limit when one is known.
-        val contentText = when {
-            armed -> context.getString(R.string.gesture_notification_armed)
-            anyLevel -> context.getString(R.string.gesture_notification_waiting_any_level)
-            limitPercent != null -> context.getString(
-                R.string.gesture_notification_waiting_limit,
-                limitPercent,
+        // Three distinct states, not two. WAITING_FOR_RECONNECT is the time-critical countdown and
+        // stays a bare instruction — the arming basis is history by then. ARMED is what a plugged-in
+        // user actually sees, for hours, so that is where the arming basis (any level vs. a named
+        // limit vs. a generic hold) has to be spelled out. IDLE keeps the passive "waiting" copy,
+        // which explains the enabled mode rather than the current basis.
+        val contentText = when (decision) {
+            QuickFullChargeDecision.WAITING_FOR_RECONNECT -> context.getString(
+                R.string.gesture_notification_armed,
             )
-            else -> context.getString(R.string.gesture_notification_waiting)
+            QuickFullChargeDecision.ARMED -> when {
+                anyLevel -> context.getString(R.string.gesture_notification_armed_any_level)
+                limitPercent != null -> context.getString(
+                    R.string.gesture_notification_armed_limit,
+                    limitPercent,
+                )
+                else -> context.getString(R.string.gesture_notification_armed_holding)
+            }
+            else -> when {
+                anyLevel -> context.getString(R.string.gesture_notification_waiting_any_level)
+                limitPercent != null -> context.getString(
+                    R.string.gesture_notification_waiting_limit,
+                    limitPercent,
+                )
+                else -> context.getString(R.string.gesture_notification_waiting)
+            }
         }
         val builder = NotificationCompat.Builder(context, GESTURE_CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher_monochrome)
@@ -162,10 +176,11 @@ object SessionNotifications {
             // Show at once instead of the ~10s foreground-service deferral, so the armed
             // "reconnect now" cue is visible within its 10-second window.
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-        // The persistent waiting notification carries the "you can turn this off" hint in its
-        // expanded view — kept out of the collapsed line so it stays short, and off the armed
-        // cue so the time-sensitive reconnect instruction isn't diluted.
-        if (!armed) {
+        // The steady-state notification carries the "you can turn this off" hint in its expanded
+        // view — kept out of the collapsed line so it stays short, and off the reconnect countdown
+        // so the time-sensitive instruction isn't diluted. ARMED can persist for hours, so it gets
+        // the hint like IDLE does.
+        if (decision != QuickFullChargeDecision.WAITING_FOR_RECONNECT) {
             builder.setStyle(
                 NotificationCompat.BigTextStyle().bigText(
                     contentText + "\n\n" + context.getString(R.string.gesture_notification_disable_hint),
