@@ -452,9 +452,10 @@ class ChargeSessionService : Service() {
                     armed = armed,
                     // Armed copy reflects what actually armed; idle copy explains the enabled mode.
                     anyLevel = if (armed) output.anyLevelBasis else anyLevel,
-                    // Authoritative evidence only: on a fresh install with no journal the unplugged
-                    // waiting copy stays generic and names the limit once the hardware reports it.
-                    limitPercent = GestureBasis.limitPercent(hardware, lastPersistent),
+                    // Verified evidence only, never Amply's write journal: naming a number is a
+                    // user-facing claim, and a limit removed natively must not keep being claimed.
+                    // Unverified state falls back to the generic "charge limit is holding" copy.
+                    limitPercent = GestureBasis.limitPercent(hardware),
                 ),
             )
             // Expiry isn't broadcast-driven: without a nudge the "reconnect now" copy could linger
