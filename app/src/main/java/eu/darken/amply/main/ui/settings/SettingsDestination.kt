@@ -7,7 +7,8 @@ enum class SettingsDestination {
     DIAGNOSTICS,
     SUPPORT,
     ACKNOWLEDGEMENTS,
-    RECONNECT_GESTURE,
+    /** The charge-control preferences (the reconnect gesture and its arming basis), from the settings hub. */
+    CHARGING,
 
     /**
      * The recording **preferences** — the capture switch and the retention window — reached from the

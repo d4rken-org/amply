@@ -101,7 +101,6 @@ fun DashboardScreen(
     onRestore: () -> Unit,
     onApply: (ChargePolicy) -> Unit,
     onQuickFullChargeChange: (Boolean) -> Unit,
-    onOpenReconnectSettings: () -> Unit,
     onAlarmEnabledChange: (Boolean) -> Unit,
     onAlarmTargetChange: (Int) -> Unit,
     onFixNotifications: () -> Unit,
@@ -216,7 +215,6 @@ fun DashboardScreen(
                                 canControl = state.charging.controlEnabled &&
                                     state.charging.access?.canControl == true,
                                 onEnabledChange = onQuickFullChargeChange,
-                                onOpenSettings = onOpenReconnectSettings,
                             )
                         }
                     }
@@ -276,7 +274,6 @@ fun DashboardScreen(
                                 anyLevel = state.quickFullChargeAnyLevel,
                                 canControl = state.charging.reconnectSupported && state.charging.canApply,
                                 onEnabledChange = onQuickFullChargeChange,
-                                onOpenSettings = onOpenReconnectSettings,
                             )
                         }
                     }
@@ -652,7 +649,6 @@ private fun QuickFullChargeCard(
     anyLevel: Boolean,
     canControl: Boolean,
     onEnabledChange: (Boolean) -> Unit,
-    onOpenSettings: () -> Unit,
 ) {
     // When the gesture can neither be used nor turned off, dim the whole card so it reads as
     // disabled like the other controls, instead of showing a full-colour but inert toggle.
@@ -666,19 +662,7 @@ private fun QuickFullChargeCard(
         AmplyCardHeader(
             title = stringResource(R.string.dashboard_reconnect_title),
             icon = Icons.Default.Bolt,
-            trailing = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (enabled) {
-                        IconButton(onClick = onOpenSettings, enabled = interactive) {
-                            Icon(
-                                Icons.TwoTone.Settings,
-                                contentDescription = stringResource(R.string.dashboard_reconnect_settings_action),
-                            )
-                        }
-                    }
-                    AmplyCardToggleIndicator(checked = enabled, enabled = interactive)
-                }
-            },
+            trailing = { AmplyCardToggleIndicator(checked = enabled, enabled = interactive) },
         )
         Text(
             when {
@@ -701,19 +685,17 @@ private fun QuickFullChargeCardPreview() = PreviewWrapper {
             anyLevel = false,
             canControl = true,
             onEnabledChange = {},
-            onOpenSettings = {},
         )
         QuickFullChargeCard(
             enabled = true,
             anyLevel = true,
             canControl = true,
             onEnabledChange = {},
-            onOpenSettings = {},
         )
     }
 }
 
-// Gear + switch share the title row; make sure it degrades gracefully at large font scales.
+// The title row carries the switch alone now; make sure it degrades gracefully at large font scales.
 @Preview(name = "Large font", showBackground = true, fontScale = 1.5f)
 @Composable
 private fun QuickFullChargeCardLargeFontPreview() = PreviewWrapper {
@@ -722,7 +704,6 @@ private fun QuickFullChargeCardLargeFontPreview() = PreviewWrapper {
         anyLevel = true,
         canControl = true,
         onEnabledChange = {},
-        onOpenSettings = {},
     )
 }
 
@@ -913,7 +894,6 @@ private fun DashboardScreenPreview() = PreviewWrapper {
         onRestore = {},
         onApply = {},
         onQuickFullChargeChange = {},
-        onOpenReconnectSettings = {},
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
@@ -1006,7 +986,6 @@ private fun DashboardScreenLiveChargePreview() = PreviewWrapper {
         onRestore = {},
         onApply = {},
         onQuickFullChargeChange = {},
-        onOpenReconnectSettings = {},
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
@@ -1080,7 +1059,6 @@ private fun DashboardScreenApplyingPreview() = PreviewWrapper {
         onRestore = {},
         onApply = {},
         onQuickFullChargeChange = {},
-        onOpenReconnectSettings = {},
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
@@ -1150,7 +1128,6 @@ private fun DashboardScreenSessionActivePreview() = PreviewWrapper {
         onRestore = {},
         onApply = {},
         onQuickFullChargeChange = {},
-        onOpenReconnectSettings = {},
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
@@ -1222,7 +1199,6 @@ private fun DashboardScreenSessionRecordedPreview() = PreviewWrapper {
         onRestore = {},
         onApply = {},
         onQuickFullChargeChange = {},
-        onOpenReconnectSettings = {},
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
@@ -1282,7 +1258,6 @@ private fun DashboardScreenWssOnlyPreview() = PreviewWrapper {
         onRestore = {},
         onApply = {},
         onQuickFullChargeChange = {},
-        onOpenReconnectSettings = {},
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
@@ -1349,7 +1324,6 @@ private fun DashboardScreenSamsungPreview() = PreviewWrapper {
         onRestore = {},
         onApply = {},
         onQuickFullChargeChange = {},
-        onOpenReconnectSettings = {},
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
@@ -1417,7 +1391,6 @@ private fun DashboardScreenOnePlusNeedsShizukuPreview() = PreviewWrapper {
         onRestore = {},
         onApply = {},
         onQuickFullChargeChange = {},
-        onOpenReconnectSettings = {},
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
@@ -1470,7 +1443,6 @@ private fun DashboardScreenUnsupportedPreview() = PreviewWrapper {
         onRestore = {},
         onApply = {},
         onQuickFullChargeChange = {},
-        onOpenReconnectSettings = {},
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},

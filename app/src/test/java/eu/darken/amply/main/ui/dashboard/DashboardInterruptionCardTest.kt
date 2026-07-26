@@ -61,7 +61,6 @@ class DashboardInterruptionCardTest {
                 onRestore = {},
                 onApply = {},
                 onQuickFullChargeChange = {},
-                onOpenReconnectSettings = {},
                 onAlarmEnabledChange = {},
                 onAlarmTargetChange = {},
                 onFixNotifications = {},

@@ -56,8 +56,8 @@ import eu.darken.amply.main.ui.dashboard.shouldMonitorAccess
 import eu.darken.amply.main.ui.onboarding.OnboardingScreen
 import eu.darken.amply.main.ui.settings.AcknowledgementsScreen
 import eu.darken.amply.main.ui.settings.ChargingHistorySettingsScreen
+import eu.darken.amply.main.ui.settings.ChargingSettingsScreen
 import eu.darken.amply.main.ui.settings.GeneralSettingsScreen
-import eu.darken.amply.main.ui.settings.ReconnectGestureSettingsScreen
 import eu.darken.amply.main.ui.settings.SettingsDestination
 import eu.darken.amply.main.ui.settings.SettingsScreen
 import eu.darken.amply.main.ui.settings.SettingsViewModel
@@ -224,9 +224,10 @@ class MainActivity : ComponentActivity() {
                         when (destination) {
                             // The wizard clears its raw session and returns to whichever surface opened it.
                             SettingsDestination.DIAGNOSTICS -> leaveWizard()
-                            // These are entered from the dashboard, not the settings hub.
+                            // These are entered from the dashboard, not the settings hub. CHARGING is
+                            // deliberately NOT among them: it lives under the hub, so system Back must
+                            // return there — the same place its top-bar Back goes.
                             SettingsDestination.SETTINGS,
-                            SettingsDestination.RECONNECT_GESTURE,
                             SettingsDestination.BATTERY -> destination = SettingsDestination.DASHBOARD
                             // The history list is only reachable from the battery hub's top bar.
                             SettingsDestination.CHARGE_HISTORY -> destination = SettingsDestination.BATTERY
@@ -260,9 +261,6 @@ class MainActivity : ComponentActivity() {
                                     viewModel.setQuickFullChargeEnabled(false)
                                 }
                             },
-                            onOpenReconnectSettings = {
-                                destination = SettingsDestination.RECONNECT_GESTURE
-                            },
                             onAlarmEnabledChange = { enabled ->
                                 if (enabled) {
                                     runWithNotifications(NotificationAction.ENABLE_CHARGE_ALARM)
@@ -295,6 +293,8 @@ class MainActivity : ComponentActivity() {
                         SettingsDestination.SETTINGS -> SettingsScreen(
                             onBack = { destination = SettingsDestination.DASHBOARD },
                             onGeneral = { destination = SettingsDestination.GENERAL },
+                            gestureEnabled = state.quickFullChargeEnabled,
+                            onCharging = { destination = SettingsDestination.CHARGING },
                             captureEnabled = state.stats.enabled,
                             onChargingHistory = {
                                 destination = SettingsDestination.CHARGING_HISTORY_SETTINGS
@@ -356,10 +356,20 @@ class MainActivity : ComponentActivity() {
                             onBack = { destination = SettingsDestination.SETTINGS },
                             onOpenUrl = settingsViewModel::openUrl,
                         )
-                        SettingsDestination.RECONNECT_GESTURE -> ReconnectGestureSettingsScreen(
+                        SettingsDestination.CHARGING -> ChargingSettingsScreen(
                             gestureEnabled = state.quickFullChargeEnabled,
                             anyLevelEnabled = state.quickFullChargeAnyLevel,
-                            onBack = { destination = SettingsDestination.DASHBOARD },
+                            // Exactly the dashboard card's gate, so settings can never switch the
+                            // gesture on where the card correctly forbids it.
+                            canEnableGesture = state.charging.reconnectSupported && state.charging.canApply,
+                            onBack = { destination = SettingsDestination.SETTINGS },
+                            onGestureEnabledChange = { enabled ->
+                                if (enabled) {
+                                    runWithNotifications(NotificationAction.ENABLE_QUICK_GESTURE)
+                                } else {
+                                    viewModel.setQuickFullChargeEnabled(false)
+                                }
+                            },
                             onAnyLevelChange = viewModel::setQuickFullChargeAnyLevel,
                         )
                         SettingsDestination.CHARGING_HISTORY_SETTINGS -> ChargingHistorySettingsScreen(

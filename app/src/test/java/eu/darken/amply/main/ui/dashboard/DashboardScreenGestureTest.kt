@@ -9,18 +9,16 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
-import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.test.core.app.ApplicationProvider
 import eu.darken.amply.R
@@ -58,35 +56,24 @@ class DashboardScreenGestureTest {
     // on its test tag instead.
     private fun heroCard() = hasTestTag(HERO_CARD_TEST_TAG)
 
-    private fun render(
-        state: DashboardUiState,
-            onOpenReconnectSettings: () -> Unit = {},
-    ) {
-        compose.setContent {
-            DashboardScreenForTest(
-                state = state,
-                onOpenReconnectSettings = onOpenReconnectSettings,
-            )
-        }
+    private fun render(state: DashboardUiState) {
+        compose.setContent { DashboardScreenForTest(state = state) }
     }
 
+    // The gesture's options moved to Settings > Charging, so the card carries its toggle alone. The
+    // top bar's gear is the only settings affordance left on the dashboard.
     @Test
-    fun `gesture card gear opens the reconnect settings`() {
-        var opened = false
+    fun `the gesture card carries no settings shortcut`() {
         render(
             state = DashboardUiState(
                 onboardingComplete = true,
                 quickFullChargeEnabled = true,
             ),
-            onOpenReconnectSettings = { opened = true },
         )
 
-        val gear = hasContentDescription(string(R.string.dashboard_reconnect_settings_action))
-        compose.onNode(hasScrollAction()).performScrollToNode(gear)
-        compose.onNodeWithContentDescription(string(R.string.dashboard_reconnect_settings_action))
-            .performClick()
-
-        compose.runOnIdle { opened shouldBe true }
+        compose.onNode(hasScrollAction())
+            .performScrollToNode(hasText(string(R.string.dashboard_reconnect_title)))
+        compose.onAllNodesWithContentDescription(string(R.string.action_settings)).assertCountEquals(1)
     }
 
     @Test
@@ -377,10 +364,7 @@ class DashboardScreenGestureTest {
 // state it cares about. Kept composable (rather than inlined into setContent) so a test can drive state
 // changes through a live composition.
 @Composable
-private fun DashboardScreenForTest(
-    state: DashboardUiState,
-    onOpenReconnectSettings: () -> Unit = {},
-) {
+private fun DashboardScreenForTest(state: DashboardUiState) {
     DashboardScreen(
         state = state,
         adbCommand = "",
@@ -390,7 +374,6 @@ private fun DashboardScreenForTest(
         onRestore = {},
         onApply = {},
         onQuickFullChargeChange = {},
-        onOpenReconnectSettings = onOpenReconnectSettings,
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},

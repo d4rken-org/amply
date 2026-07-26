@@ -24,8 +24,8 @@ import eu.darken.amply.main.ui.dashboard.DashboardUiState
 import eu.darken.amply.main.ui.dashboard.StatsDashboardState
 import eu.darken.amply.stats.core.ChargeCurvePoint
 import eu.darken.amply.stats.core.StatsLiveSession
+import eu.darken.amply.main.ui.settings.ChargingSettingsScreen
 import eu.darken.amply.main.ui.settings.GeneralSettingsScreen
-import eu.darken.amply.main.ui.settings.ReconnectGestureSettingsScreen
 
 // Device spec shared by every Play Store screenshot. 1080x1920 (9:16) is Play's recommended phone
 // size and stays within its "longest side may not exceed 2x the shorter side" rule — 1080x2400
@@ -62,10 +62,12 @@ internal fun SettingsContent() = PreviewWrapper {
 
 @Composable
 internal fun ReconnectGestureContent() = PreviewWrapper {
-    ReconnectGestureSettingsScreen(
+    ChargingSettingsScreen(
         gestureEnabled = true,
         anyLevelEnabled = false,
+        canEnableGesture = true,
         onBack = {},
+        onGestureEnabledChange = {},
         onAnyLevelChange = {},
     )
 }
@@ -85,7 +87,6 @@ private fun DashboardShot(state: DashboardUiState) = PreviewWrapper {
         onRestore = {},
         onApply = {},
         onQuickFullChargeChange = {},
-        onOpenReconnectSettings = {},
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},

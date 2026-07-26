@@ -6,6 +6,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.twotone.ArrowBack
 import androidx.compose.material.icons.automirrored.twotone.OpenInNew
 import androidx.compose.material.icons.automirrored.twotone.ShowChart
+import androidx.compose.material.icons.twotone.Bolt
 import androidx.compose.material.icons.twotone.Book
 import androidx.compose.material.icons.twotone.BugReport
 import androidx.compose.material.icons.twotone.Favorite
@@ -34,6 +35,8 @@ import eu.darken.amply.common.settings.SettingsNavigationItem
 fun SettingsScreen(
     onBack: () -> Unit,
     onGeneral: () -> Unit,
+    gestureEnabled: Boolean,
+    onCharging: () -> Unit,
     captureEnabled: Boolean,
     onChargingHistory: () -> Unit,
     showDiagnostics: Boolean,
@@ -75,6 +78,19 @@ fun SettingsScreen(
                     subtitle = stringResource(R.string.settings_general_subtitle),
                     icon = Icons.TwoTone.Settings,
                     onClick = onGeneral,
+                )
+            }
+            item { SettingsDivider() }
+            item {
+                SettingsNavigationItem(
+                    title = stringResource(R.string.settings_charging_title),
+                    subtitle = if (gestureEnabled) {
+                        stringResource(R.string.settings_charging_subtitle_on)
+                    } else {
+                        stringResource(R.string.settings_charging_subtitle_off)
+                    },
+                    icon = Icons.TwoTone.Bolt,
+                    onClick = onCharging,
                 )
             }
             item { SettingsDivider() }
@@ -166,6 +182,8 @@ private fun SettingsScreenPreview() = PreviewWrapper {
     SettingsScreen(
         onBack = {},
         onGeneral = {},
+        gestureEnabled = true,
+        onCharging = {},
         captureEnabled = true,
         onChargingHistory = {},
         showDiagnostics = true,
