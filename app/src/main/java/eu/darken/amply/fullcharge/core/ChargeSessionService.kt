@@ -398,8 +398,9 @@ class ChargeSessionService : Service() {
         // basis never armed on such a device. The hardware signal is only reported while powered,
         // so unplugged ticks yield inconclusive evidence, which the engine treats as "no change".
         val hardware = adapter?.decodeHardware(chargingStatus, plugged)
+        val lastPersistent = preferences.lastPersistentPolicyNow()
         val policyEvidence = if (anyLevel) {
-            GestureBasis.evidence(hardware, preferences.lastPersistentPolicyNow())
+            GestureBasis.evidence(hardware, lastPersistent)
         } else {
             PolicyEvidence.UNKNOWN
         }
@@ -451,6 +452,9 @@ class ChargeSessionService : Service() {
                     armed = armed,
                     // Armed copy reflects what actually armed; idle copy explains the enabled mode.
                     anyLevel = if (armed) output.anyLevelBasis else anyLevel,
+                    // Authoritative evidence only: on a fresh install with no journal the unplugged
+                    // waiting copy stays generic and names the limit once the hardware reports it.
+                    limitPercent = GestureBasis.limitPercent(hardware, lastPersistent),
                 ),
             )
             // Expiry isn't broadcast-driven: without a nudge the "reconnect now" copy could linger

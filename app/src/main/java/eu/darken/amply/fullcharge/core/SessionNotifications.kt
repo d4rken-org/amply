@@ -126,7 +126,12 @@ object SessionNotifications {
             .build()
     }
 
-    fun gesture(context: Context, armed: Boolean, anyLevel: Boolean = false): Notification {
+    fun gesture(
+        context: Context,
+        armed: Boolean,
+        anyLevel: Boolean = false,
+        limitPercent: Int? = null,
+    ): Notification {
         ensureChannels(context)
         val openPendingIntent = PendingIntent.getActivity(
             context,
@@ -134,15 +139,18 @@ object SessionNotifications {
             Intent(context, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        // Armed copy is the same regardless of arming basis; only the passive "waiting" copy
-        // distinguishes any-level from limit-hold.
-        val contentText = context.getString(
-            when {
-                armed -> R.string.gesture_notification_armed
-                anyLevel -> R.string.gesture_notification_waiting_any_level
-                else -> R.string.gesture_notification_waiting
-            },
-        )
+        // Armed copy is the same regardless of arming basis — it is the time-critical "reconnect
+        // now" instruction and the arming already happened. Only the passive "waiting" copy
+        // distinguishes any-level from a limit hold, and names the limit when one is known.
+        val contentText = when {
+            armed -> context.getString(R.string.gesture_notification_armed)
+            anyLevel -> context.getString(R.string.gesture_notification_waiting_any_level)
+            limitPercent != null -> context.getString(
+                R.string.gesture_notification_waiting_limit,
+                limitPercent,
+            )
+            else -> context.getString(R.string.gesture_notification_waiting)
+        }
         val builder = NotificationCompat.Builder(context, GESTURE_CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher_monochrome)
             .setContentTitle(context.getString(R.string.gesture_notification_title))
