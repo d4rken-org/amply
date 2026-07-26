@@ -9,16 +9,28 @@ enum class QuickFullChargeDecision {
     TRIGGER,
 }
 
+/** How conclusively the current charge configuration is known, for the any-level arming basis. */
+enum class PolicyEvidence { PROTECTIVE, UNRESTRICTED, UNKNOWN }
+
 /**
  * Detects a deliberate unplug/replug gesture that starts a one-time full charge.
  *
  * Two arming bases exist:
  * - Limit hold (default): Android's charging-policy hardware state reports the Pixel policy actively
  *   holding near its limit. Only the hardware signal is trusted, never Amply's cached request.
- * - Any level (opt-in): the user enabled the any-level option and Amply's persistently configured
- *   policy is protective; percent, battery status, and the hardware hold are deliberately ignored.
- *   This basis is revoked the moment the option or the protective policy is withdrawn — including
- *   an already-open reconnect window — so an explicit opt-out can never produce a trigger.
+ * - Any level (opt-in): the user enabled the any-level option and the current charge configuration
+ *   is conclusively protective ([PolicyEvidence.PROTECTIVE]); percent, battery status, and the
+ *   hardware hold are deliberately ignored. This basis is revoked — including an already-open
+ *   reconnect window — by an explicit opt-out or by *conclusive* [PolicyEvidence.UNRESTRICTED]
+ *   evidence, so an opt-out can never produce a trigger.
+ *
+ * [PolicyEvidence.UNKNOWN] deliberately does **not** revoke: the strongest evidence (the battery
+ * broadcast's charging-policy hardware state) is only reported while external power is present, so
+ * the very unplug tick that opens the reconnect window reports UNKNOWN. Treating that as a
+ * withdrawal would revoke the basis before the powered→unpowered edge is even recorded and the
+ * window would never open. An open window survives inconclusive evidence for at most the 10 s
+ * reconnect ceiling, and `ChargeSessionManager.begin()` re-verifies live state and refuses
+ * (`SessionStartDecision.AlreadyChargesFull`) when readback proves charging already reaches full.
  *
  * The reconnect window has a debounce floor: a disconnect shorter than [minReconnectMillis] never
  * triggers, filtering momentary power cuts (car ignition, connector jostle). Timestamps must come
@@ -40,7 +52,7 @@ class QuickFullChargeGesture(
         val batteryStatus: Int,
         val chargingStatus: Int,
         val anyLevelEnabled: Boolean,
-        val policyProtective: Boolean,
+        val policyEvidence: PolicyEvidence,
     )
 
     data class Output(
@@ -60,12 +72,17 @@ class QuickFullChargeGesture(
             input.chargingStatus == CHARGING_STATUS_POLICY &&
             input.batteryStatus != BatteryManager.BATTERY_STATUS_CHARGING &&
             input.percent in MIN_ARM_PERCENT..MAX_ARM_PERCENT
-        val anyLevelHeld = input.anyLevelEnabled && input.plugged && input.policyProtective
+        val anyLevelHeld = input.anyLevelEnabled &&
+            input.plugged &&
+            input.policyEvidence == PolicyEvidence.PROTECTIVE
 
-        // An any-level basis is continuously observable and is dropped as soon as its inputs are
-        // withdrawn. A latched limit-hold basis survives option flips: its evidence was the
-        // (momentary) hardware hold, which is mode-independent.
-        if (armedBy == ArmedBy.ANY_LEVEL && (!input.anyLevelEnabled || !input.policyProtective)) {
+        // An any-level basis is dropped by an explicit opt-out or by conclusive evidence that
+        // charging is unrestricted — never by merely inconclusive evidence, which is what an
+        // unplugged tick always reports. A latched limit-hold basis survives option flips: its
+        // evidence was the (momentary) hardware hold, which is mode-independent.
+        if (armedBy == ArmedBy.ANY_LEVEL &&
+            (!input.anyLevelEnabled || input.policyEvidence == PolicyEvidence.UNRESTRICTED)
+        ) {
             armedBy = null
             disconnectedAtMillis = null
         }
