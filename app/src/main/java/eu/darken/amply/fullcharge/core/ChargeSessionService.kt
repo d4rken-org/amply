@@ -444,14 +444,17 @@ class ChargeSessionService : Service() {
             log(TAG) { "Reconnect gesture triggered one-time full charging" }
             beginOrResume()
         } else {
-            val armed = decision == QuickFullChargeDecision.ARMED ||
-                decision == QuickFullChargeDecision.WAITING_FOR_RECONNECT
             startAsForeground(
                 SessionNotifications.gesture(
                     this,
-                    armed = armed,
+                    decision = decision,
                     // Armed copy reflects what actually armed; idle copy explains the enabled mode.
-                    anyLevel = if (armed) output.anyLevelBasis else anyLevel,
+                    anyLevel = when (decision) {
+                        QuickFullChargeDecision.ARMED,
+                        QuickFullChargeDecision.WAITING_FOR_RECONNECT,
+                        -> output.anyLevelBasis
+                        else -> anyLevel
+                    },
                     // Verified evidence only, never Amply's write journal: naming a number is a
                     // user-facing claim, and a limit removed natively must not keep being claimed.
                     // Unverified state falls back to the generic "charge limit is holding" copy.
