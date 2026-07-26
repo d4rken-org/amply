@@ -40,9 +40,10 @@ import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
 
 /**
- * The single battery/charging destination: the capture switch, the current or last charge, and the
- * full live readout. Replaces the split between a read-only battery-detail screen and a statistics
- * screen that each rendered level, current, and temperature through different code.
+ * The single battery/charging destination: the current or last charge and the full live readout, led
+ * by the recording opt-in until it has been accepted. Replaces the split between a read-only
+ * battery-detail screen and a statistics screen that each rendered level, current, and temperature
+ * through different code.
  *
  * State-hoisted and previewable — it renders straight from a [BatteryReadout] plus a
  * [ChargeTeaserState], so it needs no ViewModel of its own. Fields the platform doesn't report render
@@ -53,11 +54,10 @@ import eu.darken.amply.common.compose.PreviewWrapper
 fun BatteryHubScreen(
     readout: BatteryReadout?,
     captureEnabled: Boolean,
-    lastCaptureWallMillis: Long?,
     teaser: ChargeTeaserState,
     onBack: () -> Unit,
     onOpenHistory: () -> Unit,
-    onCaptureEnabledChange: (Boolean) -> Unit,
+    onEnableCapture: () -> Unit,
     onOpenSession: (Long) -> Unit,
 ) {
     Scaffold(
@@ -91,16 +91,15 @@ fun BatteryHubScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item {
-                CaptureToggleCard(
-                    enabled = captureEnabled,
-                    lastCaptureWallMillis = lastCaptureWallMillis,
-                    onCaptureEnabledChange = onCaptureEnabledChange,
-                )
+            // Gated on the authoritative preference, not on the teaser: the opt-in is a one-time
+            // prompt, so it disappears for good the moment recording is on.
+            if (!captureEnabled) {
+                item { CaptureOptInCard(onEnable = onEnableCapture) }
             }
             // The charge section sits above the raw readout: "how is this charge going" is the question
-            // that brings most visits here, and the readout below is reference material. With capture
-            // off there is no section at all — the toggle immediately above already explains why.
+            // that brings most visits here, and the readout below is reference material. With recording
+            // on it is the first thing on the screen; with recording off there is no section at all —
+            // the opt-in card immediately above already explains why.
             if (teaser != ChargeTeaserState.CaptureOff) {
                 item { SectionHeader(stringResource(teaser.sectionTitle())) }
                 item {
@@ -257,14 +256,14 @@ private val previewCharging = BatteryReadout(
 @AmplyPreview
 @Composable
 private fun BatteryHubScreenLivePreview() = PreviewWrapper {
+    // Recording on: no opt-in card, so the live charge is the first thing on the screen.
     BatteryHubScreen(
         readout = previewCharging,
         captureEnabled = true,
-        lastCaptureWallMillis = 0L,
         teaser = ChargeTeaserState.Live(previewLiveSession),
         onBack = {},
         onOpenHistory = {},
-        onCaptureEnabledChange = {},
+        onEnableCapture = {},
         onOpenSession = {},
     )
 }
@@ -278,11 +277,10 @@ private fun BatteryHubScreenLastPreview() = PreviewWrapper {
             plugged = 0,
         ),
         captureEnabled = true,
-        lastCaptureWallMillis = 0L,
         teaser = ChargeTeaserState.Last(previewLastSession),
         onBack = {},
         onOpenHistory = {},
-        onCaptureEnabledChange = {},
+        onEnableCapture = {},
         onOpenSession = {},
     )
 }
@@ -290,16 +288,15 @@ private fun BatteryHubScreenLastPreview() = PreviewWrapper {
 @AmplyPreview
 @Composable
 private fun BatteryHubScreenCaptureOffPreview() = PreviewWrapper {
-    // Capture off: no charge section at all, but the full readout is still here — it never depended
-    // on the opt-in.
+    // Never opted in: the opt-in card leads, there is no charge section, and the full readout is still
+    // here — it never depended on recording.
     BatteryHubScreen(
         readout = previewCharging,
         captureEnabled = false,
-        lastCaptureWallMillis = null,
         teaser = ChargeTeaserState.CaptureOff,
         onBack = {},
         onOpenHistory = {},
-        onCaptureEnabledChange = {},
+        onEnableCapture = {},
         onOpenSession = {},
     )
 }
@@ -319,11 +316,10 @@ private fun BatteryHubScreenSparsePreview() = PreviewWrapper {
             voltageMillivolts = 3900,
         ),
         captureEnabled = true,
-        lastCaptureWallMillis = null,
         teaser = ChargeTeaserState.None,
         onBack = {},
         onOpenHistory = {},
-        onCaptureEnabledChange = {},
+        onEnableCapture = {},
         onOpenSession = {},
     )
 }
@@ -336,11 +332,10 @@ private fun BatteryHubScreenLargeFontPreview() = PreviewWrapper {
     BatteryHubScreen(
         readout = previewCharging.copy(technology = "Li-ion polymer (high voltage)"),
         captureEnabled = true,
-        lastCaptureWallMillis = 0L,
         teaser = ChargeTeaserState.Last(previewLastSession),
         onBack = {},
         onOpenHistory = {},
-        onCaptureEnabledChange = {},
+        onEnableCapture = {},
         onOpenSession = {},
     )
 }

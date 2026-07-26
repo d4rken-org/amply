@@ -63,6 +63,7 @@ class ChargeStatsRepositoryLiveTest {
         dataStoreScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         val bootIdSource = BootIdSource(context)
         val recorder = ChargeStatsRecorder(
+            context = context,
             database = { database },
             preferences = StatsPreferences(
                 AppDataStore(

@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.twotone.ArrowBack
 import androidx.compose.material.icons.automirrored.twotone.OpenInNew
+import androidx.compose.material.icons.automirrored.twotone.ShowChart
 import androidx.compose.material.icons.twotone.Book
 import androidx.compose.material.icons.twotone.BugReport
 import androidx.compose.material.icons.twotone.Favorite
@@ -33,6 +34,8 @@ import eu.darken.amply.common.settings.SettingsNavigationItem
 fun SettingsScreen(
     onBack: () -> Unit,
     onGeneral: () -> Unit,
+    captureEnabled: Boolean,
+    onChargingHistory: () -> Unit,
     showDiagnostics: Boolean,
     diagnosticsReady: Boolean,
     onDiagnostics: () -> Unit,
@@ -75,8 +78,21 @@ fun SettingsScreen(
                 )
             }
             item { SettingsDivider() }
-            // Battery statistics deliberately has no entry here — the dashboard's stats card is the
-            // single way in, so the capture switch lives next to the data it produces.
+            // Charge recording is opted into once, from the battery hub's card — so the durable on/off
+            // control and the retention window belong here, not next to the data they produce.
+            item {
+                SettingsNavigationItem(
+                    title = stringResource(R.string.settings_charging_history_title),
+                    subtitle = if (captureEnabled) {
+                        stringResource(R.string.settings_charging_history_subtitle_on)
+                    } else {
+                        stringResource(R.string.settings_charging_history_subtitle_off)
+                    },
+                    icon = Icons.AutoMirrored.TwoTone.ShowChart,
+                    onClick = onChargingHistory,
+                )
+            }
+            item { SettingsDivider() }
             if (showDiagnostics) {
                 item { SettingsCategoryHeader(stringResource(R.string.settings_category_advanced)) }
                 item {
@@ -150,6 +166,8 @@ private fun SettingsScreenPreview() = PreviewWrapper {
     SettingsScreen(
         onBack = {},
         onGeneral = {},
+        captureEnabled = true,
+        onChargingHistory = {},
         showDiagnostics = true,
         diagnosticsReady = true,
         onDiagnostics = {},

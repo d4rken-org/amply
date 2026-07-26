@@ -10,6 +10,7 @@ import eu.darken.amply.stats.core.StatsPowerCalculator
  * One raw battery observation persisted for a charge curve. Belongs to a [ChargeSessionEntity]
  * ([sessionId], cascade-deleted with its session). Retention purges old rows by [wallMillis]; the
  * owning session's summary is unaffected because it is accumulated online, not recomputed from these.
+ * Whole entries are additionally purged by session end, which cascades here.
  *
  * [powerMilliwatts] is battery-terminal *charge* power (battery voltage × |current|), not charger/
  * input power. Because the magnitude carries no direction, it is recorded **only while the battery is

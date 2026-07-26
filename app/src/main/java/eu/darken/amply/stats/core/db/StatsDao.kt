@@ -52,6 +52,17 @@ interface StatsDao {
     @Query("DELETE FROM charge_sessions WHERE id = :id")
     suspend fun deleteSession(id: Long)
 
+    /**
+     * Retention: drop finished sessions that ended before a cutoff. Their [BatterySampleEntity] rows
+     * cascade (FK onDelete=CASCADE).
+     *
+     * Keyed on [ChargeSessionEntity.endedAtWallMillis], not the start stamp, so a long charge that
+     * *ended* recently is not dropped for having started early. `IS NOT NULL` keeps an open session
+     * untouchable, and the comparison is strict — a session ending exactly at the cutoff survives.
+     */
+    @Query("DELETE FROM charge_sessions WHERE endedAtWallMillis IS NOT NULL AND endedAtWallMillis < :cutoffWallMillis")
+    suspend fun deleteSessionsEndedBefore(cutoffWallMillis: Long): Int
+
     @Query("DELETE FROM charge_sessions")
     suspend fun deleteAllSessions()
 
@@ -83,7 +94,11 @@ interface StatsDao {
     @Query("SELECT * FROM battery_samples WHERE sessionId = :sessionId ORDER BY elapsedRealtimeMillis ASC")
     suspend fun samplesForSessionNow(sessionId: Long): List<BatterySampleEntity>
 
-    /** Retention: drop raw samples older than a cutoff whose session is already closed. */
+    /**
+     * Retention: drop raw samples older than a cutoff whose session is already closed. Complements
+     * [deleteSessionsEndedBefore] rather than being subsumed by it — a 20-day charge that ended
+     * yesterday survives as an entry, but its oldest curve points are still outside the window.
+     */
     @Query(
         """
         DELETE FROM battery_samples

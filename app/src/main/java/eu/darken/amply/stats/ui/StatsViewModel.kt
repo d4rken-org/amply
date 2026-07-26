@@ -19,6 +19,7 @@ import eu.darken.amply.stats.core.ChargeSessionSummary
 import eu.darken.amply.stats.core.ChargeStatsRecorder
 import eu.darken.amply.stats.core.ChargeStatsRepository
 import eu.darken.amply.stats.core.StatsPreferences
+import eu.darken.amply.stats.core.StatsRetention
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
@@ -34,15 +35,6 @@ import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-
-/**
- * The capture switch and its "last recorded" caption. Deliberately DataStore-only: the hub collects
- * this on every visit, and it must never be the thing that creates `stats.db` (see [chargeHistoryStates]).
- */
-data class CaptureUiState(
-    val captureEnabled: Boolean = false,
-    val lastCaptureWallMillis: Long? = null,
-)
 
 /**
  * The recorded-session list. Three states, because a Room failure must not be indistinguishable from
@@ -73,12 +65,20 @@ class StatsViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
-    val captureState: StateFlow<CaptureUiState> = combine(
-        preferences.captureEnabled.flow,
-        preferences.lastCaptureWallMillis.flow,
-    ) { enabled, lastCapture ->
-        CaptureUiState(captureEnabled = enabled, lastCaptureWallMillis = lastCapture)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), CaptureUiState())
+    /**
+     * The retention window, for the charging-history settings screen.
+     *
+     * Shared **eagerly**, unlike everything else here: with lazy sharing the screen's first frame
+     * would render the placeholder default and then jump to the stored value. Collection starts with
+     * the ViewModel and is DataStore-only, so it resolves long before the user navigates here — and it
+     * still never opens `stats.db` (see [chargeHistoryStates] for the property that matters there).
+     *
+     * Eager sharing only helps if the ViewModel is actually constructed early, which is why
+     * `MainActivity` collects this at its composition root rather than in the settings destination.
+     */
+    val retentionDays: StateFlow<Int> = preferences.retentionDays.flow
+        .map(StatsRetention::clampDays)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, StatsRetention.DEFAULT_DAYS)
 
     // Collected only by the history screen. Deliberately NOT gated on captureEnabled: switching capture
     // off must not hide (or make unclearable) what was already recorded.
@@ -140,6 +140,14 @@ class StatsViewModel @Inject constructor(
             preferences.setCaptureEnabled(enabled)
             recorder.setEnabled(enabled)
             nudgeService()
+        }
+    }
+
+    /** Change the retention window and apply it right away, so the effect is visible immediately. */
+    fun setRetentionDays(days: Int) {
+        viewModelScope.launch {
+            preferences.setRetentionDays(days)
+            recorder.purgeNow()
         }
     }
 

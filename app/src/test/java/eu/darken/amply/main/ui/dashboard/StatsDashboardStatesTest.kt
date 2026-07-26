@@ -6,6 +6,7 @@ import eu.darken.amply.stats.core.CaptureServiceHealth.NudgeOutcome
 import eu.darken.amply.stats.core.ChargeSessionSummary
 import eu.darken.amply.stats.core.ChargingType
 import eu.darken.amply.stats.core.StatsPreferences
+import eu.darken.amply.stats.core.StatsRetention
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -127,17 +128,19 @@ class StatsDashboardStatesTest {
      * Regression for the charging card's ~20s "blip".
      *
      * Driven through the **real** [StatsPreferences] on a real store, because the bug lived in the
-     * wiring rather than in this function: the recorder stamps `lastCaptureWallMillis` on every
-     * sample, that write handed the whole Preferences snapshot to every collector, and an
-     * undeduplicated `captureEnabled` re-emitted `true` — restarting the `flatMapLatest` below and
-     * replaying its loading marker, which blanked the card's chart for a frame.
+     * wiring rather than in this function: a write to any other key in the store handed the whole
+     * Preferences snapshot to every collector, and an undeduplicated `captureEnabled` re-emitted
+     * `true` — restarting the `flatMapLatest` below and replaying its loading marker, which blanked
+     * the card's chart for a frame. The original culprit was a per-sample "last capture" timestamp the
+     * recorder wrote every ~20s while charging; that key is gone, so the stimulus here is the
+     * retention window instead — the guard it proves belongs to the store, not to that one key.
      *
      * Note the stimulus has to be an **unrelated key carrying a new value**. Re-writing
      * `captureEnabled = true` would prove nothing: an equal snapshot is suppressed by DataStore
      * itself, so that version of this test passes even against the broken code.
      */
     @Test
-    fun `a recorder timestamp write does not restart the stats flow`() = runBlocking {
+    fun `an unrelated preference write does not restart the stats flow`() = runBlocking {
         val preferences = StatsPreferences(
             AppDataStore(
                 PreferenceDataStoreFactory.create(scope = storeScope) { File(tempDir, "test.preferences_pb") },
@@ -159,8 +162,8 @@ class StatsDashboardStatesTest {
         // Loading marker, then the first real data.
         withTimeout(TIMEOUT) { while (seen.size < 2) delay(5) }
 
-        // Exactly what the recorder does on every recorded sample while charging.
-        repeat(3) { i -> preferences.setLastCaptureWallMillis(1_000L + i) }
+        // Three writes to another key in the same store, each carrying a new value.
+        repeat(3) { i -> preferences.setRetentionDays(StatsRetention.MIN_DAYS + i) }
         delay(SETTLE)
 
         seen.count { it.loading } shouldBe 1

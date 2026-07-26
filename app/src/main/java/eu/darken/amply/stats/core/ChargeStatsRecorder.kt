@@ -1,12 +1,13 @@
 package eu.darken.amply.stats.core
 
+import android.content.Context
 import android.os.BatteryManager
 import android.os.SystemClock
 import androidx.room.withTransaction
 import dagger.Lazy
+import dagger.hilt.android.qualifiers.ApplicationContext
 import eu.darken.amply.battery.core.BatteryReadout
 import eu.darken.amply.battery.core.BatteryReader
-import eu.darken.amply.common.datastore.value
 import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
@@ -30,15 +31,22 @@ import javax.inject.Singleton
  * happen on this recorder's own IO coroutine — entirely off the charge-session service's
  * `commandMutex`. That is what guarantees a slow read/write here can never delay the safety-critical
  * charge-policy restore. The command channel is FIFO and unbounded, so plug transitions are never
- * dropped and enable/disable/clear are strictly ordered against samples.
+ * dropped and enable/disable/clear/purge are strictly ordered against samples.
  *
  * Capture on/off is an in-memory [capturing] flag driven by ordered [Command.SetEnabled] commands
  * (not a per-sample DataStore read), so an unplug sample enqueued just before a disable is sealed
  * with the correct endpoint before capture stops. The [StatsDatabase] is injected lazily so a
  * corrupt/locked stats DB can't fail construction of the safety-service graph.
+ *
+ * Retention ([StatsRetention]) is applied opportunistically rather than on a schedule: at process
+ * start, whenever a session is sealed, and on an explicit [purgeNow] after the user moves the
+ * retention slider. With capture **off** only the first and last of those fire — no samples arrive to
+ * seal anything — so history can sit past its window until the app is next started or the slider is
+ * touched. Accepted: nothing about stale local rows warrants a background job.
  */
 @Singleton
 class ChargeStatsRecorder @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val database: Lazy<StatsDatabase>,
     private val preferences: StatsPreferences,
     private val bootIdSource: BootIdSource,
@@ -57,8 +65,8 @@ class ChargeStatsRecorder @Inject constructor(
 
     init {
         scope.launch {
-            // Runs before any command: reconciles sessions left open by an unclean shutdown, and seeds
-            // the capturing flag from the durable preference.
+            // Runs before any command: seeds the capturing flag from the durable preference, reconciles
+            // sessions left open by an unclean shutdown, and applies retention.
             startupRepair()
             for (command in commands) {
                 try {
@@ -66,6 +74,7 @@ class ChargeStatsRecorder @Inject constructor(
                         is Command.Record -> onSample(command.tick)
                         is Command.SetEnabled -> onSetEnabled(command.enabled)
                         Command.Clear -> onClear()
+                        Command.Purge -> onPurge()
                     }
                 } catch (e: CancellationException) {
                     throw e
@@ -91,16 +100,23 @@ class ChargeStatsRecorder @Inject constructor(
         commands.trySend(Command.Clear)
     }
 
+    /** Apply the retention window now, ordered against samples — for a changed retention setting. */
+    fun purgeNow() {
+        commands.trySend(Command.Purge)
+    }
+
     private suspend fun startupRepair() {
         try {
             capturing = preferences.isCaptureEnabledNow()
             // Only touch the DB when we might have data — avoids creating an empty stats.db for users
-            // who never enabled statistics. The lastCapture stamp alone is not a sound existence test:
-            // it is written after the row is committed, so a process death in between leaves an open
-            // row with no stamp. Capture being enabled is therefore also sufficient — such a user gets
+            // who never enabled statistics. Capture being enabled is also sufficient: such a user gets
             // a stats.db on the next tick anyway, so opening it here costs nothing.
-            if (!capturing && preferences.lastCaptureWallMillis.value() == null) return
+            if (!capturing && !statsDatabaseExists()) return
             reconcileDanglingSessions()
+            // After reconciliation, never inside it: retention has to run even when there was no
+            // dangling row to reconcile — the normal state after a clean shutdown, which is exactly
+            // when a purge is the only thing this repair pass has to do.
+            purgeExpiredSessions(System.currentTimeMillis())
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -226,7 +242,7 @@ class ChargeStatsRecorder @Inject constructor(
         openSession = null
         lastRecordedElapsed = null
         lastRecordedPercent = null
-        purgeOldSamples(endWallMillis)
+        purgeExpiredSessions(endWallMillis)
     }
 
     private suspend fun onSetEnabled(enabled: Boolean) {
@@ -250,10 +266,18 @@ class ChargeStatsRecorder @Inject constructor(
             db.statsDao().deleteAllSamples()
             db.statsDao().deleteAllSessions()
         }
-        // Reset in-memory state immediately after the durable delete, before the cosmetic pref write,
-        // so a failing pref edit can't strand a reference to a now-deleted parent row.
+        // Reset in-memory state immediately after the durable delete, so nothing keeps a reference to
+        // a now-deleted parent row.
         resetInMemory()
-        runCatching { preferences.clearLastCapture() }
+    }
+
+    /**
+     * Apply retention on demand. Guarded like [startupRepair] so dragging the retention slider can
+     * never be what creates `stats.db` for a user who has no recorded data at all.
+     */
+    private suspend fun onPurge() {
+        if (!capturing && !statsDatabaseExists()) return
+        purgeExpiredSessions(System.currentTimeMillis())
     }
 
     /**
@@ -279,7 +303,6 @@ class ChargeStatsRecorder @Inject constructor(
         val candidate = if (capturing) open.maxByOrNull { it.id } else null
         val resumed = candidate?.let { resumeOrNull(it, currentBoot) }
         open.filter { it.id != resumed?.id }.forEach { row -> sealDangling(dao, row, currentBoot) }
-        open.maxOfOrNull { it.runningLastWallMillis ?: it.startedAtWallMillis }?.let { purgeOldSamples(it) }
     }
 
     /**
@@ -332,17 +355,31 @@ class ChargeStatsRecorder @Inject constructor(
         )
     }
 
-    /** Bound the raw-sample table: drop closed-session samples older than the retention window. */
-    private suspend fun purgeOldSamples(nowWallMillis: Long) {
-        val cutoff = nowWallMillis - RAW_SAMPLE_RETENTION_MILLIS
-        runCatching { database.get().statsDao().deleteSamplesOlderThan(cutoff) }
-            .onFailure { log(TAG, Logging.Priority.WARN) { "Stats retention purge failed: ${it.message}" } }
+    /**
+     * Apply the user's retention window: whole finished entries that ended before the cutoff go, and
+     * the surviving ones lose curve points older than it (a long charge that ended recently keeps its
+     * summary while its oldest samples age out).
+     */
+    private suspend fun purgeExpiredSessions(nowWallMillis: Long) {
+        val cutoff = StatsRetention.cutoffWallMillis(nowWallMillis, preferences.retentionDaysNow())
+        runCatching {
+            val dao = database.get().statsDao()
+            dao.deleteSessionsEndedBefore(cutoff)
+            dao.deleteSamplesOlderThan(cutoff)
+        }.onFailure { log(TAG, Logging.Priority.WARN) { "Stats retention purge failed: ${it.message}" } }
     }
 
-    private suspend fun markRecorded(sample: StatsSample) {
+    /**
+     * True if a stats DB file is on disk. Sound where the old last-capture timestamp was not: that
+     * stamp was written *after* the first row was committed, so a process death in the gap left data
+     * the guard couldn't see.
+     */
+    private fun statsDatabaseExists(): Boolean =
+        runCatching { context.getDatabasePath(StatsDatabase.NAME).exists() }.getOrDefault(false)
+
+    private fun markRecorded(sample: StatsSample) {
         lastRecordedElapsed = sample.elapsedRealtimeMillis
         lastRecordedPercent = sample.percent
-        preferences.setLastCaptureWallMillis(sample.wallMillis)
     }
 
     private fun resetInMemory() {
@@ -371,10 +408,10 @@ class ChargeStatsRecorder @Inject constructor(
         data class Record(val tick: RawStatsTick) : Command
         data class SetEnabled(val enabled: Boolean) : Command
         data object Clear : Command
+        data object Purge : Command
     }
 
     private companion object {
         val TAG = logTag("Stats", "Recorder")
-        const val RAW_SAMPLE_RETENTION_MILLIS = 30L * 24 * 60 * 60 * 1000 // 30 days
     }
 }
