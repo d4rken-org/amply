@@ -322,6 +322,7 @@ class ChargeSessionService : Service() {
         val level = battery?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
         val scale = battery?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
         val percent = if (level >= 0 && scale > 0) level * 100 / scale else -1
+        val chargingStatus = battery?.getIntExtra(BatteryManager.EXTRA_CHARGING_STATUS, 0) ?: 0
 
         val session = fullChargeStore.currentSession()
 
@@ -370,7 +371,15 @@ class ChargeSessionService : Service() {
             return
         }
 
-        if (!fullChargeStore.isQuickFullChargeEnabled() || !reconnectGestureAvailable()) {
+        // Resolved once, here: DeviceInfo.current() resolves activities/providers, reads Samsung
+        // settings and queries UserManager, so it must stay behind the session early-return and the
+        // cheap enabled check — hoisting it would newly charge active sessions, disabled gestures
+        // and watcher-only ticks for it under commandMutex. Net cost is unchanged: the availability
+        // check already resolved a selection at exactly this point, and the hardware decode below
+        // reuses this one.
+        val gestureEnabled = fullChargeStore.isQuickFullChargeEnabled()
+        val adapter = if (gestureEnabled) adapterRegistry.select().adapter else null
+        if (!gestureEnabled || adapter?.reconnectGestureSupported != true) {
             dispatchWatchers(plugged, percent, status, sessionOwned = false, battery, observedAtElapsed)
             // Gesture inactive: keep running only if a watcher still wants the service, showing the
             // quiet monitoring notification instead of the gesture cue.
@@ -383,25 +392,36 @@ class ChargeSessionService : Service() {
         }
 
         val anyLevel = fullChargeStore.isQuickFullChargeAnyLevel()
-        // "Protective" means Amply's own persistent configuration, freshly read on every tick — the
-        // engine revokes an any-level arming/window the moment this goes false, so a trigger can
-        // never rest on a belief older than its own evaluation. (A change made in native Settings
-        // stays invisible without Shizuku; ChargeSessionManager.begin() re-verifies live state and
-        // refuses when readback proves charging is already unrestricted.)
-        val policyProtective = anyLevel && preferences.lastPersistentPolicyNow()
-            .let { it != null && it != ChargePolicy.Unrestricted }
+        // The live charging-policy hardware state, freshly decoded on every tick. It is the
+        // authoritative source for the any-level basis: a limit set natively (or by a previous
+        // install) leaves Amply's own journal empty, and gating on the journal alone meant the
+        // basis never armed on such a device. The hardware signal is only reported while powered,
+        // so unplugged ticks yield inconclusive evidence, which the engine treats as "no change".
+        val hardware = adapter?.decodeHardware(chargingStatus, plugged)
+        val policyEvidence = if (anyLevel) {
+            GestureBasis.evidence(hardware, preferences.lastPersistentPolicyNow())
+        } else {
+            PolicyEvidence.UNKNOWN
+        }
         val output = quickGesture.update(
             QuickFullChargeGesture.Input(
                 nowMillis = observedAtElapsed,
                 plugged = plugged,
                 percent = percent,
                 batteryStatus = status,
-                chargingStatus = battery?.getIntExtra(BatteryManager.EXTRA_CHARGING_STATUS, 0) ?: 0,
+                chargingStatus = chargingStatus,
                 anyLevelEnabled = anyLevel,
-                policyProtective = policyProtective,
+                policyEvidence = policyEvidence,
             ),
         )
         val decision = output.decision
+        // Every gesture tick, not just the interesting ones: a gesture that never arms leaves no
+        // other trace, and diagnosing that from a debug log must not require a DataStore teardown.
+        log(TAG, Logging.Priority.VERBOSE) {
+            "Reconnect gesture tick: plugged=$plugged percent=$percent batteryStatus=$status " +
+                "chargingStatus=$chargingStatus anyLevel=$anyLevel policyEvidence=$policyEvidence " +
+                "decision=$decision"
+        }
         if (decision != QuickFullChargeDecision.IDLE) {
             log(TAG) {
                 "Reconnect gesture: decision=$decision anyLevelBasis=${output.anyLevelBasis} " +

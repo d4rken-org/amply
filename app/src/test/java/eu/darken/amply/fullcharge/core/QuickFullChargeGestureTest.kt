@@ -105,7 +105,7 @@ class QuickFullChargeGestureTest {
             batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
             chargingStatus = 1,
             anyLevel = true,
-            protective = true,
+            evidence = PolicyEvidence.PROTECTIVE,
         ) shouldBe QuickFullChargeDecision.ARMED
     }
 
@@ -118,7 +118,7 @@ class QuickFullChargeGestureTest {
             batteryStatus = BatteryManager.BATTERY_STATUS_UNKNOWN,
             chargingStatus = 0,
             anyLevel = true,
-            protective = true,
+            evidence = PolicyEvidence.PROTECTIVE,
         ) shouldBe QuickFullChargeDecision.ARMED
     }
 
@@ -131,7 +131,7 @@ class QuickFullChargeGestureTest {
             batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
             chargingStatus = 1,
             anyLevel = true,
-            protective = false,
+            evidence = PolicyEvidence.UNRESTRICTED,
         ) shouldBe QuickFullChargeDecision.IDLE
     }
 
@@ -144,7 +144,7 @@ class QuickFullChargeGestureTest {
             batteryStatus = BatteryManager.BATTERY_STATUS_DISCHARGING,
             chargingStatus = 0,
             anyLevel = true,
-            protective = true,
+            evidence = PolicyEvidence.PROTECTIVE,
         ) shouldBe QuickFullChargeDecision.IDLE
     }
 
@@ -153,7 +153,13 @@ class QuickFullChargeGestureTest {
         anyLevelCharging(1_000) shouldBe QuickFullChargeDecision.ARMED
         anyLevelUnplugged(2_000) shouldBe QuickFullChargeDecision.WAITING_FOR_RECONNECT
         val output = gesture.update(
-            input(now = 7_000, plugged = true, percent = 16, anyLevel = true, protective = true),
+            input(
+                now = 7_000,
+                plugged = true,
+                percent = 16,
+                anyLevel = true,
+                evidence = PolicyEvidence.PROTECTIVE,
+            ),
         )
         output.decision shouldBe QuickFullChargeDecision.TRIGGER
         output.anyLevelBasis shouldBe true
@@ -185,7 +191,7 @@ class QuickFullChargeGestureTest {
             batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
             chargingStatus = 1,
             anyLevel = false,
-            protective = true,
+            evidence = PolicyEvidence.PROTECTIVE,
         ) shouldBe QuickFullChargeDecision.IDLE
     }
 
@@ -199,7 +205,7 @@ class QuickFullChargeGestureTest {
             batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
             chargingStatus = 1,
             anyLevel = true,
-            protective = false,
+            evidence = PolicyEvidence.UNRESTRICTED,
         ) shouldBe QuickFullChargeDecision.IDLE
     }
 
@@ -215,7 +221,7 @@ class QuickFullChargeGestureTest {
             batteryStatus = BatteryManager.BATTERY_STATUS_DISCHARGING,
             chargingStatus = 0,
             anyLevel = false,
-            protective = true,
+            evidence = PolicyEvidence.PROTECTIVE,
         ) shouldBe QuickFullChargeDecision.IDLE
         step(
             now = 5_000,
@@ -224,7 +230,7 @@ class QuickFullChargeGestureTest {
             batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
             chargingStatus = 1,
             anyLevel = false,
-            protective = true,
+            evidence = PolicyEvidence.PROTECTIVE,
         ) shouldBe QuickFullChargeDecision.IDLE
     }
 
@@ -240,8 +246,78 @@ class QuickFullChargeGestureTest {
             batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
             chargingStatus = 1,
             anyLevel = true,
-            protective = false,
+            evidence = PolicyEvidence.UNRESTRICTED,
         ) shouldBe QuickFullChargeDecision.IDLE
+    }
+
+    // The regression this whole tri-state exists for: the hardware evidence is only reported while
+    // powered, so the very unplug tick that opens the window reports UNKNOWN. Treating that as a
+    // withdrawal revoked the basis before the plug edge was recorded, and the gesture never fired
+    // on a device whose limit was set natively (empty journal).
+    @Test
+    fun `an inconclusive unplug tick keeps the any-level window open`() {
+        step(
+            now = 1_000,
+            plugged = true,
+            percent = 45,
+            batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
+            chargingStatus = QuickFullChargeGesture.CHARGING_STATUS_POLICY,
+            anyLevel = true,
+            evidence = PolicyEvidence.PROTECTIVE,
+        ) shouldBe QuickFullChargeDecision.ARMED
+        step(
+            now = 2_000,
+            plugged = false,
+            percent = 45,
+            batteryStatus = BatteryManager.BATTERY_STATUS_DISCHARGING,
+            chargingStatus = 0,
+            anyLevel = true,
+            evidence = PolicyEvidence.UNKNOWN,
+        ) shouldBe QuickFullChargeDecision.WAITING_FOR_RECONNECT
+        val output = gesture.update(
+            input(
+                now = 6_000,
+                plugged = true,
+                percent = 45,
+                batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
+                chargingStatus = 1,
+                anyLevel = true,
+                evidence = PolicyEvidence.PROTECTIVE,
+            ),
+        )
+        output.decision shouldBe QuickFullChargeDecision.TRIGGER
+        output.anyLevelBasis shouldBe true
+    }
+
+    @Test
+    fun `a conclusively unrestricted unplug tick cancels the any-level window`() {
+        step(
+            now = 1_000,
+            plugged = true,
+            percent = 45,
+            batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
+            chargingStatus = QuickFullChargeGesture.CHARGING_STATUS_POLICY,
+            anyLevel = true,
+            evidence = PolicyEvidence.PROTECTIVE,
+        ) shouldBe QuickFullChargeDecision.ARMED
+        step(
+            now = 2_000,
+            plugged = false,
+            percent = 45,
+            batteryStatus = BatteryManager.BATTERY_STATUS_DISCHARGING,
+            chargingStatus = 0,
+            anyLevel = true,
+            evidence = PolicyEvidence.UNRESTRICTED,
+        ) shouldBe QuickFullChargeDecision.IDLE
+        step(
+            now = 6_000,
+            plugged = true,
+            percent = 45,
+            batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
+            chargingStatus = 1,
+            anyLevel = true,
+            evidence = PolicyEvidence.PROTECTIVE,
+        ) shouldBe QuickFullChargeDecision.ARMED
     }
 
     @Test
@@ -255,7 +331,7 @@ class QuickFullChargeGestureTest {
             batteryStatus = BatteryManager.BATTERY_STATUS_NOT_CHARGING,
             chargingStatus = QuickFullChargeGesture.CHARGING_STATUS_POLICY,
             anyLevel = true,
-            protective = false,
+            evidence = PolicyEvidence.UNRESTRICTED,
         ) shouldBe QuickFullChargeDecision.TRIGGER
     }
 
@@ -268,7 +344,7 @@ class QuickFullChargeGestureTest {
             batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
             chargingStatus = 1,
             anyLevel = true,
-            protective = true,
+            evidence = PolicyEvidence.PROTECTIVE,
         ) shouldBe QuickFullChargeDecision.ARMED
     }
 
@@ -285,7 +361,7 @@ class QuickFullChargeGestureTest {
             batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
             chargingStatus = 1,
             anyLevel = true,
-            protective = true,
+            evidence = PolicyEvidence.PROTECTIVE,
         ) shouldBe QuickFullChargeDecision.ARMED
     }
 
@@ -304,7 +380,7 @@ class QuickFullChargeGestureTest {
         batteryStatus: Int = BatteryManager.BATTERY_STATUS_UNKNOWN,
         chargingStatus: Int = 0,
         anyLevel: Boolean = false,
-        protective: Boolean = false,
+        evidence: PolicyEvidence = PolicyEvidence.UNKNOWN,
     ) = QuickFullChargeGesture.Input(
         nowMillis = now,
         plugged = plugged,
@@ -312,7 +388,7 @@ class QuickFullChargeGestureTest {
         batteryStatus = batteryStatus,
         chargingStatus = chargingStatus,
         anyLevelEnabled = anyLevel,
-        policyProtective = protective,
+        policyEvidence = evidence,
     )
 
     private fun step(
@@ -322,9 +398,9 @@ class QuickFullChargeGestureTest {
         batteryStatus: Int = BatteryManager.BATTERY_STATUS_UNKNOWN,
         chargingStatus: Int = 0,
         anyLevel: Boolean = false,
-        protective: Boolean = false,
+        evidence: PolicyEvidence = PolicyEvidence.UNKNOWN,
     ) = gesture.update(
-        input(now, plugged, percent, batteryStatus, chargingStatus, anyLevel, protective),
+        input(now, plugged, percent, batteryStatus, chargingStatus, anyLevel, evidence),
     ).decision
 
     private fun atLimit(now: Long) = step(
@@ -355,7 +431,7 @@ class QuickFullChargeGestureTest {
         batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
         chargingStatus = 1,
         anyLevel = true,
-        protective = true,
+        evidence = PolicyEvidence.PROTECTIVE,
     )
 
     private fun anyLevelUnplugged(now: Long) = step(
@@ -365,6 +441,6 @@ class QuickFullChargeGestureTest {
         batteryStatus = BatteryManager.BATTERY_STATUS_DISCHARGING,
         chargingStatus = 0,
         anyLevel = true,
-        protective = true,
+        evidence = PolicyEvidence.PROTECTIVE,
     )
 }
