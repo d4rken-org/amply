@@ -24,13 +24,19 @@ enum class PolicyEvidence { PROTECTIVE, UNRESTRICTED, UNKNOWN }
  *   reconnect window — by an explicit opt-out or by *conclusive* [PolicyEvidence.UNRESTRICTED]
  *   evidence, so an opt-out can never produce a trigger.
  *
- * [PolicyEvidence.UNKNOWN] deliberately does **not** revoke: the strongest evidence (the battery
- * broadcast's charging-policy hardware state) is only reported while external power is present, so
- * the very unplug tick that opens the reconnect window reports UNKNOWN. Treating that as a
- * withdrawal would revoke the basis before the powered→unpowered edge is even recorded and the
+ * [PolicyEvidence.UNKNOWN] is tolerated **only** on an unplugged tick or while a reconnect window is
+ * open — that is the one place the strongest evidence is structurally unavailable, because the
+ * battery broadcast's charging-policy hardware state is only reported while external power is
+ * present. So the very unplug tick that opens the reconnect window reports UNKNOWN; treating that as
+ * a withdrawal would revoke the basis before the powered→unpowered edge is even recorded and the
  * window would never open. An open window survives inconclusive evidence for at most the 10 s
  * reconnect ceiling, and `ChargeSessionManager.begin()` re-verifies live state and refuses
  * (`SessionStartDecision.AlreadyChargesFull`) when readback proves charging already reaches full.
+ *
+ * A *continuously plugged* tick that goes inconclusive does drop the basis: powered, the evidence is
+ * available, so an inconclusive reading means the configuration is no longer known to be protective
+ * (a natively-removed limit reads as UNKNOWN, not UNRESTRICTED, on a journal-less device). Dropping
+ * costs nothing — the basis re-arms on the very next tick that reports protective evidence again.
  *
  * The reconnect window has a debounce floor: a disconnect shorter than [minReconnectMillis] never
  * triggers, filtering momentary power cuts (car ignition, connector jostle). Timestamps must come
@@ -76,12 +82,20 @@ class QuickFullChargeGesture(
             input.plugged &&
             input.policyEvidence == PolicyEvidence.PROTECTIVE
 
-        // An any-level basis is dropped by an explicit opt-out or by conclusive evidence that
-        // charging is unrestricted — never by merely inconclusive evidence, which is what an
-        // unplugged tick always reports. A latched limit-hold basis survives option flips: its
-        // evidence was the (momentary) hardware hold, which is mode-independent.
+        // An any-level basis is dropped by an explicit opt-out, by conclusive evidence that charging
+        // is unrestricted, or by inconclusive evidence on a tick where conclusive evidence was
+        // available (plugged, no open window) — a natively-removed limit reads UNKNOWN, not
+        // UNRESTRICTED, on a journal-less device. The `disconnectedAtMillis == null` guard is
+        // load-bearing: this block runs before the replug edge is handled, so without it a replug
+        // tick whose hardware has not re-reported its hold yet would destroy its own trigger.
+        // A latched limit-hold basis survives option flips: its evidence was the (momentary)
+        // hardware hold, which is mode-independent.
         if (armedBy == ArmedBy.ANY_LEVEL &&
-            (!input.anyLevelEnabled || input.policyEvidence == PolicyEvidence.UNRESTRICTED)
+            (!input.anyLevelEnabled ||
+                input.policyEvidence == PolicyEvidence.UNRESTRICTED ||
+                (input.policyEvidence == PolicyEvidence.UNKNOWN &&
+                    input.plugged &&
+                    disconnectedAtMillis == null))
         ) {
             armedBy = null
             disconnectedAtMillis = null
