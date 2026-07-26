@@ -42,12 +42,14 @@ class GestureBasisTest {
     }
 
     @Test
-    fun `the named limit comes from the strongest source`() {
-        GestureBasis.limitPercent(verified(ChargePolicy.FixedLimit(85)), ChargePolicy.FixedLimit(80)) shouldBe 85
-        // A natively-set adaptive policy must never be labelled as the journal's 80% limit.
-        GestureBasis.limitPercent(verified(ChargePolicy.Adaptive), ChargePolicy.FixedLimit(80)) shouldBe null
-        GestureBasis.limitPercent(null, ChargePolicy.FixedLimit(80)) shouldBe 80
-        GestureBasis.limitPercent(verified(ChargePolicy.FixedLimit(100)), null) shouldBe null
-        GestureBasis.limitPercent(null, null) shouldBe null
+    fun `only a verified fixed limit may be named`() {
+        GestureBasis.limitPercent(verified(ChargePolicy.FixedLimit(85))) shouldBe 85
+        // A verified policy that isn't a hard cap names nothing.
+        GestureBasis.limitPercent(verified(ChargePolicy.Adaptive)) shouldBe null
+        GestureBasis.limitPercent(verified(ChargePolicy.FixedLimit(100))) shouldBe null
+        // Inconclusive hardware must not be rescued by anything: a limit the user removed natively
+        // decodes as Unknown, and naming the journal's 80% there is a false user-facing claim.
+        GestureBasis.limitPercent(ChargeObservation.Unknown("no readback".toCaString())) shouldBe null
+        GestureBasis.limitPercent(null) shouldBe null
     }
 }
