@@ -234,7 +234,7 @@ private fun SettingsComponentsPreview() = PreviewWrapper {
         )
         SettingsDivider()
         SettingsSwitchItem(
-            title = "Quick full charge",
+            title = "Reconnect gesture",
             subtitle = "Reconnect at 80% to charge fully once",
             checked = true,
             onCheckedChange = {},
