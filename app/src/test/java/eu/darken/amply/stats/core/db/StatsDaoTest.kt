@@ -142,6 +142,63 @@ class StatsDaoTest {
         dao.samplesForSessionNow(openId).map { it.wallMillis } shouldBe listOf(1_000L)
     }
 
+    @Test
+    fun `session retention deletes entries that ended before the cutoff and cascades their samples`() = runTest {
+        val expired = closedSession(startWall = 1_000L, endWall = 2_000L)
+        dao.insertSample(sample(expired, wall = 1_500L))
+        val kept = closedSession(startWall = 6_000L, endWall = 7_000L)
+        dao.insertSample(sample(kept, wall = 6_500L))
+
+        dao.deleteSessionsEndedBefore(cutoffWallMillis = 5_000L) shouldBe 1
+
+        dao.sessionById(expired) shouldBe null
+        dao.samplesForSessionNow(expired) shouldBe emptyList()
+        dao.sessionById(kept)!!.id shouldBe kept
+        dao.samplesForSessionNow(kept).size shouldBe 1
+    }
+
+    @Test
+    fun `a session that ended after the cutoff keeps its entry even with samples older than it`() = runTest {
+        // A 20-day charge that ended yesterday: the entry survives, and its old curve points are only
+        // bounded by the per-sample purge — which is why both queries exist.
+        val id = closedSession(startWall = 1_000L, endWall = 7_000L)
+        dao.insertSample(sample(id, wall = 1_000L))
+        dao.insertSample(sample(id, wall = 6_500L))
+
+        dao.deleteSessionsEndedBefore(cutoffWallMillis = 5_000L) shouldBe 0
+
+        dao.sessionById(id)!!.id shouldBe id
+        dao.samplesForSessionNow(id).map { it.wallMillis } shouldBe listOf(1_000L, 6_500L)
+        dao.deleteSamplesOlderThan(cutoffWallMillis = 5_000L) shouldBe 1
+        dao.samplesForSessionNow(id).map { it.wallMillis } shouldBe listOf(6_500L)
+    }
+
+    @Test
+    fun `session retention never deletes an open session however old its start`() = runTest {
+        val id = dao.insertSession(openSession(startWall = 1_000L))
+
+        dao.deleteSessionsEndedBefore(cutoffWallMillis = 500_000L) shouldBe 0
+
+        dao.sessionById(id)!!.endedAtWallMillis shouldBe null
+    }
+
+    @Test
+    fun `a session ending exactly at the cutoff survives`() = runTest {
+        val id = closedSession(startWall = 1_000L, endWall = 5_000L)
+
+        dao.deleteSessionsEndedBefore(cutoffWallMillis = 5_000L) shouldBe 0
+
+        dao.sessionById(id)!!.id shouldBe id
+    }
+
+    private suspend fun closedSession(startWall: Long, endWall: Long): Long {
+        val id = dao.insertSession(openSession(startWall = startWall))
+        dao.updateSession(
+            dao.sessionById(id)!!.copy(endedAtWallMillis = endWall, endedElapsedRealtimeMillis = endWall),
+        )
+        return id
+    }
+
     private fun sample(sessionId: Long, wall: Long) = BatterySampleEntity(
         sessionId = sessionId,
         wallMillis = wall,

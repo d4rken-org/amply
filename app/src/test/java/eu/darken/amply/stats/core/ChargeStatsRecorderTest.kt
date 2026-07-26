@@ -32,11 +32,12 @@ import org.robolectric.annotation.Config
 import java.io.File
 
 /**
- * Startup reconciliation of a session left open by a process death, against an in-memory Room
- * instance: does the recorder reattach the row (keeping the real plug-in time and one history entry),
- * or seal it? The decision itself is unit-tested in [StatsSessionEngineTest]; what is covered here is
- * the orchestration around it — probing live battery state, choosing among multiple open rows, and
- * the capture-disabled short circuit.
+ * Recorder-level orchestration against an in-memory Room instance: startup reconciliation of a
+ * session left open by a process death (reattach the row, keeping the real plug-in time and one
+ * history entry, or seal it?) and the retention purges layered on top of it. The individual decisions
+ * are unit-tested in [StatsSessionEngineTest] / [StatsRetentionTest]; what is covered here is the
+ * orchestration — probing live battery state, choosing among multiple open rows, the capture-disabled
+ * short circuit, and *when* a purge actually runs.
  *
  * Robolectric (JUnit 4) per the project's convention for anything needing the Android framework. The
  * recorder's own command loop is injected with a dispatcher, but its database work still crosses
@@ -54,6 +55,15 @@ class ChargeStatsRecorderTest {
     private lateinit var database: StatsDatabase
     private lateinit var preferences: StatsPreferences
     private lateinit var dataStoreScope: CoroutineScope
+    private var databaseAccessCount = 0
+
+    /**
+     * Retention runs against real wall time (the recorder reads `System.currentTimeMillis()`), so the
+     * fixtures are anchored to *now* rather than to a small literal: a session sealed at epoch+1s would
+     * sit outside every retention window and be purged by the very startup pass that sealed it.
+     */
+    private val now = System.currentTimeMillis()
+    private val wallStart = now - HOUR
 
     @Before
     fun setup() {
@@ -61,6 +71,10 @@ class ChargeStatsRecorderTest {
         database = Room.inMemoryDatabaseBuilder(context, StatsDatabase::class.java)
             .allowMainThreadQueries()
             .build()
+        databaseAccessCount = 0
+        // Room is in-memory here, so the recorder's existence guard must see no file unless a test
+        // deliberately creates one — a leftover from another test would silently defeat it.
+        context.getDatabasePath(StatsDatabase.NAME).delete()
         // Own temp file per test, matching the project's other DataStore tests. A DataStore over the
         // app's real path would be shared with every other Robolectric class in the same JVM.
         dataStoreScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -80,23 +94,31 @@ class ChargeStatsRecorderTest {
     }
 
     /**
-     * Construct the recorder, which runs its startup reconciliation immediately. Everything the
-     * reconciliation reads (capture flag, last-capture stamp, boot count, sticky battery state) must
-     * already be seeded.
+     * Construct the recorder, which runs its startup repair immediately. Everything that repair reads
+     * (capture flag, retention window, boot count, sticky battery state) must already be seeded. The
+     * database is handed over through a counting provider so a test can assert Room was never opened.
      */
     private fun startRecorder() = ChargeStatsRecorder(
-        database = { database },
+        context = context,
+        database = { databaseAccessCount++; database },
         preferences = preferences,
         bootIdSource = BootIdSource(context),
         batteryReader = BatteryReader(context),
         dispatcher = Dispatchers.Unconfined,
     )
 
-    private suspend fun enableCapture(enabled: Boolean = true, stamped: Boolean = true) {
+    private suspend fun enableCapture(enabled: Boolean = true) {
         preferences.setCaptureEnabled(enabled)
-        // With capture off, the last-capture stamp is what tells the recorder there may be data worth
-        // reconciling; without either it refuses to touch the DB at all.
-        if (stamped) preferences.setLastCaptureWallMillis(WALL_START)
+    }
+
+    /**
+     * Materialize the on-disk `stats.db` the recorder's existence guard checks. Room is in-memory
+     * here, so without this a capture-off recorder correctly refuses to touch the database at all.
+     */
+    private fun createStatsDatabaseFile() {
+        val file = context.getDatabasePath(StatsDatabase.NAME)
+        file.parentFile?.mkdirs()
+        file.createNewFile()
     }
 
     private fun setBootCount(count: Int) {
@@ -126,7 +148,7 @@ class ChargeStatsRecorderTest {
     private suspend fun insertOpenSession(
         bootId: Long = BOOT_ID,
         lastPercent: Int? = 50,
-        startWall: Long = WALL_START,
+        startWall: Long = wallStart,
     ): Long = database.statsDao().insertSession(
         ChargeSessionEntity(
             startedAtWallMillis = startWall,
@@ -140,6 +162,16 @@ class ChargeStatsRecorderTest {
             runningLastPowerMilliwatts = 9_000,
         ),
     )
+
+    /** A finished entry, for the retention cases. Elapsed stamps are irrelevant to a wall-time purge. */
+    private suspend fun insertClosedSession(endWall: Long, startWall: Long = endWall - 60_000): Long {
+        val id = insertOpenSession(startWall = startWall)
+        val row = database.statsDao().sessionById(id)!!
+        database.statsDao().updateSession(
+            row.copy(endedAtWallMillis = endWall, endedElapsedRealtimeMillis = endWall),
+        )
+        return id
+    }
 
     private suspend fun await(condition: suspend () -> Boolean) {
         withTimeout(AWAIT_TIMEOUT_MILLIS) {
@@ -164,7 +196,7 @@ class ChargeStatsRecorderTest {
         val row = database.statsDao().sessionById(id).shouldNotBeNull()
         // The whole point: the card's "Since …" keeps the real plug-in time rather than jumping to
         // the process launch time.
-        row.startedAtWallMillis shouldBe WALL_START
+        row.startedAtWallMillis shouldBe wallStart
         row.startPercent shouldBe 40
         row.endedAtWallMillis shouldBe null
         // Continuity across the gap is inferred, so the row is flagged...
@@ -226,11 +258,11 @@ class ChargeStatsRecorderTest {
     }
 
     @Test
-    fun `an open row with no last-capture stamp is still reconciled`(): Unit = runBlocking {
-        // The stamp is written *after* the session row is committed, so a process death in between
-        // leaves an open row with no stamp. Gating reconciliation on the stamp alone would strand that
-        // row open forever and let the next tick open a second one alongside it.
-        enableCapture(stamped = false)
+    fun `an open row is reconciled even with no stats db file on disk`(): Unit = runBlocking {
+        // Capture being enabled is sufficient on its own: a recorder that refused to look until it saw
+        // a database file would strand this row open forever and let the next tick open a second one
+        // alongside it. (Room is in-memory here, so no file exists.)
+        enableCapture()
         setBootCount(BOOT_ID.toInt())
         setBattery(plugged = true, percent = 55)
         val id = insertOpenSession()
@@ -247,6 +279,7 @@ class ChargeStatsRecorderTest {
         // is enqueued, so a crash in between leaves durable-off with a row still open. No tick will
         // ever arrive to advance a resumed row.
         enableCapture(enabled = false)
+        createStatsDatabaseFile()
         setBootCount(BOOT_ID.toInt())
         setBattery(plugged = true, percent = 55)
         val id = insertOpenSession()
@@ -260,8 +293,8 @@ class ChargeStatsRecorderTest {
         enableCapture()
         setBootCount(BOOT_ID.toInt())
         setBattery(plugged = true, percent = 55)
-        val older = insertOpenSession(startWall = WALL_START)
-        val newer = insertOpenSession(startWall = WALL_START + 60_000)
+        val older = insertOpenSession(startWall = wallStart)
+        val newer = insertOpenSession(startWall = wallStart + 60_000)
 
         startRecorder()
         awaitResumed(newer)
@@ -288,14 +321,101 @@ class ChargeStatsRecorderTest {
                 sessionActive = false,
                 batteryIntent = null,
                 observedElapsedRealtimeMillis = 60_000,
-                wallMillis = WALL_START + 60_000,
+                wallMillis = wallStart + 60_000,
             ),
         )
         await { database.statsDao().sessionById(id)?.runningLastPercent == 56 }
 
         // Appended, not reopened: still one session, and it is still the original row.
         database.statsDao().openSessions().map { it.id } shouldBe listOf(id)
-        database.statsDao().sessionById(id)?.startedAtWallMillis shouldBe WALL_START
+        database.statsDao().sessionById(id)?.startedAtWallMillis shouldBe wallStart
+    }
+
+    @Test
+    fun `startup purges expired entries with no dangling open row to reconcile`(): Unit = runBlocking {
+        // The regression this pins: with the purge nested inside reconciliation, a clean shutdown (no
+        // open rows) meant no purge ran at all — retention only ever applied after a crash.
+        preferences.setRetentionDays(3)
+        enableCapture()
+        setBootCount(BOOT_ID.toInt())
+        setBattery(plugged = false, percent = 55)
+        val expired = insertClosedSession(endWall = now - 10 * DAY)
+
+        startRecorder()
+
+        await { database.statsDao().sessionById(expired) == null }
+    }
+
+    @Test
+    fun `purgeNow applies the stored retention window, not the default`(): Unit = runBlocking {
+        preferences.setRetentionDays(3)
+        enableCapture()
+        setBootCount(BOOT_ID.toInt())
+        setBattery(plugged = false, percent = 55)
+
+        val recorder = startRecorder()
+        // 5 days old: inside the 14-day default, outside the 3 days actually configured.
+        val expired = insertClosedSession(endWall = now - 5 * DAY)
+        val kept = insertClosedSession(endWall = now - DAY)
+        recorder.purgeNow()
+
+        await { database.statsDao().sessionById(expired) == null }
+        database.statsDao().sessionById(kept).shouldNotBeNull()
+    }
+
+    @Test
+    fun `an open row survives a purge and expires only once a seal makes it eligible`(): Unit = runBlocking {
+        preferences.setRetentionDays(3)
+        enableCapture()
+        createStatsDatabaseFile()
+        setBootCount(BOOT_ID.toInt())
+        setBattery(plugged = true, percent = 55)
+        val id = insertOpenSession(startWall = now - 10 * DAY)
+
+        val recorder = startRecorder()
+        awaitResumed(id)
+
+        // Commands are FIFO on one loop, so the seal below is strictly after this purge: had the purge
+        // taken the still-open row, there would be nothing left to seal and the await would time out.
+        recorder.purgeNow()
+        recorder.setEnabled(false)
+        awaitSealed(id)
+
+        recorder.purgeNow()
+        await { database.statsDao().sessionById(id) == null }
+    }
+
+    @Test
+    fun `recorded data is purged even with capture switched off`(): Unit = runBlocking {
+        // The case the old last-capture stamp could miss: capture is off, but a database file (and rows)
+        // are on disk, so retention still has work to do.
+        preferences.setRetentionDays(3)
+        enableCapture(enabled = false)
+        createStatsDatabaseFile()
+        setBootCount(BOOT_ID.toInt())
+        setBattery(plugged = false, percent = 55)
+        val expired = insertClosedSession(endWall = now - 10 * DAY)
+
+        startRecorder()
+
+        await { database.statsDao().sessionById(expired) == null }
+    }
+
+    @Test
+    fun `a purge on a never-enabled recorder never opens the database`(): Unit = runBlocking {
+        // Dragging the retention slider must not be what creates stats.db for a user who never recorded
+        // anything. No stats.db file exists here (Room is in-memory) and capture was never enabled.
+        enableCapture(enabled = false)
+        setBootCount(BOOT_ID.toInt())
+        setBattery(plugged = false, percent = 55)
+
+        val recorder = startRecorder()
+        recorder.purgeNow()
+        // A negative assertion has nothing to await, so give the command loop a generous window in
+        // which to misbehave.
+        delay(500)
+
+        databaseAccessCount shouldBe 0
     }
 
     // The recorder's power gate. Both cases seed real voltage AND current, and assert those raw
@@ -358,12 +478,13 @@ class ChargeStatsRecorderTest {
             putExtra(BatteryManager.EXTRA_VOLTAGE, 4_000)
         },
         observedElapsedRealtimeMillis = 60_000,
-        wallMillis = WALL_START + 60_000,
+        wallMillis = wallStart + 60_000,
     )
 
     private companion object {
         const val BOOT_ID = 7L
-        const val WALL_START = 1_000L
         const val AWAIT_TIMEOUT_MILLIS = 10_000L
+        const val HOUR = 60L * 60 * 1000
+        const val DAY = 24 * HOUR
     }
 }

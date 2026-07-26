@@ -184,6 +184,9 @@
     <string name="settings_title">Settings</string>
     <string name="settings_version">Amply %1$s</string>
     <string name="settings_general_subtitle">Theme and appearance</string>
+    <string name="settings_charging_history_title">Charging history</string>
+    <string name="settings_charging_history_subtitle_on">Recording charges</string>
+    <string name="settings_charging_history_subtitle_off">Not recording</string>
     <string name="settings_category_advanced">Advanced</string>
     <string name="settings_diagnostics_title">Help add support</string>
     <string name="settings_diagnostics_subtitle_ready">Guide a maintainer to add your device · Shizuku ready</string>
@@ -522,9 +525,12 @@
     <string name="charge_history_loading">Loading…</string>
     <string name="charge_history_unavailable">Charge history is unavailable right now</string>
     <string name="stats_capture_title">Record statistics</string>
-    <string name="stats_capture_subtitle">Records each charge in detail — level, charging speed, and temperature over time. While on, Amply keeps a permanent notification and runs continuously; you can turn it off any time.</string>
-    <string name="stats_capture_last_recorded">Last recorded %1$s</string>
-    <string name="stats_capture_never">not yet — recording starts on your next charge</string>
+    <string name="stats_capture_subtitle">Records each charge in detail — level, charging speed, and temperature over time. While on, Amply keeps a permanent notification and runs continuously.</string>
+    <string name="stats_capture_optin_action">Start recording</string>
+    <string name="stats_capture_optin_hint">You can turn recording off again in Settings › Charging history.</string>
+    <string name="stats_retention_title">Keep history for</string>
+    <string name="stats_retention_value">%1$d days</string>
+    <string name="stats_retention_footer">Charges older than this are deleted automatically.</string>
     <string name="stats_empty">No charge sessions recorded yet. Plug in while recording is on to capture one.</string>
     <string name="stats_clear_action">Clear statistics data</string>
     <string name="stats_clear_confirm_title">Clear statistics?</string>

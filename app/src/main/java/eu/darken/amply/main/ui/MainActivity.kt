@@ -55,6 +55,7 @@ import eu.darken.amply.main.ui.dashboard.DashboardViewModel
 import eu.darken.amply.main.ui.dashboard.shouldMonitorAccess
 import eu.darken.amply.main.ui.onboarding.OnboardingScreen
 import eu.darken.amply.main.ui.settings.AcknowledgementsScreen
+import eu.darken.amply.main.ui.settings.ChargingHistorySettingsScreen
 import eu.darken.amply.main.ui.settings.GeneralSettingsScreen
 import eu.darken.amply.main.ui.settings.ReconnectGestureSettingsScreen
 import eu.darken.amply.main.ui.settings.SettingsDestination
@@ -96,6 +97,15 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val themeState by settingsViewModel.themeState.collectAsState()
+            // Collected here at the composition root, NOT down in the CHARGING_HISTORY_SETTINGS branch
+            // that consumes it. `statsViewModel` is a lazy `by viewModels()` delegate, so collecting at
+            // the destination would construct the ViewModel — and thus start its "eager" sharing — in
+            // the very frame the screen appears, rendering the placeholder default before the stored
+            // value lands (a drag started in that window would also be reset, since the slider re-keys
+            // its local state on the incoming value). Collecting at the root makes it an already-resolved
+            // source by the time the user is two levels deep in Settings, the same way `captureEnabled`
+            // uses the resolved dashboard state instead of its own first emission. Don't move it down.
+            val retentionDays by statsViewModel.retentionDays.collectAsState()
             AmplyTheme(themeState) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -285,6 +295,10 @@ class MainActivity : ComponentActivity() {
                         SettingsDestination.SETTINGS -> SettingsScreen(
                             onBack = { destination = SettingsDestination.DASHBOARD },
                             onGeneral = { destination = SettingsDestination.GENERAL },
+                            captureEnabled = state.stats.enabled,
+                            onChargingHistory = {
+                                destination = SettingsDestination.CHARGING_HISTORY_SETTINGS
+                            },
                             // Offered whenever this device is one we want contribution data for (unsupported/lab),
                             // regardless of whether Shizuku is installed yet — the wizard nudges the install.
                             showDiagnostics = state.charging.contributionWanted,
@@ -348,33 +362,36 @@ class MainActivity : ComponentActivity() {
                             onBack = { destination = SettingsDestination.DASHBOARD },
                             onAnyLevelChange = viewModel::setQuickFullChargeAnyLevel,
                         )
-                        // The hub reads the battery straight from the dashboard state (already
-                        // collected) and takes only the capture switch from the stats ViewModel —
-                        // deliberately not its history flow, which is what would open stats.db.
-                        SettingsDestination.BATTERY -> {
-                            val capture by statsViewModel.captureState.collectAsState()
-                            BatteryHubScreen(
-                                readout = state.batteryReadout,
-                                // The switch reads from the already-resolved dashboard state, not from
-                                // captureState: that flow is only subscribed when this screen opens, so
-                                // its first emission is the `false` default and the toggle would render
-                                // off for a frame beside a teaser saying a charge is being recorded.
-                                // Same preference, one resolved source, no disagreement on screen.
-                                captureEnabled = state.stats.enabled,
-                                lastCaptureWallMillis = capture.lastCaptureWallMillis,
-                                teaser = ChargeTeaserState.from(state.stats, state.batteryReadout),
-                                onBack = { destination = SettingsDestination.DASHBOARD },
-                                onOpenHistory = { destination = SettingsDestination.CHARGE_HISTORY },
-                                onCaptureEnabledChange = { enabled ->
-                                    if (enabled) {
-                                        runWithNotifications(NotificationAction.ENABLE_STATS)
-                                    } else {
-                                        statsViewModel.setCaptureEnabled(false)
-                                    }
-                                },
-                                onOpenSession = { id -> openSession(id, SettingsDestination.BATTERY) },
-                            )
-                        }
+                        SettingsDestination.CHARGING_HISTORY_SETTINGS -> ChargingHistorySettingsScreen(
+                            // Both values come from already-resolved sources (the dashboard state and
+                            // the root-collected retention flow), so neither the switch nor the slider
+                            // can render a placeholder for a frame while a first emission lands.
+                            captureEnabled = state.stats.enabled,
+                            retentionDays = retentionDays,
+                            onBack = { destination = SettingsDestination.SETTINGS },
+                            onCaptureEnabledChange = { enabled ->
+                                if (enabled) {
+                                    runWithNotifications(NotificationAction.ENABLE_STATS)
+                                } else {
+                                    statsViewModel.setCaptureEnabled(false)
+                                }
+                            },
+                            onRetentionChange = statsViewModel::setRetentionDays,
+                        )
+                        // The hub reads the battery and the capture flag straight from the dashboard
+                        // state (already collected and resolved, so the opt-in card can't flash on for
+                        // a frame beside a teaser saying a charge is being recorded) — deliberately not
+                        // the stats ViewModel's history flow, which is what would open stats.db.
+                        SettingsDestination.BATTERY -> BatteryHubScreen(
+                            readout = state.batteryReadout,
+                            captureEnabled = state.stats.enabled,
+                            teaser = ChargeTeaserState.from(state.stats, state.batteryReadout),
+                            onBack = { destination = SettingsDestination.DASHBOARD },
+                            onOpenHistory = { destination = SettingsDestination.CHARGE_HISTORY },
+                            // Enable-only: turning recording back off lives in Settings › Charging history.
+                            onEnableCapture = { runWithNotifications(NotificationAction.ENABLE_STATS) },
+                            onOpenSession = { id -> openSession(id, SettingsDestination.BATTERY) },
+                        )
                         // The Room-backed session list is collected only here, so the stats DB isn't
                         // opened just by visiting the hub — a user who never enables statistics never
                         // creates stats.db by looking at their battery.
