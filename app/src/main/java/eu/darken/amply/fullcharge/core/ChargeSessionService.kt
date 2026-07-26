@@ -397,7 +397,7 @@ class ChargeSessionService : Service() {
         // install) leaves Amply's own journal empty, and gating on the journal alone meant the
         // basis never armed on such a device. The hardware signal is only reported while powered,
         // so unplugged ticks yield inconclusive evidence, which the engine treats as "no change".
-        val hardware = adapter?.decodeHardware(chargingStatus, plugged)
+        val hardware = adapter.decodeHardware(chargingStatus, plugged)
         val lastPersistent = preferences.lastPersistentPolicyNow()
         val policyEvidence = if (anyLevel) {
             GestureBasis.evidence(hardware, lastPersistent)
