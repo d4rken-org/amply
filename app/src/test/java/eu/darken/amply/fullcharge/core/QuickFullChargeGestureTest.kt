@@ -320,6 +320,71 @@ class QuickFullChargeGestureTest {
         ) shouldBe QuickFullChargeDecision.ARMED
     }
 
+    // A natively-removed limit reads UNKNOWN (not UNRESTRICTED) on a journal-less device. While
+    // plugged with no window open the evidence is available, so an inconclusive reading must drop
+    // the basis — otherwise a later replug would start a session and "restore" a limit the user
+    // had deliberately removed.
+    @Test
+    fun `an inconclusive tick while steadily plugged disarms`() {
+        anyLevelCharging(1_000) shouldBe QuickFullChargeDecision.ARMED
+        step(
+            now = 2_000,
+            plugged = true,
+            percent = 15,
+            batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
+            chargingStatus = 1,
+            anyLevel = true,
+            evidence = PolicyEvidence.UNKNOWN,
+        ) shouldBe QuickFullChargeDecision.IDLE
+        step(
+            now = 3_000,
+            plugged = false,
+            percent = 15,
+            batteryStatus = BatteryManager.BATTERY_STATUS_DISCHARGING,
+            chargingStatus = 0,
+            anyLevel = true,
+            evidence = PolicyEvidence.UNKNOWN,
+        ) shouldBe QuickFullChargeDecision.IDLE
+        step(
+            now = 7_000,
+            plugged = true,
+            percent = 15,
+            batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
+            chargingStatus = 1,
+            anyLevel = true,
+            evidence = PolicyEvidence.UNKNOWN,
+        ) shouldBe QuickFullChargeDecision.IDLE
+    }
+
+    // The open-window guard: the replug tick may still report UNKNOWN because the hardware has not
+    // re-reported its hold yet. Revoking there would destroy the very trigger the gesture exists for.
+    @Test
+    fun `an inconclusive replug inside the window still triggers`() {
+        anyLevelCharging(1_000) shouldBe QuickFullChargeDecision.ARMED
+        step(
+            now = 2_000,
+            plugged = false,
+            percent = 15,
+            batteryStatus = BatteryManager.BATTERY_STATUS_DISCHARGING,
+            chargingStatus = 0,
+            anyLevel = true,
+            evidence = PolicyEvidence.UNKNOWN,
+        ) shouldBe QuickFullChargeDecision.WAITING_FOR_RECONNECT
+        val output = gesture.update(
+            input(
+                now = 6_000,
+                plugged = true,
+                percent = 15,
+                batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
+                chargingStatus = 1,
+                anyLevel = true,
+                evidence = PolicyEvidence.UNKNOWN,
+            ),
+        )
+        output.decision shouldBe QuickFullChargeDecision.TRIGGER
+        output.anyLevelBasis shouldBe true
+    }
+
     @Test
     fun `limit hold window survives an any-level option flip`() {
         atLimit(1_000)
