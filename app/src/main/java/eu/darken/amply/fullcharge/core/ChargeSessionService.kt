@@ -448,11 +448,17 @@ class ChargeSessionService : Service() {
                 SessionNotifications.gesture(
                     this,
                     decision = decision,
-                    // Armed copy reflects what actually armed; idle copy explains the enabled mode.
                     anyLevel = when (decision) {
+                        // The armed copy states the condition the gesture will fire under. The
+                        // latched basis is not that condition: at the limit, LIMIT_HOLD wins the
+                        // latch even while any-level is on and qualifying, and naming the limit
+                        // there would understate a gesture that will in fact fire at any level.
+                        // Requiring PROTECTIVE evidence keeps it from overstating in the opposite
+                        // direction, when the option is on but nothing protective is detected.
                         QuickFullChargeDecision.ARMED,
                         QuickFullChargeDecision.WAITING_FOR_RECONNECT,
-                        -> output.anyLevelBasis
+                        -> anyLevel && policyEvidence == PolicyEvidence.PROTECTIVE
+                        // Idle copy explains the enabled mode rather than a live basis.
                         else -> anyLevel
                     },
                     // Verified evidence only, never Amply's write journal: naming a number is a

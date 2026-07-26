@@ -7,6 +7,7 @@ import eu.darken.amply.R
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -65,6 +66,20 @@ class SessionNotificationsGestureTest {
             text(QuickFullChargeDecision.ARMED, anyLevel = true)
         text(QuickFullChargeDecision.IDLE, anyLevel = true, limitPercent = 80) shouldBe
             text(QuickFullChargeDecision.IDLE, anyLevel = true)
+    }
+
+    @Test
+    fun `armed at a known limit names no percentage once any level qualifies`() {
+        // The device sitting at its holding limit is the common state: the caller must pass the
+        // condition the gesture fires under, so the any-level copy must not name the limit there.
+        val atLimitAnyLevel = text(QuickFullChargeDecision.ARMED, anyLevel = true, limitPercent = 80)
+        val atLimitOnly = text(QuickFullChargeDecision.ARMED, limitPercent = 80)
+
+        atLimitAnyLevel shouldBe
+            context.getString(R.string.gesture_notification_armed_any_level)
+        atLimitOnly shouldBe
+            context.getString(R.string.gesture_notification_armed_limit, 80)
+        atLimitAnyLevel!! shouldNotContain "80%"
     }
 
     @Test

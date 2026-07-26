@@ -140,10 +140,11 @@ object SessionNotifications {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         // Three distinct states, not two. WAITING_FOR_RECONNECT is the time-critical countdown and
-        // stays a bare instruction — the arming basis is history by then. ARMED is what a plugged-in
-        // user actually sees, for hours, so that is where the arming basis (any level vs. a named
-        // limit vs. a generic hold) has to be spelled out. IDLE keeps the passive "waiting" copy,
-        // which explains the enabled mode rather than the current basis.
+        // stays a bare instruction — how the gesture armed is history by then. ARMED is what a
+        // plugged-in user actually sees, for hours, so that is where the condition the gesture will
+        // fire under (any level vs. a named limit vs. a generic hold) has to be spelled out — the
+        // caller passes that condition, not whichever basis happened to latch first. IDLE keeps the
+        // passive "waiting" copy, which explains the enabled mode rather than the current basis.
         val contentText = when (decision) {
             QuickFullChargeDecision.WAITING_FOR_RECONNECT -> context.getString(
                 R.string.gesture_notification_armed,
