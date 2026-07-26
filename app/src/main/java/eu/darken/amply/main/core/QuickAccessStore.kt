@@ -1,17 +1,18 @@
 package eu.darken.amply.main.core
 
-import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.edit
 import eu.darken.amply.common.AppDataStore
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
+import eu.darken.amply.common.datastore.createValue
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import javax.inject.Inject
 import javax.inject.Singleton
 
+@Serializable
 data class QuickAccessState(
-    val dismissed: Boolean = false,
-    val widgetAdded: Boolean = false,
-    val tileAdded: Boolean = false,
+    @SerialName("dismissed") val dismissed: Boolean = false,
+    @SerialName("widgetAdded") val widgetAdded: Boolean = false,
+    @SerialName("tileAdded") val tileAdded: Boolean = false,
 )
 
 /**
@@ -21,31 +22,25 @@ data class QuickAccessState(
  */
 @Singleton
 class QuickAccessStore @Inject constructor(
-    private val dataStore: AppDataStore,
+    dataStore: AppDataStore,
+    json: Json,
 ) {
-    val state: Flow<QuickAccessState> = dataStore.store.data.map {
-        QuickAccessState(
-            dismissed = it[DISMISSED] ?: false,
-            widgetAdded = it[WIDGET_ADDED] ?: false,
-            tileAdded = it[TILE_ADDED] ?: false,
-        )
-    }
+    val state = dataStore.createValue(
+        key = "quickaccess.v2",
+        defaultValue = QuickAccessState(),
+        json = json,
+        fallbackToDefault = true,
+    )
 
     suspend fun dismiss() {
-        dataStore.store.edit { it[DISMISSED] = true }
+        state.update { it.copy(dismissed = true) }
     }
 
     suspend fun markWidgetAdded() {
-        dataStore.store.edit { it[WIDGET_ADDED] = true }
+        state.update { it.copy(widgetAdded = true) }
     }
 
     suspend fun markTileAdded() {
-        dataStore.store.edit { it[TILE_ADDED] = true }
-    }
-
-    private companion object {
-        val DISMISSED = booleanPreferencesKey("quickaccess.v1.dismissed")
-        val WIDGET_ADDED = booleanPreferencesKey("quickaccess.v1.widget_added")
-        val TILE_ADDED = booleanPreferencesKey("quickaccess.v1.tile_added")
+        state.update { it.copy(tileAdded = true) }
     }
 }

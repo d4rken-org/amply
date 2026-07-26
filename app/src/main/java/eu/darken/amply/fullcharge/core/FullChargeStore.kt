@@ -1,57 +1,99 @@
 package eu.darken.amply.fullcharge.core
 
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.intPreferencesKey
-import androidx.datastore.preferences.core.longPreferencesKey
-import androidx.datastore.preferences.core.stringPreferencesKey
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.common.AppDataStore
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
+import eu.darken.amply.common.datastore.createValue
+import eu.darken.amply.common.datastore.value
+import eu.darken.amply.common.serialization.ChargePolicySerializer
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
  * Provenance of persisted work: which process created it and during which boot. Used to spot work
- * that survived a process death ([token] mismatch) within the same boot ([bootCount] match). A null
- * value marks a legacy record written before provenance existed.
+ * that survived a process death ([token] mismatch) within the same boot ([bootCount] match).
+ *
+ * **Every field carries a default.** Provenance is diagnostic metadata hanging off a record whose
+ * real payload is a charge policy Amply still owes the user. Making any of it required would let a
+ * missing `pid` take the whole record down with it — and a lost record means the restore never
+ * happens and the battery keeps charging unrestricted. A [token]-less record is treated as un-owned
+ * (see [normalizedProvenance]), which is exactly what a missing owner meant before.
  */
+@Serializable
 data class WorkProvenance(
-    val token: String,
-    val pid: Int,
-    val bootCount: Int?,
-    val createdAtMillis: Long,
+    @SerialName("token") val token: String = "",
+    @SerialName("pid") val pid: Int = -1,
+    @SerialName("bootCount") val bootCount: Int? = null,
+    @SerialName("createdAtMillis") val createdAtMillis: Long = 0L,
 )
 
+@Serializable
 data class ChargeSessionRecord(
+    // The one genuinely fatal field: a policy this build cannot read must not be guessed at, so an
+    // unreadable one collapses the record to "no session" — the pre-refactor behaviour.
+    @SerialName("restorePolicy")
+    @Serializable(with = ChargePolicySerializer::class)
     val restorePolicy: ChargePolicy,
-    val startedAtMillis: Long,
-    val connectedSeen: Boolean,
-    val provenance: WorkProvenance? = null,
+    @SerialName("startedAtMillis") val startedAtMillis: Long = 0L,
+    @SerialName("connectedSeen") val connectedSeen: Boolean = false,
+    @SerialName("provenance") val provenance: WorkProvenance? = null,
     /**
      * Stable correlation id for the owed work, generated once at creation and preserved across
      * process-adoption (unlike [WorkProvenance.token], which is re-stamped to the current owner). An
-     * interruption event ties back to this so a later restore can resolve it. Null on legacy records.
+     * interruption event ties back to this so a later restore can resolve it.
      */
-    val workId: String? = null,
+    @SerialName("workId") val workId: String? = null,
 )
 
+/**
+ * The restore Amply still owes after a boot or an interrupted session, held as one record so its
+ * target, correlation id and provenance can never be read as a mismatched set.
+ */
+@Serializable
+data class RecoveryRecord(
+    @SerialName("target")
+    @Serializable(with = ChargePolicySerializer::class)
+    val target: ChargePolicy,
+    @SerialName("workId") val workId: String? = null,
+    @SerialName("provenance") val provenance: WorkProvenance? = null,
+)
+
+/**
+ * Persistence for the temporary full-charge session and the restore it owes.
+ *
+ * The session and the recovery target are each **one** record under one key, so a half-written
+ * restore cannot exist. An unreadable record — including one carrying an unknown policy id — decodes
+ * to null ("no session"), exactly as the previous multi-key decode did when its policy failed to parse.
+ */
 @Singleton
 class FullChargeStore @Inject constructor(
-    private val dataStore: AppDataStore,
+    dataStore: AppDataStore,
+    json: Json,
 ) {
-    val session: Flow<ChargeSessionRecord?> = dataStore.store.data.map(::toRecord)
-    val quickFullChargeEnabled: Flow<Boolean> = dataStore.store.data.map {
-        it[QUICK_FULL_CHARGE_ENABLED] ?: false
-    }
-    val quickFullChargeAnyLevel: Flow<Boolean> = dataStore.store.data.map {
-        it[QUICK_FULL_CHARGE_ANY_LEVEL] ?: false
-    }
+    private val sessionValue = dataStore.createValue<ChargeSessionRecord?>(
+        key = "session.v2",
+        defaultValue = null,
+        json = json,
+        fallbackToDefault = true,
+    )
 
-    suspend fun currentSession(): ChargeSessionRecord? = session.first()
+    private val recoveryValue = dataStore.createValue<RecoveryRecord?>(
+        key = "recovery.v2",
+        defaultValue = null,
+        json = json,
+        fallbackToDefault = true,
+    )
+
+    private val lastSeenBootCountValue = dataStore.createValue<Int?>("recovery.last_seen_boot_count.v2")
+
+    val session = sessionValue.flow.map { it?.normalized() }
+    val quickFullChargeEnabled = dataStore.createValue("fullcharge.quick_replug_enabled.v2", false)
+    val quickFullChargeAnyLevel = dataStore.createValue("fullcharge.quick_replug_any_level.v2", false)
+
+    suspend fun currentSession(): ChargeSessionRecord? = sessionValue.value()?.normalized()
 
     suspend fun startSession(
         restorePolicy: ChargePolicy,
@@ -59,198 +101,91 @@ class FullChargeStore @Inject constructor(
         workId: String? = null,
         provenance: WorkProvenance? = null,
     ) {
-        dataStore.store.edit {
-            it[SESSION_ACTIVE] = true
-            it[SESSION_RESTORE_POLICY] = restorePolicy.stableId
-            it[SESSION_STARTED_AT] = startedAtMillis
-            it[SESSION_CONNECTED] = false
-            workId?.let { id -> it[SESSION_WORK_ID] = id } ?: it.remove(SESSION_WORK_ID)
-            it.writeSessionProvenance(provenance)
+        sessionValue.update {
+            ChargeSessionRecord(
+                restorePolicy = restorePolicy,
+                startedAtMillis = startedAtMillis,
+                connectedSeen = false,
+                provenance = provenance,
+                workId = workId,
+            )
         }
     }
 
     suspend fun markConnected() {
-        dataStore.store.edit { prefs ->
-            if (prefs[SESSION_ACTIVE] == true) prefs[SESSION_CONNECTED] = true
-        }
+        sessionValue.update { it?.copy(connectedSeen = true) }
     }
 
     /** Adopt the current process as the session's owner and flag CONNECTED in a single atomic edit. */
     suspend fun markConnectedAndAdopt(provenance: WorkProvenance) {
-        dataStore.store.edit { prefs ->
-            if (prefs[SESSION_ACTIVE] != true) return@edit
-            prefs[SESSION_CONNECTED] = true
-            prefs.writeSessionProvenance(provenance)
-        }
+        sessionValue.update { it?.copy(connectedSeen = true, provenance = provenance) }
     }
 
     /** Re-stamp the active session's provenance to the current process, if a session is present. */
     suspend fun adoptSessionOwner(provenance: WorkProvenance) {
-        dataStore.store.edit { prefs ->
-            if (prefs[SESSION_ACTIVE] != true) return@edit
-            prefs.writeSessionProvenance(provenance)
-        }
+        sessionValue.update { it?.copy(provenance = provenance) }
     }
 
     suspend fun clearSession() {
-        dataStore.store.edit {
-            it.remove(SESSION_ACTIVE)
-            it.remove(SESSION_RESTORE_POLICY)
-            it.remove(SESSION_STARTED_AT)
-            it.remove(SESSION_CONNECTED)
-            it.remove(SESSION_WORK_ID)
-            it.remove(SESSION_OWNER_TOKEN)
-            it.remove(SESSION_OWNER_PID)
-            it.remove(SESSION_BOOT_COUNT)
-            it.remove(SESSION_OWNER_SET_AT)
-        }
+        sessionValue.update { null }
     }
 
-    suspend fun pendingRecoveryTarget(): ChargePolicy? =
-        dataStore.store.data.first()[RECOVERY_PENDING_TARGET]?.let(ChargePolicy::fromStableId)
+    /**
+     * The whole owed restore in one read. Callers needing more than one of its fields must use this
+     * rather than the single-field accessors below: reading target, work id and provenance
+     * separately can pair fields from either side of a concurrent adopt or clear.
+     */
+    suspend fun currentRecovery(): RecoveryRecord? = recoveryValue.value()?.normalized()
 
-    suspend fun pendingRecoveryProvenance(): WorkProvenance? =
-        dataStore.store.data.first().recoveryProvenance()
+    suspend fun pendingRecoveryTarget(): ChargePolicy? = currentRecovery()?.target
 
-    suspend fun pendingRecoveryWorkId(): String? =
-        dataStore.store.data.first()[RECOVERY_WORK_ID]
+    suspend fun pendingRecoveryProvenance(): WorkProvenance? = currentRecovery()?.provenance
+
+    suspend fun pendingRecoveryWorkId(): String? = currentRecovery()?.workId
 
     suspend fun setPendingRecoveryTarget(
         policy: ChargePolicy,
         workId: String? = null,
         provenance: WorkProvenance? = null,
     ) {
-        dataStore.store.edit {
-            it[RECOVERY_PENDING_TARGET] = policy.stableId
-            workId?.let { id -> it[RECOVERY_WORK_ID] = id } ?: it.remove(RECOVERY_WORK_ID)
-            it.writeRecoveryProvenance(provenance)
-        }
+        recoveryValue.update { RecoveryRecord(target = policy, workId = workId, provenance = provenance) }
     }
 
     /** Re-stamp the pending recovery target's provenance to the current process, if one is present. */
     suspend fun adoptRecoveryOwner(provenance: WorkProvenance) {
-        dataStore.store.edit { prefs ->
-            if (prefs[RECOVERY_PENDING_TARGET] == null) return@edit
-            prefs.writeRecoveryProvenance(provenance)
-        }
+        recoveryValue.update { it?.copy(provenance = provenance) }
     }
 
     suspend fun clearPendingRecoveryTarget() {
-        dataStore.store.edit {
-            it.remove(RECOVERY_PENDING_TARGET)
-            it.remove(RECOVERY_WORK_ID)
-            it.remove(RECOVERY_OWNER_TOKEN)
-            it.remove(RECOVERY_OWNER_PID)
-            it.remove(RECOVERY_BOOT_COUNT)
-            it.remove(RECOVERY_SET_AT)
-        }
+        recoveryValue.update { null }
     }
 
     /** The boot count during which Amply last ran — used to spot re-delivered BOOT_COMPLETED broadcasts. */
-    suspend fun lastSeenBootCount(): Int? = dataStore.store.data.first()[LAST_SEEN_BOOT_COUNT]
+    suspend fun lastSeenBootCount(): Int? = lastSeenBootCountValue.value()
 
     suspend fun setLastSeenBootCount(count: Int) {
-        dataStore.store.edit { it[LAST_SEEN_BOOT_COUNT] = count }
+        lastSeenBootCountValue.value(count)
     }
 
-    suspend fun isQuickFullChargeEnabled(): Boolean = quickFullChargeEnabled.first()
+    suspend fun isQuickFullChargeEnabled(): Boolean = quickFullChargeEnabled.value()
 
     suspend fun setQuickFullChargeEnabled(enabled: Boolean) {
-        dataStore.store.edit { it[QUICK_FULL_CHARGE_ENABLED] = enabled }
+        quickFullChargeEnabled.value(enabled)
     }
 
-    suspend fun isQuickFullChargeAnyLevel(): Boolean = quickFullChargeAnyLevel.first()
+    suspend fun isQuickFullChargeAnyLevel(): Boolean = quickFullChargeAnyLevel.value()
 
     suspend fun setQuickFullChargeAnyLevel(enabled: Boolean) {
-        dataStore.store.edit { it[QUICK_FULL_CHARGE_ANY_LEVEL] = enabled }
-    }
-
-    private fun toRecord(prefs: Preferences): ChargeSessionRecord? {
-        if (prefs[SESSION_ACTIVE] != true) return null
-        val policy = ChargePolicy.fromStableId(prefs[SESSION_RESTORE_POLICY]) ?: return null
-        return ChargeSessionRecord(
-            restorePolicy = policy,
-            startedAtMillis = prefs[SESSION_STARTED_AT] ?: 0L,
-            connectedSeen = prefs[SESSION_CONNECTED] ?: false,
-            provenance = prefs.sessionProvenance(),
-            workId = prefs[SESSION_WORK_ID],
-        )
-    }
-
-    // A record is only stamped with provenance when a token is present; a missing token (legacy
-    // record) decodes to null so the assessor treats it as un-owned and adopts it silently.
-    private fun Preferences.sessionProvenance(): WorkProvenance? {
-        val token = this[SESSION_OWNER_TOKEN] ?: return null
-        return WorkProvenance(
-            token = token,
-            pid = this[SESSION_OWNER_PID] ?: -1,
-            bootCount = this[SESSION_BOOT_COUNT],
-            // The owner timestamp is written on every (re-)stamp; fall back to the session start for
-            // legacy records that predate it.
-            createdAtMillis = this[SESSION_OWNER_SET_AT] ?: this[SESSION_STARTED_AT] ?: 0L,
-        )
-    }
-
-    private fun Preferences.recoveryProvenance(): WorkProvenance? {
-        val token = this[RECOVERY_OWNER_TOKEN] ?: return null
-        return WorkProvenance(
-            token = token,
-            pid = this[RECOVERY_OWNER_PID] ?: -1,
-            bootCount = this[RECOVERY_BOOT_COUNT],
-            createdAtMillis = this[RECOVERY_SET_AT] ?: 0L,
-        )
-    }
-
-    private fun androidx.datastore.preferences.core.MutablePreferences.writeSessionProvenance(
-        provenance: WorkProvenance?,
-    ) {
-        if (provenance == null) {
-            remove(SESSION_OWNER_TOKEN)
-            remove(SESSION_OWNER_PID)
-            remove(SESSION_BOOT_COUNT)
-            remove(SESSION_OWNER_SET_AT)
-            return
-        }
-        this[SESSION_OWNER_TOKEN] = provenance.token
-        this[SESSION_OWNER_PID] = provenance.pid
-        provenance.bootCount?.let { this[SESSION_BOOT_COUNT] = it } ?: remove(SESSION_BOOT_COUNT)
-        this[SESSION_OWNER_SET_AT] = provenance.createdAtMillis
-    }
-
-    private fun androidx.datastore.preferences.core.MutablePreferences.writeRecoveryProvenance(
-        provenance: WorkProvenance?,
-    ) {
-        if (provenance == null) {
-            remove(RECOVERY_OWNER_TOKEN)
-            remove(RECOVERY_OWNER_PID)
-            remove(RECOVERY_BOOT_COUNT)
-            remove(RECOVERY_SET_AT)
-            return
-        }
-        this[RECOVERY_OWNER_TOKEN] = provenance.token
-        this[RECOVERY_OWNER_PID] = provenance.pid
-        provenance.bootCount?.let { this[RECOVERY_BOOT_COUNT] = it } ?: remove(RECOVERY_BOOT_COUNT)
-        this[RECOVERY_SET_AT] = provenance.createdAtMillis
-    }
-
-    private companion object {
-        val SESSION_ACTIVE = booleanPreferencesKey("session.active")
-        val SESSION_RESTORE_POLICY = stringPreferencesKey("session.restore_policy")
-        val SESSION_STARTED_AT = longPreferencesKey("session.started_at")
-        val SESSION_CONNECTED = booleanPreferencesKey("session.connected_seen")
-        val SESSION_WORK_ID = stringPreferencesKey("session.work_id")
-        val SESSION_OWNER_TOKEN = stringPreferencesKey("session.owner_token")
-        val SESSION_OWNER_PID = intPreferencesKey("session.owner_pid")
-        val SESSION_BOOT_COUNT = intPreferencesKey("session.boot_count")
-        val SESSION_OWNER_SET_AT = longPreferencesKey("session.owner_set_at")
-        val QUICK_FULL_CHARGE_ENABLED = booleanPreferencesKey("fullcharge.quick_replug_enabled")
-        val QUICK_FULL_CHARGE_ANY_LEVEL = booleanPreferencesKey("fullcharge.quick_replug_any_level")
-        val RECOVERY_PENDING_TARGET = stringPreferencesKey("recovery.pending_target")
-        val RECOVERY_WORK_ID = stringPreferencesKey("recovery.work_id")
-        val RECOVERY_OWNER_TOKEN = stringPreferencesKey("recovery.owner_token")
-        val RECOVERY_OWNER_PID = intPreferencesKey("recovery.owner_pid")
-        val RECOVERY_BOOT_COUNT = intPreferencesKey("recovery.boot_count")
-        val RECOVERY_SET_AT = longPreferencesKey("recovery.set_at")
-        val LAST_SEEN_BOOT_COUNT = intPreferencesKey("recovery.last_seen_boot_count")
+        quickFullChargeAnyLevel.value(enabled)
     }
 }
+
+/**
+ * An owner without a token identifies nobody, so it reads as no owner at all — the same answer a
+ * record with no provenance gave before, which the assessor treats as un-owned and adopts silently.
+ */
+private fun WorkProvenance?.normalizedProvenance(): WorkProvenance? = this?.takeIf { it.token.isNotBlank() }
+
+private fun ChargeSessionRecord.normalized() = copy(provenance = provenance.normalizedProvenance())
+
+private fun RecoveryRecord.normalized() = copy(provenance = provenance.normalizedProvenance())

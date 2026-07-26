@@ -31,7 +31,7 @@ class SettingsViewModel @Inject constructor(
     private val themeSettings: ThemeSettings,
     private val debugLogManager: DebugLogManager,
 ) : ViewModel() {
-    val themeState: StateFlow<ThemeState> = themeSettings.state.stateIn(
+    val themeState: StateFlow<ThemeState> = themeSettings.state.flow.stateIn(
         viewModelScope,
         SharingStarted.Eagerly,
         ThemeState(),

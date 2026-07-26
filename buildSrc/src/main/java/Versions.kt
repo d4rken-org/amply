@@ -1,6 +1,7 @@
 object Versions {
     object Kotlin {
         const val coroutines = "1.10.2"
+        const val serialization = "1.9.0"
     }
 
     object Dagger {

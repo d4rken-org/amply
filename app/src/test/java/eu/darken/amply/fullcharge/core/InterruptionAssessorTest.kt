@@ -3,6 +3,7 @@ package eu.darken.amply.fullcharge.core
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.common.AppDataStore
+import eu.darken.amply.common.serialization.SerializationModule
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.CoroutineScope
@@ -44,8 +45,8 @@ class InterruptionAssessorTest {
         appDataStore = AppDataStore(
             PreferenceDataStoreFactory.create(scope = scope) { File(tmp.newFolder(), "t.preferences_pb") },
         )
-        fullChargeStore = FullChargeStore(appDataStore)
-        interruptionStore = InterruptionStore(appDataStore)
+        fullChargeStore = FullChargeStore(appDataStore, SerializationModule.json())
+        interruptionStore = InterruptionStore(appDataStore, SerializationModule.json())
         assessor = InterruptionAssessor(
             fullChargeStore = fullChargeStore,
             interruptionStore = interruptionStore,
@@ -282,7 +283,7 @@ class InterruptionAssessorTest {
 
     @Test
     fun `a throwing interruption store never propagates`() = runTest {
-        val throwing = object : InterruptionStore(appDataStore) {
+        val throwing = object : InterruptionStore(appDataStore, SerializationModule.json()) {
             override suspend fun record(event: InterruptionEvent) {
                 throw RuntimeException("boom")
             }

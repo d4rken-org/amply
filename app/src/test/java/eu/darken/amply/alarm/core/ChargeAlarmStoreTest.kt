@@ -1,26 +1,67 @@
 package eu.darken.amply.alarm.core
 
-import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
-import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import eu.darken.amply.common.AppDataStore
+import eu.darken.amply.common.serialization.SerializationModule
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
+import java.util.concurrent.CopyOnWriteArrayList
 
 class ChargeAlarmStoreTest {
 
     @TempDir
     lateinit var tempDir: File
 
-    private fun store(scope: kotlinx.coroutines.CoroutineScope): ChargeAlarmStore {
-        val prefs: DataStore<Preferences> = PreferenceDataStoreFactory.create(scope = scope) {
+    private fun appDataStore(scope: kotlinx.coroutines.CoroutineScope) = AppDataStore(
+        PreferenceDataStoreFactory.create(scope = scope) {
             File(tempDir, "alarm-${System.nanoTime()}.preferences_pb")
-        }
-        return ChargeAlarmStore(AppDataStore(prefs))
+        },
+    )
+
+    private fun store(scope: kotlinx.coroutines.CoroutineScope): ChargeAlarmStore =
+        ChargeAlarmStore(appDataStore(scope), SerializationModule.json())
+
+    /**
+     * Snapping is many-to-one, so two *different* stored records can normalize to the same config.
+     * The upstream dedupe compares the raw stored string and cannot see that, so the config flow
+     * needs its own guard or the UI gets a pointless re-emission.
+     *
+     * The off-step record is written by hand because the setter snaps on the way in — only a
+     * hand-edited or future-written record can hold an off-tick target.
+     */
+    @Test
+    fun `a raw target that snaps to the current value does not re-emit`() = runBlocking {
+        val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        val prefs = appDataStore(scope)
+        val store = ChargeAlarmStore(prefs, SerializationModule.json())
+        prefs.store.edit { it[stringPreferencesKey("alarm.config.v2")] = """{"enabled":true,"targetPercent":83}""" }
+
+        val seen = CopyOnWriteArrayList<ChargeAlarmConfig>()
+        val collector = launch(Dispatchers.IO) { store.config.toList(seen) }
+        withTimeout(5_000) { while (seen.isEmpty()) delay(5) }
+
+        // A genuinely different raw record (83 -> 85) that normalizes to the same 85.
+        store.setTargetPercent(85)
+        delay(200)
+
+        seen.map { it.targetPercent } shouldBe listOf(85)
+        collector.cancel()
+        scope.cancel()
     }
 
     @Test

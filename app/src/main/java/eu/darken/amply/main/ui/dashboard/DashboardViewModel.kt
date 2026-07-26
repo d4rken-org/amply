@@ -133,8 +133,8 @@ class DashboardViewModel @Inject constructor(
 
     // The typed combine overloads stop at five flows; the two gesture booleans are pre-combined.
     private val gestureFlags = combine(
-        fullChargeStore.quickFullChargeEnabled,
-        fullChargeStore.quickFullChargeAnyLevel,
+        fullChargeStore.quickFullChargeEnabled.flow,
+        fullChargeStore.quickFullChargeAnyLevel.flow,
     ) { enabled, anyLevel -> enabled to anyLevel }
 
     // Grouped so the outer combine keeps one slot each: the live battery readout, the alarm config,
@@ -159,7 +159,7 @@ class DashboardViewModel @Inject constructor(
     // run only while capture is enabled — when it's off the card shows a promo, so a user who never
     // turned stats on never gets an empty stats.db created just by opening the dashboard.
     private val statsDashboard = statsDashboardStates(
-        captureEnabled = statsPreferences.captureEnabled,
+        captureEnabled = statsPreferences.captureEnabled.flow,
         health = captureServiceHealth.state,
         recentSessions = { statsRepository.recentSessions(limit = 1) },
         sessionCount = { statsRepository.sessionCount() },
@@ -170,7 +170,7 @@ class DashboardViewModel @Inject constructor(
         combine(
             repository.state,
             fullChargeStore.session,
-            onboardingSettings.isComplete,
+            onboardingSettings.isComplete.flow,
             gestureFlags,
             deviceReport,
         ) { charging, session, onboardingComplete, (quickFullChargeEnabled, quickFullChargeAnyLevel), report ->
@@ -183,7 +183,7 @@ class DashboardViewModel @Inject constructor(
                 deviceReport = report,
             )
         },
-        quickAccessStore.state,
+        quickAccessStore.state.flow,
         quickAccessChecked,
         tileRequestPending,
         unprivilegedExtras,

@@ -30,6 +30,7 @@ plugins {
     id("projectConfig")
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("org.jetbrains.kotlin.plugin.serialization")
     id("com.google.devtools.ksp")
     id("com.google.dagger.hilt.android")
     id("com.android.compose.screenshot")
@@ -193,6 +194,7 @@ tasks.withType<KotlinCompile>().configureEach {
         jvmTarget.set(JvmTarget.JVM_17)
         freeCompilerArgs.addAll(
             "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
+            "-opt-in=kotlinx.serialization.ExperimentalSerializationApi",
             "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
             "-Xannotation-default-target=param-property",
         )
