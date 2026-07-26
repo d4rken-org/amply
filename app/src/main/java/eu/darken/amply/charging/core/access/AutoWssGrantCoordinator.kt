@@ -49,7 +49,7 @@ class AutoWssGrantCoordinator @Inject constructor(
         if (!started.compareAndSet(false, true)) return
         scope.launch {
             observeAutoWssGrant(
-                inputs = autoWssGrantInputs(repository.state, onboardingSettings.isComplete),
+                inputs = autoWssGrantInputs(repository.state, onboardingSettings.isComplete.flow),
                 grantScope = scope,
             ) {
                 // The repository single-flights this call, so a concurrent manual tap or an overlapping

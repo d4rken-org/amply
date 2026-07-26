@@ -6,6 +6,7 @@ import androidx.room.withTransaction
 import dagger.Lazy
 import eu.darken.amply.battery.core.BatteryReadout
 import eu.darken.amply.battery.core.BatteryReader
+import eu.darken.amply.common.datastore.value
 import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
@@ -18,7 +19,6 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -99,7 +99,7 @@ class ChargeStatsRecorder @Inject constructor(
             // it is written after the row is committed, so a process death in between leaves an open
             // row with no stamp. Capture being enabled is therefore also sufficient — such a user gets
             // a stats.db on the next tick anyway, so opening it here costs nothing.
-            if (!capturing && preferences.lastCaptureWallMillis.first() == null) return
+            if (!capturing && preferences.lastCaptureWallMillis.value() == null) return
             reconcileDanglingSessions()
         } catch (e: CancellationException) {
             throw e

@@ -74,8 +74,8 @@ class StatsViewModel @Inject constructor(
 ) : ViewModel() {
 
     val captureState: StateFlow<CaptureUiState> = combine(
-        preferences.captureEnabled,
-        preferences.lastCaptureWallMillis,
+        preferences.captureEnabled.flow,
+        preferences.lastCaptureWallMillis.flow,
     ) { enabled, lastCapture ->
         CaptureUiState(captureEnabled = enabled, lastCaptureWallMillis = lastCapture)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), CaptureUiState())

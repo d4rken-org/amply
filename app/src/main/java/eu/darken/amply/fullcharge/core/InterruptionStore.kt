@@ -1,61 +1,71 @@
 package eu.darken.amply.fullcharge.core
 
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.longPreferencesKey
-import androidx.datastore.preferences.core.stringPreferencesKey
 import eu.darken.amply.common.AppDataStore
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
+import eu.darken.amply.common.datastore.createValue
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /** Why Amply's process most likely went away. Cosmetic only — never asserts a force-stop. */
+@Serializable
 enum class InterruptionReason {
     /** The exit reason matched a user-requested stop (ApplicationExitInfo USER_REQUESTED / USER_STOPPED). */
+    @SerialName("USER_STOPPED")
     USER_STOPPED,
 
     /** Anything else, no matching exit record, or the API is unavailable. */
+    @SerialName("OTHER")
     OTHER,
 }
 
+@Serializable
 enum class InterruptionOutcome {
     /** The catch-up restore succeeded — the protective limit is back. */
+    @SerialName("RESTORED_LATE")
     RESTORED_LATE,
 
     /** The restore failed and retry work remains persisted. */
+    @SerialName("STILL_PENDING")
     STILL_PENDING,
 
     /** Recovery gave up without hardware confirmation and cleared its retry state. */
+    @SerialName("UNCONFIRMED")
     UNCONFIRMED,
 }
 
+@Serializable
 data class InterruptionEvent(
-    val occurredAtMillis: Long,
-    val reason: InterruptionReason,
-    val outcome: InterruptionOutcome,
+    @SerialName("occurredAtMillis") val occurredAtMillis: Long,
+    @SerialName("reason") val reason: InterruptionReason,
+    @SerialName("outcome") val outcome: InterruptionOutcome,
     /** Stable correlation id of the owed work (see [ChargeSessionRecord.workId]); survives adoption. */
-    val workId: String,
+    @SerialName("workId") val workId: String,
 )
 
 /**
  * Single-slot persistence for the "Amply was interrupted while owing a restore" dashboard signal.
- * At most one event is held at a time — a newer event overwrites the old. A malformed/unknown stored
- * enum decodes to no event. Shares the single [AppDataStore] like the other feature facades.
+ * At most one event is held at a time — a newer event overwrites the old. A malformed record (an
+ * unknown stored enum, say) decodes to no event, which matches the all-or-nothing decode this had
+ * when it was spread across four keys. Shares the single [AppDataStore] like the other facades.
  */
 @Singleton
 open class InterruptionStore @Inject constructor(
-    private val dataStore: AppDataStore,
+    dataStore: AppDataStore,
+    json: Json,
 ) {
-    val event: Flow<InterruptionEvent?> = dataStore.store.data.map(::toEvent)
+    private val eventValue = dataStore.createValue<InterruptionEvent?>(
+        key = "interruption.v2",
+        defaultValue = null,
+        json = json,
+        fallbackToDefault = true,
+    )
+
+    val event = eventValue.flow
 
     open suspend fun record(event: InterruptionEvent) {
-        dataStore.store.edit {
-            it[OCCURRED_AT] = event.occurredAtMillis
-            it[REASON] = event.reason.name
-            it[OUTCOME] = event.outcome.name
-            it[WORK_TOKEN] = event.workId
-        }
+        eventValue.update { event }
     }
 
     /**
@@ -64,50 +74,24 @@ open class InterruptionStore @Inject constructor(
      * it is already RESTORED_LATE.
      */
     open suspend fun markRestored(workId: String) {
-        dataStore.store.edit { prefs ->
-            val current = toEvent(prefs) ?: return@edit
-            if (current.workId != workId) return@edit
-            if (current.outcome == InterruptionOutcome.RESTORED_LATE) return@edit
-            prefs[OUTCOME] = InterruptionOutcome.RESTORED_LATE.name
+        eventValue.update { current ->
+            when {
+                current == null -> null
+                current.workId != workId -> current
+                current.outcome == InterruptionOutcome.RESTORED_LATE -> current
+                else -> current.copy(outcome = InterruptionOutcome.RESTORED_LATE)
+            }
         }
     }
 
     /** Clear the event only if it is not a successful (RESTORED_LATE) one — used on an explicit user write. */
     open suspend fun clearPending() {
-        dataStore.store.edit { prefs ->
-            val current = toEvent(prefs) ?: return@edit
-            if (current.outcome == InterruptionOutcome.RESTORED_LATE) return@edit
-            prefs.clearKeys()
+        eventValue.update { current ->
+            if (current?.outcome == InterruptionOutcome.RESTORED_LATE) current else null
         }
     }
 
     open suspend fun clear() {
-        dataStore.store.edit { it.clearKeys() }
-    }
-
-    private fun androidx.datastore.preferences.core.MutablePreferences.clearKeys() {
-        remove(OCCURRED_AT)
-        remove(REASON)
-        remove(OUTCOME)
-        remove(WORK_TOKEN)
-    }
-
-    private fun toEvent(prefs: Preferences): InterruptionEvent? {
-        val occurredAt = prefs[OCCURRED_AT] ?: return null
-        val reason = prefs[REASON]?.let { name ->
-            InterruptionReason.entries.firstOrNull { it.name == name }
-        } ?: return null
-        val outcome = prefs[OUTCOME]?.let { name ->
-            InterruptionOutcome.entries.firstOrNull { it.name == name }
-        } ?: return null
-        val workId = prefs[WORK_TOKEN] ?: return null
-        return InterruptionEvent(occurredAt, reason, outcome, workId)
-    }
-
-    private companion object {
-        val OCCURRED_AT = longPreferencesKey("interruption.v1.occurred_at")
-        val REASON = stringPreferencesKey("interruption.v1.reason")
-        val OUTCOME = stringPreferencesKey("interruption.v1.outcome")
-        val WORK_TOKEN = stringPreferencesKey("interruption.v1.work_token")
+        eventValue.update { null }
     }
 }

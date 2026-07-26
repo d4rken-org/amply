@@ -1,12 +1,8 @@
 package eu.darken.amply.stats.core
 
-import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.longPreferencesKey
 import eu.darken.amply.common.AppDataStore
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
+import eu.darken.amply.common.datastore.createValue
+import eu.darken.amply.common.datastore.value
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -15,31 +11,31 @@ import javax.inject.Singleton
  * small pointers — the opt-in flag and the wall time of the last successfully recorded sample (so
  * the UI can honestly show "enabled but not currently capturing" when a gap opens). All time-series
  * data lives in Room, never here.
+ *
+ * [lastCaptureWallMillis] is rewritten on **every** recorded sample (~20s while charging), which is
+ * what makes the shared-store fan-out visible: before these became [eu.darken.amply.common.datastore
+ * .DataStoreValue]s, each of those writes re-emitted [captureEnabled] unchanged and restarted the
+ * dashboard's stats flow, flashing the charging card's loading state on every tick.
  */
 @Singleton
 class StatsPreferences @Inject constructor(
-    private val dataStore: AppDataStore,
+    dataStore: AppDataStore,
 ) {
-    val captureEnabled: Flow<Boolean> = dataStore.store.data.map { it[ENABLED] ?: false }
+    val captureEnabled = dataStore.createValue("stats.capture_enabled", false)
 
-    val lastCaptureWallMillis: Flow<Long?> = dataStore.store.data.map { it[LAST_CAPTURE] }
+    val lastCaptureWallMillis = dataStore.createValue<Long?>("stats.last_capture_wall")
 
-    suspend fun isCaptureEnabledNow(): Boolean = captureEnabled.first()
+    suspend fun isCaptureEnabledNow(): Boolean = captureEnabled.value()
 
     suspend fun setCaptureEnabled(enabled: Boolean) {
-        dataStore.store.edit { it[ENABLED] = enabled }
+        captureEnabled.value(enabled)
     }
 
     suspend fun setLastCaptureWallMillis(millis: Long) {
-        dataStore.store.edit { it[LAST_CAPTURE] = millis }
+        lastCaptureWallMillis.value(millis)
     }
 
     suspend fun clearLastCapture() {
-        dataStore.store.edit { it.remove(LAST_CAPTURE) }
-    }
-
-    private companion object {
-        val ENABLED = booleanPreferencesKey("stats.capture_enabled")
-        val LAST_CAPTURE = longPreferencesKey("stats.last_capture_wall")
+        lastCaptureWallMillis.value(null)
     }
 }

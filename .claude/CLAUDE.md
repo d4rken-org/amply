@@ -47,6 +47,8 @@ Under `app/src/main/java/eu/darken/amply/`:
 - `main/ui` — activity, onboarding, dashboard, settings, setup guide, `tile`, `widget`
 - `diagnostics/core` + `diagnostics/ui` — privileged settings comparison and its guided UI
 - `common` — shared DataStore owner (`AppDataStore`) and cross-feature primitives
+- `common/datastore` — the `createValue()` settings DSL every preference facade is built on (`DataStoreValue`)
+- `common/serialization` — the single `Json` plus `ChargePolicySerializer`, for JSON-backed setting records
 - `common/theming` — brand, Material You, mode, contrast preferences
 - `common/settings` — reusable hierarchical settings rows/sections
 - `common/debug/logging` — opt-in debug sessions and logging backends

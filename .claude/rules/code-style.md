@@ -106,7 +106,29 @@ Debug logs stay **local**: the file logger records only after explicit consent, 
 
 - Reactive with Kotlin Flow / StateFlow.
 - **Preferences DataStore** via the single `AppDataStore` (`common/AppDataStore.kt`) — `preferencesDataStore(name = "amply")`.
-  This is the raw AndroidX Preferences API (read/write `Preferences.Key`s through `store.data` / `store.edit`); there
-  is no custom `createValue()` typed-setting DSL. Feature preference facades wrap `AppDataStore` but all share the one
-  process-safe instance — do not create a second `DataStore`.
+  Feature preference facades wrap `AppDataStore` but all share the one process-safe instance — do not create a second
+  `DataStore`.
+- **Never read `store.data` directly in a facade.** Declare settings with the `createValue()` DSL in
+  `common/datastore/` (ported from SD Maid SE). Because there is exactly one shared store, Preferences DataStore hands
+  the *entire* snapshot to *every* collector on *any* write — an unrelated key's write would otherwise re-emit every
+  setting in the app, restarting downstream `flatMapLatest` chains and rebuilding whole UI states. `DataStoreValue`
+  dedupes on the **raw stored value, before the reader runs**, so the guard cannot be forgotten per-facade and never
+  depends on a domain type's `equals`. (This is not hypothetical: an undeduplicated `captureEnabled` made the
+  dashboard's charging card flash its loading state on every stats-recorder tick.)
+
+  ```kotlin
+  val captureEnabled = dataStore.createValue("stats.capture_enabled", false)   // scalar
+  val session = dataStore.createValue<ChargeSessionRecord?>("session.v2", null, json, fallbackToDefault = true)
+  ```
+
+  Read with `.value()` / collect `.flow`; write with `.value(x)` or `.update { }` (read-modify-write in one
+  transaction). Settings consumed **as a unit** — a session and its provenance, the alarm config — are one
+  `@Serializable` record under one key, so a partially-written state cannot exist. Independent scalars stay separate,
+  so a hot-path write doesn't wake unrelated collectors.
+- **Persisted records are a stored wire format.** Give every persisted property and enum constant an explicit
+  `@SerialName` and a default, and never reuse a key name for a different type (Preferences keys compare by name).
+  `fallbackToDefault` is chosen **per record**: fine where the decode is already all-or-nothing (an unreadable session
+  is no session) or cosmetic, but a record whose fields degrade *independently* — `ChargingPreferences` — must
+  validate field by field, or one bad field silently resets a user's real protective baseline to the default.
+  `StoredRecordFormatTest` pins the JSON.
 - Debug builds attach extra logging; the file logger requires explicit user consent before recording.

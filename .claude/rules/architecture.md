@@ -27,7 +27,10 @@ eu.darken.amply
     └── debug/logging        Logging fan-out + backends (Logcat, File)
 ```
 
-Feature-specific preference facades live with their owning feature but share the one `AppDataStore` instance.
+Feature-specific preference facades live with their owning feature but share the one `AppDataStore` instance. They
+declare their settings with the `createValue()` DSL (`common/datastore`) rather than touching `store.data` — with a
+single shared store, every write reaches every collector, so the deduplication has to live in the primitive. See
+`code-style.md`.
 
 ## Data Flow
 

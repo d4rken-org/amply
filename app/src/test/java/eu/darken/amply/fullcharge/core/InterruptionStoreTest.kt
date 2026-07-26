@@ -4,6 +4,7 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import eu.darken.amply.common.AppDataStore
+import eu.darken.amply.common.serialization.SerializationModule
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,7 +29,7 @@ class InterruptionStoreTest {
             },
         )
     }
-    private val store by lazy { InterruptionStore(appDataStore) }
+    private val store by lazy { InterruptionStore(appDataStore, SerializationModule.json()) }
 
     @AfterEach
     fun teardown() {
@@ -104,7 +105,31 @@ class InterruptionStoreTest {
     @Test
     fun `a malformed stored enum decodes to no event`() = runTest {
         store.record(event())
-        appDataStore.store.edit { it[stringPreferencesKey("interruption.v1.outcome")] = "GARBAGE" }
+        writeRawRecord(
+            """{"occurredAtMillis":1000,"reason":"OTHER","outcome":"GARBAGE","workId":"tok-1"}""",
+        )
         store.event.first() shouldBe null
+    }
+
+    @Test
+    fun `a malformed stored record decodes to no event`() = runTest {
+        store.record(event())
+        writeRawRecord("{not json at all")
+        store.event.first() shouldBe null
+    }
+
+    /**
+     * A missing required field is as unreadable as a bad one — this is the all-or-nothing decode the
+     * event had when it lived across four keys, where any absent key meant "no event".
+     */
+    @Test
+    fun `a record missing a required field decodes to no event`() = runTest {
+        store.record(event())
+        writeRawRecord("""{"occurredAtMillis":1000,"reason":"OTHER"}""")
+        store.event.first() shouldBe null
+    }
+
+    private suspend fun writeRawRecord(json: String) {
+        appDataStore.store.edit { it[stringPreferencesKey("interruption.v2")] = json }
     }
 }

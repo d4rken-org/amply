@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import eu.darken.amply.common.AppDataStore
+import eu.darken.amply.common.serialization.SerializationModule
 import eu.darken.amply.monitor.core.ChargeMonitorTick
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.CoroutineScope
@@ -41,7 +42,7 @@ class ChargeAlarmWatcherTest {
         val prefs: DataStore<Preferences> = PreferenceDataStoreFactory.create(scope = scope) {
             File(tempDir, "alarm-${System.nanoTime()}.preferences_pb")
         }
-        return ChargeAlarmStore(AppDataStore(prefs))
+        return ChargeAlarmStore(AppDataStore(prefs), SerializationModule.json())
     }
 
     private fun tick(plugged: Boolean, percent: Int, sessionActive: Boolean = false) =

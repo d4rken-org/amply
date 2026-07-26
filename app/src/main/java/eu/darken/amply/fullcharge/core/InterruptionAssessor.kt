@@ -90,12 +90,16 @@ class InterruptionAssessor @Inject constructor(
      * restore, so provenance is read from the pending target first, then the session. Non-candidate
      * pickups silently adopt any surviving recovery work — but the [RecoveryPickup] still carries the
      * work id so a convergence can resolve a prior event even without an assessment.
+     *
+     * Each store is read exactly **once**: reading provenance and work id through separate accessors
+     * could straddle a concurrent adopt or clear and pair a token from one version of the record with
+     * a work id from another.
      */
     suspend fun captureRecoveryPickup(): RecoveryPickup = runSafeOrNull {
-        val provenance = fullChargeStore.pendingRecoveryProvenance()
-            ?: fullChargeStore.currentSession()?.provenance
-        val workId = fullChargeStore.pendingRecoveryWorkId()
-            ?: fullChargeStore.currentSession()?.workId
+        val recovery = fullChargeStore.currentRecovery()
+        val session = fullChargeStore.currentSession()
+        val provenance = recovery?.provenance ?: session?.provenance
+        val workId = recovery?.workId ?: session?.workId
         if (provenance == null || !isSurvivedSameBoot(provenance)) {
             adoptRecoveryWork()
             return@runSafeOrNull RecoveryPickup(workId = workId, assessment = null)

@@ -29,6 +29,7 @@ private fun DependencyHandler.coreLibraryDesugaring(dependencyNotation: Any): De
 fun DependencyHandlerScope.addBaseKotlin() {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:${Versions.Kotlin.coroutines}")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:${Versions.Kotlin.coroutines}")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:${Versions.Kotlin.serialization}")
 }
 
 fun DependencyHandlerScope.addBaseAndroid() {
