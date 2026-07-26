@@ -10,7 +10,7 @@
     <string name="session_notification_active">Charge protection returns at 100% or when unplugged.</string>
     <string name="session_notification_restore">Restore now</string>
     <string name="gesture_channel_name">Reconnect gesture</string>
-    <string name="gesture_notification_title">Quick full charge is on</string>
+    <string name="gesture_notification_title">Reconnect gesture is on</string>
     <string name="gesture_notification_waiting">Waiting for a quick unplug and reconnect while your charge limit is holding.</string>
     <string name="gesture_notification_waiting_limit">Waiting for a quick unplug and reconnect at your %1$d%% limit.</string>
     <string name="gesture_notification_armed">Reconnect now: replug within 10 seconds to charge fully.</string>
@@ -374,7 +374,7 @@
     <string name="settings_charging_title">Charging</string>
     <string name="settings_charging_subtitle_on">Reconnect gesture on</string>
     <string name="settings_charging_subtitle_off">Reconnect gesture off</string>
-    <string name="settings_reconnect_category">Quick full charge</string>
+    <string name="settings_reconnect_category">Trigger</string>
     <string name="settings_reconnect_enabled_title">Reconnect gesture</string>
     <string name="settings_reconnect_enabled_body">Watch for a quick unplug and reconnect that starts a one-time full charge. Keeps an ongoing notification while it watches.</string>
     <string name="settings_reconnect_enabled_unavailable">Not available on this device</string>
