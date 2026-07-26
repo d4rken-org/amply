@@ -11,7 +11,8 @@
     <string name="session_notification_restore">Restore now</string>
     <string name="gesture_channel_name">Reconnect gesture</string>
     <string name="gesture_notification_title">Quick full charge is on</string>
-    <string name="gesture_notification_waiting">Waiting for a quick unplug and reconnect.</string>
+    <string name="gesture_notification_waiting">Waiting for a quick unplug and reconnect while your charge limit is holding.</string>
+    <string name="gesture_notification_waiting_limit">Waiting for a quick unplug and reconnect at your %1$d%% limit.</string>
     <string name="gesture_notification_armed">Reconnect now: unplug 2s, then replug within 10s to charge fully.</string>
     <string name="gesture_notification_waiting_any_level">Waiting for a quick unplug and reconnect at any charge level.</string>
     <string name="gesture_notification_disable_hint">You can turn this notification off (long-press it) without stopping the gesture.</string>
