@@ -60,7 +60,8 @@ data class DeviceInfo(
             } ?: true,
         )
 
-        private const val ACTION_CHARGING_OPTIMIZATION =
+        /** Internal so tests can register a resolver for it instead of duplicating the action string. */
+        internal const val ACTION_CHARGING_OPTIMIZATION =
             "com.google.android.settings.intelligence.action.CHARGING_OPTIMIZATION"
 
         // Shared with the Samsung adapters; duplicated here to keep DeviceInfo dependency-free.
