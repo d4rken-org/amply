@@ -49,7 +49,7 @@
     <string name="onboarding_feature_protection_body">Switch policies without digging through Android Settings.</string>
     <string name="onboarding_feature_fullcharge_title">Charge fully once</string>
     <string name="onboarding_feature_fullcharge_body">Protection returns automatically at full or when unplugged.</string>
-    <string name="onboarding_feature_shortcut_title">Optional cable shortcut</string>
+    <string name="onboarding_feature_shortcut_title">Optional reconnect gesture</string>
     <string name="onboarding_feature_shortcut_body" formatted="false">Reconnect at the 80% hold to request one full charge.</string>
     <string name="onboarding_next_action">Next</string>
     <string name="onboarding_continue_action">Get started</string>
