@@ -8,7 +8,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
-import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 
@@ -19,6 +19,13 @@ import org.junit.jupiter.api.Test
  * Wherever a test claims to prove exclusion, the handler suspends on a [CompletableDeferred]. With
  * non-suspending handlers on a single test dispatcher an "only one ran at a time" assertion holds even
  * with the lock deleted, so it would prove nothing.
+ *
+ * The consumers are endless loops, so they live in [TestScope.backgroundScope] — anywhere else and
+ * [runTest] would hang waiting for them. That makes them *background* work to the test scheduler, and
+ * `advanceUntilIdle()` deliberately stops as soon as no **foreground** task is left: with the whole
+ * coordinator in the background it runs nothing at all and every assertion sees an empty list. Drain with
+ * [runCurrent] instead, which runs every task queued at the current virtual time regardless of tier. None
+ * of these tests use virtual delays, so that is a full drain.
  */
 class DispatchCoordinatorTest {
 
@@ -48,7 +55,7 @@ class DispatchCoordinatorTest {
         coordinator.submitCommand("a") shouldBe true
         coordinator.submitCommand("b") shouldBe true
         coordinator.submitCommand("c") shouldBe true
-        advanceUntilIdle()
+        runCurrent()
 
         commandsSeen shouldBe listOf("a", "b", "c")
     }
@@ -60,7 +67,7 @@ class DispatchCoordinatorTest {
         coordinator.submitEvaluation("A") shouldBe true
         coordinator.submitEvaluation("B") shouldBe true
         coordinator.submitEvaluation("C") shouldBe true
-        advanceUntilIdle()
+        runCurrent()
 
         evaluationsSeen shouldBe listOf("A", "B", "C")
     }
@@ -77,7 +84,7 @@ class DispatchCoordinatorTest {
 
         coordinator.submitCommand("boom")
         coordinator.submitCommand("next")
-        advanceUntilIdle()
+        runCurrent()
 
         commandsSeen shouldBe listOf("next")
         errors.map { it.first } shouldBe listOf("Command boom")
@@ -94,7 +101,7 @@ class DispatchCoordinatorTest {
 
         coordinator.submitEvaluation("boom")
         coordinator.submitEvaluation("next")
-        advanceUntilIdle()
+        runCurrent()
 
         evaluationsSeen shouldBe listOf("next")
         errors.map { it.first } shouldBe listOf("Battery evaluation")
@@ -109,7 +116,7 @@ class DispatchCoordinatorTest {
         coordinator.submitEvaluation("stale")
         coordinator.newRun()
         coordinator.submitEvaluation("live")
-        advanceUntilIdle()
+        runCurrent()
 
         evaluationsSeen shouldBe listOf("live")
     }
@@ -123,14 +130,14 @@ class DispatchCoordinatorTest {
         val coordinator = launched()
         val gate = CompletableDeferred<Unit>()
         backgroundScope.launch { coordinator.withExclusive { gate.await() } }
-        advanceUntilIdle()
+        runCurrent()
 
         coordinator.submitEvaluation("stale")
         // The evaluation consumer receives it, passes the generation fast path, and parks on the lock.
-        advanceUntilIdle()
+        runCurrent()
         coordinator.newRun()
         gate.complete(Unit)
-        advanceUntilIdle()
+        runCurrent()
 
         evaluationsSeen shouldBe emptyList()
     }
@@ -143,7 +150,7 @@ class DispatchCoordinatorTest {
 
         coordinator.submitEvaluationForGeneration("stale", stale)
         coordinator.submitEvaluationForGeneration("live", coordinator.currentGeneration)
-        advanceUntilIdle()
+        runCurrent()
 
         evaluationsSeen shouldBe listOf("live")
     }
@@ -159,7 +166,7 @@ class DispatchCoordinatorTest {
         coordinator.open()
         coordinator.isOpen shouldBe true
         coordinator.submitEvaluationIfOpen("open") shouldBe true
-        advanceUntilIdle()
+        runCurrent()
 
         evaluationsSeen shouldBe listOf("open")
     }
@@ -171,7 +178,7 @@ class DispatchCoordinatorTest {
 
         coordinator.isOpen shouldBe false
         coordinator.submitEvaluation("poll") shouldBe true
-        advanceUntilIdle()
+        runCurrent()
 
         evaluationsSeen shouldBe listOf("poll")
     }
@@ -186,7 +193,7 @@ class DispatchCoordinatorTest {
 
         coordinator.isOpen shouldBe false
         coordinator.submitEvaluationIfOpen("after") shouldBe false
-        advanceUntilIdle()
+        runCurrent()
         evaluationsSeen shouldBe emptyList()
     }
 
@@ -203,13 +210,13 @@ class DispatchCoordinatorTest {
 
         coordinator.submitCommand("held")
         coordinator.submitEvaluation("waiting")
-        advanceUntilIdle()
+        runCurrent()
 
         commandsSeen shouldBe listOf("held")
         evaluationsSeen shouldBe emptyList()
 
         gate.complete(Unit)
-        advanceUntilIdle()
+        runCurrent()
         evaluationsSeen shouldBe listOf("waiting")
     }
 
@@ -218,17 +225,17 @@ class DispatchCoordinatorTest {
         val coordinator = launched()
         val gate = CompletableDeferred<Unit>()
         backgroundScope.launch { coordinator.withExclusive { gate.await() } }
-        advanceUntilIdle()
+        runCurrent()
 
         coordinator.submitCommand("c")
         coordinator.submitEvaluation("e")
-        advanceUntilIdle()
+        runCurrent()
 
         commandsSeen shouldBe emptyList()
         evaluationsSeen shouldBe emptyList()
 
         gate.complete(Unit)
-        advanceUntilIdle()
+        runCurrent()
         commandsSeen shouldBe listOf("c")
         evaluationsSeen shouldBe listOf("e")
     }
@@ -243,18 +250,18 @@ class DispatchCoordinatorTest {
         val coordinator = launched()
         val gate = CompletableDeferred<Unit>()
         backgroundScope.launch { coordinator.withExclusive { gate.await() } }
-        advanceUntilIdle()
+        runCurrent()
 
         var ran = false
         val waiter = backgroundScope.launch { coordinator.withExclusive { ran = true } }
-        advanceUntilIdle()
+        runCurrent()
 
         // Cancelled and joined WHILE the lock is still held: the join must complete.
         waiter.cancelAndJoin()
         ran shouldBe false
 
         gate.complete(Unit)
-        advanceUntilIdle()
+        runCurrent()
         ran shouldBe false
     }
 
@@ -287,7 +294,7 @@ class DispatchCoordinatorTest {
         coordinator.submitEvaluation("e") shouldBe false
         coordinator.submitEvaluationIfOpen("e") shouldBe false
         coordinator.submitEvaluationForGeneration("e", coordinator.currentGeneration) shouldBe false
-        advanceUntilIdle()
+        runCurrent()
 
         commandsSeen shouldBe emptyList()
         evaluationsSeen shouldBe emptyList()
@@ -309,17 +316,17 @@ class DispatchCoordinatorTest {
         val coordinator = launched()
 
         coordinator.submitCommand("held")
-        advanceUntilIdle()
+        runCurrent()
         commandsSeen shouldBe listOf("held")
         finished shouldBe false
 
         coordinator.shutdown()
-        advanceUntilIdle()
+        runCurrent()
         finished shouldBe false
         consumersActive() shouldBe true
 
         gate.complete(Unit)
-        advanceUntilIdle()
+        runCurrent()
         finished shouldBe true
         consumersActive() shouldBe false
     }
