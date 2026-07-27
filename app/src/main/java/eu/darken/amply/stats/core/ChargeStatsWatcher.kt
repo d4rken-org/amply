@@ -13,7 +13,7 @@ import javax.inject.Singleton
  *
  * [onBatteryTick] does no blocking work: it copies the tick into a [RawStatsTick] and hands it to
  * [ChargeStatsRecorder], which does every DataStore/Binder/Room read on its own IO thread. This runs
- * under the service's `commandMutex`, so it must never touch the disk or a Binder — a slow read here
+ * under the service's dispatch lock, so it must never touch the disk or a Binder — a slow read here
  * could delay the safety-critical charge-policy restore.
  */
 @Singleton
