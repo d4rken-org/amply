@@ -29,7 +29,7 @@ import javax.inject.Singleton
  * [offer], which only enqueues (never blocks, never touches Room/Binder/DataStore), so all
  * enrichment (parsing the intent, reading live battery properties, boot id) and all database work
  * happen on this recorder's own IO coroutine — entirely off the charge-session service's
- * `commandMutex`. That is what guarantees a slow read/write here can never delay the safety-critical
+ * dispatch lock. That is what guarantees a slow read/write here can never delay the safety-critical
  * charge-policy restore. The command channel is FIFO and unbounded, so plug transitions are never
  * dropped and enable/disable/clear/purge are strictly ordered against samples.
  *
