@@ -135,6 +135,35 @@ class ContributionWizardViewModelTest {
         vm.state.value.issueUrl.shouldNotBeNull()
     }
 
+    @Test
+    fun `a single capture cannot reach review`() = runTest(dispatcher.scheduler) {
+        // One observation can only ever derive an empty matrix, so this would build a report with no discovery data.
+        val vm = readyVm()
+        vm.goNext(); vm.goNext() // INTRO -> DETAILS -> CAPTURE
+        repo.captureQueue.add(CaptureResult.Success(mapOf(global("protect_battery") to "0")))
+        vm.setPendingLabel("off"); vm.captureMode(); advanceUntilIdle()
+        vm.goNext()
+        vm.state.value.step shouldBe WizardStep.CAPTURE
+    }
+
+    @Test
+    fun `two identical captures reach review with an empty matrix`() = runTest(dispatcher.scheduler) {
+        val same = mapOf(global("protect_battery") to "0")
+        val vm = reachedReviewWith(a = same, b = same)
+        vm.state.value.step shouldBe WizardStep.REVIEW
+        vm.state.value.review.shouldBeEmpty()
+    }
+
+    @Test
+    fun `restarting from an empty review clears the captures and returns to capture`() = runTest(dispatcher.scheduler) {
+        val same = mapOf(global("protect_battery") to "0")
+        val vm = reachedReviewWith(a = same, b = same)
+        vm.restartSession()
+        vm.state.value.step shouldBe WizardStep.CAPTURE
+        vm.state.value.modes.shouldBeEmpty()
+        vm.state.value.review.shouldBeEmpty()
+    }
+
     /** Advances the wizard to the REVIEW step with two captured modes. */
     private fun reachedReviewWith(
         a: Map<SettingId, String>,

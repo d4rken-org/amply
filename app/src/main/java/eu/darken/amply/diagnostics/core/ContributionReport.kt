@@ -1,11 +1,14 @@
 package eu.darken.amply.diagnostics.core
 
 import eu.darken.amply.charging.core.DeviceInfo
+import eu.darken.amply.charging.core.access.STANDARD_SETTINGS_NAMESPACES
+import eu.darken.amply.charging.core.access.SettingNamespace
 import eu.darken.amply.main.core.DeviceSupportReporter
 import eu.darken.amply.main.core.sanitizeReportValue
 import java.net.URLEncoder
 
-internal const val CONTRIBUTION_SCHEMA = 1
+/** 2: added `scanned_namespaces`, `captured_mode_count`, `changed_rows`, and a distinct empty-matrix wording. */
+internal const val CONTRIBUTION_SCHEMA = 2
 
 /** Conservative cap for a GitHub issue prefill URL; browsers/GitHub start truncating well above this. */
 internal const val MAX_ISSUE_URL_BYTES = 6_000
@@ -46,6 +49,7 @@ internal fun buildReviewedReport(
     effects: List<ModeEffect>,
     notes: String,
     createdAtEpochMs: Long,
+    scannedNamespaces: List<SettingNamespace> = STANDARD_SETTINGS_NAMESPACES,
     schema: Int = CONTRIBUTION_SCHEMA,
 ): ReviewedContributionReport {
     val matrix = deriveMatrix(session.observations)
@@ -72,6 +76,8 @@ internal fun buildReviewedReport(
             )
         },
         withheldRowCount = matrix.size - exportRows.size,
+        changedRowCount = matrix.size,
+        scannedNamespaces = scannedNamespaces.map { it.commandName },
         effects = effects.map { ModeEffect(sanitizeReportValue(it.modeLabel), sanitizeReportValue(it.effect)) },
         notes = sanitizeReportValue(notes, MAX_NOTE),
     )
@@ -92,10 +98,23 @@ internal fun formatContributionReport(report: ReviewedContributionReport): Strin
     appendLine("rom_version=${report.romVersion.ifBlank { "unspecified" }}")
     appendLine("feature_name=${report.featureName.ifBlank { "unspecified" }}")
     appendLine("modes=${report.modeLabels.joinToString(" | ")}")
+    appendLine("captured_mode_count=${report.modeLabels.size}")
+    appendLine("scanned_namespaces=${report.scannedNamespaces.joinToString(",")}")
+    appendLine("changed_rows=${report.changedRowCount}")
     appendLine()
     appendLine("# changed settings (value per mode, in the order above)")
     if (report.rows.isEmpty()) {
-        appendLine("(no settings approved for inclusion)")
+        // Two very different outcomes used to share one line. An empty matrix is a *measurement* result (nothing moved
+        // in the scanned providers); an all-withheld matrix is a *contributor* choice. Reading the first as the second
+        // sends a maintainer chasing a privacy decision that never happened.
+        if (report.changedRowCount == 0) {
+            appendLine(
+                "(no settings changed across the captured modes — " +
+                    "nothing differed in ${report.scannedNamespaces.joinToString(", ")})",
+            )
+        } else {
+            appendLine("(no settings approved for inclusion)")
+        }
     } else {
         report.rows.forEach { row ->
             appendLine("${row.namespace}/${row.key} = ${row.valuesByMode.joinToString(" | ") { it ?: "<absent>" }}")

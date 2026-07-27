@@ -310,6 +310,7 @@
     <string name="contribution_label_duplicate">You already captured a mode with that name.</string>
     <string name="contribution_status_no_change">That mode changed no settings — recorded anyway.</string>
     <string name="contribution_status_shizuku_required">Shizuku access is required to capture.</string>
+    <string name="contribution_capture_empty_error">Nothing could be read from the settings providers. Check that Shizuku is still running, then try again.</string>
     <string name="contribution_undo_last">Undo last</string>
     <string name="contribution_restart">Start over</string>
     <string name="contribution_modes_captured">%1$d mode(s) captured</string>
@@ -327,7 +328,10 @@
     <string name="contribution_review_hidden">Hidden</string>
     <string name="contribution_review_reveal">Reveal</string>
     <string name="contribution_review_include">Include in the public report</string>
-    <string name="contribution_review_empty">No settings changed across the captured modes.</string>
+    <string name="contribution_review_empty_title">No differences found</string>
+    <string name="contribution_review_empty_body">Nothing changed in the secure, global, or system settings between the modes you captured. That usually means one of:</string>
+    <string name="contribution_review_empty_causes">• The mode wasn\'t actually switched in the system settings between captures.\n• It was switched, but captured before the system applied it. Wait until the manufacturer\'s screen shows the new mode, then capture.\n• This ROM keeps the mode somewhere Amply can\'t read.</string>
+    <string name="contribution_review_empty_hint">Only the last one is worth sending. If you\'re not sure, start over and capture each mode again.</string>
 
     <!-- Step: deliver -->
     <string name="contribution_deliver_title">Send it</string>
@@ -340,6 +344,7 @@
 
     <!-- Navigation -->
     <string name="contribution_next">Next</string>
+    <string name="contribution_next_empty">Continue anyway</string>
     <string name="contribution_back">Back</string>
 
     <!-- Dashboard (static UI) -->

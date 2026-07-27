@@ -32,12 +32,13 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class DefaultContributionRepositoryTest {
 
-    private class RecordingSource : SettingsSnapshotSource {
+    private class RecordingSource(private val values: Map<String, String> = mapOf("some_key" to "1")) :
+        SettingsSnapshotSource {
         val requested = mutableListOf<SettingNamespace>()
         override suspend fun status() = BackendStatus(available = true, granted = true, detail = "test".toCaString())
         override suspend fun snapshot(namespace: SettingNamespace): NamespaceSnapshot {
             requested += namespace
-            return NamespaceSnapshot.Success(emptyMap())
+            return NamespaceSnapshot.Success(values)
         }
     }
 
@@ -73,5 +74,15 @@ class DefaultContributionRepositoryTest {
             SettingNamespace.SYSTEM,
         )
         source.requested shouldNotContain SettingNamespace.LINEAGE_SYSTEM
+    }
+
+    @Test
+    fun `a capture that reads nothing at all fails instead of passing as an empty snapshot`() = runTest {
+        // A backend only reports Failure when the call threw; empty/unparsable output parses to an empty map. Three
+        // empty namespaces would otherwise diff to "nothing changed" and look like a valid unsupported-ROM finding.
+        val source = RecordingSource(values = emptyMap())
+        val repo = DefaultContributionRepository(ApplicationProvider.getApplicationContext(), source, registry)
+
+        repo.captureSnapshot().shouldBeInstanceOf<CaptureResult.Failure>()
     }
 }

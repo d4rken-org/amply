@@ -53,6 +53,10 @@ data class ReviewedRow(
  * The complete, immutable, export-safe contribution report. The pure formatter accepts **only** this type and has no
  * access to raw snapshots, so privacy cannot regress through a later formatting change. Redacted rows are represented
  * solely by [withheldRowCount] — their namespace, key, and values are absent entirely.
+ *
+ * [changedRowCount] and [scannedNamespaces] describe the *measurement*, not its contents: without them a report with no
+ * rows is ambiguous between "nothing differed across the modes" and "the contributor withheld everything", and a reader
+ * cannot tell which providers were even looked at. Both are counts/namespace names only — never key or value bearing.
  */
 data class ReviewedContributionReport(
     val schema: Int,
@@ -70,6 +74,8 @@ data class ReviewedContributionReport(
     val modeLabels: List<String>,
     val rows: List<ReviewedRow>,
     val withheldRowCount: Int,
+    val changedRowCount: Int,
+    val scannedNamespaces: List<String>,
     val effects: List<ModeEffect>,
     val notes: String,
 )
