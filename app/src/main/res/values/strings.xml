@@ -4,12 +4,14 @@
     <string name="tile_active">Restore limit</string>
     <string name="tile_override_active">Temporary override active</string>
     <string name="widget_description">Amply charge controls</string>
-    <string name="session_channel_name">Temporary full charge</string>
+    <string name="session_channel_name">Full charge and restore</string>
+    <string name="session_channel_description" formatted="false">Shows while Amply is allowing a full charge, and while it restores your limit afterwards</string>
     <string name="session_notification_title" formatted="false">Charging to 100% once</string>
     <string name="session_notification_armed">Waiting for a charger</string>
     <string name="session_notification_active">Charge protection returns at 100% or when unplugged.</string>
     <string name="session_notification_restore">Restore now</string>
     <string name="gesture_channel_name">Reconnect gesture</string>
+    <string name="gesture_channel_description" formatted="false">Shows while the reconnect-for-100% gesture is watching for a replug</string>
     <string name="gesture_notification_title">Reconnect gesture is on</string>
     <string name="gesture_notification_waiting">Waiting for a quick unplug and reconnect while your charge limit is holding.</string>
     <string name="gesture_notification_waiting_limit">Waiting for a quick unplug and reconnect at your %1$d%% limit.</string>
@@ -20,6 +22,7 @@
     <string name="gesture_notification_waiting_any_level">Waiting for a quick unplug and reconnect at any charge level.</string>
     <string name="gesture_notification_disable_hint">You can turn this notification off (long-press it) without stopping the gesture.</string>
     <string name="recovery_channel_name">Charge policy recovery</string>
+    <string name="recovery_channel_description">Alerts you when your protective charge limit could not be restored</string>
     <string name="recovery_notification_title">Charge limit needs attention</string>
     <string name="recovery_notification_body">Open Amply and restart Shizuku to restore your protective policy.</string>
     <string name="recovery_notification_body_convergence">The protective policy was rewritten, but the charging hardware has not confirmed it yet. Open Amply to check.</string>
