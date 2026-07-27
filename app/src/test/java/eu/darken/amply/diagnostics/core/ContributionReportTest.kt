@@ -96,6 +96,42 @@ class ContributionReportTest {
     }
 
     @Test
+    fun `an empty matrix reads as nothing changed, not as a contributor redaction`() {
+        val id = secure("charge_optimization_mode")
+        val built = report(RawWizardSession(listOf(obs("a", id to "1"), obs("b", id to "1"))))
+        built.changedRowCount shouldBe 0
+        built.withheldRowCount shouldBe 0
+        val text = formatContributionReport(built)
+        text shouldContain "no settings changed across the captured modes"
+        text shouldNotContain "approved for inclusion"
+        text shouldContain "changed_rows=0"
+    }
+
+    @Test
+    fun `a fully withheld matrix keeps the inclusion wording and leaks no key`() {
+        val id = secure("lock_screen_owner_info")
+        val built = report(RawWizardSession(listOf(obs("a", id to "SECRET-A"), obs("b", id to "SECRET-B"))))
+        built.changedRowCount shouldBe 1
+        built.withheldRowCount shouldBe 1
+        val text = formatContributionReport(built)
+        text shouldContain "(no settings approved for inclusion)"
+        text shouldContain "withheld_rows=1"
+        text shouldNotContain "lock_screen_owner_info"
+        text shouldNotContain "SECRET"
+    }
+
+    @Test
+    fun `report states what was measured`() {
+        val text = formatContributionReport(
+            report(RawWizardSession(listOf(obs("off", global("protect_battery") to "0"), obs("max", global("protect_battery") to "1")))),
+        )
+        text shouldContain "contribution_schema=2"
+        text shouldContain "captured_mode_count=2"
+        text shouldContain "scanned_namespaces=secure,global,system"
+        text shouldContain "changed_rows=1"
+    }
+
+    @Test
     fun `multiline values are collapsed to one line`() {
         val id = secure("charge_optimization_mode")
         // "1\nINJECTED" is out of domain → redacted; approve it so we can inspect the sanitized output.

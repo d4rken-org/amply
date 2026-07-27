@@ -1,5 +1,6 @@
 package eu.darken.amply.diagnostics.ui
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -39,6 +40,7 @@ import eu.darken.amply.R
 import eu.darken.amply.charging.core.access.BackendStatus
 import eu.darken.amply.common.compose.AmplyCard
 import eu.darken.amply.common.compose.AmplyCardDefaults
+import eu.darken.amply.common.compose.AmplyCardTone
 import eu.darken.amply.common.compose.AmplyCodeBlock
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
@@ -94,9 +96,17 @@ fun ContributionWizardScreen(
                 showNext = state.step != WizardStep.DELIVER,
                 nextEnabled = when (state.step) {
                     WizardStep.INTRO -> state.shizukuReady
-                    // Not while a capture is in flight — Review must reflect a settled session.
-                    WizardStep.CAPTURE -> state.modes.isNotEmpty() && !state.busy
+                    // Not while a capture is in flight — Review must reflect a settled session. Below two modes there
+                    // is nothing to diff, so Review could only ever be empty.
+                    WizardStep.CAPTURE -> state.modes.size >= ContributionWizardViewModel.MIN_MODES && !state.busy
                     else -> true
+                },
+                // An empty matrix is still deliverable — "the ROM stores this elsewhere" is a real finding — but the
+                // label has to stop reading like a normal happy-path Next.
+                nextLabel = if (state.step == WizardStep.REVIEW && state.review.isEmpty()) {
+                    R.string.contribution_next_empty
+                } else {
+                    R.string.contribution_next
                 },
                 onBack = onBack,
                 onNext = onNext,
@@ -130,7 +140,7 @@ fun ContributionWizardScreen(
                     onUndoLast,
                     onRestart,
                 )
-                WizardStep.REVIEW -> reviewStep(state, onRevealRow, onToggleInclude)
+                WizardStep.REVIEW -> reviewStep(state, onRevealRow, onToggleInclude, onRestart)
                 WizardStep.DELIVER -> deliverStep(state, onOpenIssue, onCopyReport, onEmail)
             }
         }
@@ -142,6 +152,7 @@ private fun WizardBottomBar(
     showBack: Boolean,
     showNext: Boolean,
     nextEnabled: Boolean,
+    @StringRes nextLabel: Int,
     onBack: () -> Unit,
     onNext: () -> Unit,
 ) {
@@ -161,7 +172,7 @@ private fun WizardBottomBar(
             Spacer(Modifier.weight(1f))
             if (showNext) {
                 Button(onClick = onNext, enabled = nextEnabled) {
-                    Text(stringResource(R.string.contribution_next))
+                    Text(stringResource(nextLabel))
                 }
             }
         }
@@ -401,14 +412,42 @@ private fun LazyListScope.reviewStep(
     state: ContributionUiState,
     onRevealRow: (SettingId) -> Unit,
     onToggleInclude: (SettingId) -> Unit,
+    onRestart: () -> Unit,
 ) {
     item { SectionTitle(stringResource(R.string.contribution_review_title)) }
-    item { BodyText(stringResource(R.string.contribution_review_body)) }
     if (state.review.isEmpty()) {
-        item { BodyText(stringResource(R.string.contribution_review_empty)) }
+        item { EmptyReviewCard(onRestart) }
     } else {
+        item { BodyText(stringResource(R.string.contribution_review_body)) }
         items(state.review, key = { it.id.display }) { row ->
             ReviewRowCard(row, onRevealRow, onToggleInclude)
+        }
+    }
+}
+
+/**
+ * Shown when the captured modes produced no differences at all. Most reports that land here are a capture mishap rather
+ * than a finding, so the card names the likely causes — but it deliberately does not block delivery: "this ROM keeps the
+ * mode somewhere else" is exactly the kind of result that should still reach a maintainer.
+ */
+@Composable
+private fun EmptyReviewCard(onRestart: () -> Unit) {
+    AmplyCard(
+        tone = AmplyCardTone.TertiaryContainer,
+        verticalArrangement = Arrangement.spacedBy(AmplyCardDefaults.ItemSpacing),
+    ) {
+        Text(
+            stringResource(R.string.contribution_review_empty_title),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Text(stringResource(R.string.contribution_review_empty_body))
+        Text(stringResource(R.string.contribution_review_empty_causes))
+        Text(
+            stringResource(R.string.contribution_review_empty_hint),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        TextButton(onClick = onRestart) {
+            Text(stringResource(R.string.contribution_restart))
         }
     }
 }
@@ -505,8 +544,8 @@ private fun LazyListScope.deliverStep(
 @AmplyPreview
 @Composable
 private fun ContributionWizardScreenPreview() = PreviewWrapper {
-    ContributionWizardScreen(
-        state = ContributionUiState(
+    PreviewScreen(
+        ContributionUiState(
             step = WizardStep.CAPTURE,
             shizuku = BackendStatus(available = true, granted = true, detail = "Shizuku connected".toCaString()),
             featureName = "Protect battery",
@@ -526,6 +565,31 @@ private fun ContributionWizardScreenPreview() = PreviewWrapper {
                 ),
             ),
         ),
+    )
+}
+
+@AmplyPreview
+@Composable
+private fun ContributionWizardEmptyReviewPreview() = PreviewWrapper {
+    PreviewScreen(
+        ContributionUiState(
+            step = WizardStep.REVIEW,
+            shizuku = BackendStatus(available = true, granted = true, detail = "Shizuku connected".toCaString()),
+            featureName = "Charging protection",
+            romVersion = "HyperOS 3",
+            modes = listOf(
+                ModeSummary(label = "Intelligent charging", effect = "no_change", changedFromPrevious = null),
+                ModeSummary(label = "Charge fully", effect = "no_change", changedFromPrevious = 0),
+            ),
+            review = emptyList(),
+        ),
+    )
+}
+
+@Composable
+private fun PreviewScreen(state: ContributionUiState) {
+    ContributionWizardScreen(
+        state = state,
         onExit = {},
         onRefreshStatus = {},
         onOpenShizuku = {},

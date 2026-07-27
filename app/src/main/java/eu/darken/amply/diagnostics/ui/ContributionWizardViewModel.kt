@@ -205,8 +205,12 @@ class ContributionWizardViewModel @Inject constructor(
         when (mutableState.value.step) {
             WizardStep.INTRO -> if (mutableState.value.shizukuReady) transitionTo(WizardStep.DETAILS)
             WizardStep.DETAILS -> transitionTo(WizardStep.CAPTURE)
-            // Never advance while a capture is in flight — Review must reflect a settled session.
-            WizardStep.CAPTURE -> if (rawSession.observations.isNotEmpty() && captureJob?.isActive != true) buildReview()
+            // Never advance while a capture is in flight — Review must reflect a settled session. Two observations are
+            // the authoritative minimum: a diff needs something to diff against, so a single capture can only ever
+            // derive an empty matrix and would produce a report with no discovery data at all.
+            WizardStep.CAPTURE -> if (rawSession.observations.size >= MIN_MODES && captureJob?.isActive != true) {
+                buildReview()
+            }
             WizardStep.REVIEW -> buildDelivery()
             WizardStep.DELIVER -> Unit
         }
@@ -287,7 +291,9 @@ class ContributionWizardViewModel @Inject constructor(
     private fun diffCount(before: Map<SettingId, String>, after: Map<SettingId, String>): Int =
         (before.keys + after.keys).count { before[it] != after[it] }
 
-    private companion object {
-        val TAG = logTag("Contribution", "VM")
+    companion object {
+        /** A comparison needs at least two modes; one capture derives an empty matrix by construction. */
+        const val MIN_MODES = 2
+        private val TAG = logTag("Contribution", "VM")
     }
 }

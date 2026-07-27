@@ -2,6 +2,7 @@ package eu.darken.amply.diagnostics.core
 
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
+import eu.darken.amply.R
 import eu.darken.amply.charging.core.DeviceInfo
 import eu.darken.amply.charging.core.access.BackendStatus
 import eu.darken.amply.charging.core.access.NamespaceSnapshot
@@ -9,6 +10,7 @@ import eu.darken.amply.charging.core.access.STANDARD_SETTINGS_NAMESPACES
 import eu.darken.amply.charging.core.access.SettingsSnapshotSource
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
 import eu.darken.amply.common.ca.CaString
+import eu.darken.amply.common.ca.toCaString
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -50,6 +52,10 @@ class DefaultContributionRepository @Inject constructor(
                 is NamespaceSnapshot.Failure -> return CaptureResult.Failure(result.reason)
             }
         }
+        // A backend only reports Failure when the call *threw*. A command that returns empty or unparsable output
+        // instead parses to an empty map, and three empty namespaces would look exactly like a valid "nothing changed"
+        // capture. No real Android device has zero settings across all three, so treat it as a failed read.
+        if (merged.isEmpty()) return CaptureResult.Failure(R.string.contribution_capture_empty_error.toCaString())
         return CaptureResult.Success(merged)
     }
 
