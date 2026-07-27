@@ -32,11 +32,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.UUID
 import javax.inject.Inject
@@ -56,25 +53,23 @@ class ChargeSessionService : Service() {
     @Inject lateinit var watchers: Set<@JvmSuppressWildcards ChargeMonitorWatcher>
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val commandMutex = Mutex()
-    // A single-consumer FIFO queue: onStartCommand enqueues on the main thread in arrival order, so rapid
-    // taps (e.g. "∞ 80%" then "∞ 100%") can never be reordered by the dispatcher and finish on the wrong one.
-    private val commandChannel = Channel<Command>(Channel.UNLIMITED)
+    // Commands are a single-consumer FIFO queue: onStartCommand enqueues on the main thread in arrival
+    // order, so rapid taps (e.g. "∞ 80%" then "∞ 100%") can never be reordered by the dispatcher and
+    // finish on the wrong one.
     // Battery evaluations are serialized the same way: the receiver, the 30s poll, and the gesture
-    // expiry nudge all enqueue here and a single consumer drains under commandMutex. Concurrent
+    // expiry nudge all enqueue here and a single consumer drains under the same shared lock. Concurrent
     // evaluations could otherwise observe plug edges out of order and corrupt the gesture state
     // machine (its per-tick preference reads suspend, widening the reorder window). Each entry
-    // carries the time it was OBSERVED — queue latency under a busy mutex must not distort the
-    // gesture's 2-10s reconnect window — and the monitoring generation it belongs to, so events
-    // queued before a monitor stop/restart can never replay into freshly reset gesture state.
-    private val evaluationChannel = Channel<Evaluation>(Channel.UNLIMITED)
+    // carries the time it was OBSERVED — queue latency under a busy lock must not distort the
+    // gesture's 2-10s reconnect window — and the coordinator stamps the monitoring generation it
+    // belongs to, so events queued before a monitor stop/restart can never replay into freshly reset
+    // gesture state.
+    private val coordinator = DispatchCoordinator<Command, Evaluation>()
     private val quickGesture = QuickFullChargeGesture()
     private var monitorJob: Job? = null
     private var gestureExpiryJob: Job? = null
-    @Volatile private var monitorGeneration = 0
-    // Written under commandMutex, but read by the battery receiver/monitor loop outside it.
+    // Written under the dispatch lock, but read by the battery receiver/monitor loop outside it.
     @Volatile private var recoveryJob: Job? = null
-    @Volatile private var monitorReady = false
     private var settingObserverRegistered = false
     @Volatile private var restoring = false
     // One-shot interruption assessment for a freshly resumed persisted session: set when
@@ -84,11 +79,7 @@ class ChargeSessionService : Service() {
 
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (monitorReady) {
-                evaluationChannel.trySend(
-                    Evaluation(intent, SystemClock.elapsedRealtime(), monitorGeneration),
-                )
-            }
+            coordinator.submitEvaluationIfOpen(Evaluation(intent, SystemClock.elapsedRealtime()))
         }
     }
 
@@ -96,11 +87,11 @@ class ChargeSessionService : Service() {
         override fun onChange(selfChange: Boolean) {
             if (restoring) return
             scope.launch {
-                commandMutex.withLock {
+                coordinator.withExclusive {
                     // Re-check under the lock: a persistent-policy command can set `restoring` after the
                     // fast-path check above but before we acquire the lock, so its own write must not be
                     // mistaken for a native change and cancelled.
-                    if (restoring) return@withLock
+                    if (restoring) return@withExclusive
                     // Respect a native Settings change instead of restoring over the user's choice.
                     manager.cancelWithoutRestore()
                     unregisterSettingObserver()
@@ -125,42 +116,21 @@ class ChargeSessionService : Service() {
             IntentFilter(Intent.ACTION_BATTERY_CHANGED),
             ContextCompat.RECEIVER_EXPORTED,
         )
-        // Drain commands one at a time, in the order they were enqueued. A failure in one command (e.g. a
-        // surface update throwing) must not kill the consumer and strand every command that follows.
-        scope.launch {
-            for (command in commandChannel) {
-                try {
-                    commandMutex.withLock { handleCommand(command.action, command.target) }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    log(TAG, Logging.Priority.ERROR) { "Command ${command.action} failed: ${e.message}" }
-                }
-            }
-        }
-        scope.launch {
-            for (evaluation in evaluationChannel) {
-                if (evaluation.generation != monitorGeneration) continue
-                try {
-                    commandMutex.withLock {
-                        // Re-check under the lock: a command can restart monitoring between the
-                        // fast-path check above and the mutex acquisition.
-                        if (evaluation.generation != monitorGeneration) return@withLock
-                        evaluateBattery(evaluation.intent, evaluation.observedAtElapsed)
-                    }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    log(TAG, Logging.Priority.ERROR) { "Battery evaluation failed: ${e.message}" }
-                }
-            }
-        }
+        // Drain commands and evaluations one at a time, in the order they were enqueued and never
+        // concurrently with each other. A failure in one item (e.g. a surface update throwing) must not
+        // kill its consumer and strand everything that follows.
+        coordinator.launch(
+            scope = scope,
+            onCommand = { handleCommand(it.action, it.target) },
+            onEvaluation = { evaluateBattery(it.intent, it.observedAtElapsed) },
+            onError = { label, e -> log(TAG, Logging.Priority.ERROR) { "$label failed: ${e.message}" } },
+        )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         log(TAG) { "Start command: action=${intent?.action ?: "<restart>"}" }
         val target = intent?.getStringExtra(EXTRA_TARGET_POLICY)?.let(ChargePolicy::fromStableId)
-        commandChannel.trySend(Command(intent?.action, target))
+        coordinator.submitCommand(Command(intent?.action, target))
         return START_STICKY
     }
 
@@ -168,12 +138,14 @@ class ChargeSessionService : Service() {
 
     override fun onDestroy() {
         log(TAG) { "Destroying charge-session service" }
-        monitorReady = false
+        coordinator.close()
         monitorJob?.cancel()
         runCatching { unregisterReceiver(batteryReceiver) }
         unregisterSettingObserver()
-        commandChannel.close()
-        evaluationChannel.close()
+        // Closing the queues lets an in-flight handler finish; only cancelling the scope stops the
+        // consumers, so these two must stay adjacent — otherwise a waiter parked on the shared lock
+        // could acquire it and resume monitoring on a dying service.
+        coordinator.shutdown()
         scope.cancel()
         super.onDestroy()
     }
@@ -200,7 +172,7 @@ class ChargeSessionService : Service() {
         quickGesture.reset()
         registerSettingObserver()
         startMonitoringLoop()
-        monitorReady = true
+        coordinator.open()
         evaluateBattery()
         SurfaceUpdater.updateNow(this)
     }
@@ -232,7 +204,7 @@ class ChargeSessionService : Service() {
         }
         unregisterSettingObserver()
         startMonitoringLoop()
-        monitorReady = true
+        coordinator.open()
         // A watcher-only monitor gets the quiet notification; the gesture path re-posts its own in
         // evaluateBattery. Post here so an alarm-only start replaces the bootstrap notification.
         if (!gestureActive) startAsForeground(SessionNotifications.monitoring(this))
@@ -254,7 +226,7 @@ class ChargeSessionService : Service() {
 
     /**
      * Deliver a battery tick to every optional watcher. Evaluations are already serialized (single
-     * evaluation consumer under [commandMutex]), so no extra lock is needed. Each watcher is bounded
+     * evaluation consumer under the [coordinator]'s lock), so no extra lock is needed. Each watcher is bounded
      * by [WATCHER_TICK_BUDGET_MILLIS] and fully isolated: a hung or throwing watcher can neither
      * strand this evaluation nor, since restore already ran before this point, delay policy recovery.
      */
@@ -268,7 +240,7 @@ class ChargeSessionService : Service() {
     ) {
         if (watchers.isEmpty()) return
         // Pass the exact evaluated intent through; watchers parse it and read live properties off the
-        // evaluation thread. Building the readout here would put Binder calls under commandMutex and
+        // evaluation thread. Building the readout here would put Binder calls under the dispatch lock and
         // could delay a queued restore.
         val tick = ChargeMonitorTick(
             plugged = plugged,
@@ -293,19 +265,17 @@ class ChargeSessionService : Service() {
     private fun startMonitoringLoop() {
         // New monitoring run: evaluations queued for the previous run are stale and must be dropped
         // (the gesture state machine was or will be reset relative to them).
-        monitorGeneration++
+        coordinator.newRun()
         monitorJob?.cancel()
         monitorJob = scope.launch {
             while (true) {
                 delay(30_000)
-                evaluationChannel.trySend(
-                    Evaluation(null, SystemClock.elapsedRealtime(), monitorGeneration),
-                )
+                coordinator.submitEvaluation(Evaluation(null, SystemClock.elapsedRealtime()))
             }
         }
     }
 
-    // Callers must hold commandMutex — either via the evaluation consumer or a command handler.
+    // Callers must hold the dispatch lock — either via the evaluation consumer or a command handler.
     // observedAtElapsed is when the underlying battery state was seen, not when we process it.
     private suspend fun evaluateBattery(
         intent: Intent? = null,
@@ -348,7 +318,7 @@ class ChargeSessionService : Service() {
                     }
                     startAsForeground(SessionNotifications.session(this, connected = true))
                 }
-                // Restore is safety-critical and holds commandMutex: run it BEFORE any optional
+                // Restore is safety-critical and holds the dispatch lock: run it BEFORE any optional
                 // watcher work so a slow/hung watcher can never delay restoring the protective
                 // policy. The suppression latch was already set on the session's earlier
                 // (non-restore) ticks below; the post-restore re-evaluation sees it as fired.
@@ -374,7 +344,7 @@ class ChargeSessionService : Service() {
         // Resolved once, here: DeviceInfo.current() resolves activities/providers, reads Samsung
         // settings and queries UserManager, so it must stay behind the session early-return and the
         // cheap enabled check — hoisting it would newly charge active sessions, disabled gestures
-        // and watcher-only ticks for it under commandMutex. Net cost is unchanged: the availability
+        // and watcher-only ticks for it under the dispatch lock. Net cost is unchanged: the availability
         // check already resolved a selection at exactly this point, and the hardware decode below
         // reuses this one.
         val gestureEnabled = fullChargeStore.isQuickFullChargeEnabled()
@@ -472,11 +442,12 @@ class ChargeSessionService : Service() {
             // waiting evaluations must not push the deadline out — and dropped when it resolves.
             if (decision == QuickFullChargeDecision.WAITING_FOR_RECONNECT) {
                 if (gestureExpiryJob?.isActive != true) {
-                    val generation = monitorGeneration
+                    val generation = coordinator.currentGeneration
                     gestureExpiryJob = scope.launch {
                         delay(QuickFullChargeGesture.MAX_RECONNECT_MILLIS + 500)
-                        evaluationChannel.trySend(
-                            Evaluation(null, SystemClock.elapsedRealtime(), generation),
+                        coordinator.submitEvaluationForGeneration(
+                            Evaluation(null, SystemClock.elapsedRealtime()),
+                            generation,
                         )
                     }
                 }
@@ -486,9 +457,9 @@ class ChargeSessionService : Service() {
         }
     }
 
-    // All command handling is serialized by commandMutex; recoveryJob is only touched
+    // All command handling is serialized by the dispatch lock; recoveryJob is only touched
     // while holding it, except for the recovery job's own tail, which re-acquires the
-    // mutex (a cancelled job aborts at that acquisition instead of blocking a canceller).
+    // lock (a cancelled job aborts at that acquisition instead of blocking a canceller).
     private suspend fun handleCommand(action: String?, target: ChargePolicy?) {
         when (action) {
             ACTION_RESTORE -> if (recoveryJob?.isActive != true) restoreAndContinue()
@@ -538,9 +509,9 @@ class ChargeSessionService : Service() {
         if (recoveryJob?.isActive == true) return
         // Quiesce monitoring before recovery writes: with ACTION_CHECK the service can already be
         // alive in gesture-monitor mode, and the monitor loop / battery receiver run outside the
-        // command mutex — they could replace the recovering notification or begin a session that
+        // dispatch lock — they could replace the recovering notification or begin a session that
         // races the recovery re-writes.
-        monitorReady = false
+        coordinator.close()
         monitorJob?.cancel()
         gestureExpiryJob?.cancel()
         unregisterSettingObserver()
@@ -560,7 +531,7 @@ class ChargeSessionService : Service() {
             } finally {
                 // In finally so an interruption-bookkeeping failure can never strand the recovering
                 // foreground state.
-                commandMutex.withLock {
+                coordinator.withExclusive {
                     // continueGestureOrStop() awaits a surface update on every terminal branch, so no path here
                     // leaves the widget/tile un-pushed (some paths push more than once — updateAll is idempotent).
                     continueGestureOrStop()
@@ -619,7 +590,7 @@ class ChargeSessionService : Service() {
     ) {
         log(TAG) { "Restoring the saved charging policy" }
         restoring = true
-        monitorReady = false
+        coordinator.close()
         unregisterSettingObserver()
         // Read the stable work id before the restore clears the session record, so a later upgrade of
         // a still-pending interruption event can be matched to it (the owner token is not stable).
@@ -673,7 +644,7 @@ class ChargeSessionService : Service() {
         // choice is new owed work, so it gets a fresh work id.
         fullChargeStore.setPendingRecoveryTarget(policy, UUID.randomUUID().toString(), currentWorkProvenance())
         restoring = true
-        monitorReady = false
+        coordinator.close()
         try {
             // Suppress our own settings write from tripping the native-change observer, and end any one-time
             // session without restoring — the new persistent policy IS the intended end state.
@@ -715,13 +686,12 @@ class ChargeSessionService : Service() {
         adapterRegistry.select().adapter?.reconnectGestureSupported == true
 
     private fun stopMonitoring() {
-        monitorReady = false
         // Drop any un-consumed pickup assessment so it can never leak into a later session/monitor run.
         pendingSessionAssessment = null
         // A rapid disable/re-enable can reuse this service instance; neither stale gesture state
         // (an old reconnect window) nor already-queued evaluations from this run may survive into
         // the next monitoring run.
-        monitorGeneration++
+        coordinator.closeAndInvalidate()
         monitorJob?.cancel()
         gestureExpiryJob?.cancel()
         quickGesture.reset()
@@ -762,7 +732,6 @@ class ChargeSessionService : Service() {
     private data class Evaluation(
         val intent: Intent?,
         val observedAtElapsed: Long,
-        val generation: Int,
     )
 
     companion object {
