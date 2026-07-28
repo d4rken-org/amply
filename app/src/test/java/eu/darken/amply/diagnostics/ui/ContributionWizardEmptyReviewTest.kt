@@ -81,22 +81,39 @@ class ContributionWizardEmptyReviewTest {
         values = listOf("0", "1"),
     )
 
+    /** An unknown key: redacted, not revealed, not included — the default state of a new device's real mapping row. */
+    private val withheldRow = ReviewRowUi(
+        id = SettingId(SettingNamespace.SECURE, "vendor_unknown_charge_key"),
+        disclosure = Disclosure.REDACTED,
+        revealed = false,
+        included = false,
+        values = null,
+    )
+
     @Test
-    fun `an empty review explains itself instead of reading like a normal step`() {
+    fun `an empty review explains itself and cannot be delivered`() {
         render(reviewState(emptyList()))
 
         compose.onNodeWithText(string(R.string.contribution_review_empty_title)).assertExists()
-        compose.onNodeWithText(string(R.string.contribution_next_empty)).assertExists()
-        // The happy-path label must be gone — that is the whole point of the relabel.
-        compose.onNodeWithText(string(R.string.contribution_next)).assertDoesNotExist()
+        // No "send it anyway" path: a report with no settings never reaches an issue or the support inbox.
+        compose.onNodeWithText(string(R.string.contribution_next)).assertIsNotEnabled()
     }
 
     @Test
-    fun `a populated review keeps the normal next label`() {
+    fun `a review with rows but nothing included cannot be delivered`() {
+        render(reviewState(listOf(withheldRow)))
+
+        compose.onNodeWithText(string(R.string.contribution_review_nothing_included_title)).assertExists()
+        compose.onNodeWithText(string(R.string.contribution_next)).assertIsNotEnabled()
+    }
+
+    @Test
+    fun `a populated review can be delivered`() {
         render(reviewState(listOf(populatedRow)))
 
-        compose.onNodeWithText(string(R.string.contribution_next)).assertExists()
+        compose.onNodeWithText(string(R.string.contribution_next)).assertIsEnabled()
         compose.onNodeWithText(string(R.string.contribution_review_empty_title)).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.contribution_review_nothing_included_title)).assertDoesNotExist()
     }
 
     // Tall screen: at Robolectric's 470px default the card's action lands behind the bottom bar and the click would

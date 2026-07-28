@@ -184,6 +184,43 @@ class ContributionWizardViewModelTest {
     }
 
     @Test
+    fun `an empty matrix cannot be delivered`() = runTest(dispatcher.scheduler) {
+        val same = mapOf(global("protect_battery") to "0")
+        val vm = reachedReviewWith(a = same, b = same)
+        vm.state.value.deliverable shouldBe false
+
+        vm.goNext()
+        advanceUntilIdle()
+
+        vm.state.value.step shouldBe WizardStep.REVIEW
+        vm.state.value.reportText shouldBe null
+        vm.state.value.issueUrl shouldBe null
+    }
+
+    @Test
+    fun `a matrix whose rows are all withheld cannot be delivered until one is included`() =
+        runTest(dispatcher.scheduler) {
+            // An unknown key is redacted by default, which is exactly what a new device's real mapping row looks like.
+            val id = secure("vendor_unknown_charge_key")
+            val vm = reachedReviewWith(a = mapOf(id to "0"), b = mapOf(id to "1"))
+            vm.state.value.review.single().included shouldBe false
+            vm.state.value.nothingIncluded shouldBe true
+
+            vm.goNext()
+            advanceUntilIdle()
+            vm.state.value.step shouldBe WizardStep.REVIEW
+
+            vm.revealRow(id)
+            vm.toggleInclude(id)
+            vm.state.value.deliverable shouldBe true
+
+            vm.goNext()
+            advanceUntilIdle()
+            vm.state.value.step shouldBe WizardStep.DELIVER
+            vm.state.value.reportText.shouldNotBeNull() shouldContain "vendor_unknown_charge_key"
+        }
+
+    @Test
     fun `restarting from an empty review clears the captures and returns to capture`() = runTest(dispatcher.scheduler) {
         val same = mapOf(global("protect_battery") to "0")
         val vm = reachedReviewWith(a = same, b = same)

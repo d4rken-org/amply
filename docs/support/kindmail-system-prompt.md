@@ -131,9 +131,12 @@ that their device will be supported.
 
 ### If `changed_rows=0`
 
-Not actionable by itself. The wizard already showed them a "No differences found" warning with the likely
-causes and they chose "Continue anyway", so **do not tell them they did it wrong or that they skipped a step.**
-They didn't.
+**Current builds cannot produce this.** Since the wizard change that followed the first of these emails, a
+capture that finds no differences cannot be delivered at all: no issue, no email, only "Start over". A
+`changed_rows=0` report arriving now means the user is on 0.2.1-beta0 or older, so ask them to update first.
+
+Not actionable by itself. Older builds warned about it and then offered a "Continue anyway" button, so **do not
+tell them they did it wrong or that they skipped a step.** They used a path the app handed them.
 
 There are three causes, and only the last one is a real finding:
 
@@ -158,6 +161,12 @@ Then check two things in the block and work them into the reply:
 
 - A report with fewer than two captured modes can't be produced by current versions; the wizard blocks it. If
   one turns up anyway, the user is on an old build, ask them to update.
+- Same for `(no settings approved for inclusion)`, which means settings changed but the contributor included
+  none of them. Current builds block delivery until at least one row is included, so this shape also only
+  arrives from 0.2.1-beta0 or older. Don't push the user to disclose anything; just ask them to update and run
+  it again, and the wizard will explain the reveal step in place.
+- Taken together: every discovery report from a current build carries at least one setting. If one doesn't, the
+  build is old, and that is the first thing to check.
 - Never tell a user their device will be supported on the strength of a report. The gate is physical
   verification, not a settings mapping.
 

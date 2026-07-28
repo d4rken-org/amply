@@ -74,6 +74,17 @@ data class ContributionUiState(
      * and the ROM version, and those two often identify the ROM family on their own.
      */
     val detailsComplete: Boolean get() = featureName.isNotBlank() && romVersion.isNotBlank()
+
+    /**
+     * A report is only worth delivering if it carries at least one setting. This covers both dead ends with one
+     * predicate: an empty matrix (nothing differed across the captured modes) leaves [review] empty, and a matrix
+     * whose every row was withheld leaves nothing included. Either way the report would name no candidate key, which
+     * is the only thing a maintainer can act on.
+     */
+    val deliverable: Boolean get() = review.any { it.included }
+
+    /** Rows were found, but none are included yet — distinct from [review] being empty, and fixable by the user. */
+    val nothingIncluded: Boolean get() = review.isNotEmpty() && !deliverable
 }
 
 /**
@@ -218,7 +229,9 @@ class ContributionWizardViewModel @Inject constructor(
             WizardStep.CAPTURE -> if (rawSession.observations.size >= MIN_MODES && captureJob?.isActive != true) {
                 buildReview()
             }
-            WizardStep.REVIEW -> buildDelivery()
+            // A report with no settings is not deliverable at all: there is no "send it anyway" path, because an
+            // empty report costs a maintainer a round-trip and tells them nothing the device list doesn't already.
+            WizardStep.REVIEW -> if (mutableState.value.deliverable) buildDelivery()
             WizardStep.DELIVER -> Unit
         }
     }
