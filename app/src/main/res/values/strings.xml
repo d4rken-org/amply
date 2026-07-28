@@ -295,6 +295,7 @@
 
     <!-- Step: details -->
     <string name="contribution_details_title">About this device</string>
+    <string name="contribution_details_required">Both answers below are needed. Even if the capture finds nothing, they tell a maintainer which software your phone runs and what to look for.</string>
     <string name="contribution_feature_label">Battery-protection feature name</string>
     <string name="contribution_feature_hint">What is it called on your phone? e.g. \"Protect battery\", \"Battery care\"</string>
     <string name="contribution_rom_label">Software version</string>
@@ -334,7 +335,9 @@
     <string name="contribution_review_empty_title">No differences found</string>
     <string name="contribution_review_empty_body">Nothing changed in the secure, global, or system settings between the modes you captured. That usually means one of:</string>
     <string name="contribution_review_empty_causes">• The mode wasn\'t actually switched in the system settings between captures.\n• It was switched, but captured before the system applied it. Wait until the manufacturer\'s screen shows the new mode, then capture.\n• This ROM keeps the mode somewhere Amply can\'t read.</string>
-    <string name="contribution_review_empty_hint">Only the last one is worth sending. If you\'re not sure, start over and capture each mode again.</string>
+    <string name="contribution_review_empty_hint">There\'s nothing to send from this run, so this is as far as it goes. Start over and capture each mode again if you think one of the first two applies. If your phone has no battery-protection setting to switch, or it keeps it somewhere Amply can\'t read, then this device can\'t be mapped this way.</string>
+    <string name="contribution_review_nothing_included_title">Nothing included yet</string>
+    <string name="contribution_review_nothing_included_body">Settings did change, but none are in the report yet. Support for a new device is usually hiding behind one of the rows below, so reveal them, check that nothing personal is in there, and include at least one. A report with no settings can\'t be used.</string>
 
     <!-- Step: deliver -->
     <string name="contribution_deliver_title">Send it</string>
@@ -347,7 +350,6 @@
 
     <!-- Navigation -->
     <string name="contribution_next">Next</string>
-    <string name="contribution_next_empty">Continue anyway</string>
     <string name="contribution_back">Back</string>
 
     <!-- Dashboard (static UI) -->

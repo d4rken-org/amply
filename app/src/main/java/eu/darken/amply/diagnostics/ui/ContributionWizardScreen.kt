@@ -96,18 +96,18 @@ fun ContributionWizardScreen(
                 showNext = state.step != WizardStep.DELIVER,
                 nextEnabled = when (state.step) {
                     WizardStep.INTRO -> state.shizukuReady
+                    // An empty matrix is still a deliverable finding, but only if the report says which feature and
+                    // which ROM it came from — so both are collected before any capture, not after.
+                    WizardStep.DETAILS -> state.detailsComplete
                     // Not while a capture is in flight — Review must reflect a settled session. Below two modes there
                     // is nothing to diff, so Review could only ever be empty.
                     WizardStep.CAPTURE -> state.modes.size >= ContributionWizardViewModel.MIN_MODES && !state.busy
+                    // No settings, no delivery. Both dead ends (nothing differed, or everything withheld) are
+                    // explained by a card in the step itself, so a disabled Next is never unexplained.
+                    WizardStep.REVIEW -> state.deliverable
                     else -> true
                 },
-                // An empty matrix is still deliverable — "the ROM stores this elsewhere" is a real finding — but the
-                // label has to stop reading like a normal happy-path Next.
-                nextLabel = if (state.step == WizardStep.REVIEW && state.review.isEmpty()) {
-                    R.string.contribution_next_empty
-                } else {
-                    R.string.contribution_next
-                },
+                nextLabel = R.string.contribution_next,
                 onBack = onBack,
                 onNext = onNext,
             )
@@ -262,6 +262,7 @@ private fun LazyListScope.detailsStep(
     onNotesChange: (String) -> Unit,
 ) {
     item { SectionTitle(stringResource(R.string.contribution_details_title)) }
+    item { BodyText(stringResource(R.string.contribution_details_required)) }
     item {
         OutlinedTextField(
             value = state.featureName,
@@ -419,6 +420,9 @@ private fun LazyListScope.reviewStep(
         item { EmptyReviewCard(onRestart) }
     } else {
         item { BodyText(stringResource(R.string.contribution_review_body)) }
+        if (state.nothingIncluded) {
+            item { NothingIncludedCard() }
+        }
         items(state.review, key = { it.id.display }) { row ->
             ReviewRowCard(row, onRevealRow, onToggleInclude)
         }
@@ -426,9 +430,9 @@ private fun LazyListScope.reviewStep(
 }
 
 /**
- * Shown when the captured modes produced no differences at all. Most reports that land here are a capture mishap rather
- * than a finding, so the card names the likely causes — but it deliberately does not block delivery: "this ROM keeps the
- * mode somewhere else" is exactly the kind of result that should still reach a maintainer.
+ * Shown when the captured modes produced no differences at all. There is nothing to send from here: the report would
+ * name no candidate key, and a maintainer cannot tell a capture mishap from a ROM that hides the setting. So the card
+ * names the likely causes and the only two ways forward — capture again, or accept the device isn't mappable this way.
  */
 @Composable
 private fun EmptyReviewCard(onRestart: () -> Unit) {
@@ -449,6 +453,25 @@ private fun EmptyReviewCard(onRestart: () -> Unit) {
         TextButton(onClick = onRestart) {
             Text(stringResource(R.string.contribution_restart))
         }
+    }
+}
+
+/**
+ * Rows were found but none are included, so the report would carry no candidate key. A new device's key is never on the
+ * auto-disclose allowlist by definition, so this is the normal state of exactly the reports worth the most — the card
+ * has to explain the reveal step rather than leave a disabled Next unexplained.
+ */
+@Composable
+private fun NothingIncludedCard() {
+    AmplyCard(
+        tone = AmplyCardTone.TertiaryContainer,
+        verticalArrangement = Arrangement.spacedBy(AmplyCardDefaults.ItemSpacing),
+    ) {
+        Text(
+            stringResource(R.string.contribution_review_nothing_included_title),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Text(stringResource(R.string.contribution_review_nothing_included_body))
     }
 }
 

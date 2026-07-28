@@ -67,6 +67,24 @@ data class ContributionUiState(
     val deliveryTooLargeBytes: Int? = null,
 ) {
     val shizukuReady: Boolean get() = shizuku?.ready == true
+
+    /**
+     * Both device-context fields are required before capturing. They are the only part of a report that survives an
+     * empty matrix: a capture that finds no differences is unattributable without the OEM's own name for the feature
+     * and the ROM version, and those two often identify the ROM family on their own.
+     */
+    val detailsComplete: Boolean get() = featureName.isNotBlank() && romVersion.isNotBlank()
+
+    /**
+     * A report is only worth delivering if it carries at least one setting. This covers both dead ends with one
+     * predicate: an empty matrix (nothing differed across the captured modes) leaves [review] empty, and a matrix
+     * whose every row was withheld leaves nothing included. Either way the report would name no candidate key, which
+     * is the only thing a maintainer can act on.
+     */
+    val deliverable: Boolean get() = review.any { it.included }
+
+    /** Rows were found, but none are included yet — distinct from [review] being empty, and fixable by the user. */
+    val nothingIncluded: Boolean get() = review.isNotEmpty() && !deliverable
 }
 
 /**
@@ -204,14 +222,16 @@ class ContributionWizardViewModel @Inject constructor(
     fun goNext() {
         when (mutableState.value.step) {
             WizardStep.INTRO -> if (mutableState.value.shizukuReady) transitionTo(WizardStep.DETAILS)
-            WizardStep.DETAILS -> transitionTo(WizardStep.CAPTURE)
+            WizardStep.DETAILS -> if (mutableState.value.detailsComplete) transitionTo(WizardStep.CAPTURE)
             // Never advance while a capture is in flight — Review must reflect a settled session. Two observations are
             // the authoritative minimum: a diff needs something to diff against, so a single capture can only ever
             // derive an empty matrix and would produce a report with no discovery data at all.
             WizardStep.CAPTURE -> if (rawSession.observations.size >= MIN_MODES && captureJob?.isActive != true) {
                 buildReview()
             }
-            WizardStep.REVIEW -> buildDelivery()
+            // A report with no settings is not deliverable at all: there is no "send it anyway" path, because an
+            // empty report costs a maintainer a round-trip and tells them nothing the device list doesn't already.
+            WizardStep.REVIEW -> if (mutableState.value.deliverable) buildDelivery()
             WizardStep.DELIVER -> Unit
         }
     }

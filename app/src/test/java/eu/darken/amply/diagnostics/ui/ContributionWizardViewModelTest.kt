@@ -41,6 +41,12 @@ class ContributionWizardViewModelTest {
         dispatcher.scheduler.advanceUntilIdle()
     }
 
+    /** Satisfies the DETAILS gate so a test can walk on to CAPTURE. */
+    private fun ContributionWizardViewModel.fillDetails() {
+        setFeatureName("Protect battery")
+        setRomVersion("One UI 8")
+    }
+
     private fun global(key: String) = SettingId(SettingNamespace.GLOBAL, key)
     private fun secure(key: String) = SettingId(SettingNamespace.SECURE, key)
 
@@ -136,10 +142,33 @@ class ContributionWizardViewModelTest {
     }
 
     @Test
+    fun `capture is unreachable until both device details are given`() = runTest(dispatcher.scheduler) {
+        val vm = readyVm()
+        vm.goNext() // INTRO -> DETAILS
+        vm.state.value.step shouldBe WizardStep.DETAILS
+
+        vm.goNext()
+        vm.state.value.step shouldBe WizardStep.DETAILS
+
+        vm.setFeatureName("Protect battery")
+        vm.goNext() // ROM version still missing
+        vm.state.value.step shouldBe WizardStep.DETAILS
+
+        vm.setRomVersion("   ") // whitespace does not count
+        vm.goNext()
+        vm.state.value.step shouldBe WizardStep.DETAILS
+
+        vm.setRomVersion("One UI 8")
+        vm.state.value.detailsComplete shouldBe true
+        vm.goNext()
+        vm.state.value.step shouldBe WizardStep.CAPTURE
+    }
+
+    @Test
     fun `a single capture cannot reach review`() = runTest(dispatcher.scheduler) {
         // One observation can only ever derive an empty matrix, so this would build a report with no discovery data.
         val vm = readyVm()
-        vm.goNext(); vm.goNext() // INTRO -> DETAILS -> CAPTURE
+        vm.goNext(); vm.fillDetails(); vm.goNext() // INTRO -> DETAILS -> CAPTURE
         repo.captureQueue.add(CaptureResult.Success(mapOf(global("protect_battery") to "0")))
         vm.setPendingLabel("off"); vm.captureMode(); advanceUntilIdle()
         vm.goNext()
@@ -153,6 +182,43 @@ class ContributionWizardViewModelTest {
         vm.state.value.step shouldBe WizardStep.REVIEW
         vm.state.value.review.shouldBeEmpty()
     }
+
+    @Test
+    fun `an empty matrix cannot be delivered`() = runTest(dispatcher.scheduler) {
+        val same = mapOf(global("protect_battery") to "0")
+        val vm = reachedReviewWith(a = same, b = same)
+        vm.state.value.deliverable shouldBe false
+
+        vm.goNext()
+        advanceUntilIdle()
+
+        vm.state.value.step shouldBe WizardStep.REVIEW
+        vm.state.value.reportText shouldBe null
+        vm.state.value.issueUrl shouldBe null
+    }
+
+    @Test
+    fun `a matrix whose rows are all withheld cannot be delivered until one is included`() =
+        runTest(dispatcher.scheduler) {
+            // An unknown key is redacted by default, which is exactly what a new device's real mapping row looks like.
+            val id = secure("vendor_unknown_charge_key")
+            val vm = reachedReviewWith(a = mapOf(id to "0"), b = mapOf(id to "1"))
+            vm.state.value.review.single().included shouldBe false
+            vm.state.value.nothingIncluded shouldBe true
+
+            vm.goNext()
+            advanceUntilIdle()
+            vm.state.value.step shouldBe WizardStep.REVIEW
+
+            vm.revealRow(id)
+            vm.toggleInclude(id)
+            vm.state.value.deliverable shouldBe true
+
+            vm.goNext()
+            advanceUntilIdle()
+            vm.state.value.step shouldBe WizardStep.DELIVER
+            vm.state.value.reportText.shouldNotBeNull() shouldContain "vendor_unknown_charge_key"
+        }
 
     @Test
     fun `restarting from an empty review clears the captures and returns to capture`() = runTest(dispatcher.scheduler) {
@@ -176,6 +242,7 @@ class ContributionWizardViewModelTest {
         vm.refreshStatus()
         dispatcher.scheduler.advanceUntilIdle()
         vm.goNext() // INTRO -> DETAILS
+        vm.fillDetails()
         vm.goNext() // DETAILS -> CAPTURE
         repo.captureQueue.add(CaptureResult.Success(a))
         repo.captureQueue.add(CaptureResult.Success(b))
