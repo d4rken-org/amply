@@ -16,14 +16,15 @@ Useful on any device — no ADB, Shizuku, or special permissions needed:
 * Battery details: a live view of level, temperature, voltage, current, charge cycles, and health.
 * Protection guide: on devices Amply can't control directly, it points you to your phone's own built-in battery-protection setting.
 
-Direct charge control is verified on a limited set of devices:
+Which devices can Amply control directly?
 
-* Pixel 6a and newer on Android 15+.
-* Samsung Galaxy on verified One UI versions.
-* Xiaomi, Redmi and POCO on HyperOS 2.
-* OnePlus, Oppo and Realme on ColorOS 15 (requires Shizuku).
+Charge protection is built by each manufacturer, and it changes with system updates — so a list here would be out of date the moment it's written. Pixel devices generally have good support. Everywhere else it depends on your specific phone and its system version, and no list can promise you an answer.
 
-Direct control needs a one-time setup: grant WRITE_SECURE_SETTINGS via Shizuku, or from a computer over ADB. Amply walks you through each step. Other devices stay diagnostics-only for now — Amply still shows what it finds and lets you contribute your device data to help expand support.
+So Amply doesn't guess: install it and open it. It checks your device on the spot and tells you what it can and can't do, before you set anything up.
+
+If direct control isn't available, Amply is still useful — battery details, the charge alarm, and a guide to your phone's own protection setting — and you can contribute your device data to help expand support.
+
+Direct control needs a one-time setup: grant WRITE_SECURE_SETTINGS via Shizuku, or from a computer over ADB. Amply walks you through each step.
 
 Amply is experimental, free, and open source (GPL-3.0).
 
