@@ -26,8 +26,10 @@ unlisted YouTube video or a link-shared Google Drive file.
 
 The video is regenerated on a device with no manual screen recording: the recorder drives Amply
 with label-based taps (robust to layout changes) while `screenrecord` captures, then post-processing
-adds a title card, burned-in captions, and an end card. **The scripts are committed; the `.mp4`
-output is not** — it is written to `/tmp/amply-demo/` and regenerating it is one command.
+adds a title card, burned-in captions, and an end card. **The scripts are committed; the `.mp4` is
+not** — `.gitignore` excludes `fastlane/play-declarations/**/*.mp4`, so the render can live next to
+its `DECLARATION.md` (ready to upload) without ever entering the repository. Intermediate artifacts
+(`raw.mp4`, `captions.txt`, the card text) stay in `/tmp/amply-demo/`.
 
 | File | Role |
 |------|------|
@@ -40,10 +42,18 @@ output is not** — it is written to `/tmp/amply-demo/` and regenerating it is o
 # Requires a PHYSICAL, capability-gated device (an emulator fails the gate and
 # would record the diagnostics-only UI). Default serial is the Pixel 7a.
 ./foreground-service-special-use/record.sh 31071JEHN17531
-./postprocess.sh /tmp/amply-demo/foreground-service-special-use
+./postprocess.sh /tmp/amply-demo/foreground-service-special-use \
+                 foreground-service-special-use/declaration.mp4
 
 # NOREC=1 ./foreground-service-special-use/record.sh   # validate the tap chain, no recording
+# TRIM_START=2.5 ./postprocess.sh …                    # drop N seconds off the front
 ```
+
+`TRIM_START` (or a `trim.txt` in the output dir) exists to salvage a take whose opening frames
+caught something they shouldn't have; caption timings are shifted to match. It should not normally
+be needed — `record.sh` launches Amply and lets it settle *before* the capture starts, because
+launching inside the recording puts the previously-focused app on screen for the duration of the
+launch animation.
 
 ### What the recorder guarantees
 

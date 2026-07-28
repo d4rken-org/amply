@@ -59,12 +59,15 @@ if ! have "Charge to 100% once"; then
   echo "         adb -s $SERIAL shell pm grant $PKG android.permission.WRITE_SECURE_SETTINGS" >&2
   exit 1
 fi
-# Restart into a clean dashboard so the recording opens on a settled screen.
+# Restart into a clean dashboard and let it settle BEFORE the capture starts.
+# Launching inside the recording would put the previously-focused app on screen
+# for the ~2.5s of the launch animation — whatever the user happened to have open.
 app_stop; pause 1
+app_launch; pause 4
 
 # ---- recording --------------------------------------------------------------
 rec_start
-app_launch; pause 4
+pause 2.5
 cap "Plugged in — the battery is held\nat the 80% protection limit"
 pause 3.5
 

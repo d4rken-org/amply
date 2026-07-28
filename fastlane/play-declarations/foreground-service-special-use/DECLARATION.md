@@ -95,7 +95,8 @@ promptly, and interrupting it causes user-visible harm) but matches no defined t
 ## 6. Demo video
 
 Produced by `./record.sh` (see [`../README.md`](../README.md)). Recorded on a physical Pixel 7a,
-portrait 720×1600, ~68 s including title and end cards.
+portrait 720×1600, ~64 s including title and end cards. The rendered file sits next to this
+document as `declaration.mp4` and is git-ignored — upload it, don't commit it.
 
 The video demonstrates the **unplug** stop condition rather than the 100% one. That is deliberate:
 it is the condition that cannot work without a running foreground service, because Android does not
