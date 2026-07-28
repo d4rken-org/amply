@@ -67,6 +67,13 @@ data class ContributionUiState(
     val deliveryTooLargeBytes: Int? = null,
 ) {
     val shizukuReady: Boolean get() = shizuku?.ready == true
+
+    /**
+     * Both device-context fields are required before capturing. They are the only part of a report that survives an
+     * empty matrix: a capture that finds no differences is unattributable without the OEM's own name for the feature
+     * and the ROM version, and those two often identify the ROM family on their own.
+     */
+    val detailsComplete: Boolean get() = featureName.isNotBlank() && romVersion.isNotBlank()
 }
 
 /**
@@ -204,7 +211,7 @@ class ContributionWizardViewModel @Inject constructor(
     fun goNext() {
         when (mutableState.value.step) {
             WizardStep.INTRO -> if (mutableState.value.shizukuReady) transitionTo(WizardStep.DETAILS)
-            WizardStep.DETAILS -> transitionTo(WizardStep.CAPTURE)
+            WizardStep.DETAILS -> if (mutableState.value.detailsComplete) transitionTo(WizardStep.CAPTURE)
             // Never advance while a capture is in flight — Review must reflect a settled session. Two observations are
             // the authoritative minimum: a diff needs something to diff against, so a single capture can only ever
             // derive an empty matrix and would produce a report with no discovery data at all.

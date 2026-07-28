@@ -41,6 +41,12 @@ class ContributionWizardViewModelTest {
         dispatcher.scheduler.advanceUntilIdle()
     }
 
+    /** Satisfies the DETAILS gate so a test can walk on to CAPTURE. */
+    private fun ContributionWizardViewModel.fillDetails() {
+        setFeatureName("Protect battery")
+        setRomVersion("One UI 8")
+    }
+
     private fun global(key: String) = SettingId(SettingNamespace.GLOBAL, key)
     private fun secure(key: String) = SettingId(SettingNamespace.SECURE, key)
 
@@ -136,10 +142,33 @@ class ContributionWizardViewModelTest {
     }
 
     @Test
+    fun `capture is unreachable until both device details are given`() = runTest(dispatcher.scheduler) {
+        val vm = readyVm()
+        vm.goNext() // INTRO -> DETAILS
+        vm.state.value.step shouldBe WizardStep.DETAILS
+
+        vm.goNext()
+        vm.state.value.step shouldBe WizardStep.DETAILS
+
+        vm.setFeatureName("Protect battery")
+        vm.goNext() // ROM version still missing
+        vm.state.value.step shouldBe WizardStep.DETAILS
+
+        vm.setRomVersion("   ") // whitespace does not count
+        vm.goNext()
+        vm.state.value.step shouldBe WizardStep.DETAILS
+
+        vm.setRomVersion("One UI 8")
+        vm.state.value.detailsComplete shouldBe true
+        vm.goNext()
+        vm.state.value.step shouldBe WizardStep.CAPTURE
+    }
+
+    @Test
     fun `a single capture cannot reach review`() = runTest(dispatcher.scheduler) {
         // One observation can only ever derive an empty matrix, so this would build a report with no discovery data.
         val vm = readyVm()
-        vm.goNext(); vm.goNext() // INTRO -> DETAILS -> CAPTURE
+        vm.goNext(); vm.fillDetails(); vm.goNext() // INTRO -> DETAILS -> CAPTURE
         repo.captureQueue.add(CaptureResult.Success(mapOf(global("protect_battery") to "0")))
         vm.setPendingLabel("off"); vm.captureMode(); advanceUntilIdle()
         vm.goNext()
@@ -176,6 +205,7 @@ class ContributionWizardViewModelTest {
         vm.refreshStatus()
         dispatcher.scheduler.advanceUntilIdle()
         vm.goNext() // INTRO -> DETAILS
+        vm.fillDetails()
         vm.goNext() // DETAILS -> CAPTURE
         repo.captureQueue.add(CaptureResult.Success(a))
         repo.captureQueue.add(CaptureResult.Success(b))

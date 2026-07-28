@@ -96,6 +96,9 @@ fun ContributionWizardScreen(
                 showNext = state.step != WizardStep.DELIVER,
                 nextEnabled = when (state.step) {
                     WizardStep.INTRO -> state.shizukuReady
+                    // An empty matrix is still a deliverable finding, but only if the report says which feature and
+                    // which ROM it came from — so both are collected before any capture, not after.
+                    WizardStep.DETAILS -> state.detailsComplete
                     // Not while a capture is in flight — Review must reflect a settled session. Below two modes there
                     // is nothing to diff, so Review could only ever be empty.
                     WizardStep.CAPTURE -> state.modes.size >= ContributionWizardViewModel.MIN_MODES && !state.busy
@@ -262,6 +265,7 @@ private fun LazyListScope.detailsStep(
     onNotesChange: (String) -> Unit,
 ) {
     item { SectionTitle(stringResource(R.string.contribution_details_title)) }
+    item { BodyText(stringResource(R.string.contribution_details_required)) }
     item {
         OutlinedTextField(
             value = state.featureName,
