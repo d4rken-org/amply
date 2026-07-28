@@ -1,3 +1,8 @@
+---
+name: release
+description: Amply's release process — versioning via version.properties/bump.sh, signing material, the release-prepare/release-tag workflows, store-listing metadata, Play Store screenshot generation, and the Google Play publication gate. Use when cutting a release, bumping a version, regenerating store screenshots, or touching signing/release CI.
+---
+
 # Release
 
 ## Current state (honest)
@@ -12,9 +17,24 @@ into CI and are gated (see below), so `release-tag.yml` still publishes a **FOSS
 
 - **Metadata**: `fastlane/metadata/android/en-US/{title,short_description,full_description}.txt` + `changelogs/default.txt`,
   validated in CI by `check_metadata_length.sh` (title 30 / short 80 / full 3800 / changelog 500 chars).
-- **Screenshots**: generated from `@Preview` composables on the JVM — see `build-commands.md` for the
-  `generate_screenshots.sh` → `copy_screenshots.sh` workflow. Committed under `.../images/phoneScreenshots/`.
-  Regenerate before a store update; CI compiles but never renders them.
+- **Screenshots**: generated from `@Preview` composables on the JVM (no device) via the Compose Preview Screenshot
+  Testing plugin (`com.android.compose.screenshot`, enabled by `android.experimental.enableScreenshotTest=true` in
+  `gradle.properties`). The store composables live in `app/src/debug/.../screenshots/ScreenshotContent.kt`; the
+  capture entry points (`@PreviewTest`) and locale annotations live in `app/src/screenshotTest/.../screenshots/`.
+
+  ```bash
+  # 1. Render (writes to app/src/screenshotTestGplayDebug/reference/, which is gitignored)
+  ./fastlane/generate_screenshots.sh
+  # 2. Normalize (flatten alpha → opaque 1080x1920) + sort into the committed metadata tree
+  ./fastlane/copy_screenshots.sh
+  ```
+
+  Committed output lands in `fastlane/metadata/android/en-US/images/phoneScreenshots/` as `1_dashboard_light.png …
+  6_reconnect_gesture.png` (names come from `copy_screenshots.sh`'s `screen_file` map). Both scripts fail loudly on
+  any count/dimension/format mismatch and `copy_screenshots.sh` requires ImageMagick. Needs the JDK 21 build
+  toolchain like everything else. CI compiles these sources (`compileGplayDebugScreenshotTestKotlin`) but does
+  **not** render — layoutlib output differs across machines — so **regenerating screenshots is a manual pre-release
+  step**.
 - **`supply` lanes** (`beta` / `production` / `listing_only` / `screenshots_only`): every lane that mutates Play state
   refuses to run unless `AMPLY_PLAY_PUBLISH_APPROVED=1`, keeping publication behind the `specialUse` gate below.
   Prerequisites (all manual, none automated): an existing Play app for `eu.darken.amply`, a service-account JSON at the

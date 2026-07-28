@@ -21,22 +21,20 @@ gated to a **physically-qualified device-codename allowlist** (HAL enforcement i
 system user; **reads are unprivileged (ContentResolver), writes require Shizuku** (the shell UID holds
 `lineageos.permission.WRITE_SETTINGS`, which `WRITE_SECURE_SETTINGS` does not cover). Other Pixels, Samsung on
 unverified One UI versions (6/7, 9+), non-HyperOS-2 Xiaomi devices, non-ColorOS-15 Oplus devices, and unqualified
-LineageOS builds remain diagnostics-only. See the qualification ledger in `.claude/rules/privileged-access.md` for
+LineageOS builds remain diagnostics-only. See the qualification ledger (`.claude/skills/device-qualification/`) for
 the verified devices and mappings.
 
-Package: `eu.darken.amply`. License: GPL-3.0-or-later. Status: pre-launch (`0.1.0-beta1`).
+Package: `eu.darken.amply`. License: GPL-3.0-or-later. Status: pre-launch (current version in `VERSION`).
 
 ## Project Shape
 
-- **Single Gradle module**: `:app` (declared in `settings.gradle.kts`). This is *not* a multi-module project.
-- **Product flavors** (`distribution` dimension): `foss` and `gplay`.
-- **Build types**: `debug`, `beta` (minified), `release` (minified). Every variant shares the single applicationId
-  `eu.darken.amply` — no build-type suffixes; installed variants are mutually exclusive (different signing keys).
-- **SDKs**: `compileSdk`/`targetSdk` 36, `minSdk` 26. Core-library desugaring enabled.
+Single Gradle module (`:app`), flavors and build types are declared in `app/build.gradle.kts`. Two non-obvious
+constraints:
+
 - **Java**: build/test toolchain needs **JDK 21** (Robolectric requires it to emulate Android SDK 36); compiled
   bytecode still targets **Java 17** (`compileOptions`/`jvmTarget` in `app/build.gradle.kts`).
-- **Stack**: Kotlin, Jetpack Compose + Material 3, Navigation3, Glance (widget), Hilt/KSP, Coroutines/Flow,
-  Preferences DataStore, Shizuku (AIDL user service).
+- **Every variant shares the single applicationId** `eu.darken.amply` — no build-type suffixes. Because signing
+  certificates differ, installed variants are mutually exclusive on a device; switching requires an uninstall.
 
 ## Package Layout (feature/core/ui)
 
@@ -45,7 +43,8 @@ Under `app/src/main/java/eu/darken/amply/`:
 - `charging/core` — policies, device capability checks, OEM adapters, WSS, Shizuku access (`access/shizuku`, `adapter`)
 - `fullcharge/core` — temporary sessions, boot recovery, reconnect gesture
 - `main/ui` — activity, onboarding, dashboard, settings, setup guide, `tile`, `widget`
-- `diagnostics/core` + `diagnostics/ui` — privileged settings comparison and its guided UI
+- `diagnostics/core` + `diagnostics/ui` — "Help add support" contribution wizard: read-only multi-mode setting
+  discovery + on-device privacy review
 - `common` — shared DataStore owner (`AppDataStore`) and cross-feature primitives
 - `common/datastore` — the `createValue()` settings DSL every preference facade is built on (`DataStoreValue`)
 - `common/serialization` — the single `Json` plus `ChargePolicySerializer`, for JSON-backed setting records
@@ -67,17 +66,23 @@ AIDL boundary: `app/src/main/aidl/eu/darken/amply/charging/core/access/shizuku/I
 
 ## Rules
 
-Topic-specific guidance lives in `.claude/rules/`:
+Always-loaded topic guidance lives in `.claude/rules/`:
 
-- `architecture.md` — package layout, data flow, `ChargeObservation`, adapters, session/recovery, privileged boundary
-- `privileged-access.md` — Shizuku/WSS access paths, capability gate, AIDL safety boundary (read before touching control code)
+- `architecture.md` — data flow, `ChargeObservation`, session/recovery, reconnect gesture, pitfalls
+- `privileged-access.md` — Shizuku/WSS access paths, capability gates, AIDL safety boundary (read before touching control code)
 - `build-commands.md` — gradle build/test/lint commands, flavors, build types
 - `code-style.md` — Kotlin/Compose conventions, logging, DataStore
 - `testing.md` — JUnit 5 + Kotest conventions (JUnit 4 only for Robolectric)
 - `commit-guidelines.md` — commit/PR format and prefixes
 - `localization.md` — string extraction conventions and the current gap
-- `release.md` — versioning, signing, CI (pre-launch state)
 - `agent-instructions.md` — sub-agent usage and working principles
+
+Loaded on demand, as skills (`.claude/skills/`) — there are **no nested `CLAUDE.md` files** in this repo, all
+guidance lives under `.claude/`:
+
+- `oem-adapters` — per-OEM adapter detail (keys, value domains, write ordering, session overrides)
+- `device-qualification` — physical qualification protocol, verified-device ledger, per-OEM known gaps
+- `release` — versioning, `bump.sh`, signing, release workflows, store metadata + screenshots
 
 ## Safety Boundary (read first)
 
