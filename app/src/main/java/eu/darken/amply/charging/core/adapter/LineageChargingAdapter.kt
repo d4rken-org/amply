@@ -34,7 +34,7 @@ import javax.inject.Singleton
  * class of bug), so control is gated to a **physically-qualified codename allowlist**
  * ([QUALIFIED_CODENAMES]) that ships **empty** until a device passes qualification; every LineageOS build
  * otherwise falls through to [LineageLabAdapter]. See the qualification ledger in
- * `.claude/rules/privileged-access.md`.
+ * `.claude/skills/device-qualification/`.
  */
 @Singleton
 class LineageChargingAdapter @Inject constructor(
@@ -165,7 +165,7 @@ class LineageChargingAdapter @Inject constructor(
         /**
          * Physically-qualified device codenames (`Build.DEVICE`) where the charge-control HAL is confirmed
          * to enforce the limit. **Ships empty** — the adapter is diagnostics-only until a device passes the
-         * qualification protocol and gets a ledger row (see `.claude/rules/privileged-access.md`). Widen
+         * qualification protocol and gets a ledger row (see `.claude/skills/device-qualification/`). Widen
          * ONLY with a qualified device.
          */
         val QUALIFIED_CODENAMES = emptySet<String>()

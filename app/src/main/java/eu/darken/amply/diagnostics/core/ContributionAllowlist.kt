@@ -12,7 +12,7 @@ import eu.darken.amply.charging.core.access.SettingNamespace
  *
  * Mirrors the spike-verified charge keys (kept deliberately separate from the privileged `SettingWritePolicy`, which
  * governs writes; these two domains happen to coincide today but answer different questions). Extend only with
- * spike-documented keys — see the qualification ledger in `.claude/rules/privileged-access.md`.
+ * spike-documented keys — see the qualification ledger in `.claude/skills/device-qualification/`.
  */
 object ContributionAllowlist {
     private val ROWS: Map<SettingId, Set<String>> = mapOf(

@@ -18,7 +18,7 @@ import javax.inject.Singleton
 /**
  * ColorOS / OxygenOS (Oplus) charging protection via two mutually-exclusive `system` keys
  * (verified on a OnePlus Nord CE4 Lite / ColorOS 15; see the qualification ledger in
- * .claude/rules/privileged-access.md):
+ * .claude/skills/device-qualification/):
  *
  * - `regular_charge_protection_switch_state` — "Charging limit": a hard cap that keeps the
  *   battery at 80% while charging → [ChargePolicy.FixedLimit] at 80.

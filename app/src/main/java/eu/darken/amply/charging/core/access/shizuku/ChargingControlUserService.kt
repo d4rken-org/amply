@@ -171,7 +171,7 @@ internal class BoundedStreamReader(
  * Pure validation for the privileged write path. Every writable setting carries an explicit
  * per-key value domain — the boundary itself rejects out-of-domain values instead of trusting
  * the adapter layer. Keys must be physically qualified before being added (see the qualification
- * ledger in .claude/rules/privileged-access.md); the OnePlus key is present for a future lab adapter
+ * ledger in .claude/skills/device-qualification/); the OnePlus key is present for a future lab adapter
  * and is not invoked by production code.
  */
 internal object SettingWritePolicy {
@@ -189,7 +189,7 @@ internal object SettingWritePolicy {
             "battery_protection_threshold" to setOf("80", "85", "90", "95"),
         ),
         "system" to mapOf(
-            // ColorOS/OxygenOS (Oplus) charging protection (qualification ledger in .claude/rules/privileged-access.md).
+            // ColorOS/OxygenOS (Oplus) charging protection (qualification ledger in .claude/skills/device-qualification/).
             // System namespace: writable only via Shizuku (shell UID), not direct WRITE_SECURE_SETTINGS.
             "regular_charge_protection_switch_state" to setOf("0", "1"),
             "smart_charge_protection_switch_state" to setOf("0", "1"),
