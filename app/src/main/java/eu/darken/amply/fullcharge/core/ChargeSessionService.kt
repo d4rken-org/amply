@@ -354,6 +354,10 @@ class ChargeSessionService : Service() {
             // Gesture inactive: keep running only if a watcher still wants the service, showing the
             // quiet monitoring notification instead of the gesture cue.
             if (anyWatcherEnabled()) {
+                // Only stopMonitoring() resets the engine, so a watcher keeping this instance alive
+                // across a disable/re-enable cycle would otherwise resume on stale gesture state
+                // (a latched basis or an open reconnect window from before the disable).
+                quickGesture.reset()
                 startAsForeground(SessionNotifications.monitoring(this))
             } else {
                 stopMonitoring()
