@@ -113,6 +113,20 @@ class QuickFullChargeGestureTest {
         charging(8_000) shouldBe QuickFullChargeDecision.TRIGGER
     }
 
+    // Characterization test: a carried basis is not bounded by the window it came from. It exists to
+    // stop a future "carry deadline" anchored to the original unplug from silently re-breaking the
+    // reported bug — such a deadline was proposed, and it would have made exactly this retry inert.
+    @Test
+    fun `a retry long after the original unplug still triggers`() {
+        atLimit(0) shouldBe QuickFullChargeDecision.ARMED
+        disconnected(1_000) shouldBe QuickFullChargeDecision.WAITING_FOR_RECONNECT
+        // A 500ms blip is rejected and hands the basis back to the plugged-period latch.
+        charging(1_500) shouldBe QuickFullChargeDecision.ARMED
+        // The deliberate retry comes 19s after the original unplug — far past the 10s ceiling.
+        disconnected(20_000) shouldBe QuickFullChargeDecision.WAITING_FOR_RECONNECT
+        charging(25_000) shouldBe QuickFullChargeDecision.TRIGGER
+    }
+
     @Test
     fun `a carried limit-hold basis reports a non any-level basis`() {
         atLimit(0) shouldBe QuickFullChargeDecision.ARMED
