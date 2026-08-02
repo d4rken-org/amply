@@ -23,9 +23,11 @@ enum class PolicyEvidence { PROTECTIVE, UNRESTRICTED, UNKNOWN }
  * reading alone can never reconstruct a limit hold, and every retry after a missed window used to be
  * inert. A rejected sub-[minReconnectMillis] gap is deliberately treated as a *non-event*: the basis
  * returns to the ordinary plugged-period latch and from there persists exactly as long as a freshly
- * observed hold would — it carries no timestamp and is retired only by the out-of-band check below,
- * by [reset], or by consuming a trigger. So a retry is not bounded by the original window; that is
- * the point (see `a retry long after the original unplug still triggers`).
+ * observed hold would. Carrying no timestamp of its own, it is subject to the same retirement paths
+ * as any latched basis — the out-of-band check below, an any-level revocation, expiry of a reconnect
+ * window it later opens, a replug that re-derives to nothing, [reset], or consuming a trigger. What
+ * it is *not* bound by is the original reconnect window; that is the point (see `a retry long after
+ * the original unplug still triggers`).
  *
  * Two arming bases exist:
  * - Limit hold (default): Android's charging-policy hardware state reports the Pixel policy actively
