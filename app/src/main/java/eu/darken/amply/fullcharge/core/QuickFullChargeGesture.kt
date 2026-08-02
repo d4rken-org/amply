@@ -15,6 +15,15 @@ enum class PolicyEvidence { PROTECTIVE, UNRESTRICTED, UNKNOWN }
 /**
  * Detects a deliberate unplug/replug gesture that starts a one-time full charge.
  *
+ * The engine is a three-state machine — `Idle`, `Armed(basis)`, `AwaitingReconnect(basis, since)` —
+ * plus the orthogonal plug-edge memory [previousPlugged]. The arming basis is *carried* through the
+ * unplugged gap by `AwaitingReconnect`, and a replug that is merely mistimed hands it back to
+ * `Armed` instead of discarding it. That carry-over is what makes retrying possible: a physically
+ * replugged phone reports `CHARGING` while it tops back up, so re-deriving the basis from the replug
+ * reading alone can never reconstruct a limit hold, and every retry after a missed window used to be
+ * inert. No memory concept or extra timeout constant is needed for this — the basis lifetime equals
+ * the window lifetime, so staleness is bounded structurally.
+ *
  * Two arming bases exist:
  * - Limit hold (default): Android's charging-policy hardware state reports the Pixel policy actively
  *   holding near its limit. Only the hardware signal is trusted, never Amply's cached request.
@@ -22,7 +31,8 @@ enum class PolicyEvidence { PROTECTIVE, UNRESTRICTED, UNKNOWN }
  *   is conclusively protective ([PolicyEvidence.PROTECTIVE]); percent, battery status, and the
  *   hardware hold are deliberately ignored. This basis is revoked — including an already-open
  *   reconnect window — by an explicit opt-out or by *conclusive* [PolicyEvidence.UNRESTRICTED]
- *   evidence, so an opt-out can never produce a trigger.
+ *   evidence, so an opt-out can never produce a trigger. Revocation runs before the plug edges, so a
+ *   revoked basis is never carried over by a mistimed replug either.
  *
  * [PolicyEvidence.UNKNOWN] is tolerated **only** on an unplugged tick or while a reconnect window is
  * open — that is the one place the strongest evidence is structurally unavailable, because the
@@ -39,7 +49,8 @@ enum class PolicyEvidence { PROTECTIVE, UNRESTRICTED, UNKNOWN }
  * costs nothing — the basis re-arms on the very next tick that reports protective evidence again.
  *
  * The reconnect window has a debounce floor: a disconnect shorter than [minReconnectMillis] never
- * triggers, filtering momentary power cuts (car ignition, connector jostle). Timestamps must come
+ * triggers, filtering momentary power cuts (car ignition, connector jostle); such a replug returns to
+ * `Armed` with the carried basis, so the next deliberate attempt can fire. Timestamps must come
  * from `SystemClock.elapsedRealtime()` so wall-clock changes cannot distort the window.
  */
 class QuickFullChargeGesture(
@@ -69,9 +80,21 @@ class QuickFullChargeGesture(
 
     private enum class ArmedBy { LIMIT_HOLD, ANY_LEVEL }
 
+    private sealed interface State {
+        data object Idle : State
+        data class Armed(val basis: ArmedBy) : State
+        data class AwaitingReconnect(val basis: ArmedBy, val sinceMillis: Long) : State
+    }
+
+    private val State.armingBasis: ArmedBy?
+        get() = when (this) {
+            State.Idle -> null
+            is State.Armed -> basis
+            is State.AwaitingReconnect -> basis
+        }
+
     private var previousPlugged: Boolean? = null
-    private var armedBy: ArmedBy? = null
-    private var disconnectedAtMillis: Long? = null
+    private var state: State = State.Idle
 
     fun update(input: Input): Output {
         val heldAtLimit = input.plugged &&
@@ -85,81 +108,100 @@ class QuickFullChargeGesture(
         // An any-level basis is dropped by an explicit opt-out, by conclusive evidence that charging
         // is unrestricted, or by inconclusive evidence on a tick where conclusive evidence was
         // available (plugged, no open window) — a natively-removed limit reads UNKNOWN, not
-        // UNRESTRICTED, on a journal-less device. The `disconnectedAtMillis == null` guard is
-        // load-bearing: this block runs before the replug edge is handled, so without it a replug
-        // tick whose hardware has not re-reported its hold yet would destroy its own trigger.
+        // UNRESTRICTED, on a journal-less device. The "not mid-window" guard is load-bearing: this
+        // block runs before the replug edge is handled, so without it a replug tick whose hardware
+        // has not re-reported its hold yet would destroy its own trigger.
         // A latched limit-hold basis survives option flips: its evidence was the (momentary)
         // hardware hold, which is mode-independent.
-        if (armedBy == ArmedBy.ANY_LEVEL &&
+        if (state.armingBasis == ArmedBy.ANY_LEVEL &&
             (!input.anyLevelEnabled ||
                 input.policyEvidence == PolicyEvidence.UNRESTRICTED ||
                 (input.policyEvidence == PolicyEvidence.UNKNOWN &&
                     input.plugged &&
-                    disconnectedAtMillis == null))
+                    state !is State.AwaitingReconnect))
         ) {
-            armedBy = null
-            disconnectedAtMillis = null
+            state = State.Idle
         }
 
         val previous = previousPlugged
         previousPlugged = input.plugged
 
         if (previous == null) {
-            armedBy = basisOf(heldAtLimit, anyLevelHeld)
+            state = armFrom(heldAtLimit, anyLevelHeld)
             return statusOutput(input)
         }
 
         if (previous && !input.plugged) {
-            disconnectedAtMillis = input.nowMillis.takeIf { armedBy != null }
+            // Carry the basis across the gap: the hardware evidence is already gone by this tick.
+            state = (state as? State.Armed)
+                ?.let { State.AwaitingReconnect(it.basis, input.nowMillis) }
+                ?: State.Idle
             return statusOutput(input)
         }
 
         if (!previous && input.plugged) {
-            val windowBasis = armedBy
-            val delta = disconnectedAtMillis?.let { input.nowMillis - it }
-            disconnectedAtMillis = null
-            armedBy = null
-            if (windowBasis != null && delta != null && delta in minReconnectMillis..maxReconnectMillis) {
-                return Output(QuickFullChargeDecision.TRIGGER, windowBasis == ArmedBy.ANY_LEVEL)
+            val awaiting = state as? State.AwaitingReconnect
+            if (awaiting != null) {
+                val delta = input.nowMillis - awaiting.sinceMillis
+                return when {
+                    delta in minReconnectMillis..maxReconnectMillis -> {
+                        state = State.Idle
+                        Output(QuickFullChargeDecision.TRIGGER, awaiting.basis == ArmedBy.ANY_LEVEL)
+                    }
+                    // Too fast (a momentary power cut): keep the basis the window carried. The
+                    // replug reading itself can never re-derive it — a phone topping back up
+                    // reports CHARGING, not a settled hold — so discarding it here made every
+                    // retry after a rejected attempt inert.
+                    delta < minReconnectMillis -> {
+                        state = State.Armed(awaiting.basis)
+                        statusOutput(input)
+                    }
+                    // Too late: the window is spent, but the fresh plugged state may already
+                    // qualify again — re-arm immediately instead of waiting for another broadcast.
+                    else -> {
+                        state = armFrom(heldAtLimit, anyLevelHeld)
+                        statusOutput(input)
+                    }
+                }
             }
-            // A too-fast or too-late replug is no trigger, but the fresh plugged state may already
-            // qualify again — re-arm immediately instead of waiting for another broadcast.
-            armedBy = basisOf(heldAtLimit, anyLevelHeld)
+            state = armFrom(heldAtLimit, anyLevelHeld)
             return statusOutput(input)
         }
 
         if (input.plugged) {
             when {
                 // Latch the hold: at the later unplug tick the hardware evidence is already gone.
-                heldAtLimit -> armedBy = ArmedBy.LIMIT_HOLD
-                armedBy == null && anyLevelHeld -> armedBy = ArmedBy.ANY_LEVEL
+                heldAtLimit -> state = State.Armed(ArmedBy.LIMIT_HOLD)
+                state is State.Idle && anyLevelHeld -> state = State.Armed(ArmedBy.ANY_LEVEL)
             }
-        } else if (disconnectedAtMillis?.let { input.nowMillis - it > maxReconnectMillis } == true) {
-            disconnectedAtMillis = null
-            armedBy = null
+        } else {
+            val awaiting = state as? State.AwaitingReconnect
+            if (awaiting != null && input.nowMillis - awaiting.sinceMillis > maxReconnectMillis) {
+                state = State.Idle
+            }
         }
         return statusOutput(input)
     }
 
     fun reset() {
         previousPlugged = null
-        armedBy = null
-        disconnectedAtMillis = null
+        state = State.Idle
     }
 
-    private fun basisOf(heldAtLimit: Boolean, anyLevelHeld: Boolean): ArmedBy? = when {
-        heldAtLimit -> ArmedBy.LIMIT_HOLD
-        anyLevelHeld -> ArmedBy.ANY_LEVEL
-        else -> null
+    private fun armFrom(heldAtLimit: Boolean, anyLevelHeld: Boolean): State = when {
+        heldAtLimit -> State.Armed(ArmedBy.LIMIT_HOLD)
+        anyLevelHeld -> State.Armed(ArmedBy.ANY_LEVEL)
+        else -> State.Idle
     }
 
     private fun statusOutput(input: Input): Output {
+        val current = state
         val decision = when {
-            input.plugged && armedBy != null -> QuickFullChargeDecision.ARMED
-            !input.plugged && disconnectedAtMillis != null -> QuickFullChargeDecision.WAITING_FOR_RECONNECT
+            input.plugged && current is State.Armed -> QuickFullChargeDecision.ARMED
+            !input.plugged && current is State.AwaitingReconnect -> QuickFullChargeDecision.WAITING_FOR_RECONNECT
             else -> QuickFullChargeDecision.IDLE
         }
-        return Output(decision, armedBy == ArmedBy.ANY_LEVEL)
+        return Output(decision, current.armingBasis == ArmedBy.ANY_LEVEL)
     }
 
     companion object {

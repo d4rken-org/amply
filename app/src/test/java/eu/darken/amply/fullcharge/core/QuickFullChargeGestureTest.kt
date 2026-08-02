@@ -58,7 +58,7 @@ class QuickFullChargeGestureTest {
         // Debounce floor: exactly the minimum triggers, one millisecond less does not.
         atLimit(0)
         disconnected(1_000)
-        atLimit(1_000 + QuickFullChargeGesture.MIN_RECONNECT_MILLIS - 1) shouldBe QuickFullChargeDecision.ARMED
+        charging(1_000 + QuickFullChargeGesture.MIN_RECONNECT_MILLIS - 1) shouldBe QuickFullChargeDecision.ARMED
 
         gesture.reset()
         atLimit(0)
@@ -81,10 +81,144 @@ class QuickFullChargeGestureTest {
     fun `rejected fast blip immediately re-arms and a second attempt can trigger`() {
         atLimit(0) shouldBe QuickFullChargeDecision.ARMED
         disconnected(1_000) shouldBe QuickFullChargeDecision.WAITING_FOR_RECONNECT
-        // A 500ms blip (car ignition) is rejected, but the replug observation itself re-arms.
-        atLimit(1_500) shouldBe QuickFullChargeDecision.ARMED
+        // A 500ms blip (car ignition) is rejected. The replug reading is the realistic one — a phone
+        // that just got power back reports CHARGING, never a settled hold — so re-arming can only
+        // come from the basis the window carried.
+        charging(1_500) shouldBe QuickFullChargeDecision.ARMED
         disconnected(2_000) shouldBe QuickFullChargeDecision.WAITING_FOR_RECONNECT
-        atLimit(5_000) shouldBe QuickFullChargeDecision.TRIGGER
+        charging(5_000) shouldBe QuickFullChargeDecision.TRIGGER
+    }
+
+    @Test
+    fun `a too-late replug does not carry the basis`() {
+        atLimit(1_000) shouldBe QuickFullChargeDecision.ARMED
+        disconnected(2_000) shouldBe QuickFullChargeDecision.WAITING_FOR_RECONNECT
+        // 15s later: the window is spent and the replug reading cannot re-derive a hold.
+        charging(17_000) shouldBe QuickFullChargeDecision.IDLE
+        // Without a basis there is nothing to open a window with, so a well-timed retry stays inert.
+        disconnected(18_000) shouldBe QuickFullChargeDecision.IDLE
+        charging(21_000) shouldBe QuickFullChargeDecision.IDLE
+    }
+
+    @Test
+    fun `the carried basis survives repeated rejected attempts`() {
+        atLimit(0) shouldBe QuickFullChargeDecision.ARMED
+        disconnected(1_000) shouldBe QuickFullChargeDecision.WAITING_FOR_RECONNECT
+        charging(1_500) shouldBe QuickFullChargeDecision.ARMED
+        disconnected(2_000) shouldBe QuickFullChargeDecision.WAITING_FOR_RECONNECT
+        charging(2_500) shouldBe QuickFullChargeDecision.ARMED
+        disconnected(3_000) shouldBe QuickFullChargeDecision.WAITING_FOR_RECONNECT
+        charging(3_500) shouldBe QuickFullChargeDecision.ARMED
+        disconnected(4_000) shouldBe QuickFullChargeDecision.WAITING_FOR_RECONNECT
+        charging(8_000) shouldBe QuickFullChargeDecision.TRIGGER
+    }
+
+    @Test
+    fun `a carried limit-hold basis reports a non any-level basis`() {
+        atLimit(0) shouldBe QuickFullChargeDecision.ARMED
+        disconnected(1_000) shouldBe QuickFullChargeDecision.WAITING_FOR_RECONNECT
+        charging(1_500) shouldBe QuickFullChargeDecision.ARMED
+        disconnected(2_000) shouldBe QuickFullChargeDecision.WAITING_FOR_RECONNECT
+        val output = gesture.update(
+            input(
+                now = 5_000,
+                plugged = true,
+                batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
+                chargingStatus = 1,
+            ),
+        )
+        output.decision shouldBe QuickFullChargeDecision.TRIGGER
+        output.anyLevelBasis shouldBe false
+    }
+
+    @Test
+    fun `a rejected blip does not resurrect a revoked any-level basis`() {
+        anyLevelCharging(1_000) shouldBe QuickFullChargeDecision.ARMED
+        anyLevelUnplugged(2_000) shouldBe QuickFullChargeDecision.WAITING_FOR_RECONNECT
+        // Opt-out mid-window revokes the basis; the carry-over must not hand it back.
+        step(
+            now = 3_000,
+            plugged = false,
+            percent = 15,
+            batteryStatus = BatteryManager.BATTERY_STATUS_DISCHARGING,
+            chargingStatus = 0,
+            anyLevel = false,
+            evidence = PolicyEvidence.PROTECTIVE,
+        ) shouldBe QuickFullChargeDecision.IDLE
+        val output = gesture.update(
+            input(
+                now = 3_500,
+                plugged = true,
+                percent = 15,
+                batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
+                chargingStatus = 1,
+                anyLevel = false,
+                evidence = PolicyEvidence.PROTECTIVE,
+            ),
+        )
+        output.decision shouldBe QuickFullChargeDecision.IDLE
+        output.anyLevelBasis shouldBe false
+    }
+
+    @Test
+    fun `reset clears a carried basis`() {
+        atLimit(0) shouldBe QuickFullChargeDecision.ARMED
+        disconnected(1_000) shouldBe QuickFullChargeDecision.WAITING_FOR_RECONNECT
+        charging(1_500) shouldBe QuickFullChargeDecision.ARMED
+        gesture.reset()
+        // Fresh start: no basis to open a window with, so the next attempt cannot trigger.
+        disconnected(2_000) shouldBe QuickFullChargeDecision.IDLE
+        charging(5_000) shouldBe QuickFullChargeDecision.IDLE
+    }
+
+    @Test
+    fun `a rejected blip keeps the limit-hold basis while any level also qualifies`() {
+        // Both bases qualify at once: the hardware hold wins the latch and must survive the blip,
+        // even though the replug tick alone would only support the any-level basis.
+        step(
+            now = 0,
+            plugged = true,
+            batteryStatus = BatteryManager.BATTERY_STATUS_NOT_CHARGING,
+            chargingStatus = QuickFullChargeGesture.CHARGING_STATUS_POLICY,
+            anyLevel = true,
+            evidence = PolicyEvidence.PROTECTIVE,
+        ) shouldBe QuickFullChargeDecision.ARMED
+        step(
+            now = 1_000,
+            plugged = false,
+            batteryStatus = BatteryManager.BATTERY_STATUS_DISCHARGING,
+            chargingStatus = 0,
+            anyLevel = true,
+            evidence = PolicyEvidence.UNKNOWN,
+        ) shouldBe QuickFullChargeDecision.WAITING_FOR_RECONNECT
+        step(
+            now = 1_500,
+            plugged = true,
+            batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
+            chargingStatus = 1,
+            anyLevel = true,
+            evidence = PolicyEvidence.PROTECTIVE,
+        ) shouldBe QuickFullChargeDecision.ARMED
+        step(
+            now = 2_000,
+            plugged = false,
+            batteryStatus = BatteryManager.BATTERY_STATUS_DISCHARGING,
+            chargingStatus = 0,
+            anyLevel = true,
+            evidence = PolicyEvidence.UNKNOWN,
+        ) shouldBe QuickFullChargeDecision.WAITING_FOR_RECONNECT
+        val output = gesture.update(
+            input(
+                now = 5_000,
+                plugged = true,
+                batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
+                chargingStatus = 1,
+                anyLevel = true,
+                evidence = PolicyEvidence.PROTECTIVE,
+            ),
+        )
+        output.decision shouldBe QuickFullChargeDecision.TRIGGER
+        output.anyLevelBasis shouldBe false
     }
 
     @Test
