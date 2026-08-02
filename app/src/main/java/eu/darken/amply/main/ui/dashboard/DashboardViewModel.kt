@@ -32,14 +32,12 @@ import eu.darken.amply.common.debug.logging.asLog
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
 import eu.darken.amply.common.flow.combine as combine6
-import eu.darken.amply.fullcharge.core.ChargeSessionManager
 import eu.darken.amply.fullcharge.core.ChargeSessionRecord
 import eu.darken.amply.fullcharge.core.ChargeSessionService
 import eu.darken.amply.fullcharge.core.FullChargeStore
 import eu.darken.amply.fullcharge.core.InterruptionEvent
 import eu.darken.amply.fullcharge.core.InterruptionStore
 import eu.darken.amply.fullcharge.core.ServiceDispatch
-import eu.darken.amply.fullcharge.core.SessionNotifications
 import eu.darken.amply.main.core.DeviceSupportReport
 import eu.darken.amply.main.core.DeviceSupportReporter
 import eu.darken.amply.main.core.OnboardingSettings
@@ -113,7 +111,6 @@ class DashboardViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: ChargingRepository,
     private val fullChargeStore: FullChargeStore,
-    private val sessionManager: ChargeSessionManager,
     private val onboardingSettings: OnboardingSettings,
     private val deviceSupportReporter: DeviceSupportReporter,
     private val quickAccessStore: QuickAccessStore,
@@ -340,25 +337,23 @@ class DashboardViewModel @Inject constructor(
 
     fun completeOnboarding() = viewModelScope.launch { onboardingSettings.complete() }
 
-    fun applyPolicy(policy: ChargePolicy) = viewModelScope.launch {
+    /**
+     * Routed through the service (same command the widget's ∞ buttons use) rather than writing the
+     * policy here: the service serializes the write against session/recovery writes, refuses when no
+     * backend can write, persists the recovery target before the risky write, suppresses its own
+     * settings-observer trip, force-writes so a same-value write still re-triggers the HAL, clears
+     * the interruption warning plus its recovery notification on success (and posts one on failure)
+     * — and resets the gesture engine, which the plain ACTION_MONITOR nudge never did, so a stale
+     * arming basis could survive a persistent-policy change.
+     */
+    fun applyPolicy(policy: ChargePolicy) {
         log(TAG, Logging.Priority.INFO) { "applyPolicy(${policy.stableId})" }
-        if (fullChargeStore.currentSession() != null) sessionManager.cancelWithoutRestore()
-        val result = repository.applyPersistent(policy)
-        if (result.success) {
-            // An explicit policy choice supersedes any non-successful interruption warning and its
-            // lingering recovery notification.
-            interruptionStore.clearPending()
-            SessionNotifications.cancelRecovery(context)
-        }
-        // The persistent policy is an any-level arming input; nudge a running gesture monitor so
-        // arming and notification copy react now instead of on the next broadcast/30s poll.
-        if (fullChargeStore.isQuickFullChargeEnabled()) {
-            ContextCompat.startForegroundService(
-                context,
-                Intent(context, ChargeSessionService::class.java)
-                    .setAction(ChargeSessionService.ACTION_MONITOR),
-            )
-        }
+        ContextCompat.startForegroundService(
+            context,
+            Intent(context, ChargeSessionService::class.java)
+                .setAction(ChargeSessionService.ACTION_SET_PERSISTENT_POLICY)
+                .putExtra(ChargeSessionService.EXTRA_TARGET_POLICY, policy.stableId),
+        )
     }
 
     fun startFullCharge() {
