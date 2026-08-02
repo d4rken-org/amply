@@ -235,6 +235,82 @@ class QuickFullChargeGestureTest {
         output.anyLevelBasis shouldBe false
     }
 
+    // Defence in depth for a pre-existing gap: the steady-plugged branch never dropped a latched
+    // basis, so a limit removed in system settings left the gesture armed while the battery climbed
+    // out of the arming band.
+    @Test
+    fun `a limit-hold basis is retired once the battery leaves the arming band`() {
+        atLimit(1_000) shouldBe QuickFullChargeDecision.ARMED
+        step(
+            now = 2_000,
+            plugged = true,
+            percent = 92,
+            batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
+            chargingStatus = 1,
+        ) shouldBe QuickFullChargeDecision.IDLE
+        step(
+            now = 3_000,
+            plugged = true,
+            percent = 92,
+            batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
+            chargingStatus = 1,
+        ) shouldBe QuickFullChargeDecision.IDLE
+        // Without a basis a perfectly timed gesture stays inert.
+        disconnected(4_000) shouldBe QuickFullChargeDecision.IDLE
+        charging(7_000) shouldBe QuickFullChargeDecision.IDLE
+    }
+
+    @Test
+    fun `an out-of-band reading does not retire an any-level basis`() {
+        // The any-level basis is percent-independent by design — 15% is far outside the band.
+        anyLevelCharging(1_000) shouldBe QuickFullChargeDecision.ARMED
+        anyLevelCharging(2_000) shouldBe QuickFullChargeDecision.ARMED
+        anyLevelUnplugged(3_000) shouldBe QuickFullChargeDecision.WAITING_FOR_RECONNECT
+        val output = gesture.update(
+            input(
+                now = 6_000,
+                plugged = true,
+                percent = 15,
+                batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
+                chargingStatus = 1,
+                anyLevel = true,
+                evidence = PolicyEvidence.PROTECTIVE,
+            ),
+        )
+        output.decision shouldBe QuickFullChargeDecision.TRIGGER
+        output.anyLevelBasis shouldBe true
+    }
+
+    @Test
+    fun `an unreadable percent does not retire a limit-hold basis`() {
+        atLimit(1_000) shouldBe QuickFullChargeDecision.ARMED
+        // A failed sticky-broadcast read must not disarm a healthy gesture.
+        step(
+            now = 2_000,
+            plugged = true,
+            percent = -1,
+            batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
+            chargingStatus = 1,
+        ) shouldBe QuickFullChargeDecision.ARMED
+        disconnected(3_000) shouldBe QuickFullChargeDecision.WAITING_FOR_RECONNECT
+        charging(6_000) shouldBe QuickFullChargeDecision.TRIGGER
+    }
+
+    @Test
+    fun `an out-of-band reading cancels an open limit-hold window`() {
+        atLimit(1_000) shouldBe QuickFullChargeDecision.ARMED
+        disconnected(2_000) shouldBe QuickFullChargeDecision.WAITING_FOR_RECONNECT
+        // The retirement runs before the plug edges, so it reaches an already-open window too.
+        step(
+            now = 3_000,
+            plugged = false,
+            percent = 95,
+            batteryStatus = BatteryManager.BATTERY_STATUS_DISCHARGING,
+            chargingStatus = 0,
+        ) shouldBe QuickFullChargeDecision.IDLE
+        charging(5_000) shouldBe QuickFullChargeDecision.IDLE
+    }
+
     @Test
     fun `window expires while staying unplugged`() {
         atLimit(0)

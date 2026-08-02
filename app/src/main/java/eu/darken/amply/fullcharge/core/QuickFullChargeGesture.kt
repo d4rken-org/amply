@@ -51,6 +51,15 @@ enum class PolicyEvidence { PROTECTIVE, UNRESTRICTED, UNKNOWN }
  * (a natively-removed limit reads as UNKNOWN, not UNRESTRICTED, on a journal-less device). Dropping
  * costs nothing — the basis re-arms on the very next tick that reports protective evidence again.
  *
+ * A latched *limit-hold* basis is retired by any readable percent outside the arming band. This is
+ * defence in depth for a **pre-existing** gap, not a consequence of the carry-over: the
+ * steady-plugged branch has never dropped a latched basis, so a limit removed in system settings
+ * left the gesture armed while the battery climbed past the band. The check runs before the plug
+ * edges, so an out-of-band reading also cancels an already-open reconnect window. It is deliberately
+ * narrow: an any-level basis is percent-independent by design and would lose windows it may
+ * legitimately hold, and an unreadable percent (`< 0`) retires nothing, so one failed
+ * sticky-broadcast read cannot disarm a healthy gesture.
+ *
  * The reconnect window has a debounce floor: a disconnect shorter than [minReconnectMillis] never
  * triggers, filtering momentary power cuts (car ignition, connector jostle); such a replug returns to
  * `Armed` with the carried basis, so the next deliberate attempt can fire. Timestamps must come
@@ -122,6 +131,19 @@ class QuickFullChargeGesture(
                 (input.policyEvidence == PolicyEvidence.UNKNOWN &&
                     input.plugged &&
                     state !is State.AwaitingReconnect))
+        ) {
+            state = State.Idle
+        }
+
+        // Defence in depth for a latched limit-hold basis: the steady-plugged branch has never
+        // dropped one, so a limit removed in system settings left the gesture armed while the
+        // battery climbed past the arming band. A reading outside the band retires it. Only a
+        // limit-hold basis — an any-level basis is percent-independent by design. An unreadable
+        // percent (< 0) retires nothing, so a single failed sticky-broadcast read cannot disarm a
+        // healthy gesture.
+        if (input.percent >= 0 &&
+            input.percent !in MIN_ARM_PERCENT..MAX_ARM_PERCENT &&
+            state.armingBasis == ArmedBy.LIMIT_HOLD
         ) {
             state = State.Idle
         }
