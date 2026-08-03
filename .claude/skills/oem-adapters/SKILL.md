@@ -61,10 +61,15 @@ observable (device holds at 80%). See the qualification ledger (`device-qualific
 One live adapter (`lineageos-chargingcontrol-v1`) plus a `LineageLabAdapter`, for LineageOS's native Charging
 Control. **Manufacturer-agnostic** — the ROM changes charging control regardless of the OEM hardware — so both are
 registered **first** in `AdapterRegistry`, ahead of every OEM adapter; a LineageOS build on Samsung/Xiaomi/OnePlus/
-Pixel hardware is handled by these, never the OEM lab adapters (stock devices have `lineageOsVersion == null` and
-skip both). Gate: `ro.lineage.build.version` present + `Build.DEVICE` in a **physically-qualified codename
-allowlist** (`QUALIFIED_CODENAMES`) + `lineagesettings` provider present + system user. Unqualified LineageOS builds
-fall to `LineageLabAdapter`.
+Pixel hardware is handled by these, never the OEM lab adapters (stock devices are not `isLineageOs` and skip both).
+Gate: `DeviceInfo.isLineageOs` + `Build.DEVICE` in a **physically-qualified codename allowlist**
+(`QUALIFIED_CODENAMES`) + `lineagesettings` provider present + system user. Unqualified LineageOS builds fall to
+`LineageLabAdapter`.
+
+`isLineageOs` comes from the **`org.lineageos.android` system feature**, not `ro.lineage.build.version`: the
+`ro.lineage.*` properties are SELinux-denied to `untrusted_app` (`custom_version_prop`) and read back empty, which
+previously made every LineageOS device look like stock and fall through to an OEM adapter. See
+`rules/privileged-access.md`.
 
 The three keys live in the private `content://lineagesettings/system` provider (`SettingNamespace.LINEAGE_SYSTEM`),
 NOT any AOSP `settings` namespace: `charging_control_enabled` (0/1), `charging_control_mode` (3=LIMIT), and

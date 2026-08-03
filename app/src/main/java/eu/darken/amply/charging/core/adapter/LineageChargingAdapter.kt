@@ -59,7 +59,7 @@ class LineageChargingAdapter @Inject constructor(
     override val preferShizukuForWrites = true
 
     override fun probe(device: DeviceInfo): AdapterSupport {
-        val matched = device.lineageOsVersion != null && device.codename in qualifiedCodenames
+        val matched = device.isLineageOs && device.codename in qualifiedCodenames
         return AdapterSupport(
             matched = matched,
             controlEnabled = matched && device.hasLineageSettingsProvider && device.isSystemUser,

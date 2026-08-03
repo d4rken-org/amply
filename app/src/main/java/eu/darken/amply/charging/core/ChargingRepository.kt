@@ -64,6 +64,14 @@ data class ChargingState(
     val writeRequiresShizuku: Boolean = false,
     val controlEnabled: Boolean = false,
     val contributionWanted: Boolean = false,
+    /** See [eu.darken.amply.charging.core.adapter.AdapterSupport.guidedCaptureUseful]. */
+    val guidedCaptureUseful: Boolean = true,
+    /**
+     * False until adapter selection has actually run. Callers that *withhold* UI on an adapter capability must
+     * wait for this: the capability defaults are permissive, so acting on them before selection would briefly
+     * show something the resolved state forbids.
+     */
+    val adapterResolved: Boolean = false,
     val access: AccessSnapshot? = null,
     val observation: ChargeObservation = ChargeObservation.Unknown(R.string.charging_reason_loading.toCaString()),
     val pending: PendingRequest? = null,
@@ -407,6 +415,8 @@ class ChargingRepository @Inject constructor(
             writeRequiresShizuku = adapter?.preferShizukuForWrites == true,
             controlEnabled = selection.support.controlEnabled,
             contributionWanted = selection.support.contributionWanted,
+            guidedCaptureUseful = selection.support.guidedCaptureUseful,
+            adapterResolved = true,
             access = access,
             observation = observation,
             pending = pending,

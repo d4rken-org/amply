@@ -2,6 +2,7 @@ package eu.darken.amply.charging.core.access.shizuku
 
 import android.content.Context
 import androidx.annotation.Keep
+import eu.darken.amply.charging.core.access.parseLineageHealthDump
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.util.concurrent.TimeUnit
@@ -60,6 +61,21 @@ class ChargingControlUserService(
         return result.exitCode == 0
     }
 
+    override fun dumpLineageChargingControl(): String {
+        // Constant binary + constant argument, argv-separated. Nothing here is caller-supplied, so unlike the
+        // other ops there is no namespace/key/value to validate. Read-only: `dumpsys <service>` with no further
+        // arguments cannot mutate charging control, and no write allowlist is involved.
+        val result = runCommand("/system/bin/dumpsys", LINEAGE_HEALTH_SERVICE)
+        if (result.exitCode != 0) {
+            throw IllegalStateException(result.stderr.ifBlank { "dumpsys $LINEAGE_HEALTH_SERVICE failed" })
+        }
+        // Reduced to `PROVIDER|mode` HERE, inside the privileged process, so the raw dump never crosses Binder.
+        // It contains the user's configured charging schedule (StartTime/TargetTime — effectively their sleep
+        // window) and live battery level, none of which the app needs or may publish. Privacy by construction:
+        // a future caller cannot log or forward what it was never handed.
+        return parseLineageHealthDump(result.stdout)?.encode().orEmpty()
+    }
+
     override fun destroy() = exitProcess(0)
 
     private fun requireNamespace(namespace: String) {
@@ -78,6 +94,9 @@ class ChargingControlUserService(
         private val KEY = Regex("[A-Za-z0-9_.:-]{1,160}")
         private val PACKAGE = Regex("[A-Za-z][A-Za-z0-9_.]{2,200}")
         const val LINEAGE_SYSTEM_URI = "content://lineagesettings/system"
+
+        /** LineageOS's platform health service; owns ChargingControlController and its active provider. */
+        const val LINEAGE_HEALTH_SERVICE = "lineagehealth"
         private const val COMMAND_TIMEOUT_MS = 10_000L
         // `snapshotSettings` returns the whole dump as one AIDL String, whose Parcel is ~2 bytes/char plus overhead,
         // so this UTF-8 byte cap stays well under the ~1 MiB Binder transaction ceiling. Real `settings list`

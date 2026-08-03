@@ -224,7 +224,7 @@ fun DashboardScreen(
                             manufacturer = state.charging.device.manufacturer
                                 .ifBlank { stringResource(R.string.dashboard_manufacturer_fallback) },
                             onOpenSettings = onNativeSettings,
-                            isLineageOs = state.charging.device.lineageOsVersion != null,
+                            isLineageOs = state.charging.device.isLineageOs,
                         )
                     }
                 } else {
@@ -294,10 +294,20 @@ fun DashboardScreen(
                     if (state.charging.contributionWanted) {
                         item(key = "dashboard.unsupported") {
                             UnsupportedDeviceCard(
-                                manufacturer = state.charging.device.manufacturer
-                                    .ifBlank { stringResource(R.string.dashboard_manufacturer_fallback) },
+                                // On a custom ROM the unmapped thing is the ROM, not the vendor —
+                                // a LineageOS Pixel is not "not mapped for Google devices".
+                                platformLabel = if (state.charging.device.isLineageOs) {
+                                    stringResource(R.string.platform_name_lineageos)
+                                } else {
+                                    state.charging.device.manufacturer
+                                        .ifBlank { stringResource(R.string.dashboard_manufacturer_fallback) }
+                                },
                                 reportPreview = state.deviceReport?.let(::formatReport),
+                                showGuidedWizard = state.charging.guidedCaptureUseful,
+                                shizuku = state.charging.access?.shizuku,
                                 onOpenWizard = onOpenContribution,
+                                onAllowShizuku = onAllowShizuku,
+                                onOpenShizuku = onOpenShizuku,
                                 onPrepareReport = onPrepareSupportReport,
                                 onCopyReport = onCopySupportReport,
                                 onOpenIssue = onOpenSupportIssue,

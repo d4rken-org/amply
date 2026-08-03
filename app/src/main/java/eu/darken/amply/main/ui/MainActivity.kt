@@ -301,7 +301,9 @@ class MainActivity : ComponentActivity() {
                             },
                             // Offered whenever this device is one we want contribution data for (unsupported/lab),
                             // regardless of whether Shizuku is installed yet — the wizard nudges the install.
-                            showDiagnostics = state.charging.contributionWanted,
+                            // Withheld where a settings diff can discover nothing, so nobody is walked into a
+                            // capture that cannot be delivered (see AdapterSupport.guidedCaptureUseful).
+                            showDiagnostics = state.charging.contributionWanted && state.charging.guidedCaptureUseful,
                             diagnosticsReady = state.charging.access?.shizuku?.ready == true,
                             onDiagnostics = { enterWizard(SettingsDestination.SETTINGS) },
                             onSupport = { destination = SettingsDestination.SUPPORT },
@@ -316,7 +318,15 @@ class MainActivity : ComponentActivity() {
                             onStyleChange = settingsViewModel::setThemeStyle,
                             onColorChange = settingsViewModel::setThemeColor,
                         )
-                        SettingsDestination.DIAGNOSTICS -> ContributionWizardScreen(
+                        // Guarded at the destination too, not just at the two entry points: this can be restored
+                        // from saved state after a process death, which would otherwise resurrect the wizard on a
+                        // device where it can never produce a deliverable capture. Rendering waits for adapter
+                        // selection, because guidedCaptureUseful defaults permissive — composing on the default
+                        // would flash the wizard for a frame before the resolved state redirects away from it.
+                        SettingsDestination.DIAGNOSTICS -> if (!state.charging.adapterResolved) Unit
+                        else if (!state.charging.guidedCaptureUseful) {
+                            LaunchedEffect(Unit) { leaveWizard() }
+                        } else ContributionWizardScreen(
                             state = contributionState,
                             onExit = leaveWizard,
                             onRefreshStatus = contributionViewModel::refreshStatus,

@@ -8,6 +8,8 @@ import android.os.Build
 import dagger.hilt.android.qualifiers.ApplicationContext
 import eu.darken.amply.BuildConfig
 import eu.darken.amply.charging.core.DeviceInfo
+import eu.darken.amply.charging.core.access.LineageHealthSummary
+import eu.darken.amply.charging.core.access.SettingsSnapshotSource
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
 import eu.darken.amply.common.AmplyLinks
 import kotlinx.coroutines.Dispatchers
@@ -36,6 +38,12 @@ data class DeviceSupportReport(
     val hyperOsVersion: Int?,
     val oplusRomVersion: Int?,
     val lineageOsVersion: String?,
+    val isLineageOs: Boolean,
+    /**
+     * LineageOS charge-control probe: the bound provider plus the configured mode, which together bound what can
+     * be said about HAL limit support. Null when unknown (not LineageOS, or no Shizuku) — never read as a negative.
+     */
+    val lineageHealth: LineageHealthSummary?,
     val hasProtectBattery: Boolean,
     val hasLineageSettingsProvider: Boolean,
     val adapterId: String?,
@@ -54,10 +62,14 @@ data class DeviceSupportReport(
 class DeviceSupportReporter @Inject constructor(
     @ApplicationContext private val context: Context,
     private val registry: AdapterRegistry,
+    private val snapshotSource: SettingsSnapshotSource,
 ) {
     suspend fun collect(): DeviceSupportReport = withContext(Dispatchers.IO) {
         val device = DeviceInfo.current(context)
         val selection = registry.select(device)
+        // Only meaningful on LineageOS, and only reachable with Shizuku (dumpsys needs the shell UID). Without it
+        // the field stays null and the report is exactly as informative as before — never blocks a contribution.
+        val lineageHealth = if (device.isLineageOs) snapshotSource.lineageHealth() else null
         val battery = runCatching {
             context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         }.getOrNull()
@@ -76,6 +88,8 @@ class DeviceSupportReporter @Inject constructor(
             hyperOsVersion = device.hyperOsVersion,
             oplusRomVersion = device.oplusRomVersion,
             lineageOsVersion = device.lineageOsVersion,
+            isLineageOs = device.isLineageOs,
+            lineageHealth = lineageHealth,
             hasProtectBattery = device.hasProtectBattery,
             hasLineageSettingsProvider = device.hasLineageSettingsProvider,
             adapterId = selection.adapter?.id,
@@ -109,7 +123,7 @@ internal fun sanitizeReportValue(value: String?, max: Int = 120): String {
 /** Deterministic, single stable schema. Keep field order fixed so reports are diff-friendly. */
 internal fun formatReport(report: DeviceSupportReport): String = buildString {
     appendLine("Amply device-support request")
-    appendLine("report_schema=7")
+    appendLine("report_schema=8")
     appendLine("app_version=${report.appVersionName} (${report.appVersionCode})")
     appendLine("distribution=${report.flavor}/${report.buildType}")
     appendLine("manufacturer=${report.manufacturer}")
@@ -125,7 +139,17 @@ internal fun formatReport(report: DeviceSupportReport): String = buildString {
     appendLine("one_ui_version=${report.oneUiVersion ?: "none"}")
     appendLine("hyperos_version=${report.hyperOsVersion ?: "none"}")
     appendLine("oplus_rom_version=${report.oplusRomVersion ?: "none"}")
+    // is_lineageos is the reliable one: lineageos_version is SELinux-denied to apps on real builds
+    // and reads "none" even on LineageOS (see LineageOsDetector).
+    appendLine("is_lineageos=${report.isLineageOs}")
     appendLine("lineageos_version=${report.lineageOsVersion ?: "none"}")
+    // Observation, NOT a verdict. Provider selection branches on the configured mode before capability, so a
+    // device in a time-based mode reports Deadline having never consulted either limit-capable provider. And
+    // there is no negative case: Toggle also accepts MODE_LIMIT and enforces the cap itself. NOT_OBSERVED is
+    // resolved by re-running with a limit set; no value here rules a device out, and none proves enforcement.
+    appendLine("lineage_cc_provider=${report.lineageHealth?.provider?.name ?: "unknown"}")
+    appendLine("lineage_cc_mode=${report.lineageHealth?.mode ?: "unknown"}")
+    appendLine("lineage_cc_limit_mechanism=${report.lineageHealth?.limitMechanism?.name ?: "UNKNOWN"}")
     appendLine("has_protect_battery=${report.hasProtectBattery}")
     appendLine("has_lineage_settings_provider=${report.hasLineageSettingsProvider}")
     appendLine("adapter=${report.adapterId ?: "none"}")

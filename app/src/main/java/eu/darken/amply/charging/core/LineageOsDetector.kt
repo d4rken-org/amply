@@ -1,10 +1,18 @@
 package eu.darken.amply.charging.core
 
 /**
- * Detects LineageOS (and close derivatives that keep the property) from `ro.lineage.build.version`
- * (e.g. "23.2"). The value is the ROM version string; presence alone is what gates the Lineage
- * charging-control adapter — the feature has shipped since LineageOS 20 and is not version-scoped.
- * Null on any failure or non-Lineage device; downstream gates treat null as "not LineageOS".
+ * Best-effort read of the LineageOS ROM version string from `ro.lineage.build.version` (e.g. "23.2"),
+ * for diagnostics and device-support reports only.
+ *
+ * **This is not a LineageOS detector — do not gate on it.** Every `ro.lineage.*` property is labelled
+ * `u:object_r:custom_version_prop:s0`, which SELinux denies to `untrusted_app`. `SystemProperties.get`
+ * returns an empty string on denial rather than throwing (see [SystemPropertyReader]), so on a real
+ * LineageOS device this returns null and is indistinguishable from stock Android. Verified on
+ * LineageOS 23.2 / Android 16 (oriole): `avc: denied { read } ... tcontext=custom_version_prop`.
+ *
+ * Use [DeviceInfo.isLineageOs], which is backed by the app-readable `org.lineageos.android` system
+ * feature. Non-null here only on builds that relabel the property, so it stays an OR-input to that
+ * flag rather than the sole signal.
  */
 object LineageOsDetector {
 

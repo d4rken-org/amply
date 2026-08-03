@@ -28,11 +28,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import eu.darken.amply.R
+import eu.darken.amply.common.ca.toCaString
 import eu.darken.amply.common.compose.AmplyCard
 import eu.darken.amply.common.compose.AmplyCardDefaults
 import eu.darken.amply.common.compose.AmplyCardHeader
 import eu.darken.amply.common.compose.AmplyCardTone
 import eu.darken.amply.common.compose.AmplyCodeBlock
+import eu.darken.amply.charging.core.access.BackendStatus
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
 
@@ -41,13 +43,22 @@ import eu.darken.amply.common.compose.PreviewWrapper
  * contribution (see [eu.darken.amply.charging.core.adapter.AdapterSupport.contributionWanted]).
  * Explains the situation in plain language and offers two low-friction contribution paths: a
  * prefilled public GitHub issue, or a prefilled email (lower barrier, no account needed).
+ *
+ * [platformLabel] names whatever is actually unmapped, which is not always the manufacturer: on a
+ * custom ROM the hardware vendor may well be supported already (a LineageOS Pixel would otherwise be
+ * told "not mapped for Google devices", which is false), so the caller passes the ROM there instead.
  */
 @Composable
 fun UnsupportedDeviceCard(
     modifier: Modifier = Modifier,
-    manufacturer: String,
+    platformLabel: String,
     reportPreview: String?,
+    showGuidedWizard: Boolean = true,
+    /** Null while access is still being probed — renders no action rather than guessing at a state. */
+    shizuku: BackendStatus? = null,
     onOpenWizard: () -> Unit,
+    onAllowShizuku: () -> Unit = {},
+    onOpenShizuku: () -> Unit = {},
     onPrepareReport: () -> Unit,
     onCopyReport: () -> Unit,
     onOpenIssue: () -> Unit,
@@ -67,7 +78,7 @@ fun UnsupportedDeviceCard(
             titleStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
         )
         Text(
-            text = stringResource(R.string.setup_unsupported_body, manufacturer),
+            text = stringResource(R.string.setup_unsupported_body, platformLabel),
             style = MaterialTheme.typography.bodyMedium,
         )
         Text(
@@ -76,15 +87,51 @@ fun UnsupportedDeviceCard(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         // Primary path: the guided wizard, which produces the far more useful setting-discovery report.
-        Button(
-            onClick = onOpenWizard,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Icon(Icons.AutoMirrored.TwoTone.OpenInNew, contentDescription = null)
+        // Hidden where a settings diff can find nothing (see AdapterSupport.guidedCaptureUseful) — offering it
+        // there would walk the user through a capture that always diffs to empty and cannot be delivered.
+        if (showGuidedWizard) {
+            Button(
+                onClick = onOpenWizard,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.AutoMirrored.TwoTone.OpenInNew, contentDescription = null)
+                Text(
+                    stringResource(R.string.setup_unsupported_wizard_action),
+                    Modifier.padding(start = 8.dp),
+                )
+            }
+        }
+        // Where the guided wizard is withheld it was also the only place these users could grant Shizuku — and the
+        // probe that enriches their report needs it. The action must match the actual state: requesting permission
+        // is a no-op while the server is stopped (ShizukuController returns false immediately), so a stopped or
+        // absent Shizuku has to send the user to the app instead of showing a button that silently fails.
+        if (!showGuidedWizard && shizuku?.ready != true) {
             Text(
-                stringResource(R.string.setup_unsupported_wizard_action),
-                Modifier.padding(start = 8.dp),
+                text = stringResource(R.string.setup_unsupported_probe_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            when {
+                shizuku == null -> Unit
+                !shizuku.installed -> OutlinedButton(
+                    onClick = onOpenShizuku,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.contribution_install_shizuku))
+                }
+                shizuku.available && !shizuku.granted -> OutlinedButton(
+                    onClick = onAllowShizuku,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.setup_unsupported_allow_shizuku_action))
+                }
+                else -> OutlinedButton(
+                    onClick = onOpenShizuku,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.contribution_open_shizuku))
+                }
+            }
         }
         // Secondary: send just the non-privileged device metadata (no Shizuku needed).
         OutlinedButton(
@@ -173,8 +220,38 @@ private const val PREVIEW_REPORT = "manufacturer=Samsung\nmodel=SM-S911B\nandroi
 private fun UnsupportedDeviceCardPreview() = PreviewWrapper {
     UnsupportedDeviceCard(
         modifier = Modifier.padding(16.dp),
-        manufacturer = "Samsung",
+        platformLabel = "Samsung",
         reportPreview = PREVIEW_REPORT,
+        onOpenWizard = {},
+        onPrepareReport = {},
+        onCopyReport = {},
+        onOpenIssue = {},
+        onEmail = {},
+        onHelp = {},
+    )
+}
+
+private const val PREVIEW_LINEAGE_REPORT =
+    "manufacturer=Google\nmodel=Pixel 6\nis_lineageos=true\nlineage_cc_limit_mechanism=NOT_OBSERVED"
+
+/**
+ * The custom-ROM shape: the guided wizard is withheld (a settings diff can discover nothing there), so the card
+ * has to carry the Shizuku connect step itself — the state the OEM preview above never renders.
+ */
+@AmplyPreview
+@Composable
+private fun UnsupportedDeviceCardLineagePreview() = PreviewWrapper {
+    UnsupportedDeviceCard(
+        modifier = Modifier.padding(16.dp),
+        platformLabel = "LineageOS",
+        reportPreview = PREVIEW_LINEAGE_REPORT,
+        showGuidedWizard = false,
+        shizuku = BackendStatus(
+            available = false,
+            granted = false,
+            installed = true,
+            detail = "Shizuku is not running".toCaString(),
+        ),
         onOpenWizard = {},
         onPrepareReport = {},
         onCopyReport = {},

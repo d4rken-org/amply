@@ -100,8 +100,10 @@ exactly like success from software. So every supported combination above was ver
 and a device family only gets added after that. Enabling it on an unverified device would mean telling users
 their battery is protected when it isn't. Be friendly but firm about this; it is not a missing feature.
 
-Users on unsupported devices still get the charge alarm, the battery info, the OEM guide, and the discovery
-wizard, so it's worth pointing those out rather than leaving them with nothing.
+Users on unsupported devices still get the charge alarm, the battery info, and the OEM guide, so it's worth
+pointing those out rather than leaving them with nothing. Most also get the guided discovery wizard — the
+exception is LineageOS, where the charge-control keys are already known, so those users get the direct
+"send device info" report instead (it carries a ROM capability probe when Shizuku is connected).
 
 ## Device-Support Discovery Reports
 

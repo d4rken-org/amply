@@ -14,6 +14,13 @@ interface SettingsSnapshotSource {
 
     /** Full dump of one namespace, or a typed failure. Never silently coerces a failure to an empty map. */
     suspend fun snapshot(namespace: SettingNamespace): NamespaceSnapshot
+
+    /**
+     * LineageOS charge-control capability probe. Null on a non-Lineage device, when the backend is unavailable,
+     * or when the dump carries no provider line — callers must treat null as "unknown", never as a negative
+     * result. Read-only; the raw dump is reduced inside the user service (see [parseLineageHealthDump]).
+     */
+    suspend fun lineageHealth(): LineageHealthSummary?
 }
 
 /**
