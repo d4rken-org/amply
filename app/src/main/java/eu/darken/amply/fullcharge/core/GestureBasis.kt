@@ -60,6 +60,11 @@ object GestureBasis {
      * one. Only a verified observation answers: the journal records Amply's last write, not the
      * current configuration, so falling through to it would keep claiming "your 80 % limit" after
      * the user removed that limit natively.
+     *
+     * This is also the limit-hold gesture's *settled at the limit* arming input
+     * (`QuickFullChargeGesture.Input.verifiedLimitPercent`), which is why the no-journal rule is
+     * load-bearing beyond copy: [evidence]'s journal fallback would arm the default basis off a
+     * limit Amply merely remembers writing. Keep this function journal-free.
      */
     fun limitPercent(hardware: ChargeObservation?): Int? =
         (hardware as? ChargeObservation.Verified)?.policy?.limitPercentOrNull()

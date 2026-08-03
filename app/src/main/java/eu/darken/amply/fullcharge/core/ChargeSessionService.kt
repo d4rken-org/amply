@@ -378,6 +378,10 @@ class ChargeSessionService : Service() {
         } else {
             PolicyEvidence.UNKNOWN
         }
+        // Verified readback only, deliberately not GestureBasis.evidence()'s journal fallback: this
+        // feeds the *default* limit-hold basis, which must never arm off a limit Amply merely
+        // remembers writing. The same value names the limit in the notification below.
+        val verifiedLimitPercent = GestureBasis.limitPercent(hardware)
         val output = quickGesture.update(
             QuickFullChargeGesture.Input(
                 nowMillis = observedAtElapsed,
@@ -387,6 +391,7 @@ class ChargeSessionService : Service() {
                 chargingStatus = chargingStatus,
                 anyLevelEnabled = anyLevel,
                 policyEvidence = policyEvidence,
+                verifiedLimitPercent = verifiedLimitPercent,
             ),
         )
         val decision = output.decision
@@ -438,7 +443,7 @@ class ChargeSessionService : Service() {
                     // Verified evidence only, never Amply's write journal: naming a number is a
                     // user-facing claim, and a limit removed natively must not keep being claimed.
                     // Unverified state falls back to the generic "charge limit is holding" copy.
-                    limitPercent = GestureBasis.limitPercent(hardware),
+                    limitPercent = verifiedLimitPercent,
                 ),
             )
             // Expiry isn't broadcast-driven: without a nudge the "reconnect now" copy could linger
