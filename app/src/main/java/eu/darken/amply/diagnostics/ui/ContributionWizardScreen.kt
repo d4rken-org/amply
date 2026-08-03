@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -160,6 +161,11 @@ private fun WizardBottomBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                // The activity is edge-to-edge, so Scaffold lays this bar against the window bottom.
+                // Without the inset the system navigation bar covers it — under 3-button navigation
+                // that leaves only a few px of Back/Next tappable. Padding goes on the Row, not the
+                // Surface, so the background still extends behind the bar.
+                .navigationBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,

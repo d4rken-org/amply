@@ -42,7 +42,7 @@ class UnsupportedDeviceCardTest {
         compose.setContent {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 UnsupportedDeviceCard(
-                    manufacturer = "Samsung",
+                    platformLabel = "Samsung",
                     hasSupportLead = hasSupportLead,
                     reportPreview = reportPreview,
                     onOpenWizard = {},

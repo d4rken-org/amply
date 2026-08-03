@@ -632,7 +632,9 @@ class DashboardViewModel @Inject constructor(
      * into the body instead, so the email always carries the details the copy promises.
      */
     fun emailDeviceSupport() = viewModelScope.launch {
-        val report = deviceReport.value ?: deviceSupportReporter.collect().also { deviceReport.value = it }
+        // Always re-collect rather than reusing the cached snapshot: a report gathered before Shizuku was granted
+        // carries lineage_cc_provider=unknown, and silently emailing that stale answer defeats the probe.
+        val report = deviceSupportReporter.collect().also { deviceReport.value = it }
         val attachment = runCatching {
             withContext(Dispatchers.IO) {
                 val dir = File(context.cacheDir, "support").apply { mkdirs() }

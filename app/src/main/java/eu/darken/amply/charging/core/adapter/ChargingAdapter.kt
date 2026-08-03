@@ -20,6 +20,15 @@ data class AdapterSupport(
      * false for the live Pixel line, whose gate failures are known device-class limitations.
      */
     val contributionWanted: Boolean = false,
+    /**
+     * Whether the guided settings-diff wizard can discover anything here. False when the control keys are already
+     * mapped, so toggling modes produces an empty diff and the wizard dead-ends at delivery — true of LineageOS,
+     * whose keys are known and whose only open question (does the charging HAL actually enforce the cap?) no
+     * settings capture can answer. Those devices contribute via the direct report instead, which carries the
+     * HAL-capability probe. Independent of [contributionWanted]: the contribution is still wanted, just not by
+     * this instrument.
+     */
+    val guidedCaptureUseful: Boolean = true,
 )
 
 /** How an adapter's applied configuration can be confirmed. */

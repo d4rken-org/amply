@@ -18,7 +18,7 @@ limit on **qualified** LineageOS devices, integrated with Amply's session/widget
 
 ## Scope decisions (v1)
 - **Ships lab-only until qualified.** Live control gated to a **qualified-codename allowlist** (empty until the
-  Pixel 6 passes) + `lineageOsVersion != null` + provider present + system user. All other Lineage builds →
+  Pixel 6 passes) + `isLineageOs` + provider present + system user. All other Lineage builds →
   new `LineageLabAdapter` (diagnostics + contribution). No "verified device" ledger row until qualification.
 - **Recognize only exactly-restorable states.** `read()` returns `Verified` only for states v1 can restore
   precisely (the supported limit set + Unrestricted). Native AUTO/CUSTOM, any unsupported limit, or an ambiguous
@@ -41,8 +41,10 @@ limit on **qualified** LineageOS devices, integrated with Amply's session/widget
   `DefaultContributionRepository` with an explicit `STANDARD_SETTINGS_NAMESPACES = [SECURE, GLOBAL, SYSTEM]`
   so the contribution wizard never queries the Lineage provider (would fail capture on stock devices).
   + regression test asserting stock capture requests exactly those three.
-- AIDL `IChargingControlService`: add **only** `boolean writeLineageSetting(String key, String value) = 5;`
-  (constant `/system/bin/content insert`, constant URI, argv-separated, no shell string). No read/snapshot AIDL.
+- AIDL `IChargingControlService`: `boolean writeLineageSetting(String key, String value) = 5;`
+  (constant `/system/bin/content insert`, constant URI, argv-separated, no shell string). Settings *reads* need no
+  AIDL — they are unprivileged. Later joined by `String dumpLineageChargingControl() = 6;`, a zero-argument
+  read-only capability probe (see "HAL capability probe" below).
 - `ChargingControlUserService`: implement `writeLineageSetting` via `runBoundedProcess` with
   `content insert --uri content://lineagesettings/system --bind name:s:<key> --bind value:s:<val>`.
   New `LineageSettingWritePolicy`: read+write **key allowlist** = the 3 control keys; write domains
@@ -57,15 +59,21 @@ limit on **qualified** LineageOS devices, integrated with Amply's session/widget
 - `DirectSettingsBackend`: `LINEAGE_SYSTEM` read → `LineageSettingsClient`; write → `false`.
 
 ### 2. Detection
-- `LineageOsDetector`: `ro.lineage.build.version` via `SystemPropertyReader` → `String?`.
-- `DeviceInfo`: `lineageOsVersion: String?`, `hasLineageSettingsProvider: Boolean`
+- **Identity is the `org.lineageos.android` system feature**, exposed as `DeviceInfo.isLineageOs`. Do NOT gate on
+  `ro.lineage.build.version`: every `ro.lineage.*` property is SELinux-labelled `custom_version_prop` and denied to
+  `untrusted_app`, and `SystemProperties.get` returns `""` on denial rather than throwing, so the read fails
+  silently and a LineageOS device is indistinguishable from stock (this shipped, and routed every LineageOS build
+  to an OEM adapter until it was caught on oriole / LOS 23.2).
+- `LineageOsDetector`: `ro.lineage.build.version` via `SystemPropertyReader` → `String?`, a **secondary** identity
+  signal (normally null on real hardware) kept for diagnostics and for derivatives that relabel the property.
+- `DeviceInfo`: `hasLineageFeature: Boolean`, `lineageOsVersion: String?`, `hasLineageSettingsProvider: Boolean`
   (`packageManager.resolveContentProvider("lineagesettings", 0) != null`, fail-closed).
 - Manifest `<queries><provider android:authorities="lineagesettings"/></queries>` (+ the Lineage
   charging-control deep-link intent) so package-visibility doesn't false-negative resolution.
 
 ### 3. Adapters
 - `LineageChargingAdapter` (`id = "lineageos-chargingcontrol-v1"`):
-  - `probe`: `matched = lineageOsVersion != null && codename in QUALIFIED_CODENAMES`;
+  - `probe`: `matched = isLineageOs && codename in QUALIFIED_CODENAMES`;
     `controlEnabled = matched && hasLineageSettingsProvider && isSystemUser`;
     `contributionWanted = false` (unqualified Lineage is handled by the lab adapter).
   - `verification = SYNC_READBACK`, `preferShizukuForWrites = true`.
@@ -79,8 +87,8 @@ limit on **qualified** LineageOS devices, integrated with Amply's session/widget
   - `observedSettingUris` = table URI + per-key URIs for enabled/mode/limit (register both forms; confirm which
     the provider notifies at qualification).
   - `nativeSettingsIntent`: Lineage charging-control deep link, fallback `ACTION_BATTERY_SAVER_SETTINGS`.
-- `LineageLabAdapter` (`DisabledLabAdapter`, `id = "lineageos-lab"`): `matches = lineageOsVersion != null`
-  (diagnostics/contribution for unqualified Lineage builds).
+- `LineageLabAdapter` (`DisabledLabAdapter`, `id = "lineageos-lab"`): `matches = device.isLineageOs`
+  (diagnostics/contribution for unqualified Lineage builds), with `guidedCaptureUseful = false`.
 - `AdapterRegistry`: prepend `lineage, lineageLab` **before all OEM adapters**.
 
 ### 4. Least privilege
@@ -120,9 +128,34 @@ mutation**; provider notification URI forms; **`dumpsys lineagehealth mIsLimitSe
 wired/wireless below/at/above threshold; access tiers; shell-permission denial; binder death; rootless-Shizuku
 reboot recovery; sessions/boot recovery; R8 `foss` beta; both flavor unit suites + both debug assembles/lints.
 
+## HAL capability probe (added after the LineageOS 23.2 device run)
+
+The guided settings-diff wizard is **withheld** on LineageOS (`AdapterSupport.guidedCaptureUseful = false`): the
+keys are already mapped and sit outside the wizard's capture set, so a run always diffs to empty and cannot be
+delivered. The direct device-support report instead carries `dumpsys lineagehealth`, reduced inside the user
+service to `PROVIDER|mode` so the user's charging schedule and battery level never cross Binder.
+
+It is an **observation, never a verdict**, for two upstream reasons. Selection is mode-dependent —
+`getProviderForMode` branches on the configured mode before capability, so `MODE_AUTO`/`MODE_MANUAL` return
+Deadline before either limit-capable provider is consulted. And there is **no negative case**: `Toggle` also
+accepts `MODE_LIMIT` and enforces `targetPct` itself by cutting charging (with a recharge margin), so it is a
+capable mechanism, not a rejection. `isHALModeSupported` additionally swallows `RemoteException` into `false`,
+so even "provider X wasn't selected" can be transient.
+
+| Provider | `lineage_cc_limit_mechanism` | Meaning |
+| --- | --- | --- |
+| `Limit` | `NATIVE_LIMIT` | Native HAL cap (only bound when `mLimit.isSupported()`) |
+| `Toggle` | `FRAMEWORK_TOGGLE` | Framework cuts charging at the target |
+| `Deadline` | `NOT_OBSERVED` | Time-based mode; nothing learned — re-run with a limit set |
+| fork/newer | `UNKNOWN` | Not interpretable |
+
+No value rules a device out, and none proves enforcement: oriole bound `Limit` on LineageOS 20 and still charged
+past the cap. Only a real charging session settles that.
+
 ## Out of scope
 - Extending the contribution wizard to *capture* `lineagesettings` (only the regression guard is in scope).
-- Runtime `dumpsys` verification; schedule (AUTO/CUSTOM) modes; reconnect gesture.
+- Schedule (AUTO/CUSTOM) modes; reconnect gesture.
+- Observing *enforcement* (does charging actually stop at the cap) — needs a charging session, not a snapshot.
 
 ## Risks
 1. HAL absent/broken → write succeeds, no limit. Mitigated by qualified-codename gate + known gap.

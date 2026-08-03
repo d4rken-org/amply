@@ -354,6 +354,10 @@
 
     <!-- Dashboard (static UI) -->
     <string name="dashboard_manufacturer_fallback">these</string>
+    <!-- Substituted into setup_unsupported_body on a custom ROM, in place of the hardware vendor. -->
+    <string name="platform_name_lineageos">LineageOS</string>
+    <string name="setup_unsupported_probe_hint">Connecting Shizuku lets Amply include which charge-control method your ROM uses, which helps work out whether support is possible.</string>
+    <string name="setup_unsupported_allow_shizuku_action">Allow Amply in Shizuku</string>
     <string name="dashboard_applying">Applying…</string>
     <string name="dashboard_device_line">%1$s · Android API %2$d</string>
     <string name="dashboard_waiting_target">Waiting for the system to switch to %1$s — this can take about 15 seconds…</string>

@@ -137,6 +137,7 @@ class AdapterRegistrySelectionTest {
         provider: Boolean = true,
         systemUser: Boolean = true,
         version: String? = "23.2",
+        feature: Boolean = false,
     ) = DeviceInfo(
         manufacturer = manufacturer,
         model = "TEST",
@@ -144,9 +145,21 @@ class AdapterRegistrySelectionTest {
         fingerprint = "test",
         codename = codename,
         lineageOsVersion = version,
+        hasLineageFeature = feature,
         hasLineageSettingsProvider = provider,
         isSystemUser = systemUser,
     )
+
+    /**
+     * A real LineageOS device as the app actually sees it: `ro.lineage.*` is labelled
+     * `custom_version_prop` and denied to `untrusted_app`, so the version reads back null and only the
+     * `org.lineageos.android` system feature is observable. Verified on LineageOS 23.2 / Android 16
+     * (oriole). Gating on the version alone silently routed these devices to the OEM adapters.
+     */
+    private fun lineageWithDeniedProperty(
+        codename: String = "oriole",
+        manufacturer: String = "Google",
+    ) = lineage(codename = codename, manufacturer = manufacturer, version = null, feature = true)
 
     @Test
     fun `a qualified lineageos codename selects the live adapter with control`() {
@@ -187,7 +200,46 @@ class AdapterRegistrySelectionTest {
 
     @Test
     fun `a stock device is unaffected by the lineage adapters`() {
-        // lineageOsVersion == null → both Lineage adapters skip, OEM matching proceeds as before.
+        // Neither signal set → both Lineage adapters skip, OEM matching proceeds as before.
         registry.select(samsung(80000)).adapter?.id shouldBe "samsung-oneui8-v1"
+    }
+
+    @Test
+    fun `a qualified lineageos device is selected when only the system feature is readable`() {
+        val selection = registry.select(lineageWithDeniedProperty(codename = "oriole"))
+        selection.adapter?.id shouldBe "lineageos-chargingcontrol-v1"
+        selection.support.controlEnabled shouldBe true
+    }
+
+    @Test
+    fun `an unqualified lineageos device falls to the lineage lab adapter without the version property`() {
+        // The Pixel 6 / LineageOS 23.2 case: previously selected google-pixel-lab-v1, which hid the
+        // contribution wizard (contributionWanted defaults false on the Pixel adapter) and pointed
+        // "open battery settings" at Battery Saver instead of Battery.
+        val selection = registry.select(lineageWithDeniedProperty(codename = "raven"))
+        selection.adapter?.id shouldBe "lineageos-lab"
+        selection.support.contributionWanted shouldBe true
+    }
+
+    @Test
+    fun `the guided capture wizard is withheld on lineageos but still offered to OEM lab devices`() {
+        // On LineageOS the keys are already mapped and live outside the wizard's capture set, so a guided run
+        // always diffs to empty and cannot be delivered — the contribution goes through the direct report.
+        val lineage = registry.select(lineageWithDeniedProperty(codename = "raven")).support
+        lineage.contributionWanted shouldBe true
+        lineage.guidedCaptureUseful shouldBe false
+
+        // An unmapped OEM is the case the wizard exists for; it must be unaffected.
+        val samsung = registry.select(samsung(oneUi = null)).support
+        samsung.contributionWanted shouldBe true
+        samsung.guidedCaptureUseful shouldBe true
+    }
+
+    @Test
+    fun `lineageos on OEM hardware is never swallowed by an OEM adapter without the version property`() {
+        registry.select(lineageWithDeniedProperty("gts9", "samsung")).adapter?.id shouldBe "lineageos-lab"
+        registry.select(lineageWithDeniedProperty("munch", "Xiaomi")).adapter?.id shouldBe "lineageos-lab"
+        registry.select(lineageWithDeniedProperty("salami", "OnePlus")).adapter?.id shouldBe "lineageos-lab"
+        registry.select(lineageWithDeniedProperty("bluejay", "Google")).adapter?.id shouldBe "lineageos-lab"
     }
 }

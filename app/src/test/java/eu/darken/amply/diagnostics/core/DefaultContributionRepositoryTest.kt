@@ -6,6 +6,7 @@ import eu.darken.amply.charging.core.access.LineageChargeReadout
 import eu.darken.amply.charging.core.access.LineageChargeReader
 import eu.darken.amply.charging.core.access.NamespaceSnapshot
 import eu.darken.amply.charging.core.access.SettingNamespace
+import eu.darken.amply.charging.core.access.LineageHealthSummary
 import eu.darken.amply.charging.core.access.SettingsSnapshotSource
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
 import eu.darken.amply.charging.core.adapter.LineageChargingAdapter
@@ -40,6 +41,8 @@ class DefaultContributionRepositoryTest {
             requested += namespace
             return NamespaceSnapshot.Success(values)
         }
+
+        override suspend fun lineageHealth(): LineageHealthSummary? = null
     }
 
     private val stubReader = object : LineageChargeReader {

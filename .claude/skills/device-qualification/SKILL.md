@@ -89,6 +89,31 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
     `apply(FixedLimit)` writes `mode=3`, reads back `mode=1 ≠ 3` → decodes `Unknown(unrecognizedValue=true)` → `apply`
     returns false, so it **refuses without a false claim of control**. Reinforces the allowlist bar: a device must both
     expose the LIMIT mode bit **and** actually cut charging. `charging_control_*` again **absent in factory state**.
+  - **Pixel 6 (oriole) on LineageOS 23.2-20260720-NIGHTLY / Android 16 — app-level compatibility pass 2026-08-03.**
+    HAL qualification **not re-run** (same build as the run above, verdict stands). This pass found a defect that made
+    the whole Lineage path unreachable in production: **Amply never detected LineageOS at all.** All five
+    `ro.lineage.*` properties are labelled `u:object_r:custom_version_prop:s0`, which SELinux denies to
+    `untrusted_app` (`avc: denied { read } … tcontext=custom_version_prop … app=eu.darken.amply`).
+    `SystemProperties.get` returns `""` on denial instead of throwing, so `SystemPropertyReader`'s `runCatching`
+    never fired, nothing was logged, and `LineageOsDetector.detect()` silently returned null — `getprop` over adb had
+    always worked because it runs as `shell`. Both Lineage adapters skipped and selection fell through to
+    `google-pixel-lab-v1`, which (a) made `QUALIFIED_CODENAMES` dead — a qualified codename could never activate,
+    (b) hid the "Help add support" wizard (`contributionWanted` defaults false on the Pixel adapter, true on the lab
+    adapter), and (c) pointed "open battery settings" at Battery Saver, since the Pixel intent targets the absent
+    Google Settings-Intelligence component and never tries `POWER_USAGE_SUMMARY` (which *does* resolve on LOS).
+    Fixed by gating on the app-readable `org.lineageos.android` system feature (`DeviceInfo.isLineageOs`); the
+    version property is kept as a **secondary identity signal** (OR-ed in, normally null on real hardware). The
+    same run added a `dumpsys lineagehealth` probe to the device-support report. **It is an observation, never a
+    verdict, and never qualifies a device.** Two reasons: selection is mode-dependent (upstream picks Deadline
+    before Limit for `MODE_AUTO`/`MODE_MANUAL`, so this device's `Provider: Deadline` at `Mode: 1` merely means
+    nothing was learned), and there is no negative case at all — `Toggle` also accepts `MODE_LIMIT` and enforces
+    the cap itself, so binding it is a capable mechanism rather than a rejection. Even `NATIVE_LIMIT` proves
+    nothing: oriole bound `Limit` on LOS 20 and still charged past the cap. Only physical observation of the
+    charge current qualifies a device. Oriole's NO-GO rests on the `mode=3` write reading back as `1` plus the
+    LOS 20 charge-past observation — both separate evidence from this probe. Note LineageOS **spoofs `Build.FINGERPRINT`** to stock
+    (`google/oriole/oriole:16/…/release-keys`), so fingerprint sniffing is not a fallback. Otherwise clean on this
+    ROM: install/launch/onboarding/dashboard/settings with no crashes, honest "Unsupported device" reporting, live
+    battery monitoring across simulated plug/level transitions, and the charge alarm firing at threshold.
 - **Xiaomi** — adaptive hardware enforcement of external writes unconfirmed; treat the adapter as provisional until
   the 80% hold is physically observed.
 - **Pixel** — wireless at-threshold hold/charge-past and the widget under Shizuku-only remain unexercised (both share

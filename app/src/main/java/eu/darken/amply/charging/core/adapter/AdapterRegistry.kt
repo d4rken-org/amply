@@ -30,7 +30,7 @@ class AdapterRegistry @Inject constructor(
     // hardware underneath, so a LineageOS build on Samsung/Xiaomi/OnePlus/Pixel must be handled by the
     // Lineage live/lab pair — never swallowed by a manufacturer-based OEM adapter. lineageLab (any
     // LineageOS build) sits right after the live adapter (qualified codenames) and before all OEM
-    // adapters. Stock devices have lineageOsVersion == null, so both skip and OEM matching proceeds.
+    // adapters. Stock devices are not isLineageOs, so both skip and OEM matching proceeds.
     // Live adapters otherwise match only their verified scopes; same-OEM misses fall to the lab adapters.
     private val adapters = listOf(
         lineage, lineageLab,

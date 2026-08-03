@@ -89,9 +89,23 @@ long-term observation (see Known gaps below).
 
 ### LineageOS
 
-LineageOS control requires **all** of: LineageOS (`ro.lineage.build.version` present), a **physically-qualified
+LineageOS control requires **all** of: LineageOS (`DeviceInfo.isLineageOs`), a **physically-qualified
 device codename** (`Build.DEVICE` ∈ `LineageChargingAdapter.QUALIFIED_CODENAMES`), the `lineagesettings` provider
-present, and the system user. It is **manufacturer-agnostic** (LineageOS runs on many OEMs), so the Lineage
+present, and the system user.
+
+**Detect LineageOS with the `org.lineageos.android` system feature, never `ro.lineage.build.version`.** All five
+`ro.lineage.*` properties are labelled `u:object_r:custom_version_prop:s0`, which SELinux denies to
+`untrusted_app`. `SystemProperties.get` returns an *empty string* on denial instead of throwing, so the read fails
+silently and a LineageOS device is indistinguishable from stock — which routed every LineageOS build to an OEM
+adapter (verified on oriole / LineageOS 23.2 / Android 16). `hasSystemFeature` needs no `<queries>` entry and no
+permission. `lineageOsVersion` remains a **secondary identity signal** — `isLineageOs` ORs it in so derivatives that
+relabel the property still match — and is normally null on real hardware; it is not "diagnostics only".
+
+**Blocker before the first codename is added to `QUALIFIED_CODENAMES`:** the live gate is codename-scoped, but HAL
+capability is *build*-scoped — oriole exposed the LIMIT mode bit on LineageOS 20 and dropped it on 23.2 on identical
+hardware. A bare codename entry would therefore claim more than any single qualification run proves. Scope the entry
+by codename **plus** the qualified Lineage generation / API level (and treat a property-only or derivative match as
+insufficient for the live gate), or qualify every build you intend to cover. It is **manufacturer-agnostic** (LineageOS runs on many OEMs), so the Lineage
 live/lab adapters are ordered **before all OEM adapters** in `AdapterRegistry` — a LineageOS build on Samsung/
 Xiaomi/OnePlus hardware must never be swallowed by a manufacturer-based lab adapter. Unqualified LineageOS builds
 fall to `LineageLabAdapter` (diagnostics/contribution).

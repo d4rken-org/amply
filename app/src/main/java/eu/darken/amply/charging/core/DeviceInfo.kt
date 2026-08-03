@@ -19,10 +19,21 @@ data class DeviceInfo(
     val hyperOsVersion: Int? = null,
     val oplusRomVersion: Int? = null,
     val lineageOsVersion: String? = null,
+    val hasLineageFeature: Boolean = false,
     val hasProtectBattery: Boolean = false,
     val hasLineageSettingsProvider: Boolean = false,
     val isSystemUser: Boolean = true,
 ) {
+    /**
+     * Whether this is a LineageOS build. [lineageOsVersion] alone must never gate this: every
+     * `ro.lineage.*` property lives in the SELinux context `custom_version_prop`, which
+     * `untrusted_app` cannot read, so on a real LineageOS device the property reads back empty and
+     * the version is null (see [LineageOsDetector]). [hasLineageFeature] is the app-readable
+     * identity signal; the version is kept as an OR so derivatives that expose the property but not
+     * the feature still match, and so unit tests can construct either shape.
+     */
+    val isLineageOs: Boolean get() = hasLineageFeature || lineageOsVersion != null
+
     companion object {
         fun current(context: Context? = null) = DeviceInfo(
             manufacturer = Build.MANUFACTURER.orEmpty(),
@@ -39,6 +50,13 @@ data class DeviceInfo(
             hyperOsVersion = HyperOsVersionDetector.detect(),
             oplusRomVersion = OplusRomVersionDetector.detect(),
             lineageOsVersion = LineageOsDetector.detect(),
+            // The app-readable LineageOS identity signal. System features are not subject to package
+            // visibility filtering, so this needs no <queries> entry and no permission — unlike the
+            // ro.lineage.* properties, which SELinux denies to untrusted_app. Fail closed.
+            hasLineageFeature = context?.let {
+                runCatching { it.packageManager.hasSystemFeature(FEATURE_LINEAGE_OS) }
+                    .getOrDefault(false)
+            } ?: false,
             hasProtectBattery = context?.let {
                 runCatching {
                     Settings.Global.getString(it.contentResolver, KEY_PROTECT_BATTERY) != null
@@ -69,5 +87,8 @@ data class DeviceInfo(
 
         /** Authority of LineageOS's private settings provider (`content://lineagesettings/...`). */
         const val LINEAGE_SETTINGS_AUTHORITY = "lineagesettings"
+
+        /** LineageOS's core platform system feature, declared by `lineageos.platform`. */
+        const val FEATURE_LINEAGE_OS = "org.lineageos.android"
     }
 }

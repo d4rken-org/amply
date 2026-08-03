@@ -81,4 +81,16 @@ class ShizukuSettingsBackend @Inject constructor(
             NamespaceSnapshot.Failure((e.message ?: e.javaClass.simpleName).toCaString())
         }
     }
+
+    override suspend fun lineageHealth(): LineageHealthSummary? = withContext(Dispatchers.IO) {
+        // Blocking Binder transaction. Best-effort by design: this only enriches a contribution report, so any
+        // failure (no Shizuku, not LineageOS, service absent) degrades to "unknown" rather than surfacing an error.
+        try {
+            parseLineageHealthSummary(controller.service().dumpLineageChargingControl())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+    }
 }

@@ -17,11 +17,15 @@ abstract class DisabledLabAdapter : ChargingAdapter {
 
     abstract fun matches(device: DeviceInfo): Boolean
 
+    /** See [AdapterSupport.guidedCaptureUseful]; false for a ROM whose control keys are already mapped. */
+    protected open val guidedCaptureUseful: Boolean = true
+
     override fun probe(device: DeviceInfo) = AdapterSupport(
         matched = matches(device),
         controlEnabled = false,
         detail = R.string.adapter_detail_lab_diagnostics,
         contributionWanted = true,
+        guidedCaptureUseful = guidedCaptureUseful,
     )
 
     override suspend fun read(backend: AccessBackend) =
@@ -71,7 +75,13 @@ class LineageLabAdapter @Inject constructor() : DisabledLabAdapter() {
 
     // Any LineageOS build whose device codename is not in the live adapter's qualified allowlist.
     // Charging control is HAL-dependent and unverified here, so it stays diagnostics/contribution only.
-    override fun matches(device: DeviceInfo) = device.lineageOsVersion != null
+    override fun matches(device: DeviceInfo) = device.isLineageOs
+
+    // The three charging_control_* keys are already mapped and live in a provider the wizard does not capture,
+    // so a guided run always diffs to nothing and cannot be delivered. The direct report instead carries an
+    // observation of which provider LineageOS bound — useful triage context, but it decides nothing: no value
+    // qualifies or disqualifies a device, only physical charging observation does.
+    override val guidedCaptureUseful = false
 
     companion object {
         val CANDIDATE_KEYS = setOf(
