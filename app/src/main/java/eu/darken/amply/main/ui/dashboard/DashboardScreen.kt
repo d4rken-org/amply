@@ -296,6 +296,7 @@ fun DashboardScreen(
                             UnsupportedDeviceCard(
                                 manufacturer = state.charging.device.manufacturer
                                     .ifBlank { stringResource(R.string.dashboard_manufacturer_fallback) },
+                                hasSupportLead = state.charging.hasSupportLead,
                                 reportPreview = state.deviceReport?.let(::formatReport),
                                 onOpenWizard = onOpenContribution,
                                 onPrepareReport = onPrepareSupportReport,
@@ -1431,6 +1432,9 @@ private fun DashboardScreenUnsupportedPreview() = PreviewWrapper {
             charging = ChargingState(
                 device = DeviceInfo("Samsung", "SM-S911B", 34, "preview", hasChargingOptimization = false),
                 adapterName = "Diagnostics only".toCaString(),
+                // A Samsung on an unverified One UI: the lab adapter matched, so the metadata-only report
+                // names a family to check and the card offers it alongside the wizard.
+                adapterId = "samsung-lab",
                 controlEnabled = false,
                 contributionWanted = true,
                 observation = ChargeObservation.Unsupported("This device is not a supported Pixel".toCaString()),

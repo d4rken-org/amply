@@ -83,6 +83,38 @@ data class ChargingState(
             writeRequiresShizuku -> access?.shizuku?.ready == true
             else -> access?.canControl == true
         }
+
+    /**
+     * True when an adapter — live or lab — recognized this device's family, i.e. Amply knows *what* it is looking
+     * at even when it cannot control it. Derived from [adapterId] rather than carried separately: [AdapterRegistry]
+     * returns an adapter exactly when some probe matched, and its catch-all is the only null-adapter selection, so a
+     * mirrored flag could only ever drift.
+     */
+    val adapterMatched: Boolean get() = adapterId != null
+
+    /**
+     * Whether the unprivileged device metadata alone gives a maintainer somewhere to start, which is what makes it
+     * worth a public device-support issue. Two independent sources, because neither covers the other:
+     *
+     * - a matched adapter, including a lab one. Those match on manufacturer or ROM marker, so "Samsung, One UI
+     *   unreadable" still says the feature exists and names the skin whose key mapping to check.
+     * - a ROM marker or a protection key/provider the probes found directly. [AdapterRegistry]'s family matchers are
+     *   manufacturer lists and property checks, so a rebranded Oplus device or a LineageOS derivative that ships the
+     *   settings provider without the Lineage property lands in the catch-all while still carrying a real lead.
+     *
+     * False means every probe came back empty: the report can only state that none of the known families matched,
+     * which no maintainer can act on. Those devices are pointed at the contribution wizard, which can discover a key
+     * Amply does not know yet, or at email, where a dead end costs one reply instead of a public issue.
+     */
+    val hasSupportLead: Boolean
+        get() = adapterMatched ||
+            device.hasProtectBattery ||
+            device.hasLineageSettingsProvider ||
+            device.hasChargingOptimization ||
+            device.oneUiVersion != null ||
+            device.hyperOsVersion != null ||
+            device.oplusRomVersion != null ||
+            device.lineageOsVersion != null
 }
 
 @Singleton
