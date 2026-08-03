@@ -46,6 +46,14 @@ import eu.darken.amply.common.compose.PreviewWrapper
 fun UnsupportedDeviceCard(
     modifier: Modifier = Modifier,
     manufacturer: String,
+    /**
+     * Whether the device metadata alone gives a maintainer somewhere to start (see
+     * [eu.darken.amply.charging.core.ChargingState.hasSupportLead]). Only then is the metadata-only GitHub
+     * path offered — it is the one contribution route that needs no Shizuku, but a report naming no family,
+     * ROM marker or key is a public issue nobody can act on. Without a lead the card offers the wizard,
+     * which can still discover a key Amply does not know, and email.
+     */
+    hasSupportLead: Boolean,
     reportPreview: String?,
     onOpenWizard: () -> Unit,
     onPrepareReport: () -> Unit,
@@ -86,15 +94,18 @@ fun UnsupportedDeviceCard(
                 Modifier.padding(start = 8.dp),
             )
         }
-        // Secondary: send just the non-privileged device metadata (no Shizuku needed).
-        OutlinedButton(
-            onClick = {
-                onPrepareReport()
-                showDialog = true
-            },
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(stringResource(R.string.setup_unsupported_request_action))
+        // Secondary: send just the non-privileged device metadata (no Shizuku needed). Offered only where
+        // that metadata identifies something — see [hasSupportLead].
+        if (hasSupportLead) {
+            OutlinedButton(
+                onClick = {
+                    onPrepareReport()
+                    showDialog = true
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.setup_unsupported_request_action))
+            }
         }
 
         HorizontalDivider(Modifier.padding(vertical = 4.dp))
@@ -119,7 +130,9 @@ fun UnsupportedDeviceCard(
         }
     }
 
-    if (showDialog) {
+    // Also gated, not just its launcher: a lead that disappears under an open dialog must take the
+    // confirmation with it rather than leaving an Open-GitHub button behind.
+    if (showDialog && hasSupportLead) {
         AlertDialog(
             onDismissRequest = { showDialog = false },
             title = { Text(stringResource(R.string.setup_unsupported_dialog_title)) },
@@ -174,7 +187,26 @@ private fun UnsupportedDeviceCardPreview() = PreviewWrapper {
     UnsupportedDeviceCard(
         modifier = Modifier.padding(16.dp),
         manufacturer = "Samsung",
+        hasSupportLead = true,
         reportPreview = PREVIEW_REPORT,
+        onOpenWizard = {},
+        onPrepareReport = {},
+        onCopyReport = {},
+        onOpenIssue = {},
+        onEmail = {},
+        onHelp = {},
+    )
+}
+
+/** A device whose metadata carries no lead at all: the metadata-only GitHub path is not offered. */
+@AmplyPreview
+@Composable
+private fun UnsupportedDeviceCardNoLeadPreview() = PreviewWrapper {
+    UnsupportedDeviceCard(
+        modifier = Modifier.padding(16.dp),
+        manufacturer = "BLU",
+        hasSupportLead = false,
+        reportPreview = null,
         onOpenWizard = {},
         onPrepareReport = {},
         onCopyReport = {},
