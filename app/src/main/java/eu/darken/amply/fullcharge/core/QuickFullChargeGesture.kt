@@ -30,8 +30,23 @@ enum class PolicyEvidence { PROTECTIVE, UNRESTRICTED, UNKNOWN }
  * the original unplug still triggers`).
  *
  * Two arming bases exist:
- * - Limit hold (default): Android's charging-policy hardware state reports the Pixel policy actively
- *   holding near its limit. Only the hardware signal is trusted, never Amply's cached request.
+ * - Limit hold (default): the charge limit is established as active by either of two paths, both
+ *   requiring Android's charging-policy hardware state, never Amply's cached request. *Held* adds a
+ *   battery status other than `CHARGING`. *Settled at the limit* instead requires that the battery
+ *   has already reached the verified limit ([Input.verifiedLimitPercent]), and deliberately does
+ *   **not** wait for the battery status. That wait is the problem it exists to solve: for the
+ *   ~10–12 s the Pixel HAL takes to act on a freshly written limit the phone is physically topping
+ *   back up and reports `CHARGING`, so every path that writes the limit while already in the arming
+ *   band — a session restore, boot recovery, the widget's persistent-policy buttons — left the
+ *   gesture unable to arm at all, and an unplug in that window opened no reconnect window. Neither
+ *   path subsumes the other: ordinary drift to 79 % under an 80 % limit is *held* but not *settled*,
+ *   and the window after a write is *settled* but not *held*. Reaching the limit is what carries the
+ *   intent the dropped battery status used to carry — it separates sitting at the limit from
+ *   climbing through the band, so a replug at 76 % under an 80 % limit still arms nothing.
+ *   Accepting `CHARGING` is what makes the steady-plugged drop below load-bearing, because the
+ *   hardware state lags a policy change in both directions. Since both paths require the
+ *   charging-policy state, a policy that reports a *different* hardware state — Pixel's adaptive
+ *   charging — never arms this basis at all; the any-level basis is the only one that covers it.
  * - Any level (opt-in): the user enabled the any-level option and the current charge configuration
  *   is conclusively protective ([PolicyEvidence.PROTECTIVE]); percent, battery status, and the
  *   hardware hold are deliberately ignored. This basis is revoked — including an already-open
@@ -84,6 +99,12 @@ class QuickFullChargeGesture(
         val chargingStatus: Int,
         val anyLevelEnabled: Boolean,
         val policyEvidence: PolicyEvidence,
+        /**
+         * Percent of a *verified* active fixed limit, null when nothing verified names one. Must come
+         * from the live hardware/settings readback only — never from Amply's write journal, which
+         * still reports a limit the user has since removed natively.
+         */
+        val verifiedLimitPercent: Int? = null,
     )
 
     data class Output(
@@ -111,10 +132,21 @@ class QuickFullChargeGesture(
     private var state: State = State.Idle
 
     fun update(input: Input): Output {
-        val heldAtLimit = input.plugged &&
-            input.chargingStatus == CHARGING_STATUS_POLICY &&
+        val inArmingBand = input.percent in MIN_ARM_PERCENT..MAX_ARM_PERCENT
+        val policyActive = input.plugged && input.chargingStatus == CHARGING_STATUS_POLICY
+        // Anything but CHARGING — NOT_CHARGING at a settled hold, but also FULL/DISCHARGING/UNKNOWN,
+        // all of which equally mean the battery is not being driven up right now.
+        val heldAtLimit = policyActive &&
             input.batteryStatus != BatteryManager.BATTERY_STATUS_CHARGING &&
-            input.percent in MIN_ARM_PERCENT..MAX_ARM_PERCENT
+            inArmingBand
+        // The battery already reached the verified limit, so the limit is established without
+        // waiting out the HAL transition that keeps the battery status at CHARGING right after a
+        // write. Reaching the limit is what the dropped battery status is traded for.
+        val settledAtLimit = policyActive &&
+            inArmingBand &&
+            input.verifiedLimitPercent != null &&
+            input.percent >= input.verifiedLimitPercent
+        val limitBasis = heldAtLimit || settledAtLimit
         val anyLevelHeld = input.anyLevelEnabled &&
             input.plugged &&
             input.policyEvidence == PolicyEvidence.PROTECTIVE
@@ -154,7 +186,7 @@ class QuickFullChargeGesture(
         previousPlugged = input.plugged
 
         if (previous == null) {
-            state = armFrom(heldAtLimit, anyLevelHeld)
+            state = armFrom(limitBasis, anyLevelHeld)
             return statusOutput(input)
         }
 
@@ -186,20 +218,35 @@ class QuickFullChargeGesture(
                     // Too late: the window is spent, but the fresh plugged state may already
                     // qualify again — re-arm immediately instead of waiting for another broadcast.
                     else -> {
-                        state = armFrom(heldAtLimit, anyLevelHeld)
+                        state = armFrom(limitBasis, anyLevelHeld)
                         statusOutput(input)
                     }
                 }
             }
-            state = armFrom(heldAtLimit, anyLevelHeld)
+            state = armFrom(limitBasis, anyLevelHeld)
             return statusOutput(input)
         }
 
         if (input.plugged) {
             when {
                 // Latch the hold: at the later unplug tick the hardware evidence is already gone.
-                heldAtLimit -> state = State.Armed(ArmedBy.LIMIT_HOLD)
+                limitBasis -> state = State.Armed(ArmedBy.LIMIT_HOLD)
                 state is State.Idle && anyLevelHeld -> state = State.Armed(ArmedBy.ANY_LEVEL)
+                // Positive proof the limit is not holding: current is flowing while the hardware
+                // reports no charging policy at all. Required because the settled path accepts a
+                // `CHARGING` reading, and the hardware state lags a policy change in *both*
+                // directions — leaving an 80% limit at 80% briefly still reports state 4, which
+                // would otherwise latch a limit hold that no longer exists and survive (this
+                // branch has never dropped a latch) until the battery left the band. Confined to
+                // the steady-plugged branch on purpose: a replug tick legitimately reads
+                // `CHARGING` with no policy state yet, and dropping there would destroy exactly
+                // the carried basis the reconnect window exists to preserve.
+                // An unreadable percent (`< 0`) marks the whole reading as a failed sticky-broadcast
+                // read, so its charging status is no proof of anything either.
+                state.armingBasis == ArmedBy.LIMIT_HOLD &&
+                    input.percent >= 0 &&
+                    input.batteryStatus == BatteryManager.BATTERY_STATUS_CHARGING &&
+                    !policyActive -> state = State.Idle
             }
         } else {
             val awaiting = state as? State.AwaitingReconnect
@@ -215,8 +262,8 @@ class QuickFullChargeGesture(
         state = State.Idle
     }
 
-    private fun armFrom(heldAtLimit: Boolean, anyLevelHeld: Boolean): State = when {
-        heldAtLimit -> State.Armed(ArmedBy.LIMIT_HOLD)
+    private fun armFrom(limitBasis: Boolean, anyLevelHeld: Boolean): State = when {
+        limitBasis -> State.Armed(ArmedBy.LIMIT_HOLD)
         anyLevelHeld -> State.Armed(ArmedBy.ANY_LEVEL)
         else -> State.Idle
     }

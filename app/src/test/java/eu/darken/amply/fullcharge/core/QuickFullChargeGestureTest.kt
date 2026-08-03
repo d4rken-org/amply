@@ -54,6 +54,121 @@ class QuickFullChargeGestureTest {
     }
 
     @Test
+    fun `reconnect right after the limit is written triggers before the battery status settles`() {
+        // The regression: a restore re-applies the limit, the phone tops back up and still reports
+        // CHARGING for the ~10s HAL transition. Reaching the verified limit arms regardless.
+        freshlyLimited(1_000) shouldBe QuickFullChargeDecision.ARMED
+        disconnected(2_000) shouldBe QuickFullChargeDecision.WAITING_FOR_RECONNECT
+        charging(5_000) shouldBe QuickFullChargeDecision.TRIGGER
+    }
+
+    @Test
+    fun `climbing through the arming band below the limit does not arm`() {
+        freshlyLimited(1_000, percent = 76) shouldBe QuickFullChargeDecision.IDLE
+        step(
+            now = 2_000,
+            plugged = false,
+            percent = 76,
+            batteryStatus = BatteryManager.BATTERY_STATUS_DISCHARGING,
+        ) shouldBe QuickFullChargeDecision.IDLE
+        freshlyLimited(5_000, percent = 76) shouldBe QuickFullChargeDecision.IDLE
+    }
+
+    @Test
+    fun `reaching the limit above the arming band does not arm`() {
+        freshlyLimited(1_000, percent = 95) shouldBe QuickFullChargeDecision.IDLE
+    }
+
+    @Test
+    fun `an unverified limit does not arm while the battery is still charging`() {
+        step(
+            now = 1_000,
+            plugged = true,
+            batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
+            chargingStatus = QuickFullChargeGesture.CHARGING_STATUS_POLICY,
+            verifiedLimit = null,
+        ) shouldBe QuickFullChargeDecision.IDLE
+    }
+
+    @Test
+    fun `an adaptive policy never arms the limit-hold basis`() {
+        // Adaptive reports hardware state 5, and both limit-hold paths require state 4 — so it
+        // arms through neither, whatever the battery status says.
+        step(
+            now = 1_000,
+            plugged = true,
+            batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
+            chargingStatus = 5,
+            verifiedLimit = null,
+        ) shouldBe QuickFullChargeDecision.IDLE
+        step(
+            now = 2_000,
+            plugged = true,
+            batteryStatus = BatteryManager.BATTERY_STATUS_NOT_CHARGING,
+            chargingStatus = 5,
+            verifiedLimit = null,
+        ) shouldBe QuickFullChargeDecision.IDLE
+    }
+
+    @Test
+    fun `a stale policy state while leaving the limit does not leave the gesture armed`() {
+        // The hardware state lags a policy change in both directions, so switching away from the
+        // limit at 80% is briefly indistinguishable from having just written it. Once current
+        // flows with no policy state, the latch must go — it used to survive until the battery
+        // left the 75-90% band, so a replug during the climb started an unwanted full charge.
+        freshlyLimited(1_000) shouldBe QuickFullChargeDecision.ARMED
+        step(
+            now = 4_000,
+            plugged = true,
+            percent = 82,
+            batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
+            chargingStatus = 5,
+        ) shouldBe QuickFullChargeDecision.IDLE
+        step(
+            now = 6_000,
+            plugged = false,
+            percent = 82,
+            batteryStatus = BatteryManager.BATTERY_STATUS_DISCHARGING,
+        ) shouldBe QuickFullChargeDecision.IDLE
+        step(
+            now = 9_000,
+            plugged = true,
+            percent = 82,
+            batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
+            chargingStatus = 5,
+        ) shouldBe QuickFullChargeDecision.IDLE
+    }
+
+    @Test
+    fun `a replug still reconstructs the carried basis despite no policy state yet`() {
+        // The drop above must not reach the reconnect path: a replugged phone legitimately reads
+        // CHARGING with the policy state not yet re-reported, which is precisely why the basis is
+        // carried across the gap rather than re-derived.
+        atLimit(1_000) shouldBe QuickFullChargeDecision.ARMED
+        disconnected(2_000) shouldBe QuickFullChargeDecision.WAITING_FOR_RECONNECT
+        step(
+            now = 5_000,
+            plugged = true,
+            batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
+            chargingStatus = 1,
+        ) shouldBe QuickFullChargeDecision.TRIGGER
+    }
+
+    @Test
+    fun `drift below the limit still arms through the settled hold`() {
+        // 79% under an 80% limit is not "at the limit", but current is visibly cut — the original
+        // path must keep arming on its own.
+        step(
+            now = 1_000,
+            plugged = true,
+            percent = 79,
+            batteryStatus = BatteryManager.BATTERY_STATUS_NOT_CHARGING,
+            chargingStatus = QuickFullChargeGesture.CHARGING_STATUS_POLICY,
+            verifiedLimit = 80,
+        ) shouldBe QuickFullChargeDecision.ARMED
+    }
+
+    @Test
     fun `reconnect window boundaries`() {
         // Debounce floor: exactly the minimum triggers, one millisecond less does not.
         atLimit(0)
@@ -670,6 +785,7 @@ class QuickFullChargeGestureTest {
         chargingStatus: Int = 0,
         anyLevel: Boolean = false,
         evidence: PolicyEvidence = PolicyEvidence.UNKNOWN,
+        verifiedLimit: Int? = null,
     ) = QuickFullChargeGesture.Input(
         nowMillis = now,
         plugged = plugged,
@@ -678,6 +794,7 @@ class QuickFullChargeGestureTest {
         chargingStatus = chargingStatus,
         anyLevelEnabled = anyLevel,
         policyEvidence = evidence,
+        verifiedLimitPercent = verifiedLimit,
     )
 
     private fun step(
@@ -688,15 +805,31 @@ class QuickFullChargeGestureTest {
         chargingStatus: Int = 0,
         anyLevel: Boolean = false,
         evidence: PolicyEvidence = PolicyEvidence.UNKNOWN,
+        verifiedLimit: Int? = null,
     ) = gesture.update(
-        input(now, plugged, percent, batteryStatus, chargingStatus, anyLevel, evidence),
+        input(now, plugged, percent, batteryStatus, chargingStatus, anyLevel, evidence, verifiedLimit),
     ).decision
 
+    /** The settled hold: policy state 4 with current already cut. Mirrors what the Pixel adapter supplies. */
     private fun atLimit(now: Long) = step(
         now = now,
         plugged = true,
         batteryStatus = BatteryManager.BATTERY_STATUS_NOT_CHARGING,
         chargingStatus = QuickFullChargeGesture.CHARGING_STATUS_POLICY,
+        verifiedLimit = 80,
+    )
+
+    /**
+     * The window right after the limit is written: policy state 4 is already reported while the
+     * phone is still topping back up, so the battery status has not settled yet.
+     */
+    private fun freshlyLimited(now: Long, percent: Int = 80) = step(
+        now = now,
+        plugged = true,
+        percent = percent,
+        batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
+        chargingStatus = QuickFullChargeGesture.CHARGING_STATUS_POLICY,
+        verifiedLimit = 80,
     )
 
     private fun charging(now: Long) = step(
