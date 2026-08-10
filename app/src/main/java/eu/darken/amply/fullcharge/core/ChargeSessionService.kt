@@ -427,6 +427,9 @@ class ChargeSessionService : Service() {
                 SessionNotifications.gesture(
                     this,
                     decision = decision,
+                    // The notification's mode actions write persistently, so they must offer this
+                    // adapter's declared protective default, not a hardcoded limit.
+                    protectPolicy = adapter.defaultProtectivePolicy,
                     anyLevel = when (decision) {
                         // The armed copy states the condition the gesture will fire under. The
                         // latched basis is not that condition: at the limit, LIMIT_HOLD wins the
@@ -643,6 +646,10 @@ class ChargeSessionService : Service() {
         // would strand a pending target that never converges. The app's controls guide setup.
         if (!repository.refresh().canApply) {
             log(TAG, Logging.Priority.WARN) { "Persistent policy skipped: charging control not writable" }
+            // Tell the user why nothing happened. The widget/tile pre-check writability and open the
+            // app instead of dispatching, but a notification action cannot pre-check, so without this
+            // its tap is a silent no-op (it also covers a surface racing a lost write capability).
+            SessionNotifications.showRecovery(this, R.string.recovery_notification_body_unavailable)
             SurfaceUpdater.updateNow(this)
             continueGestureOrStop()
             return
