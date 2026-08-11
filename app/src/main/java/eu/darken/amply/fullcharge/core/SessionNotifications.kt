@@ -13,6 +13,7 @@ import androidx.core.content.ContextCompat
 import android.content.pm.PackageManager
 import android.os.Build
 import eu.darken.amply.R
+import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.main.ui.MainActivity
 
 object SessionNotifications {
@@ -146,9 +147,15 @@ object SessionNotifications {
             .build()
     }
 
+    /**
+     * [protectPolicy] is the adapter's declared protective default and has no default value on
+     * purpose: the action writes it persistently, so the capability has to be handed in by the
+     * caller that resolved the adapter rather than guessed here.
+     */
     fun gesture(
         context: Context,
         decision: QuickFullChargeDecision,
+        protectPolicy: ChargePolicy,
         anyLevel: Boolean = false,
         limitPercent: Int? = null,
     ): Notification {
@@ -208,8 +215,52 @@ object SessionNotifications {
                 ),
             )
         }
+        // Mode switches only on the two standing states. An explicit allowlist, not "not
+        // WAITING_FOR_RECONNECT": TRIGGER also reaches this builder, and neither the 10s countdown
+        // nor the tick that starts a full charge should offer a competing persistent write.
+        if (decision == QuickFullChargeDecision.IDLE || decision == QuickFullChargeDecision.ARMED) {
+            builder
+                .addAction(
+                    R.drawable.ic_launcher_monochrome,
+                    protectActionLabel(context, protectPolicy),
+                    persistentPolicyIntent(context, 8, protectPolicy),
+                )
+                .addAction(
+                    R.drawable.ic_launcher_monochrome,
+                    context.getString(R.string.gesture_notification_action_always_full),
+                    persistentPolicyIntent(context, 9, ChargePolicy.Unrestricted),
+                )
+        }
         return builder.build()
     }
+
+    /** Mirrors the widget's protect-button naming; other policies are not protective defaults today. */
+    private fun protectActionLabel(context: Context, policy: ChargePolicy): String = when (policy) {
+        is ChargePolicy.FixedLimit -> context.getString(
+            R.string.gesture_notification_action_protect_fixed,
+            policy.percent,
+        )
+        ChargePolicy.Adaptive -> context.getString(R.string.gesture_notification_action_protect_adaptive)
+        else -> context.getString(R.string.gesture_notification_action_protect)
+    }
+
+    /**
+     * Both actions share [ChargeSessionService.ACTION_SET_PERSISTENT_POLICY] and differ only in an
+     * extra, which does NOT factor into PendingIntent equality — hence the distinct [requestCode]
+     * per action, or the second would overwrite the first's target.
+     */
+    private fun persistentPolicyIntent(
+        context: Context,
+        requestCode: Int,
+        policy: ChargePolicy,
+    ): PendingIntent = PendingIntent.getForegroundService(
+        context,
+        requestCode,
+        Intent(context, ChargeSessionService::class.java)
+            .setAction(ChargeSessionService.ACTION_SET_PERSISTENT_POLICY)
+            .putExtra(ChargeSessionService.EXTRA_TARGET_POLICY, policy.stableId),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
 
     /**
      * Progress while a restore converges on the charging hardware. Deliberately shares
