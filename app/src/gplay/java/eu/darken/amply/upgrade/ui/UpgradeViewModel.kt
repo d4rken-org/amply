@@ -231,7 +231,7 @@ class UpgradeViewModel @Inject constructor(
             if (!current.isPro && current.error != null) {
                 if (!hasShownRepoError) {
                     hasShownRepoError = true
-                    current.error?.let { events.tryEmit(UpgradeEvents.Error(it)) }
+                    current.error.let { events.tryEmit(UpgradeEvents.Error(it)) }
                 }
             } else {
                 hasShownRepoError = false
