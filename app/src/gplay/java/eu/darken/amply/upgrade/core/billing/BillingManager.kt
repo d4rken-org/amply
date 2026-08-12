@@ -459,11 +459,11 @@ open class BillingManager @Inject constructor(
         }
     }
 
-    suspend fun querySkus(vararg skus: Sku): Collection<SkuDetails> = useConnection {
+    open suspend fun querySkus(vararg skus: Sku): Collection<SkuDetails> = useConnection {
         querySkus(*skus).also { log(TAG) { "querySkus(): $it" } }
     }
 
-    suspend fun startIapFlow(activity: Activity, sku: Sku, offer: Sku.Subscription.Offer?) {
+    open suspend fun startIapFlow(activity: Activity, sku: Sku, offer: Sku.Subscription.Offer?) {
         try {
             useConnection { launchBillingFlow(activity, sku, offer) }
         } catch (e: CancellationException) {
@@ -474,7 +474,7 @@ open class BillingManager @Inject constructor(
         }
     }
 
-    suspend fun refresh(): BillingData {
+    open suspend fun refresh(): BillingData {
         log(TAG) { "refresh()" }
         // Query in the caller's context and return the result directly, so callers get the fresh
         // purchases (and any billing error) with a real happens-before instead of racing the shared
@@ -486,7 +486,7 @@ open class BillingManager @Inject constructor(
 
     // Strict SUBS-only query for the pre-purchase subscription gate: unlike refresh(), a failure here
     // propagates (user-friendly-mapped) instead of being masked by the other product type.
-    suspend fun querySubscriptions(): Collection<Purchase> = try {
+    open suspend fun querySubscriptions(): Collection<Purchase> = try {
         useConnection { querySubscriptions() }
     } catch (e: CancellationException) {
         throw e
