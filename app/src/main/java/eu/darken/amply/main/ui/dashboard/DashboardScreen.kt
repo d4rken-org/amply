@@ -318,6 +318,12 @@ fun DashboardScreen(
                             )
                         }
                     }
+                    // Outside the contributionWanted block: an unsupported device we want no
+                    // contribution data from still gets the promo, same as a supported one. The two
+                    // branches are mutually exclusive, so the item key stays unique.
+                    if (shouldShowUpgradePromo(state.upgrade)) {
+                        item(key = "dashboard.upgrade") { UpgradePromoCard(onUpgrade = onUpgrade) }
+                    }
                 } else {
                     // Promote the widget/tile shortcuts only once setup is done (the setup guide above
                     // has disappeared) and while at least one shortcut is still undiscovered.
@@ -334,6 +340,9 @@ fun DashboardScreen(
                                 widgetAdded = state.quickAccess.widgetAdded,
                                 tileAdded = state.quickAccess.tileAdded,
                                 tileRequestPending = state.tileRequestPending,
+                                // Same settled-and-not-Pro condition as the promo card below: an
+                                // unsettled entitlement badges nothing.
+                                showProBadge = shouldShowUpgradePromo(state.upgrade),
                                 onPinWidget = onPinWidget,
                                 onAddTile = onAddTile,
                                 onDismiss = onDismissQuickAccess,

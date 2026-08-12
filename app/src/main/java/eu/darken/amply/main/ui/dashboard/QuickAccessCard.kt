@@ -46,6 +46,9 @@ fun QuickAccessCard(
     widgetAdded: Boolean,
     tileAdded: Boolean,
     tileRequestPending: Boolean,
+    // Settled-and-not-Pro only: an unsettled entitlement would badge the buttons at a paying user on
+    // every cold start, while billing is still connecting.
+    showProBadge: Boolean,
     onPinWidget: () -> Unit,
     onAddTile: () -> Unit,
     onDismiss: () -> Unit,
@@ -86,8 +89,10 @@ fun QuickAccessCard(
                     modifier = Modifier.weight(1f),
                 ) {
                     Text(stringResource(R.string.dashboard_quickaccess_add_widget))
-                    Spacer(Modifier.width(6.dp))
-                    ProBadge()
+                    if (showProBadge) {
+                        Spacer(Modifier.width(6.dp))
+                        ProBadge()
+                    }
                 }
             }
             if (!tileAdded) {
@@ -97,8 +102,10 @@ fun QuickAccessCard(
                     modifier = Modifier.weight(1f),
                 ) {
                     Text(stringResource(R.string.dashboard_quickaccess_add_tile))
-                    Spacer(Modifier.width(6.dp))
-                    ProBadge()
+                    if (showProBadge) {
+                        Spacer(Modifier.width(6.dp))
+                        ProBadge()
+                    }
                 }
             }
         }
@@ -112,6 +119,7 @@ private fun QuickAccessCardPreview() = PreviewWrapper {
         widgetAdded = false,
         tileAdded = false,
         tileRequestPending = false,
+        showProBadge = true,
         onPinWidget = {},
         onAddTile = {},
         onDismiss = {},
@@ -119,7 +127,8 @@ private fun QuickAccessCardPreview() = PreviewWrapper {
     )
 }
 
-// Widget already on the home screen: only the tile action remains, at full width.
+// Widget already on the home screen: only the tile action remains, at full width. Upgraded, so the
+// remaining action carries no badge.
 @AmplyPreview
 @Composable
 private fun QuickAccessCardWidgetAddedPreview() = PreviewWrapper {
@@ -127,6 +136,7 @@ private fun QuickAccessCardWidgetAddedPreview() = PreviewWrapper {
         widgetAdded = true,
         tileAdded = false,
         tileRequestPending = false,
+        showProBadge = false,
         onPinWidget = {},
         onAddTile = {},
         onDismiss = {},

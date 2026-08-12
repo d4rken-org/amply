@@ -53,6 +53,7 @@ import eu.darken.amply.main.ui.battery.ChargeTeaserState
 import eu.darken.amply.main.ui.dashboard.DashboardScreen
 import eu.darken.amply.main.ui.dashboard.DashboardViewModel
 import eu.darken.amply.main.ui.dashboard.shouldMonitorAccess
+import eu.darken.amply.main.ui.dashboard.shouldShowUpgradePromo
 import eu.darken.amply.main.ui.onboarding.OnboardingScreen
 import eu.darken.amply.main.ui.settings.AcknowledgementsScreen
 import eu.darken.amply.main.ui.settings.ChargingHistorySettingsScreen
@@ -368,6 +369,9 @@ class MainActivity : ComponentActivity() {
                             // The settings entry is the status view: an existing purchaser opening it
                             // must not be bounced straight back out by the pitch's auto-dismiss.
                             isPro = state.upgrade?.isPro == true,
+                            // Badging is settled-aware, unlike the row's own Active/Free subtitle:
+                            // an unresolved entitlement must not badge a gated row at a purchaser.
+                            showProBadge = shouldShowUpgradePromo(state.upgrade),
                             onUpgrade = { enterUpgrade(SettingsDestination.SETTINGS, true) },
                             onGeneral = { destination = SettingsDestination.GENERAL },
                             gestureEnabled = state.quickFullChargeEnabled,
@@ -487,6 +491,7 @@ class MainActivity : ComponentActivity() {
                             readout = state.batteryReadout,
                             captureEnabled = state.stats.enabled,
                             teaser = ChargeTeaserState.from(state.stats, state.batteryReadout),
+                            showProBadge = shouldShowUpgradePromo(state.upgrade),
                             onBack = { destination = SettingsDestination.DASHBOARD },
                             onOpenHistory = { destination = SettingsDestination.CHARGE_HISTORY },
                             // Enable-only: turning recording back off lives in Settings › Charging history.

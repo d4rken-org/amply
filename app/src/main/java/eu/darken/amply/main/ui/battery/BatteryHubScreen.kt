@@ -55,6 +55,9 @@ fun BatteryHubScreen(
     readout: BatteryReadout?,
     captureEnabled: Boolean,
     teaser: ChargeTeaserState,
+    // Only badge the opt-in once the entitlement is settled and free — a paying user must not see it
+    // flash while billing connects.
+    showProBadge: Boolean,
     onBack: () -> Unit,
     onOpenHistory: () -> Unit,
     onEnableCapture: () -> Unit,
@@ -94,7 +97,7 @@ fun BatteryHubScreen(
             // Gated on the authoritative preference, not on the teaser: the opt-in is a one-time
             // prompt, so it disappears for good the moment recording is on.
             if (!captureEnabled) {
-                item { CaptureOptInCard(onEnable = onEnableCapture) }
+                item { CaptureOptInCard(onEnable = onEnableCapture, showProBadge = showProBadge) }
             }
             // The charge section sits above the raw readout: "how is this charge going" is the question
             // that brings most visits here, and the readout below is reference material. With recording
@@ -261,6 +264,7 @@ private fun BatteryHubScreenLivePreview() = PreviewWrapper {
         readout = previewCharging,
         captureEnabled = true,
         teaser = ChargeTeaserState.Live(previewLiveSession),
+        showProBadge = false,
         onBack = {},
         onOpenHistory = {},
         onEnableCapture = {},
@@ -278,6 +282,7 @@ private fun BatteryHubScreenLastPreview() = PreviewWrapper {
         ),
         captureEnabled = true,
         teaser = ChargeTeaserState.Last(previewLastSession),
+        showProBadge = false,
         onBack = {},
         onOpenHistory = {},
         onEnableCapture = {},
@@ -294,6 +299,24 @@ private fun BatteryHubScreenCaptureOffPreview() = PreviewWrapper {
         readout = previewCharging,
         captureEnabled = false,
         teaser = ChargeTeaserState.CaptureOff,
+        showProBadge = true,
+        onBack = {},
+        onOpenHistory = {},
+        onEnableCapture = {},
+        onOpenSession = {},
+    )
+}
+
+@AmplyPreview
+@Composable
+private fun BatteryHubScreenCaptureOffProPreview() = PreviewWrapper {
+    // Same card for an upgraded user (or before the entitlement has settled): no Pro badge on the
+    // opt-in action.
+    BatteryHubScreen(
+        readout = previewCharging,
+        captureEnabled = false,
+        teaser = ChargeTeaserState.CaptureOff,
+        showProBadge = false,
         onBack = {},
         onOpenHistory = {},
         onEnableCapture = {},
@@ -317,6 +340,7 @@ private fun BatteryHubScreenSparsePreview() = PreviewWrapper {
         ),
         captureEnabled = true,
         teaser = ChargeTeaserState.None,
+        showProBadge = false,
         onBack = {},
         onOpenHistory = {},
         onEnableCapture = {},
@@ -333,6 +357,7 @@ private fun BatteryHubScreenLargeFontPreview() = PreviewWrapper {
         readout = previewCharging.copy(technology = "Li-ion polymer (high voltage)"),
         captureEnabled = true,
         teaser = ChargeTeaserState.Last(previewLastSession),
+        showProBadge = false,
         onBack = {},
         onOpenHistory = {},
         onEnableCapture = {},

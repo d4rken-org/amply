@@ -32,6 +32,9 @@ import eu.darken.amply.upgrade.ui.ProBadge
 @Composable
 fun CaptureOptInCard(
     onEnable: () -> Unit,
+    // Settled-and-not-Pro only: an unsettled entitlement would badge the button at a paying user on
+    // every cold start, while billing is still connecting.
+    showProBadge: Boolean,
     modifier: Modifier = Modifier,
 ) {
     AmplyCard(
@@ -51,8 +54,10 @@ fun CaptureOptInCard(
         )
         Button(onClick = onEnable, modifier = Modifier.align(Alignment.End)) {
             Text(stringResource(R.string.stats_capture_optin_action))
-            Spacer(Modifier.width(6.dp))
-            ProBadge()
+            if (showProBadge) {
+                Spacer(Modifier.width(6.dp))
+                ProBadge()
+            }
         }
     }
 }
@@ -60,5 +65,12 @@ fun CaptureOptInCard(
 @AmplyPreview
 @Composable
 private fun CaptureOptInCardPreview() = PreviewWrapper {
-    CaptureOptInCard(onEnable = {})
+    CaptureOptInCard(onEnable = {}, showProBadge = true)
+}
+
+// Upgraded (or the entitlement not settled yet): the action carries no badge.
+@AmplyPreview
+@Composable
+private fun CaptureOptInCardProPreview() = PreviewWrapper {
+    CaptureOptInCard(onEnable = {}, showProBadge = false)
 }

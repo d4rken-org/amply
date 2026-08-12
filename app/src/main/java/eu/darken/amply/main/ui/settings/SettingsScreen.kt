@@ -38,6 +38,9 @@ import eu.darken.amply.upgrade.ui.brandTitleText
 fun SettingsScreen(
     onBack: () -> Unit,
     isPro: Boolean,
+    // Settled-and-not-Pro, which is NOT just `!isPro`: an entitlement that hasn't resolved yet must
+    // not badge gated rows at a paying user on cold start.
+    showProBadge: Boolean,
     onUpgrade: () -> Unit,
     onGeneral: () -> Unit,
     gestureEnabled: Boolean,
@@ -128,7 +131,7 @@ fun SettingsScreen(
                     onClick = onChargingHistory,
                     // The row itself stays open to everyone: turning recording *off*, and the
                     // retention window for data already recorded, must never sit behind the gate.
-                    trailingContent = { if (!isPro) ProBadge() },
+                    trailingContent = { if (showProBadge) ProBadge() },
                 )
             }
             item { SettingsDivider() }
@@ -205,6 +208,7 @@ private fun SettingsScreenPreview() = PreviewWrapper {
     SettingsScreen(
         onBack = {},
         isPro = false,
+        showProBadge = true,
         onUpgrade = {},
         onGeneral = {},
         gestureEnabled = true,
@@ -228,6 +232,7 @@ private fun SettingsScreenUpgradedPreview() = PreviewWrapper {
     SettingsScreen(
         onBack = {},
         isPro = true,
+        showProBadge = false,
         onUpgrade = {},
         onGeneral = {},
         gestureEnabled = true,
