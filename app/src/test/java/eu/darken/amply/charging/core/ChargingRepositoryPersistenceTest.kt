@@ -18,6 +18,7 @@ import eu.darken.amply.charging.core.access.ShizukuSettingsBackend
 import eu.darken.amply.charging.core.access.shizuku.ShizukuController
 import eu.darken.amply.charging.core.access.shizuku.ShizukuInstallationDetector
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
+import eu.darken.amply.charging.core.adapter.GrapheneOsChargingAdapter
 import eu.darken.amply.charging.core.adapter.LineageChargingAdapter
 import eu.darken.amply.charging.core.adapter.LineageLabAdapter
 import eu.darken.amply.charging.core.adapter.OnePlusChargingAdapter
@@ -103,6 +104,7 @@ class ChargingRepositoryPersistenceTest {
                 context = context,
                 lineage = LineageChargingAdapter(LineageSettingsClient(context)),
                 lineageLab = LineageLabAdapter(),
+                grapheneOs = GrapheneOsChargingAdapter(),
                 pixel = PixelChargingAdapter(),
                 samsungModern = SamsungModernChargingAdapter(),
                 samsungLegacy = SamsungLegacyChargingAdapter(),

@@ -20,6 +20,7 @@ class AdapterMutationDomainTest {
 
     private val adapters = listOf(
         PixelChargingAdapter(),
+        GrapheneOsChargingAdapter(),
         SamsungModernChargingAdapter(),
         SamsungLegacyChargingAdapter(),
         XiaomiChargingAdapter(),

@@ -116,6 +116,7 @@
     <string name="adapter_name_oneplus">OnePlus/Oppo/Realme (diagnostics)</string>
     <string name="adapter_name_oplus_protection">ColorOS charging protection</string>
     <string name="adapter_name_lineageos">LineageOS charging control</string>
+    <string name="adapter_name_grapheneos">GrapheneOS charge limit</string>
 
     <!-- Adapter support detail (why a device is or isn\'t controllable) -->
     <string name="adapter_detail_requires_pixel">Requires a supported Google Pixel phone</string>
@@ -134,6 +135,9 @@
     <string name="adapter_detail_xiaomi_ready">Xiaomi charging protection detected; changes apply immediately</string>
     <string name="adapter_detail_requires_oplus">Requires a OnePlus, Oppo, or Realme device on ColorOS 15</string>
     <string name="adapter_detail_oplus_ready">ColorOS charging protection detected; control requires Shizuku</string>
+    <string name="adapter_detail_requires_grapheneos">Requires GrapheneOS</string>
+    <string name="adapter_detail_grapheneos_no_key">GrapheneOS detected, but its charge-limit setting is not present on this build</string>
+    <string name="adapter_detail_grapheneos_ready">GrapheneOS charge limit detected — changes take effect when the charger is reconnected</string>
     <string name="adapter_detail_requires_lineageos">Requires a qualified LineageOS device</string>
     <string name="adapter_detail_lineageos_no_provider">LineageOS charging control is not available on this build</string>
     <string name="adapter_detail_lineageos_ready">LineageOS charging control detected; control requires Shizuku</string>
