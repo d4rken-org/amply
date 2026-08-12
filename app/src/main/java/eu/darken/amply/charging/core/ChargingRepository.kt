@@ -304,8 +304,10 @@ class ChargingRepository @Inject constructor(
         // Plug-latched adapters: capture plug state BEFORE the write — it decides whether this write
         // can take effect now (unplugged: the very next plug session samples it) or must wait for a
         // replug. Null = plug state unreadable; treated as plugged, never claiming an effect that may
-        // not exist.
-        val pluggedAtWrite: Boolean? = if (adapter.policyLatchesAtPlug) {
+        // not exist. Re-sampled AFTER the write below: a plug landing between this sample and the
+        // write's effect latches the OLD value, so "written unplugged" is only claimed when both
+        // samples agree.
+        val pluggedBeforeWrite: Boolean? = if (adapter.policyLatchesAtPlug) {
             batteryReader.read().plugged?.let { it != 0 }
         } else {
             null
@@ -337,7 +339,14 @@ class ChargingRepository @Inject constructor(
         }
 
         // The physical write committed. Record it durably even under cancellation (the setting already
-        // changed), and never strand busy=true nor lose the fact that the write landed.
+        // changed), and never strand busy=true nor lose the fact that the write landed. Unplugged is
+        // only trusted when the samples on BOTH sides of the write agree (see pluggedBeforeWrite).
+        val pluggedAtWrite: Boolean? = if (adapter.policyLatchesAtPlug) {
+            val after = runCatching { batteryReader.read().plugged?.let { it != 0 } }.getOrNull()
+            if (pluggedBeforeWrite == false && after == false) false else true
+        } else {
+            null
+        }
         val now = System.currentTimeMillis()
         withContext(NonCancellable) { preferences.recordRequested(policy, persistent, now, plugged = pluggedAtWrite) }
         return try {
@@ -617,6 +626,13 @@ internal fun computeRefreshPending(
     if (reqPolicy == null || reqAt <= 0L) return null
     if (observation is ChargeObservation.Unsupported || observation is ChargeObservation.NeedsSetup) return null
     if (policyLatchesAtPlug) {
+        // A configured readback that no longer matches the request is a native/competing change that
+        // has already taken effect (the native toggle applies live on these ROMs) — the request is
+        // obsolete and must not keep demanding a replug. Same for a readable-but-unrecognized value,
+        // which a session start refuses on. A MATCHING readback proves only configuration and never
+        // resolves — that is the whole point of this arm.
+        if (observation is ChargeObservation.Verified && observation.policy != reqPolicy) return null
+        if (observation is ChargeObservation.Unknown && observation.unrecognizedValue) return null
         // No clock guard: a backwards wall-clock jump only disables the watermark comparison (rule 2)
         // until a fresh unplug is observed — clearing here would claim "applied" without evidence,
         // which is the one error this state exists to prevent. Live evidence (rules 3–5) is unaffected.

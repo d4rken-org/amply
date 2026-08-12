@@ -210,11 +210,12 @@ class ChargingSyncReadTest {
         hardware: ChargeObservation? = null,
         now: Long = t0 + 5_000,
         limitPercent: Int = 80,
+        observation: ChargeObservation = verified(reqPolicy, BackendKind.DIRECT_WSS), // matching config
     ) = computeRefreshPending(
         reqPolicy = reqPolicy,
         reqAt = t0,
         now = now,
-        observation = verified(reqPolicy, BackendKind.DIRECT_WSS), // readback always confirms the config
+        observation = observation,
         hardware = hardware,
         verification = VerificationStrategy.SYNC_READBACK,
         policyLatchesAtPlug = true,
@@ -307,6 +308,25 @@ class ChargingSyncReadTest {
     @Test
     fun `latched backwards clock keeps pending rather than claiming applied`() {
         latched(now = t0 - 1) shouldBe PendingRequest(other, t0, awaitingReplug = true)
+    }
+
+    @Test
+    fun `latched pending clears when a competing native change is configured`() {
+        // The native toggle applies live on these ROMs: a readback verifying a DIFFERENT policy
+        // means the request is obsolete and must not keep demanding a replug.
+        latched(observation = verified(target, BackendKind.DIRECT_WSS)) shouldBe null
+    }
+
+    @Test
+    fun `latched pending clears on an unrecognized configured value`() {
+        latched(observation = unrecognized()) shouldBe null
+    }
+
+    @Test
+    fun `latched matching readback never resolves on its own`() {
+        // Configuration is exactly what a matching readback proves — and exactly not enough.
+        latched(observation = verified(other, BackendKind.SHIZUKU)) shouldBe
+            PendingRequest(other, t0, awaitingReplug = true)
     }
 
     private class FakeBackend(override val kind: BackendKind) : AccessBackend {

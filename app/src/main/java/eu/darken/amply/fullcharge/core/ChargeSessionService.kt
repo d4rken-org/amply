@@ -358,10 +358,12 @@ class ChargeSessionService : Service() {
                 }
                 SessionDecision.MARK_DISCONNECTED -> {
                     if (assessment != null) interruptionAssessor.onSessionDecision(assessment, decision)
-                    manager.markDisconnected(System.currentTimeMillis())
-                    // The plug session that ran the old policy just ended: the session override is
-                    // latched by whichever plug comes next, so its pending-until-replug resolves now.
+                    // Watermark FIRST: the plug session that ran the old policy just ended, so the
+                    // override's pending-until-replug resolves now. If the process dies between
+                    // these two writes, a re-delivered MARK_DISCONNECTED re-runs both; the reverse
+                    // order could lose the unplug evidence to a replug-side clear.
                     preferences.recordUnpluggedSeen()
+                    manager.markDisconnected(System.currentTimeMillis())
                     startAsForeground(
                         SessionNotifications.session(this, connected = true, graceWindow = true),
                     )
@@ -386,6 +388,9 @@ class ChargeSessionService : Service() {
                 }
                 SessionDecision.CONTINUE -> {
                     if (assessment != null) interruptionAssessor.onSessionDecision(assessment, decision)
+                    // A restarted process resuming mid-grace has no expiry nudge yet; without one an
+                    // expired window would wait for the next 30s poll before restoring.
+                    if (session.disconnectedAtMillis != null && !plugged) scheduleGraceExpiry()
                     startAsForeground(
                         SessionNotifications.session(
                             this,

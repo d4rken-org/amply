@@ -130,6 +130,12 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
     (`adapter_detail_grapheneos_no_key`), and `read()` refuses (`unrecognizedValue`) so a session never clobbers it.
   - **State 4 below the limit unverified** — evidence was sampled at the 80% hold; if the ROM reports 4 only while
     holding, a FixedLimit pending clears late (at the hold) instead of instantly. Cosmetic.
+  - **A plugged restore configures but cannot enforce** — restore-at-100%, the 24h safety timeout,
+    manual restore, and a plugged boot recovery all write the protective value while a plug session
+    is running; the ROM won't enforce it until the next replug, and no code path can change that
+    (mid-session writes are ignored by design). Amply's state is correct — config protective,
+    session/recovery closed, pending-until-replug hint shown — and the exposure is one charge cycle,
+    bounded by the plug session the user is already in. Deliberately NOT treated as a defect.
   - **Wireless charging and secondary users**: NOT RUN (gated to system user).
   - Sessions/boot-recovery/R8 smoke on real GrapheneOS hardware: pending the test build posted to issue #49.
 - **Xiaomi** — adaptive hardware enforcement of external writes unconfirmed; treat the adapter as provisional until

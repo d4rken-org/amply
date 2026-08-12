@@ -143,6 +143,11 @@ class FullChargeStore @Inject constructor(
         sessionValue.update { it?.copy(disconnectedAtMillis = null, overrideAwaitingReplug = false) }
     }
 
+    /** Post-write reconciliation of the awaiting-replug hint (see ChargeSessionManager.begin). */
+    suspend fun setOverrideAwaitingReplug(awaiting: Boolean) {
+        sessionValue.update { it?.copy(overrideAwaitingReplug = awaiting) }
+    }
+
     /** Adopt the current process as the session's owner and flag CONNECTED in a single atomic edit. */
     suspend fun markConnectedAndAdopt(provenance: WorkProvenance) {
         sessionValue.update { it?.copy(connectedSeen = true, provenance = provenance) }

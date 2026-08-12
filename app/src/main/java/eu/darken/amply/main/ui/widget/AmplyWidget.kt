@@ -217,10 +217,12 @@ private fun statusLine(
     requestedTarget: ChargePolicy?,
 ): String {
     if (sessionActive) {
-        return if (settling) {
-            context.getString(R.string.widget_status_charging_waiting)
-        } else {
-            context.getString(R.string.widget_status_charging_once)
+        return when {
+            settling -> context.getString(R.string.widget_status_charging_waiting)
+            // Plug-latched adapters: the session exists but its override hasn't latched — claiming
+            // "charging to 100% once" would be false until the user re-seats the cable.
+            awaitingReplug -> context.getString(R.string.widget_status_charging_replug)
+            else -> context.getString(R.string.widget_status_charging_once)
         }
     }
     if (settling) {

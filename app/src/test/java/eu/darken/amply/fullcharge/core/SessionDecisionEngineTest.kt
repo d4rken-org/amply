@@ -153,11 +153,17 @@ class SessionDecisionEngineTest {
     }
 
     @Test
-    fun `replug after expiry is still marked when the session survived`() {
-        // The window is only enforced by unplugged evaluations; a late replug that reaches a live
-        // session means the override latched — continuing (to restore at 100%) is the safe outcome.
+    fun `replug after expiry restores instead of resuming a stale session`() {
+        // The latch already happened at the physical plug event either way; honoring the persisted
+        // bound closes the session with a protective config rather than resuming hours later.
         decideGrace(age = 10_000 + grace * 3, plugged = true, disconnectedAt = started + 10_000) shouldBe
-            SessionDecision.MARK_REPLUGGED
+            SessionDecision.RESTORE_DISCONNECTED
+    }
+
+    @Test
+    fun `replug with a backwards clock also restores`() {
+        decideGrace(age = 9_000, plugged = true, disconnectedAt = started + 10_000) shouldBe
+            SessionDecision.RESTORE_DISCONNECTED
     }
 
     @Test

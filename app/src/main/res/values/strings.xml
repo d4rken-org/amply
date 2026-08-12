@@ -531,6 +531,7 @@
     <string name="widget_button_full_once" formatted="false">1×100%</string>
     <string name="widget_status_charging_waiting" formatted="false">Charging to 100% · waiting…</string>
     <string name="widget_status_charging_once" formatted="false">Charging to 100% once</string>
+    <string name="widget_status_charging_replug" formatted="false">1×100% · replug to start</string>
     <string name="widget_status_waiting_suffix">%1$s · waiting for system…</string>
     <string name="widget_status_replug_suffix">%1$s · replug to apply</string>
     <string name="widget_label_limited">Limited to %1$d%%</string>

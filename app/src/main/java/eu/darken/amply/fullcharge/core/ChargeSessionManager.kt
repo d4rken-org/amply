@@ -100,6 +100,12 @@ class ChargeSessionManager @Inject constructor(
         )
         val result = repository.applyTemporary(overridePolicy)
         if (result.success) {
+            // Reconcile the persist-first conservative flag with the repository's authoritative
+            // post-write computation (it re-samples plug state around the write), so the session
+            // notification and the dashboard's pending hint can never disagree. Best-effort: a
+            // failure here leaves the conservative flag, which errs toward showing the hint.
+            val awaiting = repository.state.value.pending?.awaitingReplug == true
+            runCatching { sessionStore.setOverrideAwaitingReplug(awaiting) }
             result
         } else {
             // A two-key OEM transition can partially succeed. Keep recovery state unless the

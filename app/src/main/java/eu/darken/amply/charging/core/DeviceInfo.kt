@@ -2,6 +2,7 @@ package eu.darken.amply.charging.core
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.UserManager
@@ -70,12 +71,16 @@ data class DeviceInfo(
                 runCatching { it.packageManager.hasSystemFeature(FEATURE_LINEAGE_OS) }
                     .getOrDefault(false)
             } ?: false,
-            // GrapheneOS identity via its core system packages (see isGrapheneOs). getPackageInfo
+            // GrapheneOS identity via its core system packages (see isGrapheneOs). getApplicationInfo
             // needs the <queries> package entries but no permission; any one package suffices, so a
-            // renamed or slimmed component doesn't break detection. Fail closed.
+            // renamed or slimmed component doesn't break detection. The FLAG_SYSTEM check keeps a
+            // user-installed APK squatting on the name from spoofing ROM identity. Fail closed.
             hasGrapheneOsPackages = context?.let { ctx ->
                 GRAPHENEOS_PACKAGES.any { pkg ->
-                    runCatching { ctx.packageManager.getPackageInfo(pkg, 0) }.isSuccess
+                    runCatching {
+                        val flags = ctx.packageManager.getApplicationInfo(pkg, 0).flags
+                        flags and (ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+                    }.getOrDefault(false)
                 }
             } ?: false,
             hasProtectBattery = context?.let {

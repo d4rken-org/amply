@@ -104,8 +104,16 @@ object SessionDecisionEngine {
                     SessionDecision.RESTORE_DISCONNECTED
                 else -> SessionDecision.CONTINUE
             }
+            // A replug only continues the session INSIDE the persisted window. A later replug (e.g.
+            // the process was dead through expiry) has already latched whatever the key held — no
+            // decision can affect the running plug session — so honoring the expired bound by
+            // restoring is the conservative end state: config protective, session closed.
             session.connectedSeen && plugged && session.disconnectedAtMillis != null ->
-                SessionDecision.MARK_REPLUGGED
+                if (nowMillis - session.disconnectedAtMillis in 0 until replugGraceMillis) {
+                    SessionDecision.MARK_REPLUGGED
+                } else {
+                    SessionDecision.RESTORE_DISCONNECTED
+                }
             !session.connectedSeen && plugged -> SessionDecision.MARK_CONNECTED
             !session.connectedSeen && !plugged && age >= armTimeoutMillis ->
                 SessionDecision.RESTORE_ARM_TIMEOUT
