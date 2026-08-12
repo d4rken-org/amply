@@ -43,4 +43,8 @@ object Versions {
     object Kotest {
         const val core = "5.9.1"
     }
+
+    object Mockk {
+        const val core = "1.14.9"
+    }
 }
