@@ -103,3 +103,31 @@ sealed interface ChargingCardPresentation {
         }
     }
 }
+
+/** How fast the battery is being charged, for the card's headline. */
+enum class ChargingSpeed {
+    SLOW,
+    NORMAL,
+    FAST,
+    VERY_FAST,
+}
+
+/**
+ * Buckets a measured charge power, or `null` when there is no figure to classify — an unknown speed
+ * is not a normal one, and the caller falls back to the plain "Charging" headline.
+ *
+ * The SLOW and FAST bars are AOSP SettingsLib's own bucket values (`config_chargingSlowlyThreshold`
+ * 5 W / `config_chargingFastThreshold` 7.5 W), applied here to the *measured* draw rather than to the
+ * charger-advertised maximum AOSP uses — the measurement is what the battery actually receives, and it
+ * is the number shown one line below the headline. VERY_FAST at 15 W is Amply's own, twice the AOSP
+ * fast bar, so the modern 20 W+ chargers that would otherwise all read "fast" are distinguishable.
+ */
+fun chargingSpeed(milliwatts: Int?): ChargingSpeed? {
+    if (milliwatts == null || milliwatts <= 0) return null
+    return when {
+        milliwatts < 5_000 -> ChargingSpeed.SLOW
+        milliwatts > 15_000 -> ChargingSpeed.VERY_FAST
+        milliwatts > 7_500 -> ChargingSpeed.FAST
+        else -> ChargingSpeed.NORMAL
+    }
+}

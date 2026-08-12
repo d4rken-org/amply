@@ -1,4 +1,4 @@
-package eu.darken.amply.main.ui.dashboard
+package eu.darken.amply.battery.ui
 
 import android.os.BatteryManager
 import eu.darken.amply.battery.core.BatteryReadout
