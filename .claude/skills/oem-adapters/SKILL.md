@@ -90,6 +90,34 @@ states v1 can restore exactly (a supported fixed limit, or Unrestricted); AUTO/C
 an absent/malformed `enabled` decode to `Unknown(unrecognizedValue=true)` so a temporary session refuses rather than
 clobbering the user's native choice. Verified devices + coverage: see the qualification ledger (`device-qualification` skill).
 
+## GrapheneOS Adapter
+
+One live adapter (`grapheneos-chargelimit-v1`) for GrapheneOS's own "Limit to 80%" (Settings → Battery → Charging
+optimization). **ROM-identity adapter, ordered after the Lineage pair and BEFORE `pixel`** in `AdapterRegistry` —
+GrapheneOS ships only on Pixels, and the Pixel probe (any Google/Pixel*) would otherwise swallow the device as a
+matched-but-diagnostics-only stock Pixel. Gate: `DeviceInfo.isGrapheneOs` (core `app.grapheneos.*` packages via
+PackageManager `<queries>` — NO property/feature/fingerprint marker exists; verified empty on a real device) +
+`hasBatteryChargeLimit` (world-readable key presence — the capability signal, deliberately NOT part of identity) +
+system user. No lab adapter: a GrapheneOS build without the key stays on this adapter as diagnostics-only with
+`contributionWanted`.
+
+Single key `global battery_charge_limit`: `1` = fixed 80% cap (bypass charging; hard-wired, no threshold key) →
+`FixedLimit(80)`, `0` = off → `Unrestricted`; absent/other → `Unknown(unrecognizedValue=true)` (factory-absent
+semantics unverified — refuse, don't guess). WSS-writable, **no Shizuku**. SYNC_READBACK with read-back equality;
+session override = Unrestricted; protective default = FixedLimit(80); `reapply == apply` (no observer-poke — see
+below); reconnect gesture **unsupported** (structurally: the gesture's override write lands strictly after the
+replug broadcast, which the ROM has already sampled past).
+
+**The defining quirk: `policyLatchesAtPlug = true`.** GrapheneOS samples the key only at plug-session start; an
+external write updates the Settings UI live but has no hardware effect until the next unplug→replug (the native
+toggle applies live because Settings pokes the charging service directly — so the session watcher's
+cancel-without-restore on an observed external change stays correct). This drives the pending-until-replug
+verification state and the session engine's 30s replug grace window (see `rules/architecture.md`). While enforcing,
+the device reports stock-Pixel hardware state 4 (`EXTRA_CHARGING_STATUS`), which the adapter's own `decodeHardware`
+maps to `Verified(FixedLimit(80), BATTERY_HARDWARE)` — deliberately not shared with the Pixel decode, which also
+maps state 5 to an Adaptive profile this adapter cannot restore. Remote qualification (issue #49): see the
+`device-qualification` skill.
+
 ## Pixel Adapter
 
 Writes **only** two secure settings:

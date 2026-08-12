@@ -38,9 +38,9 @@ for get / put / WSS grant / diagnostic snapshots. Hard rules:
   the allowlist without an explicit, reviewed reason.
 - Every writable key carries an explicit **per-key value domain** (`SettingWritePolicy`) — the boundary itself
   rejects out-of-domain values. The Samsung keys (`global protect_battery`, `global battery_protection_threshold`),
-  the Xiaomi key (`secure security_pc_secure_protect_mode_key`), and the Oplus keys (`system
-  regular_charge_protection_switch_state`, `system smart_charge_protection_switch_state`) are all **live** on gated
-  devices (see Capability Gates).
+  the Xiaomi key (`secure security_pc_secure_protect_mode_key`), the Oplus keys (`system
+  regular_charge_protection_switch_state`, `system smart_charge_protection_switch_state`), and the GrapheneOS key
+  (`global battery_charge_limit`) are all **live** on gated devices (see Capability Gates).
 
 ## Capability Gates
 
@@ -86,6 +86,32 @@ model-scoped), and the system user. Use `ro.mi.os.version.code`, NOT the frozen 
 assumptions: the feature is treated as present on any HyperOS 2 device (a device lacking it reads the key
 absent → a harmless false claim of control), and daemon-level enforcement of external writes is pending
 long-term observation (see Known gaps below).
+
+### GrapheneOS
+
+GrapheneOS control requires **all** of: GrapheneOS identity (`DeviceInfo.isGrapheneOs` — resolved from the OS's
+core `app.grapheneos.*` packages via PackageManager `<queries>` entries; **no** graphene property, system feature,
+or fingerprint marker exists, verified on a real device), a present world-readable `global battery_charge_limit`
+key (the capability signal — GrapheneOS ships the toggle exactly where its implementation works), and the system
+user. Identity is deliberately **not** OR-ed with key presence: the adapter is registered ahead of the Pixel
+adapter, and a future stock Pixel shipping a same-named key must not be swallowed as GrapheneOS.
+
+The key is binary (`1` = fixed 80% cap with bypass charging, `0` = off) and WSS-writable — **no Shizuku needed**.
+The defining quirk is **`policyLatchesAtPlug`**: the ROM samples the key only at plug-session start, so an external
+write reads back correctly but has no hardware effect until the next unplug→replug (the native Settings toggle
+applies live because Settings pokes the charging service directly). Three mechanisms handle this — the
+pending-until-replug verification state (condition-based, no settling clock), the session engine's 30s replug grace
+window (a disconnect during a session opens a window instead of restoring, so the user's replug latches the
+override rather than a premature restore), and `reapply == apply` (no observer to re-trigger). While enforcing, the
+device reports the stock-Pixel hardware signal (`EXTRA_CHARGING_STATUS` = 4), which the adapter decodes for real
+enforcement evidence. The reconnect gesture is unsupported — its override write lands strictly after the replug
+broadcast, which the ROM has already sampled past.
+
+Qualification is **remote** (issue #49, Pixel 9 Pro XL `komodo`, GrapheneOS 2026080501 / Android 17): the tester
+physically observed enforcement (held at 80% with the shield and state 4) and the latch behavior. Package
+visibility of `app.grapheneos.*` from app context and the factory-absent key state are still unverified on-device;
+both fail closed (Pixel-adapter diagnostics, or diagnostics + contribution wizard). Record any new evidence in the
+qualification ledger (`device-qualification` skill).
 
 ### LineageOS
 
