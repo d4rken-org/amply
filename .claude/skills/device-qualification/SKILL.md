@@ -116,5 +116,19 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
     battery monitoring across simulated plug/level transitions, and the charge alarm firing at threshold.
 - **Xiaomi** — adaptive hardware enforcement of external writes unconfirmed; treat the adapter as provisional until
   the 80% hold is physically observed.
+  - **HyperOS 3 candidate mapping (contribution report, 2026-08-07 — unqualified, stays diagnostics-only).** A
+    Redmi Note 14 `24117RN76G` (`tanzanite`, Android 16 / SDK 36, `ro.mi.os.version.code=3`, ROM
+    `3.0.302.0.WOGMIXM.C08`) reported via the contribution wizard that the **same key**
+    `secure/security_pc_secure_protect_mode_key` now carries **three** modes: `0` = Charge fully and
+    `1` = Intelligent charging (labels matching HyperOS 2), plus a new `2` = **Battery protection** — apparently a
+    hard-cap mode, which HyperOS 2 lacks entirely. The device correctly fell through to `XiaomiLabAdapter`, and the
+    existing decode treats `2` as `Unknown(unrecognizedValue=true)` (refuse-don't-clobber — the test that pins this
+    was written as a garbage-value guard; `2` is now known to be a real, named OEM mode). This is a settings mapping
+    only: **no behavioral evidence** (the optional effect prompts were skipped), the cap percentage is unknown
+    (modeling mode `2` needs a concrete `FixedLimit` percent), factory/absent-key semantics on HyperOS 3 are
+    unknown, and whether value `2` is HyperOS-3-wide or model-specific is unconfirmed. A full qualification would
+    also need the boundary write domain widened from `{"0","1"}` (`ChargingControlUserService`). The contributor
+    has a working Shizuku setup (clean three-namespace, three-mode capture) — a strong candidate for a follow-up
+    qualification run; the report thread is in support mail ("Amply device-support discovery", 2026-08-07).
 - **Pixel** — wireless at-threshold hold/charge-past and the widget under Shizuku-only remain unexercised (both share
   the verified wired mechanism).
