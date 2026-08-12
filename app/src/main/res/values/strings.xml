@@ -9,6 +9,8 @@
     <string name="session_notification_title" formatted="false">Charging to 100% once</string>
     <string name="session_notification_armed">Waiting for a charger</string>
     <string name="session_notification_active">Charge protection returns at 100% or when unplugged.</string>
+    <string name="session_notification_replug">Unplug and replug the charger to start charging fully</string>
+    <string name="session_notification_grace">Plug back in within %1$d seconds to charge fully</string>
     <string name="session_notification_restore">Restore now</string>
     <string name="gesture_channel_name">Reconnect gesture</string>
     <string name="gesture_channel_description" formatted="false">Shows while the reconnect-for-100% gesture is watching for a replug</string>

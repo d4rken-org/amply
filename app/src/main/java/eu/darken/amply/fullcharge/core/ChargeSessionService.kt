@@ -68,6 +68,7 @@ class ChargeSessionService : Service() {
     private val quickGesture = QuickFullChargeGesture()
     private var monitorJob: Job? = null
     private var gestureExpiryJob: Job? = null
+    private var graceExpiryJob: Job? = null
     // Written under the dispatch lock, but read by the battery receiver/monitor loop outside it.
     @Volatile private var recoveryJob: Job? = null
     private var settingObserverRegistered = false
@@ -156,7 +157,7 @@ class ChargeSessionService : Service() {
             log(TAG) { "Starting a one-time full-charge session" }
             // A brand-new session in this process is not an interruption; drop any stale assessment.
             pendingSessionAssessment = null
-            val result = manager.begin()
+            val result = manager.begin(pluggedAtStart = currentPlugged())
             if (!result.success) {
                 log(TAG, Logging.Priority.WARN) { "Unable to start full-charge session: ${result.message}" }
                 if (fullChargeStore.currentSession() != null) SessionNotifications.showRecovery(this)
@@ -275,6 +276,30 @@ class ChargeSessionService : Service() {
         }
     }
 
+    /**
+     * Grace expiry isn't broadcast-driven: while unplugged nothing evaluates between the 30s polls,
+     * so without a nudge an expired window could keep the device unprotected for most of a poll
+     * period. Mirrors the gesture-expiry nudge: scheduled once when the window opens, generation-
+     * bound so a stale nudge can't leak into a later monitoring run.
+     */
+    private fun scheduleGraceExpiry() {
+        if (graceExpiryJob?.isActive == true) return
+        val generation = coordinator.currentGeneration
+        graceExpiryJob = scope.launch {
+            delay(SessionDecisionEngine.REPLUG_GRACE_MILLIS + 500)
+            coordinator.submitEvaluationForGeneration(
+                Evaluation(null, SystemClock.elapsedRealtime()),
+                generation,
+            )
+        }
+    }
+
+    /** Plug state from the sticky battery broadcast; null when it cannot be read right now. */
+    private fun currentPlugged(): Boolean? = runCatching {
+        registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            ?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1)
+    }.getOrNull()?.let { if (it < 0) null else it != 0 }
+
     // Callers must hold the dispatch lock — either via the evaluation consumer or a command handler.
     // observedAtElapsed is when the underlying battery state was seen, not when we process it.
     private suspend fun evaluateBattery(
@@ -306,6 +331,11 @@ class ChargeSessionService : Service() {
                 nowMillis = System.currentTimeMillis(),
                 plugged = plugged,
                 full = full,
+                replugGraceMillis = if (policyLatchesAtPlug) {
+                    SessionDecisionEngine.REPLUG_GRACE_MILLIS
+                } else {
+                    0L
+                },
             )
             when (decision) {
                 SessionDecision.MARK_CONNECTED -> {
@@ -316,6 +346,31 @@ class ChargeSessionService : Service() {
                     } else {
                         manager.markConnected()
                     }
+                    startAsForeground(
+                        SessionNotifications.session(
+                            this,
+                            connected = true,
+                            // Started while already plugged on a plug-latched adapter: this plug
+                            // session still runs the old policy — instruct the replug.
+                            awaitingReplug = session.overrideAwaitingReplug,
+                        ),
+                    )
+                }
+                SessionDecision.MARK_DISCONNECTED -> {
+                    if (assessment != null) interruptionAssessor.onSessionDecision(assessment, decision)
+                    manager.markDisconnected(System.currentTimeMillis())
+                    // The plug session that ran the old policy just ended: the session override is
+                    // latched by whichever plug comes next, so its pending-until-replug resolves now.
+                    preferences.recordUnpluggedSeen()
+                    startAsForeground(
+                        SessionNotifications.session(this, connected = true, graceWindow = true),
+                    )
+                    scheduleGraceExpiry()
+                }
+                SessionDecision.MARK_REPLUGGED -> {
+                    if (assessment != null) interruptionAssessor.onSessionDecision(assessment, decision)
+                    manager.markReplugged()
+                    graceExpiryJob?.cancel()
                     startAsForeground(SessionNotifications.session(this, connected = true))
                 }
                 // Restore is safety-critical and holds the dispatch lock: run it BEFORE any optional
@@ -332,7 +387,12 @@ class ChargeSessionService : Service() {
                 SessionDecision.CONTINUE -> {
                     if (assessment != null) interruptionAssessor.onSessionDecision(assessment, decision)
                     startAsForeground(
-                        SessionNotifications.session(this, connected = plugged || session.connectedSeen),
+                        SessionNotifications.session(
+                            this,
+                            connected = plugged || session.connectedSeen,
+                            awaitingReplug = session.overrideAwaitingReplug && plugged,
+                            graceWindow = session.disconnectedAtMillis != null && !plugged,
+                        ),
                     )
                 }
             }
@@ -526,6 +586,7 @@ class ChargeSessionService : Service() {
         coordinator.close()
         monitorJob?.cancel()
         gestureExpiryJob?.cancel()
+        graceExpiryJob?.cancel()
         unregisterSettingObserver()
         startAsForeground(SessionNotifications.recovering(this))
         recoveryJob = scope.launch {
@@ -603,6 +664,7 @@ class ChargeSessionService : Service() {
         log(TAG) { "Restoring the saved charging policy" }
         restoring = true
         coordinator.close()
+        graceExpiryJob?.cancel()
         unregisterSettingObserver()
         // Read the stable work id before the restore clears the session record, so a later upgrade of
         // a still-pending interruption event can be matched to it (the owner token is not stable).
@@ -701,6 +763,13 @@ class ChargeSessionService : Service() {
     private fun reconnectGestureAvailable() =
         adapterRegistry.select().adapter?.reconnectGestureSupported == true
 
+    // Resolved once per service lifetime: adapter selection is immutable device information, and
+    // per-tick selection is deliberately avoided in the session branch (see the note in
+    // evaluateBattery about DeviceInfo.current()'s cost under the dispatch lock).
+    private val policyLatchesAtPlug by lazy {
+        adapterRegistry.select().adapter?.policyLatchesAtPlug == true
+    }
+
     private fun stopMonitoring() {
         // Drop any un-consumed pickup assessment so it can never leak into a later session/monitor run.
         pendingSessionAssessment = null
@@ -710,6 +779,7 @@ class ChargeSessionService : Service() {
         coordinator.closeAndInvalidate()
         monitorJob?.cancel()
         gestureExpiryJob?.cancel()
+        graceExpiryJob?.cancel()
         quickGesture.reset()
         unregisterSettingObserver()
         stopForeground(STOP_FOREGROUND_REMOVE)
