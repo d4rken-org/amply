@@ -594,4 +594,26 @@
     <string name="stats_charging_type_dock">Dock</string>
     <string name="stats_charging_type_mixed">Mixed</string>
     <string name="stats_charging_type_unknown">Unknown</string>
+
+    <!--
+    Upgrade — shared across both flavors. The tier word itself (app_name_upgrade_postfix) is
+    flavor-specific and lives in src/foss and src/gplay, as does all the per-flavor pitch copy.
+    -->
+    <!-- Composes the app name with its tier word. Both slots are placeholders so the word order and
+         punctuation stay a translator's decision. -->
+    <string name="app_name_upgraded_template">%1$s %2$s</string>
+    <string name="upgrade_loading">Loading…</string>
+    <string name="upgrade_dismiss_action">Dismiss</string>
+    <string name="upgrade_retry_action">Try again</string>
+
+    <!-- Settings row + dashboard promo -->
+    <string name="settings_pro_subtitle_active">Upgrade active — thank you!</string>
+    <string name="settings_pro_subtitle_free">Free version</string>
+    <string name="dashboard_upgrade_title">Unlock the extras</string>
+    <string name="dashboard_upgrade_body">Charge history, the home-screen widget and the Quick Settings tile come with the upgrade. Charge control itself stays free.</string>
+    <string name="dashboard_upgrade_action">Upgrade</string>
+
+    <!-- Tile + widget locked states -->
+    <string name="tile_upgrade_required">Tap to unlock with %1$s</string>
+    <string name="widget_locked_body">Tap to unlock the widget</string>
 </resources>
