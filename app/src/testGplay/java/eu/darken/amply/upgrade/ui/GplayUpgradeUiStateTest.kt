@@ -1,14 +1,12 @@
 package eu.darken.amply.upgrade.ui
 
-import com.android.billingclient.api.ProductDetails
+import com.android.billingclient.api.TestProductDetails
 import eu.darken.amply.upgrade.core.OurSku
 import eu.darken.amply.upgrade.core.UpgradeRepoGplay
 import eu.darken.amply.upgrade.core.billing.SkuDetails
 import eu.darken.amply.upgrade.core.billing.TestPurchases
 import eu.darken.amply.upgrade.core.billing.toBillingData
 import io.kotest.matchers.shouldBe
-import io.mockk.every
-import io.mockk.mockk
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -22,40 +20,19 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class GplayUpgradeUiStateTest {
 
-    private fun subOffer(basePlanId: String, offerId: String?, price: String) =
-        mockk<ProductDetails.SubscriptionOfferDetails>().also {
-            every { it.basePlanId } returns basePlanId
-            every { it.offerId } returns offerId
-            every { it.pricingPhases } returns mockk<ProductDetails.PricingPhases>().also { phases ->
-                every { phases.pricingPhaseList } returns listOf(
-                    mockk<ProductDetails.PricingPhase>().also { phase ->
-                        every { phase.formattedPrice } returns price
-                    },
-                )
-            }
-        }
-
-    private fun subDetails(vararg offers: ProductDetails.SubscriptionOfferDetails) = SkuDetails(
+    private fun subDetails(vararg offers: TestProductDetails.Offer) = SkuDetails(
         sku = OurSku.Sub.PRO_UPGRADE,
-        details = mockk<ProductDetails>().also {
-            every { it.subscriptionOfferDetails } returns offers.toList()
-            every { it.oneTimePurchaseOfferDetails } returns null
-        },
+        details = TestProductDetails.subscription(OurSku.Sub.PRO_UPGRADE.id, offers.toList()),
     )
 
     private fun iapDetails(price: String = "$9.99") = SkuDetails(
         sku = OurSku.Iap.PRO_UPGRADE,
-        details = mockk<ProductDetails>().also {
-            every { it.subscriptionOfferDetails } returns null
-            every { it.oneTimePurchaseOfferDetails } returns
-                mockk<ProductDetails.OneTimePurchaseOfferDetails>().also { offer ->
-                    every { offer.formattedPrice } returns price
-                }
-        },
+        details = TestProductDetails.oneTimePurchase(OurSku.Iap.PRO_UPGRADE.id, price),
     )
 
-    private val baseOffer = subOffer("upgrade-pro-baseplan", null, "$4.99")
-    private val trialOffer = subOffer("upgrade-pro-baseplan", "upgrade-pro-baseplan-trial", "$4.99")
+    private val baseOffer = TestProductDetails.Offer("upgrade-pro-baseplan", null, "$4.99")
+    private val trialOffer =
+        TestProductDetails.Offer("upgrade-pro-baseplan", "upgrade-pro-baseplan-trial", "$4.99")
 
     // region offers
 
@@ -95,7 +72,7 @@ class GplayUpgradeUiStateTest {
         // never showed them.
         toLoadedState(
             iap = iapDetails(),
-            sub = subDetails(baseOffer, subOffer("upgrade-pro-baseplan", null, "$9.99")),
+            sub = subDetails(baseOffer, TestProductDetails.Offer("upgrade-pro-baseplan", null, "$9.99")),
             ownership = Ownership(),
         ).apply {
             subscriptionAction shouldBe SubscriptionAction.UNAVAILABLE

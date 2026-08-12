@@ -47,8 +47,13 @@ import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * `open`, and so are the streams the entitlement layer reads: every one of them originates in Play's
+ * BillingClient, which cannot be stood up in a unit test. Substituting them is the only way to
+ * exercise the entitlement mapping against realistic ownership data.
+ */
 @Singleton
-class BillingManager @Inject constructor(
+open class BillingManager @Inject constructor(
     connectionProvider: BillingConnectionProvider,
 ) {
 
@@ -93,7 +98,7 @@ class BillingManager @Inject constructor(
     // flows just stay quiet during an outage, so consumers need this explicit signal to settle their
     // null seed instead of waiting on a broken connection indefinitely.
     private val failedOnce = MutableStateFlow(false)
-    val isFailureSettled: Flow<Boolean> = failedOnce
+    open val isFailureSettled: Flow<Boolean> = failedOnce
 
     /**
      * Fires once per failed connect-loop iteration: connection setup failure, the mandatory initial
@@ -110,7 +115,7 @@ class BillingManager @Inject constructor(
      * superseded one instead of reopening a closed episode.
      */
     private val connectionFailuresChannel = Channel<Long>(Channel.UNLIMITED)
-    val connectionFailures: Flow<Long> = connectionFailuresChannel.receiveAsFlow()
+    open val connectionFailures: Flow<Long> = connectionFailuresChannel.receiveAsFlow()
 
     // Test seams: these bounds run on real dispatchers, so a virtual-time test cannot advance them.
     internal var initialRefreshTimeoutMs: Long = INITIAL_REFRESH_TIMEOUT_MS
@@ -234,11 +239,11 @@ class BillingManager @Inject constructor(
         .resubscribeOnFailure("purchases-share")
         .shareIn(scope, WhileSubscribed(3000L, 0L), replay = 1)
 
-    val billingData: Flow<BillingData> = purchases
+    open val billingData: Flow<BillingData> = purchases
         .map { it.toBillingData() }
         .shareIn(scope, WhileSubscribed(3000L, 0L), replay = 1)
 
-    val purchaseFailures: Flow<BillingResult> = connectionHolder
+    open val purchaseFailures: Flow<BillingResult> = connectionHolder
         .flatMapLatest { it?.purchaseFailures ?: emptyFlow() }
 
     /**
@@ -249,7 +254,7 @@ class BillingManager @Inject constructor(
      * grace period. Eagerly: the per-connection channel has exactly one consumer — this chain —
      * which must not depend on downstream subscribers.
      */
-    val freshBillingData: Flow<FreshData> = connectionHolder
+    open val freshBillingData: Flow<FreshData> = connectionHolder
         .flatMapLatest { connection ->
             (connection?.freshUpdates ?: emptyFlow())
                 // Inside the flatMapLatest for the same reason as `purchases`: a failure escaping the

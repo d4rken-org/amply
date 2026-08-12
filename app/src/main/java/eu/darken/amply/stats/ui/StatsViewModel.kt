@@ -12,6 +12,7 @@ import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.asLog
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
+import eu.darken.amply.common.flow.SingleEventFlow
 import eu.darken.amply.fullcharge.core.ChargeSessionService
 import eu.darken.amply.stats.core.CaptureServiceHealth
 import eu.darken.amply.stats.core.ChargeCurvePoint
@@ -20,6 +21,8 @@ import eu.darken.amply.stats.core.ChargeStatsRecorder
 import eu.darken.amply.stats.core.ChargeStatsRepository
 import eu.darken.amply.stats.core.StatsPreferences
 import eu.darken.amply.stats.core.StatsRetention
+import eu.darken.amply.upgrade.core.UpgradeRepo
+import eu.darken.amply.upgrade.core.isProForUi
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
@@ -62,8 +65,35 @@ class StatsViewModel @Inject constructor(
     private val repository: ChargeStatsRepository,
     private val recorder: ChargeStatsRecorder,
     private val serviceHealth: CaptureServiceHealth,
+    private val upgradeRepo: UpgradeRepo,
     private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
+
+    /** Emitted when a capture-enable attempt was denied: the caller routes to the upgrade screen. */
+    val upgradeRequiredEvents = SingleEventFlow<Unit>()
+
+    /**
+     * Emitted when the entitlement check passed and enabling may continue. The permission prompt is
+     * deliberately downstream of this: asking for notification access and only then refusing the
+     * feature would be the wrong order to put a user through.
+     */
+    val proceedWithEnableEvents = SingleEventFlow<Unit>()
+
+    /**
+     * Entry point for every "start recording" affordance. Answers with exactly one of the two events
+     * above; it never writes anything itself, because enabling still has to pass through the
+     * activity's notification-permission flow.
+     */
+    fun requestEnableCapture() {
+        viewModelScope.launch {
+            if (upgradeRepo.isProForUi()) {
+                proceedWithEnableEvents.tryEmit(Unit)
+            } else {
+                log(TAG) { "Capture enable denied, routing to the upgrade screen" }
+                upgradeRequiredEvents.tryEmit(Unit)
+            }
+        }
+    }
 
     /**
      * The retention window, for the charging-history settings screen.
@@ -132,9 +162,19 @@ class StatsViewModel @Inject constructor(
      * Enable/disable capture. Enabling is routed through the activity's notification-permission flow
      * first (the always-on service shows a persistent notification). Disabling seals any open session
      * before the service is nudged to re-evaluate and stop.
+     *
+     * Disabling, viewing and clearing are never gated: an entitlement that lapses must not strand a
+     * user's data behind a paywall, and it must not keep a service running they want stopped.
      */
     fun setCaptureEnabled(enabled: Boolean) {
         viewModelScope.launch {
+            // Re-checked here as defense in depth, not as the primary gate: this is the only path
+            // that actually writes the flag, and it is reachable from more than one affordance.
+            if (enabled && !upgradeRepo.isProForUi()) {
+                log(TAG) { "Capture enable denied at the write, routing to the upgrade screen" }
+                upgradeRequiredEvents.tryEmit(Unit)
+                return@launch
+            }
             // Durable state for keep-alive / isEnabled, plus an ordered recorder command that seals
             // any open session on disable before the service is nudged to re-evaluate and stop.
             preferences.setCaptureEnabled(enabled)

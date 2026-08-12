@@ -31,6 +31,9 @@ import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.asLog
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
+import eu.darken.amply.common.flow.SingleEventFlow
+import eu.darken.amply.upgrade.core.UpgradeRepo
+import eu.darken.amply.upgrade.core.isProForUi
 import eu.darken.amply.common.flow.combine as combine6
 import eu.darken.amply.fullcharge.core.ChargeSessionRecord
 import eu.darken.amply.fullcharge.core.ChargeSessionService
@@ -104,7 +107,23 @@ data class DashboardUiState(
     val stats: StatsDashboardState = StatsDashboardState(),
     /** A pending "Amply was interrupted while owing a restore" warning, or null when there is none. */
     val interruption: InterruptionEvent? = null,
+    /**
+     * The Pro entitlement, or null until it has been read at all. Nullable rather than defaulted:
+     * "not upgraded" and "not yet known" have to stay distinguishable, or the promo card would flash
+     * at a paying user on every cold start while billing is still connecting.
+     */
+    val upgrade: UpgradeSnapshot? = null,
 )
+
+/** The two facts the dashboard needs about the entitlement. */
+data class UpgradeSnapshot(
+    val isPro: Boolean,
+    val isSettled: Boolean,
+)
+
+/** The promo card is an ask; it has no business appearing before we know the answer, or after a yes. */
+fun shouldShowUpgradePromo(upgrade: UpgradeSnapshot?): Boolean =
+    upgrade != null && upgrade.isSettled && !upgrade.isPro
 
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
@@ -120,6 +139,7 @@ class DashboardViewModel @Inject constructor(
     private val statsRepository: ChargeStatsRepository,
     private val captureServiceHealth: CaptureServiceHealth,
     private val interruptionStore: InterruptionStore,
+    private val upgradeRepo: UpgradeRepo,
     private val watchers: Set<@JvmSuppressWildcards ChargeMonitorWatcher>,
 ) : ViewModel() {
     private val deviceReport = MutableStateFlow<DeviceSupportReport?>(null)
@@ -128,6 +148,9 @@ class DashboardViewModel @Inject constructor(
     private val notificationsBlocked = MutableStateFlow(false)
     private var lastPinRequestAt = 0L
 
+    /** Emitted when a gated affordance was tapped without the entitlement; the root navigates. */
+    val upgradeRequiredEvents = SingleEventFlow<Unit>()
+
     // The typed combine overloads stop at five flows; the two gesture booleans are pre-combined.
     private val gestureFlags = combine(
         fullChargeStore.quickFullChargeEnabled.flow,
@@ -135,14 +158,25 @@ class DashboardViewModel @Inject constructor(
     ) { enabled, anyLevel -> enabled to anyLevel }
 
     // Grouped so the outer combine keeps one slot each: the live battery readout, the alarm config,
-    // the notifications-blocked flag, and the interrupted-session warning.
+    // the notifications-blocked flag, the interrupted-session warning, and the entitlement.
     private val unprivilegedExtras = combine(
         batteryReadoutSource.readouts(),
         chargeAlarmStore.config,
         notificationsBlocked,
         interruptionStore.event,
-    ) { readout, alarm, blocked, interruption ->
-        UnprivilegedExtras(readout, alarm, blocked, interruption)
+        // Seeded null so the dashboard renders immediately: waiting for the first billing answer
+        // would hold up the whole screen, and the promo card is the only thing that needs it.
+        upgradeRepo.upgradeInfo
+            .map<UpgradeRepo.Info, UpgradeSnapshot?> { UpgradeSnapshot(isPro = it.isPro, isSettled = it.isSettled) }
+            .catch { e ->
+                if (e is CancellationException) throw e
+                log(TAG, Logging.Priority.WARN) { "Upgrade info read failed: ${e.message}" }
+                emit(null)
+            }
+            .onStart { emit(null) }
+            .distinctUntilChanged(),
+    ) { readout, alarm, blocked, interruption, upgrade ->
+        UnprivilegedExtras(readout, alarm, blocked, interruption, upgrade)
     }
 
     private data class UnprivilegedExtras(
@@ -150,6 +184,7 @@ class DashboardViewModel @Inject constructor(
         val alarm: ChargeAlarmConfig,
         val notificationsBlocked: Boolean,
         val interruption: InterruptionEvent?,
+        val upgrade: UpgradeSnapshot?,
     )
 
     // Battery-statistics dashboard teaser. The session/count reads (which open the stats Room DB)
@@ -194,6 +229,7 @@ class DashboardViewModel @Inject constructor(
             alarm = extras.alarm,
             notificationsBlocked = extras.notificationsBlocked,
             interruption = extras.interruption,
+            upgrade = extras.upgrade,
             stats = stats,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
@@ -209,6 +245,21 @@ class DashboardViewModel @Inject constructor(
     fun refresh() = viewModelScope.launch {
         refreshNotificationsBlocked()
         repository.refresh()
+    }
+
+    /**
+     * Re-reconcile the entitlement with the store. Deliberately NOT part of [refresh]: that one runs
+     * on every battery broadcast (~once a minute while charging), and a billing round-trip on that
+     * cadence would be both wasteful and a good way to get rate-limited. Called on resume only.
+     */
+    fun refreshUpgradeState() = viewModelScope.launch {
+        try {
+            upgradeRepo.refresh()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log(TAG, Logging.Priority.WARN) { "Upgrade refresh failed: ${e.message}" }
+        }
     }
 
     /**
@@ -465,11 +516,17 @@ class DashboardViewModel @Inject constructor(
 
     fun dismissInterruption() = viewModelScope.launch { interruptionStore.clear() }
 
-    fun requestPinWidget() {
+    fun requestPinWidget() = viewModelScope.launch {
+        // Gated before the launcher dialog, not after: asking the system to place a widget and only
+        // then telling the user it needs an upgrade would be the wrong order.
+        if (!upgradeRepo.isProForUi()) {
+            upgradeRequiredEvents.tryEmit(Unit)
+            return@launch
+        }
         // The pin dialog is modal once shown, but rapid taps before it appears would queue
         // multiple launcher requests — swallow them.
         val now = SystemClock.elapsedRealtime()
-        if (now - lastPinRequestAt < 1_000) return
+        if (now - lastPinRequestAt < 1_000) return@launch
         lastPinRequestAt = now
 
         // No success PendingIntent: the launcher accepting the request doesn't mean placement, so
@@ -491,7 +548,11 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
-    fun requestAddTile() {
+    fun requestAddTile() = viewModelScope.launch {
+        if (!upgradeRepo.isProForUi()) {
+            upgradeRequiredEvents.tryEmit(Unit)
+            return@launch
+        }
         if (Build.VERSION.SDK_INT < 33) {
             // No add-tile API before Tiramisu (reachable: legacy Samsung support covers One UI 4/5).
             Toast.makeText(
@@ -499,11 +560,11 @@ class DashboardViewModel @Inject constructor(
                 context.getString(R.string.dashboard_quickaccess_tile_manual),
                 Toast.LENGTH_LONG,
             ).show()
-            return
+            return@launch
         }
         // SystemUI rejects overlapping requests with TILE_ADD_REQUEST_ERROR_REQUEST_IN_PROGRESS;
         // the flag also disables the button until the callback resolves.
-        if (!tileRequestPending.compareAndSet(expect = false, update = true)) return
+        if (!tileRequestPending.compareAndSet(expect = false, update = true)) return@launch
         runCatching {
             context.getSystemService(StatusBarManager::class.java).requestAddTileService(
                 ComponentName(context, ChargeTileService::class.java),

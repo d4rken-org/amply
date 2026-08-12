@@ -96,10 +96,6 @@ fun DependencyHandlerScope.addTesting() {
     testImplementation(platform("org.junit:junit-bom:${Versions.JUnit.bom}"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testImplementation("io.kotest:kotest-assertions-core:${Versions.Kotest.core}")
-    // Test-only. The Play Billing client and its connection are final classes we neither own nor can
-    // instantiate in a unit test; faking them is the only way to exercise the reconnect/backoff and
-    // acknowledgement logic on the JVM.
-    testImplementation("io.mockk:mockk:${Versions.Mockk.core}")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     // Vintage engine runs the JUnit 4 Robolectric tests on the JUnit Platform.
     testRuntimeOnly("org.junit.vintage:junit-vintage-engine")

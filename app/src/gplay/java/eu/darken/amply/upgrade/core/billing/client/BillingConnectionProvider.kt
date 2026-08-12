@@ -28,11 +28,13 @@ import javax.inject.Singleton
  * owns all retry policy, so every wait stays interruptible by user demand.
  */
 @Singleton
-class BillingConnectionProvider @Inject constructor(
+open class BillingConnectionProvider @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
 
-    val connection: Flow<BillingConnection> = callbackFlow {
+    // `open` so a test can substitute a connection source: everything below reaches straight into
+    // Play's BillingClient, which no unit test can stand up.
+    open val connection: Flow<BillingConnection> = callbackFlow {
         // The listener must exist before the client, the connection needs the client: bridge via
         // this reference. onPurchasesUpdated can only fire for an ACTIVE connection, i.e. after
         // setup finished and the reference was set — a null here would be a Play contract breach,

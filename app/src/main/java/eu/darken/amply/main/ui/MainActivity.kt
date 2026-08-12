@@ -65,6 +65,7 @@ import eu.darken.amply.main.ui.settings.SupportScreen
 import eu.darken.amply.stats.ui.ChargeHistoryScreen
 import eu.darken.amply.stats.ui.StatsSessionDetailScreen
 import eu.darken.amply.stats.ui.StatsViewModel
+import eu.darken.amply.upgrade.ui.UpgradeScreenHost
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -76,10 +77,12 @@ class MainActivity : ComponentActivity() {
     // Compose-observable so a widget launch that reuses an already-running activity (SINGLE_TOP →
     // onNewIntent, which does not re-run LaunchedEffect(Unit)) still triggers the permission flow.
     private val pendingNotificationRequest = mutableStateOf(false)
+    private val pendingUpgradeRequest = mutableStateOf(false)
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         consumeNotificationRequest(intent)
+        consumeUpgradeRequest(intent)
         setIntent(intent)
     }
 
@@ -91,9 +94,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // Same consume-and-strip contract: a rotation must not re-open the upgrade screen on top of
+    // whatever the user navigated to since.
+    private fun consumeUpgradeRequest(intent: Intent) {
+        if (intent.getBooleanExtra(EXTRA_OPEN_UPGRADE, false)) {
+            intent.removeExtra(EXTRA_OPEN_UPGRADE)
+            pendingUpgradeRequest.value = true
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         consumeNotificationRequest(intent)
+        consumeUpgradeRequest(intent)
         enableEdgeToEdge()
         setContent {
             val themeState by settingsViewModel.themeState.collectAsState()
@@ -120,6 +133,20 @@ class MainActivity : ComponentActivity() {
                     // Where the session-detail screen returns to: the history list when opened from it,
                     // or the battery hub when opened from its charge teaser.
                     var detailOrigin by rememberSaveable { mutableStateOf(SettingsDestination.CHARGE_HISTORY) }
+                    // The upgrade screen is reached from five different surfaces, so it carries its
+                    // own return target instead of assuming a parent. Both Back and the pitch's
+                    // auto-dismiss use it, so an upgrade completed from a gate lands the user back
+                    // where they were trying to go.
+                    var upgradeOrigin by rememberSaveable { mutableStateOf(SettingsDestination.DASHBOARD) }
+                    // Whether this visit is the "check my status" entry (which never auto-dismisses)
+                    // or a gate/promo asking for the upgrade.
+                    var upgradeManage by rememberSaveable { mutableStateOf(false) }
+                    val enterUpgrade = { origin: SettingsDestination, manage: Boolean ->
+                        upgradeOrigin = origin
+                        upgradeManage = manage
+                        destination = SettingsDestination.UPGRADE
+                    }
+                    val leaveUpgrade = { destination = upgradeOrigin }
                     val leaveWizard = {
                         contributionViewModel.exitWizard()
                         destination = wizardOrigin
@@ -180,8 +207,37 @@ class MainActivity : ComponentActivity() {
                         runWithNotifications(NotificationAction.START_FULL_CHARGE)
                     }
                 }
+                // The tile and widget send a free user here rather than doing nothing. They come from
+                // outside the app, so the dashboard is the only sensible place to return to.
+                LaunchedEffect(pendingUpgradeRequest.value) {
+                    if (pendingUpgradeRequest.value) {
+                        pendingUpgradeRequest.value = false
+                        enterUpgrade(SettingsDestination.DASHBOARD, false)
+                    }
+                }
+                // Both ViewModels answer a denied gate with an event rather than navigating
+                // themselves; the origin is the surface the user was actually on.
+                LaunchedEffect(Unit) {
+                    viewModel.upgradeRequiredEvents.collect {
+                        enterUpgrade(SettingsDestination.DASHBOARD, false)
+                    }
+                }
+                LaunchedEffect(destination) {
+                    val origin = destination
+                    statsViewModel.upgradeRequiredEvents.collect { enterUpgrade(origin, false) }
+                }
+                // The entitlement check passed; only now is the notification permission worth asking
+                // for. Reversing the two would put a user through a system prompt and then refuse.
+                LaunchedEffect(Unit) {
+                    statsViewModel.proceedWithEnableEvents.collect {
+                        runWithNotifications(NotificationAction.ENABLE_STATS)
+                    }
+                }
                 LifecycleResumeEffect(Unit) {
                     viewModel.refresh()
+                    // Separate from refresh(): that one runs on every battery broadcast, and a
+                    // billing round-trip at that cadence would be wasteful.
+                    viewModel.refreshUpgradeState()
                     // Also re-checks widget placement after returning from the launcher's pin dialog.
                     viewModel.refreshQuickAccessPresence()
                     // Re-check Shizuku for the contribution wizard too, so granting access from its intro card
@@ -236,6 +292,8 @@ class MainActivity : ComponentActivity() {
                                 statsViewModel.closeSession()
                                 destination = detailOrigin
                             }
+                            // Same reasoning: reached from five surfaces, returns to the recorded one.
+                            SettingsDestination.UPGRADE -> leaveUpgrade()
                             else -> destination = SettingsDestination.SETTINGS
                         }
                     }
@@ -289,9 +347,18 @@ class MainActivity : ComponentActivity() {
                             onOpenSupportIssue = viewModel::openDeviceSupportIssue,
                             onEmailSupport = viewModel::emailDeviceSupport,
                             onHelp = { destination = SettingsDestination.SUPPORT },
+                            onUpgrade = { enterUpgrade(SettingsDestination.DASHBOARD, false) },
+                        )
+                        SettingsDestination.UPGRADE -> UpgradeScreenHost(
+                            manage = upgradeManage,
+                            onBack = leaveUpgrade,
                         )
                         SettingsDestination.SETTINGS -> SettingsScreen(
                             onBack = { destination = SettingsDestination.DASHBOARD },
+                            // The settings entry is the status view: an existing purchaser opening it
+                            // must not be bounced straight back out by the pitch's auto-dismiss.
+                            isPro = state.upgrade?.isPro == true,
+                            onUpgrade = { enterUpgrade(SettingsDestination.SETTINGS, true) },
                             onGeneral = { destination = SettingsDestination.GENERAL },
                             gestureEnabled = state.quickFullChargeEnabled,
                             onCharging = { destination = SettingsDestination.CHARGING },
@@ -389,9 +456,12 @@ class MainActivity : ComponentActivity() {
                             captureEnabled = state.stats.enabled,
                             retentionDays = retentionDays,
                             onBack = { destination = SettingsDestination.SETTINGS },
+                            // Enabling goes through the entitlement gate first, which answers with
+                            // either the upgrade route or the permission flow. Disabling is direct:
+                            // a lapsed entitlement must never trap a user with a running service.
                             onCaptureEnabledChange = { enabled ->
                                 if (enabled) {
-                                    runWithNotifications(NotificationAction.ENABLE_STATS)
+                                    statsViewModel.requestEnableCapture()
                                 } else {
                                     statsViewModel.setCaptureEnabled(false)
                                 }
@@ -409,7 +479,7 @@ class MainActivity : ComponentActivity() {
                             onBack = { destination = SettingsDestination.DASHBOARD },
                             onOpenHistory = { destination = SettingsDestination.CHARGE_HISTORY },
                             // Enable-only: turning recording back off lives in Settings › Charging history.
-                            onEnableCapture = { runWithNotifications(NotificationAction.ENABLE_STATS) },
+                            onEnableCapture = statsViewModel::requestEnableCapture,
                             onOpenSession = { id -> openSession(id, SettingsDestination.BATTERY) },
                         )
                         // The Room-backed session list is collected only here, so the stats DB isn't
@@ -501,6 +571,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_REQUEST_NOTIFICATIONS = "request_notifications"
+        const val EXTRA_OPEN_UPGRADE = "open_upgrade"
         private const val SUPPORT_EMAIL = "support@darken.eu"
     }
 }

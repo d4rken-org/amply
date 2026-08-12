@@ -2,8 +2,10 @@ package eu.darken.amply.main.ui.dashboard
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Widgets
@@ -23,6 +25,7 @@ import eu.darken.amply.common.compose.AmplyCardHeader
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.main.core.QuickAccessState
+import eu.darken.amply.upgrade.ui.ProBadge
 
 /**
  * Whether the quick-access promotion is rendered (within the supported-device branch). Hidden until
@@ -75,12 +78,16 @@ fun QuickAccessCard(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            // Both shortcuts need the upgrade, so each button carries the badge rather than the card:
+            // the promotion itself is worth showing to everyone, the buttons are what is gated.
             if (!widgetAdded) {
                 FilledTonalButton(
                     onClick = onPinWidget,
                     modifier = Modifier.weight(1f),
                 ) {
                     Text(stringResource(R.string.dashboard_quickaccess_add_widget))
+                    Spacer(Modifier.width(6.dp))
+                    ProBadge()
                 }
             }
             if (!tileAdded) {
@@ -90,6 +97,8 @@ fun QuickAccessCard(
                     modifier = Modifier.weight(1f),
                 ) {
                     Text(stringResource(R.string.dashboard_quickaccess_add_tile))
+                    Spacer(Modifier.width(6.dp))
+                    ProBadge()
                 }
             }
         }

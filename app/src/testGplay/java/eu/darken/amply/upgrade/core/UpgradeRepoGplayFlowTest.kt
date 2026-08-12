@@ -1,15 +1,17 @@
 package eu.darken.amply.upgrade.core
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.test.core.app.ApplicationProvider
 import eu.darken.amply.common.AppDataStore
 import eu.darken.amply.common.serialization.SerializationModule
+import com.android.billingclient.api.BillingResult
 import eu.darken.amply.upgrade.core.billing.BillingData
 import eu.darken.amply.upgrade.core.billing.BillingManager
 import eu.darken.amply.upgrade.core.billing.TestPurchases
+import eu.darken.amply.upgrade.core.billing.client.BillingConnection
+import eu.darken.amply.upgrade.core.billing.client.BillingConnectionProvider
 import eu.darken.amply.upgrade.core.billing.toBillingData
 import io.kotest.matchers.shouldBe
-import io.mockk.every
-import io.mockk.mockk
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -58,16 +60,28 @@ class UpgradeRepoGplayFlowTest {
         return BillingCache(AppDataStore(store), json)
     }
 
+    /**
+     * A manager whose Play-facing streams are supplied by the test. The connect loop the base class
+     * starts is harmless here: its provider never emits, so it just records one failure and backs
+     * off, and every stream the repository reads is overridden below.
+     */
+    private class FakeBillingManager(
+        override val billingData: Flow<BillingData>,
+        override val isFailureSettled: Flow<Boolean>,
+    ) : BillingManager(
+        object : BillingConnectionProvider(ApplicationProvider.getApplicationContext()) {
+            override val connection: Flow<BillingConnection> = emptyFlow()
+        },
+    ) {
+        override val freshBillingData: Flow<FreshData> = emptyFlow()
+        override val purchaseFailures: Flow<BillingResult> = emptyFlow()
+        override val connectionFailures: Flow<Long> = emptyFlow()
+    }
+
     private fun manager(
         billingData: Flow<BillingData>,
         failureSettled: Flow<Boolean> = MutableStateFlow(false),
-    ): BillingManager = mockk<BillingManager>(relaxed = true).also {
-        every { it.billingData } returns billingData
-        every { it.isFailureSettled } returns failureSettled
-        every { it.freshBillingData } returns emptyFlow()
-        every { it.purchaseFailures } returns emptyFlow()
-        every { it.connectionFailures } returns emptyFlow()
-    }
+    ): BillingManager = FakeBillingManager(billingData, failureSettled)
 
     @Test fun `an owned purchase settles as pro`(): Unit = runBlocking {
         val repo = UpgradeRepoGplay(

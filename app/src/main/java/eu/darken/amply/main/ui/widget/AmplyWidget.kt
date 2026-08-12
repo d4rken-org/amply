@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
@@ -57,6 +58,8 @@ import eu.darken.amply.fullcharge.core.FullChargeStore
 import eu.darken.amply.fullcharge.core.ChargeSessionService
 import eu.darken.amply.fullcharge.core.policyOrNull
 import eu.darken.amply.main.ui.MainActivity
+import eu.darken.amply.upgrade.core.UpgradeRepo
+import eu.darken.amply.upgrade.core.isProForUi
 import kotlinx.coroutines.CancellationException
 
 /** Below this width the brand mark + name is dropped so the status line stays readable. */
@@ -77,6 +80,15 @@ class AmplyWidget : GlanceAppWidget() {
         val repo = entryPoint.chargingRepository()
         val sessionStore = entryPoint.sessionStore()
         val preferences = entryPoint.chargingPreferences()
+
+        // Resolved before anything else: a free user's widget renders locked, so none of the state
+        // below is worth fetching. Placement itself is never blocked — a widget the launcher refuses
+        // to place is a far worse experience than one that explains what it needs.
+        val isPro = entryPoint.upgradeRepo().isProForUi()
+        if (!isPro) {
+            provideContent { LockedWidget(context) }
+            return
+        }
 
         // Seed once, before provideContent: the widget process can be cold and the in-memory state stale, and
         // native Settings changes are only observed while the app/service runs. Doing this here (not in a
@@ -171,6 +183,55 @@ class AmplyWidget : GlanceAppWidget() {
 }
 
 /**
+ * What a free user's widget shows: the brand, the tier it needs, and a one-line explanation. The whole
+ * surface opens the upgrade screen — there are no per-button affordances to mis-tap, and a widget that
+ * did nothing at all would read as broken.
+ */
+@Composable
+private fun LockedWidget(context: Context) {
+    val titleStyle = TextStyle(color = TITLE_COLOR, fontWeight = FontWeight.Bold)
+    Column(
+        modifier = GlanceModifier
+            .fillMaxSize()
+            .background(ColorProvider(Color(0xFFE1F5F0), Color(0xFF153531)))
+            .clickable(
+                actionStartActivity(
+                    Intent(context, MainActivity::class.java)
+                        .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                        .putExtra(MainActivity.EXTRA_OPEN_UPGRADE, true),
+                ),
+            )
+            .padding(12.dp),
+        verticalAlignment = Alignment.Vertical.CenterVertically,
+    ) {
+        Row(verticalAlignment = Alignment.Vertical.CenterVertically) {
+            Image(
+                provider = ImageProvider(R.drawable.ic_launcher_monochrome),
+                contentDescription = null,
+                modifier = GlanceModifier.size(16.dp),
+                colorFilter = ColorFilter.tint(TITLE_COLOR),
+            )
+            Spacer(GlanceModifier.width(6.dp))
+            Text(
+                text = context.getString(
+                    R.string.app_name_upgraded_template,
+                    context.getString(R.string.app_name),
+                    context.getString(R.string.app_name_upgrade_postfix),
+                ),
+                style = titleStyle,
+                maxLines = 1,
+            )
+        }
+        Text(
+            text = context.getString(R.string.widget_locked_body),
+            style = TextStyle(fontSize = 12.sp),
+            maxLines = 2,
+            modifier = GlanceModifier.padding(top = 6.dp),
+        )
+    }
+}
+
+/**
  * Structural (context-free) widget display derivation, kept pure so the branches are JVM-unit-testable.
  * `sessionActive` wins over everything; `settling` is the pending-request window; `steady` (a plain resting
  * policy, nothing in flight) is the only state that shows the brand mark.
@@ -245,12 +306,29 @@ interface AmplyWidgetEntryPoint {
     fun sessionStore(): FullChargeStore
     fun chargingRepository(): ChargingRepository
     fun chargingPreferences(): ChargingPreferences
+    fun upgradeRepo(): UpgradeRepo
+}
+
+/**
+ * Every widget action re-checks the entitlement rather than trusting the rendering that produced the
+ * button. A widget composition can be several minutes stale — Glance re-renders on its own schedule —
+ * so a lapse between render and tap would otherwise still perform the gated write.
+ */
+private suspend fun requireProOrOpenUpgrade(context: Context): Boolean {
+    val entryPoint = EntryPointAccessors.fromApplication(
+        context.applicationContext,
+        AmplyWidgetEntryPoint::class.java,
+    )
+    if (entryPoint.upgradeRepo().isProForUi()) return true
+    openApp(context, requestNotifications = false, openUpgrade = true)
+    return false
 }
 
 /** "∞ <limit>" — set the adapter's default protective limit persistently (ends any one-time session). */
 @Keep
 class ProtectAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
+        if (!requireProOrOpenUpgrade(context)) return
         val entryPoint = EntryPointAccessors.fromApplication(
             context.applicationContext,
             AmplyWidgetEntryPoint::class.java,
@@ -265,6 +343,7 @@ class ProtectAction : ActionCallback {
 @Keep
 class AlwaysFullAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
+        if (!requireProOrOpenUpgrade(context)) return
         setPersistentOrOpen(context, ChargePolicy.Unrestricted)
     }
 }
@@ -273,6 +352,7 @@ class AlwaysFullAction : ActionCallback {
 @Keep
 class FullChargeAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
+        if (!requireProOrOpenUpgrade(context)) return
         val entryPoint = EntryPointAccessors.fromApplication(
             context.applicationContext,
             AmplyWidgetEntryPoint::class.java,
@@ -338,11 +418,12 @@ private fun canShowNotifications(context: Context): Boolean = Build.VERSION.SDK_
     ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
     PackageManager.PERMISSION_GRANTED
 
-private fun openApp(context: Context, requestNotifications: Boolean) {
+private fun openApp(context: Context, requestNotifications: Boolean, openUpgrade: Boolean = false) {
     context.startActivity(
         Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra(MainActivity.EXTRA_REQUEST_NOTIFICATIONS, requestNotifications)
+            if (openUpgrade) putExtra(MainActivity.EXTRA_OPEN_UPGRADE, true)
         },
     )
 }

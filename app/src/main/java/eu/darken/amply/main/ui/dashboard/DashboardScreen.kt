@@ -122,6 +122,7 @@ fun DashboardScreen(
     onOpenSupportIssue: () -> Unit,
     onEmailSupport: () -> Unit,
     onHelp: () -> Unit,
+    onUpgrade: () -> Unit = {},
     // Injectable so a screenshot/preview fixture can render a live session at a believable age instead
     // of at "0m" — the screen is otherwise pure, and this is the one value it reads from the clock.
     nowElapsedRealtimeMillis: Long = SystemClock.elapsedRealtime(),
@@ -338,6 +339,11 @@ fun DashboardScreen(
                                 onDismiss = onDismissQuickAccess,
                             )
                         }
+                    }
+                    // Directly after the quick-access promotion, which advertises the two shortcuts
+                    // this card is the way to unlock.
+                    if (shouldShowUpgradePromo(state.upgrade)) {
+                        item(key = "dashboard.upgrade") { UpgradePromoCard(onUpgrade = onUpgrade) }
                     }
                     val access = state.charging.access
                     when {
@@ -859,6 +865,8 @@ private fun DashboardScreenPreview() = PreviewWrapper {
             quickFullChargeEnabled = true,
             // Presence check done, nothing discovered yet — renders the quick-access promotion.
             quickAccessChecked = true,
+            // Settled and not upgraded: the one combination that renders the upgrade promo.
+            upgrade = UpgradeSnapshot(isPro = false, isSettled = true),
             // A resolved interruption: the warning card sits under the hero until dismissed.
             interruption = InterruptionEvent(
                 occurredAtMillis = 0L,

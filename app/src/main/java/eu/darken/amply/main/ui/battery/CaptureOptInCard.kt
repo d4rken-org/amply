@@ -1,6 +1,8 @@
 package eu.darken.amply.main.ui.battery
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -8,12 +10,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import eu.darken.amply.R
 import eu.darken.amply.common.compose.AmplyCard
 import eu.darken.amply.common.compose.AmplyCardDefaults
 import eu.darken.amply.common.compose.AmplyCardHeader
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
+import eu.darken.amply.upgrade.ui.ProBadge
 
 /**
  * The one-time opt-in for charge recording, at the top of the battery hub. Shown only while recording
@@ -47,6 +51,8 @@ fun CaptureOptInCard(
         )
         Button(onClick = onEnable, modifier = Modifier.align(Alignment.End)) {
             Text(stringResource(R.string.stats_capture_optin_action))
+            Spacer(Modifier.width(6.dp))
+            ProBadge()
         }
     }
 }
