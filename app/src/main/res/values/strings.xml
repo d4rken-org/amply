@@ -461,6 +461,7 @@
     <string name="battery_info_summary_power">%1$s · %2$s · %3$s · %4$s</string>
     <string name="battery_value_not_reported">Not reported</string>
     <string name="battery_value_unknown">Unknown</string>
+    <string name="battery_value_not_charging">Not charging</string>
     <string name="battery_hub_title">Battery &amp; charging</string>
     <string name="battery_hub_history_action">Charge history</string>
     <string name="battery_hub_section_now">Now</string>
@@ -484,6 +485,8 @@
     <string name="battery_detail_cycle_count">Charge cycles</string>
     <string name="battery_detail_voltage">Voltage</string>
     <string name="battery_detail_current">Current now</string>
+    <string name="battery_detail_power">Charge power</string>
+    <string name="battery_detail_charger_max">Charger max</string>
     <string name="battery_detail_charge_counter">Charge counter</string>
     <string name="battery_detail_temperature">Temperature</string>
     <string name="battery_status_charging">Charging</string>
@@ -531,6 +534,9 @@
 
     <!-- Battery statistics -->
     <string name="dashboard_charging_title_charging">Charging</string>
+    <string name="dashboard_charging_title_slow">Charging slowly</string>
+    <string name="dashboard_charging_title_fast">Charging fast</string>
+    <string name="dashboard_charging_title_very_fast">Charging very fast</string>
     <string name="dashboard_charging_title_connected">Connected</string>
     <string name="dashboard_charging_title_idle">Battery</string>
     <string name="dashboard_charging_open_action">Open battery &amp; charging</string>
@@ -580,6 +586,7 @@
     <string name="stats_detail_level">Level</string>
     <string name="stats_detail_duration">Duration</string>
     <string name="stats_detail_charging_type">Connection</string>
+    <string name="stats_detail_power_now">Power now</string>
     <string name="stats_detail_avg_power">Average power</string>
     <string name="stats_detail_peak_power">Peak power</string>
     <string name="stats_detail_temperature">Temperature range</string>

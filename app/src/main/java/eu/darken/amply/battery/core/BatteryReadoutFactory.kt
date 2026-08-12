@@ -29,6 +29,8 @@ object BatteryReadoutFactory {
         currentNowMicroamps: Int = ABSENT,
         chargeCounterMicroampHours: Int = ABSENT,
         cycleCount: Int = ABSENT,
+        maxChargingCurrentMicroamps: Int = ABSENT,
+        maxChargingVoltageMicrovolts: Int = ABSENT,
     ): BatteryReadout = BatteryReadout(
         levelPercent = percentOf(level, scale),
         status = status.orNull(),
@@ -42,6 +44,10 @@ object BatteryReadoutFactory {
         currentNowMicroamps = currentNowMicroamps.orNull(),
         chargeCounterMicroampHours = chargeCounterMicroampHours.orNull(),
         cycleCount = cycleCount.orNull(),
+        // The charger extras are advertised capabilities: a device that reports them while nothing is
+        // connected reports 0, which is "no charger" rather than "a 0 W charger".
+        maxChargingCurrentMicroamps = maxChargingCurrentMicroamps.positiveOrNull(),
+        maxChargingVoltageMicrovolts = maxChargingVoltageMicrovolts.positiveOrNull(),
     )
 
     /** Percent only when the level/scale pair is internally consistent; otherwise `null`. */
@@ -51,4 +57,6 @@ object BatteryReadoutFactory {
     }
 
     private fun Int.orNull(): Int? = if (this == ABSENT) null else this
+
+    private fun Int.positiveOrNull(): Int? = if (this == ABSENT || this <= 0) null else this
 }

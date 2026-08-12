@@ -134,4 +134,30 @@ class StatsPowerCalculatorTest {
             currentNowMicroamps = 100_000_000,
         ) shouldBe null
     }
+
+    // The charger-advertised maximum: a capability the supply claims, not a measurement.
+
+    @Test
+    fun `an advertised maximum without a current is nothing to report`() {
+        StatsPowerCalculator.advertisedMaxMilliwatts(null, 9_000_000) shouldBe null
+        StatsPowerCalculator.advertisedMaxMilliwatts(0, 9_000_000) shouldBe null
+        StatsPowerCalculator.advertisedMaxMilliwatts(-1, 9_000_000) shouldBe null
+    }
+
+    @Test
+    fun `a missing advertised voltage falls back to the USB-spec 5 V`() {
+        StatsPowerCalculator.advertisedMaxMilliwatts(3_000_000, null) shouldBe 15_000
+        StatsPowerCalculator.advertisedMaxMilliwatts(3_000_000, 0) shouldBe 15_000
+    }
+
+    @Test
+    fun `both halves advertised multiply out`() {
+        StatsPowerCalculator.advertisedMaxMilliwatts(2_000_000, 9_000_000) shouldBe 18_000
+    }
+
+    @Test
+    fun `an implausible advertised maximum is rejected like a measured one`() {
+        // 30 A × 20 V = 600 W — bad units, not a phone charger.
+        StatsPowerCalculator.advertisedMaxMilliwatts(30_000_000, 20_000_000) shouldBe null
+    }
 }

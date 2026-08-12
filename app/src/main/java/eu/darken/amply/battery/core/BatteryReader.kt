@@ -51,6 +51,8 @@ class BatteryReader @Inject constructor(
             currentNowMicroamps = manager.propertyOrAbsent(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW),
             chargeCounterMicroampHours = manager.propertyOrAbsent(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER),
             cycleCount = cycleCount(battery),
+            maxChargingCurrentMicroamps = battery.getIntExtra(BatteryManager.EXTRA_MAX_CHARGING_CURRENT, ABSENT),
+            maxChargingVoltageMicrovolts = battery.getIntExtra(BatteryManager.EXTRA_MAX_CHARGING_VOLTAGE, ABSENT),
         )
     }
 
