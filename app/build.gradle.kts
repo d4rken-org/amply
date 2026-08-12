@@ -217,6 +217,11 @@ dependencies {
 
     addTesting()
 
+    // Google Play Billing — gplay flavor only. The FOSS flavor must not carry any proprietary
+    // billing code, so this cannot move into the shared `implementation` configuration.
+    "gplayImplementation"("com.android.billingclient:billing:${Versions.Billing.core}")
+    "gplayImplementation"("com.android.billingclient:billing-ktx:${Versions.Billing.core}")
+
     // Compose Preview Screenshot Testing — renders the Play Store screenshot composables
     // (app/src/screenshotTest) to PNGs on the JVM. Enabled via the experimental flag in
     // gradle.properties. Keep this version aligned with the plugin version in the root build script.

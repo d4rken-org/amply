@@ -32,6 +32,10 @@ object Versions {
         const val core = "13.1.5"
     }
 
+    object Billing {
+        const val core = "8.3.0"
+    }
+
     object JUnit {
         const val bom = "5.11.4"
     }
