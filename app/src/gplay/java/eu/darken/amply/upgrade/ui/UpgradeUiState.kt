@@ -102,6 +102,10 @@ internal fun toLoadedState(
         OurSku.Sub.PRO_UPGRADE.TRIAL_OFFER.matches(offer)
     }
 
+    // A payment Play is still processing blocks BOTH offers: the two products are alternatives for
+    // the same entitlement, so buying the other one while one is pending would double-charge for it.
+    val anyPending = subscriptionPending || iapPending
+
     return GplayUpgradeUiState.Loaded(
         subscriptionAction = when {
             subOfferTrial != null -> SubscriptionAction.TRIAL
@@ -110,12 +114,12 @@ internal fun toLoadedState(
         },
         // Any running entitlement operation (restore, manual or the invisible already-owned recovery,
         // and purchases) pauses the buy actions too — starting a purchase while an entitlement is
-        // being reconciled just races Play into ITEM_ALREADY_OWNED. A pending payment for the same
-        // product blocks it outright: the user is already paying for it.
+        // being reconciled just races Play into ITEM_ALREADY_OWNED. A pending payment blocks both
+        // outright: the user is already paying for this entitlement.
         subscriptionEnabled = (subOffer != null || subOfferTrial != null) &&
-            ownership.subscription == null && busy == null && !subscriptionPending,
+            ownership.subscription == null && busy == null && !anyPending,
         subscriptionPrice = subOffer?.pricingPhases?.pricingPhaseList?.lastOrNull()?.formattedPrice,
-        iapEnabled = iapOffer != null && !ownership.hasIap && busy == null && !iapPending,
+        iapEnabled = iapOffer != null && !ownership.hasIap && busy == null && !anyPending,
         iapPrice = iapOffer?.formattedPrice,
         ownership = ownership,
         grace = grace,

@@ -47,7 +47,6 @@ class UpgradeViewModel @Inject constructor(
     val events = SingleEventFlow<UpgradeEvents>()
 
     private var hasShownRepoError: Boolean = false
-    private var hasShownServiceUnavailableError: Boolean = false
     private var hasShownPartialQueryError: Boolean = false
 
     /**
@@ -58,7 +57,6 @@ class UpgradeViewModel @Inject constructor(
     fun onVisitStart(manage: Boolean) {
         log(TAG) { "onVisitStart(manage=$manage)" }
         hasShownRepoError = false
-        hasShownServiceUnavailableError = false
         hasShownPartialQueryError = false
     }
 
@@ -173,7 +171,6 @@ class UpgradeViewModel @Inject constructor(
         val done = queries as? SkuQueries.Done
         if (done == null) {
             // A new attempt starts a new error episode.
-            hasShownServiceUnavailableError = false
             hasShownPartialQueryError = false
         }
         // Structural close: entitlement-dependent UI never renders from a pre-reconciliation Info —
@@ -210,17 +207,11 @@ class UpgradeViewModel @Inject constructor(
                 // Grace users and owners are excluded: during an outage (exactly when grace matters)
                 // they must keep the Loaded presentation with their status/grace card.
                 if (!priceIndependent) {
-                    // This combine re-runs on every upstream change — emit once per failure episode,
-                    // not once per recombination.
-                    if (!hasShownServiceUnavailableError) {
-                        hasShownServiceUnavailableError = true
-                        events.tryEmit(UpgradeEvents.Error(queryError))
-                    }
+                    // No event: the returned Unavailable state already renders the failure inline,
+                    // with a Retry — a snackbar on top of it would report the same thing twice.
                     return@combine GplayUpgradeUiState.Unavailable(queryError)
                 }
             } else {
-                hasShownServiceUnavailableError = false
-
                 // Exactly one product type failed: show what's available, surface the failure once.
                 // Not for owners/grace: price errors aren't their problem.
                 val partialError = done.iap.exceptionOrNull() ?: done.sub.exceptionOrNull()

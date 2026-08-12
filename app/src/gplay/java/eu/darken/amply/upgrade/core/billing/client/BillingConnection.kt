@@ -281,8 +281,8 @@ class BillingConnection(
                     "iapOk=${iap.isSuccess}, subOk=${sub.isSuccess}, merged=${committed.merged().size}"
             }
 
-            // Throws when nothing was found and a query failed, so the caller can tell "not owned"
-            // apart from "couldn't verify".
+            // Throws when nothing OWNED was found and a query failed, so the caller can tell "not
+            // owned" apart from "couldn't verify" (a pending purchase owns nothing).
             combinePurchaseResults(iap, sub)
 
             PurchaseRefresh(
@@ -550,24 +550,23 @@ class BillingConnection(
         }
 
         /**
-         * Combines the two product-type query results: a purchase found by either type is
-         * authoritative; an error is only propagated when nothing was found, so callers can tell
-         * "not owned" apart from "couldn't verify one product type". Treating any found purchase as
-         * authoritative is safe because every product this app sells is a Pro SKU (see
-         * [OurSku.PRO_SKUS]). Pure and unit-tested.
+         * Combines the two product-type query results: a COMPLETED purchase found by either type is
+         * authoritative; an error is propagated whenever nothing found is actually owned, so callers
+         * can tell "not owned" apart from "couldn't verify one product type". A pending purchase
+         * grants nothing, so it must not swallow the sibling type's failure — it is still returned
+         * (the UI needs it) whenever a completed purchase is present or no query failed. Treating
+         * any found purchase as authoritative is safe because every product this app sells is a Pro
+         * SKU (see [OurSku.PRO_SKUS]). Pure and unit-tested.
          */
         internal fun combinePurchaseResults(
             iap: Result<Collection<Purchase>>,
             sub: Result<Collection<Purchase>>,
         ): Collection<Purchase> {
             val found = iap.getOrNull().orEmpty() + sub.getOrNull().orEmpty()
-            return when {
-                found.isNotEmpty() -> found.sortedByDescending { it.purchaseTime }
-                else -> {
-                    (iap.exceptionOrNull() ?: sub.exceptionOrNull())?.let { throw it }
-                    emptyList()
-                }
+            if (found.none { it.purchaseState == PurchaseState.PURCHASED }) {
+                (iap.exceptionOrNull() ?: sub.exceptionOrNull())?.let { throw it }
             }
+            return found.sortedByDescending { it.purchaseTime }
         }
     }
 }

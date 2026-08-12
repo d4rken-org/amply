@@ -111,16 +111,17 @@ class GplayUpgradeUiStateTest {
         }
     }
 
-    @Test fun `a payment play is still processing blocks its own offer only`() {
+    @Test fun `a payment play is still processing blocks both offers`() {
         toLoadedState(
             iap = iapDetails(),
             sub = subDetails(baseOffer),
             ownership = Ownership(),
             iapPending = true,
         ).apply {
-            // The money is already committed — inviting a second payment would be the defect.
+            // The money is already committed for this entitlement, and the two products are
+            // alternatives for it — inviting a second payment for the other one is the same defect.
             iapEnabled shouldBe false
-            subscriptionEnabled shouldBe true
+            subscriptionEnabled shouldBe false
             anyPending shouldBe true
         }
 
@@ -131,7 +132,8 @@ class GplayUpgradeUiStateTest {
             subscriptionPending = true,
         ).apply {
             subscriptionEnabled shouldBe false
-            iapEnabled shouldBe true
+            iapEnabled shouldBe false
+            anyPending shouldBe true
         }
     }
 

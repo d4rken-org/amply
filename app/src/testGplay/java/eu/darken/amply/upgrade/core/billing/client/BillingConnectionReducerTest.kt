@@ -159,6 +159,23 @@ class BillingConnectionReducerTest {
         ).shouldBeEmpty()
     }
 
+    @Test fun `a pending purchase owns nothing, so it must not swallow a failed query`() {
+        // Otherwise a pending IAP next to a broken SUBS query would read as "verified, nothing
+        // owned" — and a real subscription behind that failure would look lapsed.
+        shouldThrow<IllegalStateException> {
+            BillingConnection.combinePurchaseResults(
+                iap = Result.success(listOf(TestPurchases.purchase(iapId, pending = true))),
+                sub = Result.failure(IllegalStateException("subs query broke")),
+            )
+        }
+
+        // Nothing failed: the pending purchase is still reported, because the UI has to show it.
+        BillingConnection.combinePurchaseResults(
+            iap = Result.success(listOf(TestPurchases.purchase(iapId, pending = true))),
+            sub = Result.success(emptyList()),
+        ).map { it.purchaseToken } shouldBe listOf("token-$iapId")
+    }
+
     // endregion
 
     private fun Collection<Purchase>.shouldBeEmpty() {

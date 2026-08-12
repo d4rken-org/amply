@@ -62,8 +62,9 @@ internal fun LoadedOffers(
             title = stringResource(R.string.upgrade_screen_subscription_offer_title),
             price = uiState.subscriptionPrice,
             // A payment that Play is still processing outranks the terms: it explains why the button
-            // is off, which "renews yearly" would not.
-            hint = if (uiState.subscriptionPending) {
+            // is off, which "renews yearly" would not. Any pending payment disables both rows, so
+            // both rows explain themselves — a silent dead button is the worse outcome.
+            hint = if (uiState.anyPending) {
                 stringResource(R.string.upgrade_screen_offer_payment_pending)
             } else {
                 // Only promise the trial when Play actually returned the trial offer.
@@ -123,7 +124,7 @@ internal fun LoadedOffers(
         UpgradeOfferRow(
             title = stringResource(R.string.upgrade_screen_iap_offer_title),
             price = uiState.iapPrice,
-            hint = if (uiState.iapPending) {
+            hint = if (uiState.anyPending) {
                 stringResource(R.string.upgrade_screen_offer_payment_pending)
             } else {
                 stringResource(R.string.upgrade_screen_iap_offer_body)
@@ -184,7 +185,7 @@ private fun previewLoadedOffersState(
     subscriptionAction = subscriptionAction,
     subscriptionEnabled = !subscriptionPending,
     subscriptionPrice = "$4.99",
-    iapEnabled = true,
+    iapEnabled = !subscriptionPending,
     iapPrice = "$9.99",
     subscriptionPending = subscriptionPending,
 )
