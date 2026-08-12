@@ -51,8 +51,8 @@ class BatteryReader @Inject constructor(
             currentNowMicroamps = manager.propertyOrAbsent(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW),
             chargeCounterMicroampHours = manager.propertyOrAbsent(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER),
             cycleCount = cycleCount(battery),
-            maxChargingCurrentMicroamps = battery.getIntExtra(BatteryManager.EXTRA_MAX_CHARGING_CURRENT, ABSENT),
-            maxChargingVoltageMicrovolts = battery.getIntExtra(BatteryManager.EXTRA_MAX_CHARGING_VOLTAGE, ABSENT),
+            maxChargingCurrentMicroamps = battery.getIntExtra(EXTRA_MAX_CHARGING_CURRENT, ABSENT),
+            maxChargingVoltageMicrovolts = battery.getIntExtra(EXTRA_MAX_CHARGING_VOLTAGE, ABSENT),
         )
     }
 
@@ -68,5 +68,11 @@ class BatteryReader @Inject constructor(
 
         // BatteryManager.EXTRA_CYCLE_COUNT — inlined to avoid a hard API-34 symbol reference.
         const val EXTRA_CYCLE_COUNT = "android.os.extra.CYCLE_COUNT"
+
+        // BatteryManager.EXTRA_MAX_CHARGING_CURRENT/VOLTAGE are @hide: BatteryService puts them into
+        // ACTION_BATTERY_CHANGED, but the constants are absent from the public SDK. The literal keys
+        // are stable AOSP identifiers.
+        const val EXTRA_MAX_CHARGING_CURRENT = "max_charging_current"
+        const val EXTRA_MAX_CHARGING_VOLTAGE = "max_charging_voltage"
     }
 }
