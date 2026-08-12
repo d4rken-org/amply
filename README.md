@@ -26,13 +26,17 @@ Features include:
 * One-tap "charge to 100% once", then automatic restore of your protective limit
 * A dashboard that reports charge state honestly — verified, last-requested, or unknown
 * Optional "reconnect to charge to 100%" gesture at the active hardware limit
-* Quick Settings tile and a home-screen widget for protect / full-charge actions
+* Quick Settings tile and a home-screen widget for protect / full-charge actions (upgrade)
 * A persisted temporary-session monitor that survives reboots
 * Diagnostics workflow (Shizuku) for before/after setting discovery, with redacted reports
 * Works without ADB/Shizuku too — a charge alarm to remind you to unplug at a chosen level, a live battery-info card, and an OEM battery-protection guide on unsupported devices
+* Charge history with per-charge curves — level, speed, and temperature over time (upgrade)
 * Branded light/dark themes, optional Material You, and contrast choices
 * Works via `WRITE_SECURE_SETTINGS` or Shizuku
 * No ads, no tracking, open-source (`foss` and `gplay` flavors)
+
+Charge control itself — including the temporary full charge and the reconnect gesture — is free. The items marked
+(upgrade) are unlocked by the paid upgrade on Google Play, or by sponsoring development in the FOSS build.
 
 Currently supported for direct control:
 
@@ -61,7 +65,8 @@ OnePlus/Oppo/Realme — are diagnostics-only for now.
 
 ## Support the project
 
-Amply has no ads and doesn't sell your data. It's free and open-source.
+Amply has no ads and doesn't sell your data, and it never will. Charge control is free; an optional upgrade unlocks
+the extras above and is what funds continued development.
 
 * [Sponsor development](https://github.com/sponsors/d4rken) on GitHub
 * [Buy me a coffee](https://buymeacoffee.com/tydarken) ☕
