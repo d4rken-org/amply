@@ -23,11 +23,13 @@ import javax.inject.Singleton
  * from SD Maid SE's `WebpageTool` — existing ad-hoc URL intents in the app are left as they are.
  */
 @Singleton
-class WebpageTool @Inject constructor(
+open class WebpageTool @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
 
-    fun open(url: String): Boolean {
+    // `open` so a test can decide whether the page opened without having to install a fake browser
+    // into the test runtime's package manager — the return value is the interesting part here.
+    open fun open(url: String): Boolean {
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
