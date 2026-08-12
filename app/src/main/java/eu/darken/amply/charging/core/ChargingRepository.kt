@@ -120,6 +120,8 @@ data class ChargingState(
     val hasSupportLead: Boolean
         get() = adapterMatched ||
             device.hasProtectBattery ||
+            device.hasBatteryChargeLimit ||
+            device.isGrapheneOs ||
             device.hasLineageSettingsProvider ||
             device.hasChargingOptimization ||
             device.oneUiVersion != null ||

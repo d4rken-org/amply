@@ -37,4 +37,24 @@ class DeviceInfoTest {
     fun `neither signal means stock android`() {
         device(version = null, feature = false).isLineageOs shouldBe false
     }
+
+    @Test
+    fun `grapheneos identity comes from its packages alone`() {
+        device().copy(hasGrapheneOsPackages = true).isGrapheneOs shouldBe true
+        device().isGrapheneOs shouldBe false
+    }
+
+    @Test
+    fun `the charge-limit key alone is never grapheneos identity`() {
+        // The adapter is registered ahead of the live Pixel adapter; a future stock Pixel shipping
+        // a same-named key must not be swallowed as GrapheneOS.
+        device().copy(hasBatteryChargeLimit = true).isGrapheneOs shouldBe false
+    }
+
+    @Test
+    fun `detection probes fail closed without a context`() {
+        val info = DeviceInfo.current(context = null)
+        info.hasGrapheneOsPackages shouldBe false
+        info.hasBatteryChargeLimit shouldBe false
+    }
 }

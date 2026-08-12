@@ -20,7 +20,9 @@ data class DeviceInfo(
     val oplusRomVersion: Int? = null,
     val lineageOsVersion: String? = null,
     val hasLineageFeature: Boolean = false,
+    val hasGrapheneOsPackages: Boolean = false,
     val hasProtectBattery: Boolean = false,
+    val hasBatteryChargeLimit: Boolean = false,
     val hasLineageSettingsProvider: Boolean = false,
     val isSystemUser: Boolean = true,
 ) {
@@ -33,6 +35,17 @@ data class DeviceInfo(
      * the feature still match, and so unit tests can construct either shape.
      */
     val isLineageOs: Boolean get() = hasLineageFeature || lineageOsVersion != null
+
+    /**
+     * Whether this is a GrapheneOS build. There is no system property, feature, or fingerprint
+     * marker at all — `getprop` on a real device contains no "graphene" and the fingerprint is
+     * stock-Google-shaped (verified on Pixel 9 Pro XL, build 2026080501) — so identity comes from
+     * the OS's own core `app.grapheneos.*` system packages, resolved via PackageManager with
+     * matching `<queries>` entries. Deliberately NOT OR-ed with [hasBatteryChargeLimit]: this
+     * adapter is registered ahead of the live Pixel adapter, and a future stock Pixel shipping a
+     * same-named key must not be swallowed as "GrapheneOS".
+     */
+    val isGrapheneOs: Boolean get() = hasGrapheneOsPackages
 
     companion object {
         fun current(context: Context? = null) = DeviceInfo(
@@ -57,9 +70,24 @@ data class DeviceInfo(
                 runCatching { it.packageManager.hasSystemFeature(FEATURE_LINEAGE_OS) }
                     .getOrDefault(false)
             } ?: false,
+            // GrapheneOS identity via its core system packages (see isGrapheneOs). getPackageInfo
+            // needs the <queries> package entries but no permission; any one package suffices, so a
+            // renamed or slimmed component doesn't break detection. Fail closed.
+            hasGrapheneOsPackages = context?.let { ctx ->
+                GRAPHENEOS_PACKAGES.any { pkg ->
+                    runCatching { ctx.packageManager.getPackageInfo(pkg, 0) }.isSuccess
+                }
+            } ?: false,
             hasProtectBattery = context?.let {
                 runCatching {
                     Settings.Global.getString(it.contentResolver, KEY_PROTECT_BATTERY) != null
+                }.getOrDefault(false)
+            } ?: false,
+            // GrapheneOS's charge-limit key, world-readable in `global`. Presence is the capability
+            // gate (the OS only ships the toggle where its implementation works); fail closed.
+            hasBatteryChargeLimit = context?.let {
+                runCatching {
+                    Settings.Global.getString(it.contentResolver, KEY_BATTERY_CHARGE_LIMIT) != null
                 }.getOrDefault(false)
             } ?: false,
             // Whether LineageOS's private settings provider is installed (the charge-control settings
@@ -84,6 +112,19 @@ data class DeviceInfo(
 
         // Shared with the Samsung adapters; duplicated here to keep DeviceInfo dependency-free.
         const val KEY_PROTECT_BATTERY = "protect_battery"
+
+        // Shared with the GrapheneOS adapter; duplicated here to keep DeviceInfo dependency-free.
+        const val KEY_BATTERY_CHARGE_LIMIT = "battery_charge_limit"
+
+        /**
+         * Core GrapheneOS system packages used as the identity signal — chosen for being integral
+         * to the OS (setup wizard, the built-in "Info" app) rather than user-removable extras.
+         * Each needs a `<queries>` package entry in the manifest.
+         */
+        val GRAPHENEOS_PACKAGES = listOf(
+            "app.grapheneos.setupwizard",
+            "app.grapheneos.info",
+        )
 
         /** Authority of LineageOS's private settings provider (`content://lineagesettings/...`). */
         const val LINEAGE_SETTINGS_AUTHORITY = "lineagesettings"
