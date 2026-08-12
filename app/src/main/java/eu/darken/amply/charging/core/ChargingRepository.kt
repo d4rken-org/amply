@@ -2,7 +2,10 @@ package eu.darken.amply.charging.core
 
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
+import android.os.BatteryManager
 import eu.darken.amply.R
+import eu.darken.amply.battery.core.BatteryReader
+import eu.darken.amply.battery.core.BatteryReadout
 import eu.darken.amply.charging.core.access.AccessBackend
 import eu.darken.amply.charging.core.access.AccessResolver
 import eu.darken.amply.charging.core.access.AccessSnapshot
@@ -135,6 +138,7 @@ class ChargingRepository @Inject constructor(
     private val preferences: ChargingPreferences,
     private val shizukuController: ShizukuController,
     private val settleScheduler: SettleScheduler,
+    private val batteryReader: BatteryReader,
 ) {
     private val operationMutex = Mutex()
     // Separate from operationMutex: the ~25s grant deliberately never holds operationMutex (see below),
@@ -295,6 +299,16 @@ class ChargingRepository @Inject constructor(
             return ApplyResult(false, observation, "Setup required")
         }
 
+        // Plug-latched adapters: capture plug state BEFORE the write — it decides whether this write
+        // can take effect now (unplugged: the very next plug session samples it) or must wait for a
+        // replug. Null = plug state unreadable; treated as plugged, never claiming an effect that may
+        // not exist.
+        val pluggedAtWrite: Boolean? = if (adapter.policyLatchesAtPlug) {
+            batteryReader.read().plugged?.let { it != 0 }
+        } else {
+            null
+        }
+
         mutableState.value = state.value.copy(
             busy = true,
             message = caString { it.getString(R.string.charging_message_applying, policy.label.get(it)) },
@@ -323,7 +337,7 @@ class ChargingRepository @Inject constructor(
         // The physical write committed. Record it durably even under cancellation (the setting already
         // changed), and never strand busy=true nor lose the fact that the write landed.
         val now = System.currentTimeMillis()
-        withContext(NonCancellable) { preferences.recordRequested(policy, persistent, now) }
+        withContext(NonCancellable) { preferences.recordRequested(policy, persistent, now, plugged = pluggedAtWrite) }
         return try {
             val access = accessResolver.snapshot()
             val observation = when (adapter.verification) {
@@ -334,21 +348,30 @@ class ChargingRepository @Inject constructor(
             } as? ChargeObservation.Verified ?: ChargeObservation.LastRequested(policy)
             // Suppress the settling cue when there is no transition to wait for: sync-readback adapters
             // apply immediately, and async hardware may already report the target on a no-op re-apply.
-            val settled = when (adapter.verification) {
-                VerificationStrategy.SYNC_READBACK ->
-                    (observation as? ChargeObservation.Verified)?.policy == policy
-                VerificationStrategy.ASYNC_HARDWARE ->
-                    (adapter.readHardware(context) as? ChargeObservation.Verified)?.let {
-                        it.backend == BackendKind.BATTERY_HARDWARE && it.policy == policy
-                    } ?: false
+            // Plug-latched adapters are the exception: their readback only proves *configuration* —
+            // settled iff written unplugged (the next plug session samples it) or the hardware already
+            // reports the exact target (no-op re-apply while enforcing).
+            val settled = when {
+                adapter.policyLatchesAtPlug ->
+                    pluggedAtWrite == false || hardwareConfirms(adapter.readHardware(context), policy)
+                else -> when (adapter.verification) {
+                    VerificationStrategy.SYNC_READBACK ->
+                        (observation as? ChargeObservation.Verified)?.policy == policy
+                    VerificationStrategy.ASYNC_HARDWARE ->
+                        hardwareConfirms(adapter.readHardware(context), policy)
+                }
             }
-            val pending = if (settled) null else PendingRequest(policy, now)
+            val pending = if (settled) {
+                null
+            } else {
+                PendingRequest(policy, now, awaitingReplug = adapter.policyLatchesAtPlug)
+            }
             // Timing copy lives solely in the dashboard's settling line; these must stay accurate
             // when nothing is pending (sync-readback adapters, no-op re-applies).
-            val messageRes = if (observation is ChargeObservation.Verified) {
-                R.string.charging_message_verified
-            } else {
-                R.string.charging_message_requested
+            val messageRes = when {
+                pending?.awaitingReplug == true -> R.string.charging_message_applied_replug
+                observation is ChargeObservation.Verified -> R.string.charging_message_verified
+                else -> R.string.charging_message_requested
             }
             val message = caString { it.getString(messageRes, policy.label.get(it)) }
             mutableState.value = state.value.copy(
@@ -378,7 +401,7 @@ class ChargingRepository @Inject constructor(
             mutableState.value = state.value.copy(
                 busy = false,
                 observation = ChargeObservation.LastRequested(policy),
-                pending = PendingRequest(policy, now),
+                pending = PendingRequest(policy, now, awaitingReplug = fallbackAwaitsReplug(adapter, pluggedAtWrite)),
             )
             settleScheduler.schedule(now)
             throw e
@@ -391,7 +414,7 @@ class ChargingRepository @Inject constructor(
             mutableState.value = state.value.copy(
                 busy = false,
                 observation = observation,
-                pending = PendingRequest(policy, now),
+                pending = PendingRequest(policy, now, awaitingReplug = fallbackAwaitsReplug(adapter, pluggedAtWrite)),
                 message = message,
             )
             settleScheduler.schedule(now)
@@ -430,6 +453,17 @@ class ChargingRepository @Inject constructor(
         // Confirmation must come from the hardware, not the settings-level `observation` above: with Shizuku
         // or WSS the settings readback is `Verified` while the HAL is still converging, so pending would
         // otherwise never clear until the window expired.
+        val latches = adapter?.policyLatchesAtPlug == true
+        val battery = if (latches) batteryReader.read() else null
+        // Plug-latched adapters: an observed unpowered moment durably resolves an unresolved latched
+        // request — the plug session that sampled the old value is over, so the next one samples the
+        // new value. Persisted as a watermark so a later *plugged* refresh still knows it happened.
+        if (latches && battery?.plugged == 0 &&
+            preferences.lastRequestedPluggedNow() == true &&
+            preferences.unpluggedSeenAtNow() <= preferences.lastRequestedAtNow()
+        ) {
+            preferences.recordUnpluggedSeen(System.currentTimeMillis())
+        }
         val pending = computeRefreshPending(
             reqPolicy = preferences.lastRequestedNow(),
             reqAt = preferences.lastRequestedAtNow(),
@@ -437,6 +471,11 @@ class ChargingRepository @Inject constructor(
             observation = observation,
             hardware = adapter?.readHardware(context),
             verification = adapter?.verification ?: VerificationStrategy.ASYNC_HARDWARE,
+            policyLatchesAtPlug = latches,
+            reqPlugged = if (latches) preferences.lastRequestedPluggedNow() else null,
+            unpluggedSeenAt = if (latches) preferences.unpluggedSeenAtNow() else 0L,
+            battery = battery,
+            limitPercent = adapter?.latchedLimitPercent() ?: NO_LATCHED_LIMIT,
         )
         val built = ChargingState(
             device = DeviceInfo.current(context),
@@ -547,6 +586,18 @@ internal fun chooseSyncObservation(
  * successful read resolves the transition: a Verified value (matching OR different — a different value is a
  * native/competing change that has already taken effect) or a readable-but-unrecognized OEM value. Only a
  * genuinely unreadable/generic-unknown sync state keeps the request pending until the window expires.
+ *
+ * Plug-latched adapters ([policyLatchesAtPlug]) are a third case: their readback proves *configuration*, not
+ * effect, and there is no clock to run down — the ROM samples the key at the next plug-session start, whenever
+ * that is. Such a request resolves only on evidence (any one suffices):
+ *  1. it was written while confidently unplugged ([reqPlugged] == false) — the very next plug samples it;
+ *  2. an unpowered moment was observed and persisted since the write ([unpluggedSeenAt] > [reqAt]);
+ *  3. the [battery] evidence reports unpowered right now — same resolution, observed live;
+ *  4. the hardware reports the exact target (the configured limit is demonstrably enforcing);
+ *  5. limit-disproof, the only positive signal for a full-charge target: actively charging (or full)
+ *     ABOVE the adapter's cap ([limitPercent]) proves no limit session is enforcing. Below the cap the
+ *     evidence is genuinely ambiguous — a latched limit also reads "charging" while still climbing.
+ * Otherwise it stays pending with [PendingRequest.awaitingReplug] set, without expiry.
  */
 internal fun computeRefreshPending(
     reqPolicy: ChargePolicy?,
@@ -555,19 +606,57 @@ internal fun computeRefreshPending(
     observation: ChargeObservation,
     hardware: ChargeObservation?,
     verification: VerificationStrategy,
+    policyLatchesAtPlug: Boolean = false,
+    reqPlugged: Boolean? = null,
+    unpluggedSeenAt: Long = 0L,
+    battery: BatteryReadout? = null,
+    limitPercent: Int = NO_LATCHED_LIMIT,
 ): PendingRequest? {
     if (reqPolicy == null || reqAt <= 0L) return null
-    if (now - reqAt !in 0 until SETTLING_WINDOW_MILLIS) return null
     if (observation is ChargeObservation.Unsupported || observation is ChargeObservation.NeedsSetup) return null
+    if (policyLatchesAtPlug) {
+        // No clock guard: a backwards wall-clock jump only disables the watermark comparison (rule 2)
+        // until a fresh unplug is observed — clearing here would claim "applied" without evidence,
+        // which is the one error this state exists to prevent. Live evidence (rules 3–5) is unaffected.
+        val resolved = reqPlugged == false ||
+            unpluggedSeenAt > reqAt ||
+            battery?.plugged == 0 ||
+            hardwareConfirms(hardware, reqPolicy) ||
+            (reqPolicy.allowsFullCharge &&
+                battery != null && battery.onCharger &&
+                (battery.levelPercent ?: 0) > limitPercent &&
+                (battery.status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                    battery.status == BatteryManager.BATTERY_STATUS_FULL))
+        return if (resolved) null else PendingRequest(reqPolicy, reqAt, awaitingReplug = true)
+    }
+    if (now - reqAt !in 0 until SETTLING_WINDOW_MILLIS) return null
     val confirmed = when (verification) {
         VerificationStrategy.SYNC_READBACK ->
             observation is ChargeObservation.Verified ||
                 (observation is ChargeObservation.Unknown && observation.unrecognizedValue)
-        VerificationStrategy.ASYNC_HARDWARE ->
-            hardware is ChargeObservation.Verified &&
-                hardware.backend == BackendKind.BATTERY_HARDWARE &&
-                hardware.policy == reqPolicy
+        VerificationStrategy.ASYNC_HARDWARE -> hardwareConfirms(hardware, reqPolicy)
     }
     if (confirmed) return null
     return PendingRequest(reqPolicy, reqAt)
 }
+
+/** Sentinel for "no latched fixed-limit cap": no observable percent can exceed it, disabling limit-disproof. */
+internal const val NO_LATCHED_LIMIT = 100
+
+/** The cap a plug-latched adapter's limit-disproof rule compares against, from its protective default. */
+internal fun ChargingAdapter.latchedLimitPercent(): Int =
+    (defaultProtectivePolicy as? ChargePolicy.FixedLimit)?.percent ?: NO_LATCHED_LIMIT
+
+/** A BATTERY_HARDWARE-verified observation for exactly [target]. */
+internal fun hardwareConfirms(hardware: ChargeObservation?, target: ChargePolicy): Boolean =
+    hardware is ChargeObservation.Verified &&
+        hardware.backend == BackendKind.BATTERY_HARDWARE &&
+        hardware.policy == target
+
+/**
+ * Whether a degraded post-write fallback [PendingRequest] must carry the replug condition: only on a
+ * plug-latched adapter, and not when the write demonstrably happened unplugged (then the next plug
+ * samples it and the windowed cue is the honest one).
+ */
+private fun fallbackAwaitsReplug(adapter: ChargingAdapter, pluggedAtWrite: Boolean?): Boolean =
+    adapter.policyLatchesAtPlug && pluggedAtWrite != false

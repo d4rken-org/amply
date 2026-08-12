@@ -81,6 +81,7 @@
     <string name="charging_message_applying">Applying %1$s…</string>
     <string name="charging_message_write_failed">Write failed</string>
     <string name="charging_message_verified">%1$s setting verified</string>
+    <string name="charging_message_applied_replug">%1$s set — takes effect after you unplug and replug</string>
     <string name="charging_message_requested">%1$s requested</string>
     <string name="charging_message_shizuku_granted">Shizuku permission granted</string>
     <string name="charging_message_shizuku_denied">Shizuku permission was not granted</string>

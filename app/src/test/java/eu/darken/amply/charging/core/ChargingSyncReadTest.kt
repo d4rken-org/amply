@@ -2,6 +2,7 @@ package eu.darken.amply.charging.core
 
 import android.content.Context
 import android.content.Intent
+import eu.darken.amply.battery.core.BatteryReadout
 import eu.darken.amply.charging.core.access.AccessBackend
 import eu.darken.amply.charging.core.access.BackendStatus
 import eu.darken.amply.charging.core.access.SettingMutation
@@ -22,6 +23,13 @@ class ChargingSyncReadTest {
     private val target = ChargePolicy.FixedLimit(80)
     private val other = ChargePolicy.Unrestricted
     private val t0 = 1_000_000L
+
+    private companion object {
+        // android.os.BatteryManager.BATTERY_STATUS_* — inlined so this stays a plain JVM test.
+        const val STATUS_CHARGING = 2
+        const val STATUS_NOT_CHARGING = 4
+        const val STATUS_FULL = 5
+    }
 
     private fun verified(policy: ChargePolicy, backend: BackendKind) = ChargeObservation.Verified(policy, backend)
     private fun unrecognized() = ChargeObservation.Unknown("weird".toCaString(), unrecognizedValue = true)
@@ -190,6 +198,115 @@ class ChargingSyncReadTest {
     @Test
     fun `async ignores settings-only verification without a hardware signal`() {
         async(verified(target, BackendKind.SHIZUKU), null) shouldBe PendingRequest(target, t0)
+    }
+
+    // --- computeRefreshPending: plug-latched condition (no clock, resolves only on evidence) ---
+
+    private fun latched(
+        reqPolicy: ChargePolicy = other, // Unrestricted: the direction with no hardware confirmation
+        reqPlugged: Boolean? = true,
+        unpluggedSeenAt: Long = 0L,
+        battery: BatteryReadout? = null,
+        hardware: ChargeObservation? = null,
+        now: Long = t0 + 5_000,
+        limitPercent: Int = 80,
+    ) = computeRefreshPending(
+        reqPolicy = reqPolicy,
+        reqAt = t0,
+        now = now,
+        observation = verified(reqPolicy, BackendKind.DIRECT_WSS), // readback always confirms the config
+        hardware = hardware,
+        verification = VerificationStrategy.SYNC_READBACK,
+        policyLatchesAtPlug = true,
+        reqPlugged = reqPlugged,
+        unpluggedSeenAt = unpluggedSeenAt,
+        battery = battery,
+        limitPercent = limitPercent,
+    )
+
+    private fun pluggedBattery(percent: Int? = null, status: Int? = null) =
+        BatteryReadout(levelPercent = percent, status = status, plugged = 2 /* USB */)
+
+    @Test
+    fun `latched written while plugged stays pending despite a verified readback`() {
+        latched() shouldBe PendingRequest(other, t0, awaitingReplug = true)
+    }
+
+    @Test
+    fun `latched pending has no expiry`() {
+        latched(now = t0 + SETTLING_WINDOW_MILLIS * 100) shouldBe PendingRequest(other, t0, awaitingReplug = true)
+    }
+
+    @Test
+    fun `latched written unplugged is settled immediately`() {
+        latched(reqPlugged = false) shouldBe null
+    }
+
+    @Test
+    fun `latched unknown plug state at write is treated as plugged`() {
+        latched(reqPlugged = null) shouldBe PendingRequest(other, t0, awaitingReplug = true)
+    }
+
+    @Test
+    fun `latched resolves once an unplug was observed after the write`() {
+        latched(unpluggedSeenAt = t0 + 1) shouldBe null
+    }
+
+    @Test
+    fun `latched watermark at exactly the request time does not resolve`() {
+        latched(unpluggedSeenAt = t0) shouldBe PendingRequest(other, t0, awaitingReplug = true)
+    }
+
+    @Test
+    fun `latched resolves on live unpowered evidence`() {
+        latched(battery = BatteryReadout(plugged = 0)) shouldBe null
+    }
+
+    @Test
+    fun `latched unreported plug state is not unpowered evidence`() {
+        latched(battery = BatteryReadout(plugged = null)) shouldBe PendingRequest(other, t0, awaitingReplug = true)
+    }
+
+    @Test
+    fun `latched limit target resolves on matching hardware evidence`() {
+        latched(reqPolicy = target, hardware = verified(target, BackendKind.BATTERY_HARDWARE)) shouldBe null
+    }
+
+    @Test
+    fun `latched settings-level verification is not hardware evidence`() {
+        latched(reqPolicy = target, hardware = verified(target, BackendKind.SHIZUKU)) shouldBe
+            PendingRequest(target, t0, awaitingReplug = true)
+    }
+
+    @Test
+    fun `latched unrestricted resolves once charging above the cap`() {
+        latched(battery = pluggedBattery(percent = 81, status = STATUS_CHARGING)) shouldBe null
+        latched(battery = pluggedBattery(percent = 100, status = STATUS_FULL)) shouldBe null
+    }
+
+    @Test
+    fun `latched unrestricted charging at or below the cap is ambiguous and stays pending`() {
+        // A latched limit also reads "charging" while still climbing toward the cap.
+        latched(battery = pluggedBattery(percent = 80, status = STATUS_CHARGING)) shouldBe
+            PendingRequest(other, t0, awaitingReplug = true)
+    }
+
+    @Test
+    fun `latched unrestricted held above the cap without charging stays pending`() {
+        // NOT_CHARGING above the cap proves nothing about THIS request; only active charging does.
+        latched(battery = pluggedBattery(percent = 85, status = STATUS_NOT_CHARGING)) shouldBe
+            PendingRequest(other, t0, awaitingReplug = true)
+    }
+
+    @Test
+    fun `latched limit-disproof never applies to a limit target`() {
+        latched(reqPolicy = target, battery = pluggedBattery(percent = 90, status = STATUS_CHARGING)) shouldBe
+            PendingRequest(target, t0, awaitingReplug = true)
+    }
+
+    @Test
+    fun `latched backwards clock keeps pending rather than claiming applied`() {
+        latched(now = t0 - 1) shouldBe PendingRequest(other, t0, awaitingReplug = true)
     }
 
     private class FakeBackend(override val kind: BackendKind) : AccessBackend {
