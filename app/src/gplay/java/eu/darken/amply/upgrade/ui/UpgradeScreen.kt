@@ -157,7 +157,7 @@ private fun UpgradeAcquisitionContent(
 
     // During a YOUNG grace episode the offers box is hidden: likely a blip, and offers next to "still
     // active" would contradict it. An aged episode brings them back.
-    if (!inGrace || loadedState?.grace?.showDiagnostics == true) {
+    if (!inGrace || loadedState.grace?.showDiagnostics == true) {
         UpgradeOffersBox(
             uiState = uiState,
             onIap = onIap,
