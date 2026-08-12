@@ -225,7 +225,10 @@ class DashboardViewModel @Inject constructor(
             .map { it.pending }
             .distinctUntilChanged()
             .flatMapLatest { pending ->
-                if (pending == null) {
+                if (pending == null || pending.awaitingReplug) {
+                    // Awaiting-replug requests have no deadline: resolution comes from evidence at
+                    // the next refresh (MainActivity's battery receiver fires one on every plug
+                    // transition while the UI is visible; the SettleRefreshWorker covers the rest).
                     emptyFlow()
                 } else {
                     flow {
