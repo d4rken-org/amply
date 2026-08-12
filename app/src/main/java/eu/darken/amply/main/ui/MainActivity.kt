@@ -141,8 +141,14 @@ class MainActivity : ComponentActivity() {
                     // Whether this visit is the "check my status" entry (which never auto-dismisses)
                     // or a gate/promo asking for the upgrade.
                     var upgradeManage by rememberSaveable { mutableStateOf(false) }
+                    // Which surface asked for capture: the denial event arrives asynchronously, so
+                    // the origin is recorded at the request instead of read off `destination` when
+                    // the answer lands (the user may have navigated on by then).
+                    var captureGateOrigin by rememberSaveable { mutableStateOf(SettingsDestination.BATTERY) }
                     val enterUpgrade = { origin: SettingsDestination, manage: Boolean ->
-                        upgradeOrigin = origin
+                        // Never record the upgrade screen as its own return target: a second entry
+                        // while it is already open would strand Back on this screen.
+                        if (origin != SettingsDestination.UPGRADE) upgradeOrigin = origin
                         upgradeManage = manage
                         destination = SettingsDestination.UPGRADE
                     }
@@ -222,9 +228,13 @@ class MainActivity : ComponentActivity() {
                         enterUpgrade(SettingsDestination.DASHBOARD, false)
                     }
                 }
-                LaunchedEffect(destination) {
-                    val origin = destination
-                    statsViewModel.upgradeRequiredEvents.collect { enterUpgrade(origin, false) }
+                // Keyed on Unit, not on `destination`: re-keying would cancel and restart the
+                // collector on every navigation, and a denial emitted in that gap would be lost.
+                // The origin comes from the recorded request instead.
+                LaunchedEffect(Unit) {
+                    statsViewModel.upgradeRequiredEvents.collect {
+                        enterUpgrade(captureGateOrigin, false)
+                    }
                 }
                 // The entitlement check passed; only now is the notification permission worth asking
                 // for. Reversing the two would put a user through a system prompt and then refuse.
@@ -461,6 +471,7 @@ class MainActivity : ComponentActivity() {
                             // a lapsed entitlement must never trap a user with a running service.
                             onCaptureEnabledChange = { enabled ->
                                 if (enabled) {
+                                    captureGateOrigin = SettingsDestination.CHARGING_HISTORY_SETTINGS
                                     statsViewModel.requestEnableCapture()
                                 } else {
                                     statsViewModel.setCaptureEnabled(false)
@@ -479,7 +490,10 @@ class MainActivity : ComponentActivity() {
                             onBack = { destination = SettingsDestination.DASHBOARD },
                             onOpenHistory = { destination = SettingsDestination.CHARGE_HISTORY },
                             // Enable-only: turning recording back off lives in Settings › Charging history.
-                            onEnableCapture = statsViewModel::requestEnableCapture,
+                            onEnableCapture = {
+                                captureGateOrigin = SettingsDestination.BATTERY
+                                statsViewModel.requestEnableCapture()
+                            },
                             onOpenSession = { id -> openSession(id, SettingsDestination.BATTERY) },
                         )
                         // The Room-backed session list is collected only here, so the stats DB isn't

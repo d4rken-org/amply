@@ -51,18 +51,20 @@ class StatsViewModelUpgradeGateTest {
 
     private val storeScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    private class FakeInfo(override val isPro: Boolean) : UpgradeRepo.Info {
+    private class FakeInfo(
+        override val isPro: Boolean,
+        override val error: Throwable? = null,
+    ) : UpgradeRepo.Info {
         override val type: UpgradeRepo.Type = UpgradeRepo.Type.FOSS
         override val isSettled: Boolean = true
         override val upgradedAt: Instant? = null
-        override val error: Throwable? = null
     }
 
-    private class FakeUpgradeRepo(isPro: Boolean) : UpgradeRepo {
+    private class FakeUpgradeRepo(isPro: Boolean, error: Throwable? = null) : UpgradeRepo {
         override val storeSite: String = ""
         override val upgradeSite: String = ""
         override val betaSite: String = ""
-        override val upgradeInfo: Flow<UpgradeRepo.Info> = MutableStateFlow(FakeInfo(isPro))
+        override val upgradeInfo: Flow<UpgradeRepo.Info> = MutableStateFlow(FakeInfo(isPro, error))
         override suspend fun refresh() = Unit
     }
 
@@ -75,7 +77,7 @@ class StatsViewModelUpgradeGateTest {
         storeScope.cancel()
     }
 
-    private fun viewModel(isPro: Boolean): Pair<StatsViewModel, StatsPreferences> {
+    private fun viewModel(isPro: Boolean, upgradeError: Throwable? = null): Pair<StatsViewModel, StatsPreferences> {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val store = PreferenceDataStoreFactory.create(scope = storeScope) {
             File(tempFolder.newFolder(), "test.preferences_pb")
@@ -101,7 +103,7 @@ class StatsViewModelUpgradeGateTest {
             repository = ChargeStatsRepository(database, recorder, bootIdSource),
             recorder = recorder,
             serviceHealth = CaptureServiceHealth(),
-            upgradeRepo = FakeUpgradeRepo(isPro),
+            upgradeRepo = FakeUpgradeRepo(isPro, upgradeError),
             savedStateHandle = SavedStateHandle(),
         )
         return vm to preferences
@@ -137,6 +139,20 @@ class StatsViewModelUpgradeGateTest {
 
         withTimeout(TIMEOUT_MS) { vm.upgradeRequiredEvents.first() }
         preferences.captureEnabled.value() shouldBe false
+    }
+
+    @Test fun `the write-level re-check fails open when the entitlement state carries an error`(): Unit = runBlocking {
+        // The write gate is the backend one (isProSettled): a settled error state is "couldn't
+        // verify", not "not entitled", and refusing a paying user on a billing hiccup is worse than
+        // recording a charge for someone who hasn't paid.
+        val (vm, preferences) = viewModel(isPro = false, upgradeError = IllegalStateException("billing broke"))
+
+        vm.setCaptureEnabled(true)
+
+        withTimeout(TIMEOUT_MS) {
+            while (!preferences.captureEnabled.value()) { /* awaiting the write */ }
+        }
+        withTimeoutOrNull(QUIET_MS) { vm.upgradeRequiredEvents.first() } shouldBe null
     }
 
     @Test fun `turning recording off is never gated`(): Unit = runBlocking {

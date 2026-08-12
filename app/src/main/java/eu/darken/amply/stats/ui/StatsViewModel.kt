@@ -23,6 +23,7 @@ import eu.darken.amply.stats.core.StatsPreferences
 import eu.darken.amply.stats.core.StatsRetention
 import eu.darken.amply.upgrade.core.UpgradeRepo
 import eu.darken.amply.upgrade.core.isProForUi
+import eu.darken.amply.upgrade.core.isProSettled
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
@@ -170,7 +171,10 @@ class StatsViewModel @Inject constructor(
         viewModelScope.launch {
             // Re-checked here as defense in depth, not as the primary gate: this is the only path
             // that actually writes the flag, and it is reachable from more than one affordance.
-            if (enabled && !upgradeRepo.isProForUi()) {
+            // The backend gate (isProSettled), not the navigation one: it reconciles a cold-start
+            // billing race before denying, and fails open on a settled error — a Play hiccup must
+            // never refuse a paying user the write.
+            if (enabled && !upgradeRepo.isProSettled()) {
                 log(TAG) { "Capture enable denied at the write, routing to the upgrade screen" }
                 upgradeRequiredEvents.tryEmit(Unit)
                 return@launch
