@@ -206,6 +206,7 @@ private fun readyState() = DashboardUiState(
         device = pixelDevice(),
         adapterName = "Pixel Charge Control".toCaString(),
         adapterId = "pixel",
+        adapterDetail = "Charging changes take about 15 seconds to reach the hardware".toCaString(),
         supportedPolicies = pixelPolicies(),
         reconnectSupported = true,
         controlEnabled = true,

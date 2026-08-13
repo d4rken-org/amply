@@ -483,6 +483,18 @@ private fun StatusCard(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        // Standing adapter fact (write latency, Shizuku requirement, replug semantics) — only set
+        // while control is enabled, so it never repeats a gate-failure reason shown above. Hidden
+        // while a replug is pending: the transient hint below states the same fact as an instruction,
+        // and printing both would say "reconnect the charger" twice on latched adapters.
+        state.charging.adapterDetail?.takeIf { !state.charging.isAwaitingReplug() }?.let {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                it.asComposable(),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Spacer(Modifier.height(4.dp))
         Text(
             stringResource(
@@ -889,6 +901,7 @@ private fun DashboardScreenPreview() = PreviewWrapper {
                 device = DeviceInfo("Google", "Pixel 8", 36, "preview"),
                 adapterName = "Pixel Charge Control".toCaString(),
                 adapterId = "pixel",
+                adapterDetail = "Charging changes take about 15 seconds to reach the hardware".toCaString(),
                 supportedPolicies = listOf(
                     ChargePolicy.FixedLimit(80),
                     ChargePolicy.Adaptive,
@@ -1125,6 +1138,7 @@ private fun DashboardScreenAwaitingReplugPreview() = PreviewWrapper {
                 device = DeviceInfo("Google", "Pixel 9 Pro XL", 37, "preview"),
                 adapterName = "GrapheneOS charge limit".toCaString(),
                 adapterId = "grapheneos-chargelimit-v1",
+                adapterDetail = "Changes take effect the next time the charger is reconnected".toCaString(),
                 supportedPolicies = listOf(
                     ChargePolicy.FixedLimit(80),
                     ChargePolicy.Unrestricted,
