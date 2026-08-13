@@ -55,4 +55,24 @@ class ChargeStatusTest {
         state().settlingTarget() shouldBe target
         state(pending = null).settlingTarget() shouldBe null
     }
+
+    // --- awaitingReplug: a latched request is a condition, not a countdown ---
+
+    @Test
+    fun `an awaiting-replug request is never settling`() {
+        val s = state(pending = PendingRequest(target, t0, awaitingReplug = true))
+        s.isSettling(t0 + 5_000) shouldBe false
+    }
+
+    @Test
+    fun `isAwaitingReplug mirrors the pending flag`() {
+        state(pending = PendingRequest(target, t0, awaitingReplug = true)).isAwaitingReplug() shouldBe true
+        state().isAwaitingReplug() shouldBe false
+        state(pending = null).isAwaitingReplug() shouldBe false
+    }
+
+    @Test
+    fun `settlingTarget still reports an awaiting-replug target`() {
+        state(pending = PendingRequest(target, t0, awaitingReplug = true)).settlingTarget() shouldBe target
+    }
 }

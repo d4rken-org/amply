@@ -16,6 +16,8 @@ class DeviceSupportReporterTest {
         model: String = "SM-S911B",
         adapterId: String? = "samsung-lab",
         isLineageOs: Boolean = false,
+        isGrapheneOs: Boolean = false,
+        hasBatteryChargeLimit: Boolean = false,
         lineageHealth: LineageHealthSummary? = null,
     ) = DeviceSupportReport(
         manufacturer = manufacturer,
@@ -33,8 +35,10 @@ class DeviceSupportReporterTest {
         oplusRomVersion = null,
         lineageOsVersion = null,
         isLineageOs = isLineageOs,
+        isGrapheneOs = isGrapheneOs,
         lineageHealth = lineageHealth,
         hasProtectBattery = true,
+        hasBatteryChargeLimit = hasBatteryChargeLimit,
         hasLineageSettingsProvider = false,
         adapterId = adapterId,
         adapterMatched = adapterId != null,
@@ -52,7 +56,7 @@ class DeviceSupportReporterTest {
     fun `format is deterministic and schema-tagged`() {
         val text = formatReport(report())
         text shouldStartWith "Amply device-support request"
-        text shouldContain "report_schema=8"
+        text shouldContain "report_schema=9"
         text shouldContain "manufacturer=Samsung"
         text shouldContain "model=SM-S911B"
         text shouldContain "one_ui_version=61000"
@@ -60,6 +64,8 @@ class DeviceSupportReporterTest {
         text shouldContain "oplus_rom_version=none"
         text shouldContain "is_lineageos=false"
         text shouldContain "lineageos_version=none"
+        text shouldContain "is_grapheneos=false"
+        text shouldContain "has_battery_charge_limit=false"
         text shouldContain "has_protect_battery=true"
         text shouldContain "has_lineage_settings_provider=false"
         text shouldContain "adapter=samsung-lab"
@@ -111,6 +117,15 @@ class DeviceSupportReporterTest {
         val text = formatReport(report())
         text shouldContain "lineage_cc_provider=unknown"
         text shouldContain "lineage_cc_limit_mechanism=UNKNOWN"
+    }
+
+    @Test
+    fun `a grapheneos report carries identity and key presence`() {
+        // The triage-relevant pairing: identity without the key means the wizard should discover it;
+        // identity with the key means the live gate should have engaged.
+        val text = formatReport(report(isGrapheneOs = true, hasBatteryChargeLimit = true))
+        text shouldContain "is_grapheneos=true"
+        text shouldContain "has_battery_charge_limit=true"
     }
 
     @Test

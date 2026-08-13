@@ -203,6 +203,8 @@ internal object SettingWritePolicy {
             "security_pc_secure_protect_mode_key" to setOf("0", "1"),
         ),
         "global" to mapOf(
+            // GrapheneOS charge limit (1 = fixed 80% cap; the ROM latches it at plug-session start)
+            "battery_charge_limit" to setOf("0", "1"),
             // Samsung battery protection
             "protect_battery" to setOf("0", "1", "3"),
             "battery_protection_threshold" to setOf("80", "85", "90", "95"),

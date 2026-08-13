@@ -66,6 +66,16 @@ interface ChargingAdapter {
      */
     val preferShizukuForWrites: Boolean get() = false
 
+    /**
+     * The ROM's charging service samples the configured policy only at the START of a plug session:
+     * a write made while external power is present has no hardware effect until the next
+     * unplug→replug (GrapheneOS). Reads stay synchronous ([VerificationStrategy.SYNC_READBACK] —
+     * the readback truthfully reports the *configured* value); this flag changes what a settled
+     * write means (pending-until-replug instead of the settling window) and arms the session
+     * engine's disconnect grace window.
+     */
+    val policyLatchesAtPlug: Boolean get() = false
+
     fun probe(device: DeviceInfo): AdapterSupport
     fun readHardware(context: Context): ChargeObservation? = null
     fun decodeHardware(chargingState: Int, plugged: Boolean): ChargeObservation? = null

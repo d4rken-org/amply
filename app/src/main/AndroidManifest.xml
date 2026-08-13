@@ -12,6 +12,10 @@
     <queries>
         <package android:name="moe.shizuku.privileged.api" />
         <package android:name="com.google.android.settings.intelligence" />
+        <!-- GrapheneOS identity: no property/feature/fingerprint marker exists, so detection resolves
+             these core OS packages (DeviceInfo.GRAPHENEOS_PACKAGES). -->
+        <package android:name="app.grapheneos.setupwizard" />
+        <package android:name="app.grapheneos.info" />
         <!-- LineageOS private settings provider — needed so resolveContentProvider/query aren't
              hidden by package visibility on API 30+ (the Lineage charge-control adapter reads it). -->
         <provider android:authorities="lineagesettings" />

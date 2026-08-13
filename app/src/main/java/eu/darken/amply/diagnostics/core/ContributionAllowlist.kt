@@ -21,6 +21,8 @@ object ContributionAllowlist {
         SettingId(SettingNamespace.SECURE, "adaptive_charging_enabled") to setOf("0", "1"),
         // Xiaomi HyperOS charging protection
         SettingId(SettingNamespace.SECURE, "security_pc_secure_protect_mode_key") to setOf("0", "1"),
+        // GrapheneOS charging optimization
+        SettingId(SettingNamespace.GLOBAL, "battery_charge_limit") to setOf("0", "1"),
         // Samsung battery protection
         SettingId(SettingNamespace.GLOBAL, "protect_battery") to setOf("0", "1", "3"),
         SettingId(SettingNamespace.GLOBAL, "battery_protection_threshold") to setOf("80", "85", "90", "95"),

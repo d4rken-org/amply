@@ -93,6 +93,104 @@ class SessionDecisionEngineTest {
         decision shouldBe SessionDecision.CONTINUE
     }
 
+    // --- Replug grace window (plug-latched adapters; disabled via replugGraceMillis = 0 elsewhere) ---
+
+    private val grace = SessionDecisionEngine.REPLUG_GRACE_MILLIS
+
+    private fun decideGrace(
+        age: Long,
+        plugged: Boolean,
+        full: Boolean = false,
+        connectedSeen: Boolean = true,
+        disconnectedAt: Long? = null,
+        replugGraceMillis: Long = grace,
+    ) = SessionDecisionEngine.decide(
+        session = ChargeSessionRecord(
+            ChargePolicy.FixedLimit(80),
+            started,
+            connectedSeen,
+            disconnectedAtMillis = disconnectedAt,
+        ),
+        nowMillis = started + age,
+        plugged = plugged,
+        full = full,
+        replugGraceMillis = replugGraceMillis,
+    )
+
+    @Test
+    fun `grace disabled keeps the immediate disconnect restore`() {
+        decideGrace(age = 10_000, plugged = false, replugGraceMillis = 0L) shouldBe
+            SessionDecision.RESTORE_DISCONNECTED
+    }
+
+    @Test
+    fun `first disconnect opens the grace window instead of restoring`() {
+        decideGrace(age = 10_000, plugged = false) shouldBe SessionDecision.MARK_DISCONNECTED
+    }
+
+    @Test
+    fun `unplugged inside the window continues`() {
+        decideGrace(age = 10_000 + grace - 1, plugged = false, disconnectedAt = started + 10_000) shouldBe
+            SessionDecision.CONTINUE
+    }
+
+    @Test
+    fun `window expiry restores`() {
+        decideGrace(age = 10_000 + grace, plugged = false, disconnectedAt = started + 10_000) shouldBe
+            SessionDecision.RESTORE_DISCONNECTED
+    }
+
+    @Test
+    fun `a backwards clock voids the window and restores`() {
+        decideGrace(age = 9_000, plugged = false, disconnectedAt = started + 10_000) shouldBe
+            SessionDecision.RESTORE_DISCONNECTED
+    }
+
+    @Test
+    fun `replug inside the window is marked`() {
+        decideGrace(age = 15_000, plugged = true, disconnectedAt = started + 10_000) shouldBe
+            SessionDecision.MARK_REPLUGGED
+    }
+
+    @Test
+    fun `replug after expiry restores instead of resuming a stale session`() {
+        // The latch already happened at the physical plug event either way; honoring the persisted
+        // bound closes the session with a protective config rather than resuming hours later.
+        decideGrace(age = 10_000 + grace * 3, plugged = true, disconnectedAt = started + 10_000) shouldBe
+            SessionDecision.RESTORE_DISCONNECTED
+    }
+
+    @Test
+    fun `replug with a backwards clock also restores`() {
+        decideGrace(age = 9_000, plugged = true, disconnectedAt = started + 10_000) shouldBe
+            SessionDecision.RESTORE_DISCONNECTED
+    }
+
+    @Test
+    fun `full battery wins over an open grace window`() {
+        decideGrace(age = 15_000, plugged = false, full = true, disconnectedAt = started + 10_000) shouldBe
+            SessionDecision.RESTORE_FULL
+    }
+
+    @Test
+    fun `safety timeout wins over an open grace window`() {
+        decideGrace(
+            age = SessionDecisionEngine.SAFETY_TIMEOUT_MILLIS,
+            plugged = false,
+            disconnectedAt = started + SessionDecisionEngine.SAFETY_TIMEOUT_MILLIS - 1_000,
+        ) shouldBe SessionDecision.RESTORE_SAFETY_TIMEOUT
+    }
+
+    @Test
+    fun `grace never engages before the first connection`() {
+        decideGrace(age = 1_000, plugged = false, connectedSeen = false) shouldBe SessionDecision.CONTINUE
+    }
+
+    @Test
+    fun `grace constant is the real duration`() {
+        SessionDecisionEngine.REPLUG_GRACE_MILLIS shouldBe 30_000L
+    }
+
     private fun decide(age: Long, connectedSeen: Boolean, plugged: Boolean, full: Boolean) =
         SessionDecisionEngine.decide(
             session = ChargeSessionRecord(ChargePolicy.FixedLimit(80), started, connectedSeen),

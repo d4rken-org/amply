@@ -28,8 +28,10 @@ import eu.darken.amply.charging.core.ChargePolicy
  * unrestricted decodes as [ChargeObservation.Unknown] on Pixel's powered NORMAL state, so a journal
  * fallback would keep claiming a limit that no longer exists. Only a [ChargeObservation.Verified]
  * fixed limit may be named. In practice nothing loses a percentage it legitimately had: only the
- * Pixel adapter implements `decodeHardware` and only Pixel supports the reconnect gesture, so an
- * unverified state simply falls back to the generic "while your charge limit is holding" copy.
+ * Pixel and GrapheneOS adapters implement `decodeHardware`, and only Pixel supports the reconnect
+ * gesture (GrapheneOS latches the setting at plug-session start, so the gesture's write-after-replug
+ * can never take effect there) — an unverified state simply falls back to the generic "while your
+ * charge limit is holding" copy.
  *
  * Accepted residual (arming only, distinct from the above): with any-level ON, inconclusive hardware
  * evidence plus a stale protective journal still arms even if charging was since set unrestricted

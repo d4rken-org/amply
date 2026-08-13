@@ -53,6 +53,10 @@ object SessionStartDecider {
 enum class SessionDecision {
     CONTINUE,
     MARK_CONNECTED,
+    /** Plug-latched grace: first disconnect observed — open the replug window instead of restoring. */
+    MARK_DISCONNECTED,
+    /** Plug-latched grace: replug inside the window — the plug transition latched the override. */
+    MARK_REPLUGGED,
     RESTORE_FULL,
     RESTORE_DISCONNECTED,
     RESTORE_ARM_TIMEOUT,
@@ -63,6 +67,21 @@ object SessionDecisionEngine {
     const val ARM_TIMEOUT_MILLIS = 15 * 60 * 1000L
     const val SAFETY_TIMEOUT_MILLIS = 24 * 60 * 60 * 1000L
 
+    /**
+     * Replug grace for plug-latched adapters: how long after a disconnect the session keeps waiting
+     * for the replug that latches its override, instead of restoring immediately. Wall clock — the
+     * timestamp is persisted in the session record and must survive process death. Long enough to
+     * read a notification and re-seat a cable; bounded because during grace the device sits unplugged
+     * with the override *configured* — expiry restores, and a post-expiry replug then latches the
+     * already-restored protective value (fail safe).
+     */
+    const val REPLUG_GRACE_MILLIS = 30_000L
+
+    /**
+     * [replugGraceMillis] > 0 only for plug-latched adapters
+     * ([eu.darken.amply.charging.core.adapter.ChargingAdapter.policyLatchesAtPlug]); 0 disables the
+     * grace path entirely, keeping every other adapter's decisions unchanged.
+     */
     fun decide(
         session: ChargeSessionRecord,
         nowMillis: Long,
@@ -70,12 +89,31 @@ object SessionDecisionEngine {
         full: Boolean,
         armTimeoutMillis: Long = ARM_TIMEOUT_MILLIS,
         safetyTimeoutMillis: Long = SAFETY_TIMEOUT_MILLIS,
+        replugGraceMillis: Long = 0L,
     ): SessionDecision {
         val age = (nowMillis - session.startedAtMillis).coerceAtLeast(0)
         return when {
             full -> SessionDecision.RESTORE_FULL
             age >= safetyTimeoutMillis -> SessionDecision.RESTORE_SAFETY_TIMEOUT
-            session.connectedSeen && !plugged -> SessionDecision.RESTORE_DISCONNECTED
+            session.connectedSeen && !plugged -> when {
+                replugGraceMillis <= 0L -> SessionDecision.RESTORE_DISCONNECTED
+                session.disconnectedAtMillis == null -> SessionDecision.MARK_DISCONNECTED
+                // Expiry — or a backwards wall clock, which voids the window's evidence: fail safe
+                // and restore rather than waiting on a timestamp that proves nothing anymore.
+                nowMillis - session.disconnectedAtMillis !in 0 until replugGraceMillis ->
+                    SessionDecision.RESTORE_DISCONNECTED
+                else -> SessionDecision.CONTINUE
+            }
+            // A replug only continues the session INSIDE the persisted window. A later replug (e.g.
+            // the process was dead through expiry) has already latched whatever the key held — no
+            // decision can affect the running plug session — so honoring the expired bound by
+            // restoring is the conservative end state: config protective, session closed.
+            session.connectedSeen && plugged && session.disconnectedAtMillis != null ->
+                if (nowMillis - session.disconnectedAtMillis in 0 until replugGraceMillis) {
+                    SessionDecision.MARK_REPLUGGED
+                } else {
+                    SessionDecision.RESTORE_DISCONNECTED
+                }
             !session.connectedSeen && plugged -> SessionDecision.MARK_CONNECTED
             !session.connectedSeen && !plugged && age >= armTimeoutMillis ->
                 SessionDecision.RESTORE_ARM_TIMEOUT

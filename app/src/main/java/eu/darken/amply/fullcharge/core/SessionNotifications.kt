@@ -109,7 +109,18 @@ object SessionNotifications {
             .build()
     }
 
-    fun session(context: Context, connected: Boolean): Notification {
+    /**
+     * [awaitingReplug]: plug-latched adapter, override written while plugged — the cable must be
+     * re-seated before charging past the limit can start. [graceWindow]: that unplug happened and
+     * the session is waiting out the replug grace window. Mutually exclusive by construction
+     * (awaiting shows plugged, grace shows unplugged); grace wins if both are ever passed.
+     */
+    fun session(
+        context: Context,
+        connected: Boolean,
+        awaitingReplug: Boolean = false,
+        graceWindow: Boolean = false,
+    ): Notification {
         ensureChannels(context)
         val restoreIntent = Intent(context, ChargeSessionService::class.java).apply {
             action = ChargeSessionService.ACTION_RESTORE
@@ -130,10 +141,15 @@ object SessionNotifications {
             .setSmallIcon(R.drawable.ic_launcher_monochrome)
             .setContentTitle(context.getString(R.string.session_notification_title))
             .setContentText(
-                context.getString(
-                    if (connected) R.string.session_notification_active
-                    else R.string.session_notification_armed,
-                ),
+                when {
+                    graceWindow -> context.getString(
+                        R.string.session_notification_grace,
+                        SessionDecisionEngine.REPLUG_GRACE_MILLIS / 1000,
+                    )
+                    connected && awaitingReplug -> context.getString(R.string.session_notification_replug)
+                    connected -> context.getString(R.string.session_notification_active)
+                    else -> context.getString(R.string.session_notification_armed)
+                },
             )
             .setContentIntent(openPendingIntent)
             .setOngoing(true)

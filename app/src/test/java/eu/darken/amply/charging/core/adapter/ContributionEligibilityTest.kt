@@ -22,6 +22,7 @@ class ContributionEligibilityTest {
         context = context,
         lineage = LineageChargingAdapter(stubReader),
         lineageLab = LineageLabAdapter(),
+        grapheneOs = GrapheneOsChargingAdapter(),
         pixel = PixelChargingAdapter(),
         samsungModern = SamsungModernChargingAdapter(),
         samsungLegacy = SamsungLegacyChargingAdapter(),
@@ -69,6 +70,16 @@ class ContributionEligibilityTest {
         val support = registry.select(device("Google", model = "Pixel 8")).support
         support.matched shouldBe true
         support.contributionWanted shouldBe false
+    }
+
+    @Test
+    fun `grapheneos with the key does not solicit, without it it does`() {
+        val ready = device("Google", model = "Pixel 9 Pro XL", sdk = 37)
+            .copy(hasChargingOptimization = false, hasGrapheneOsPackages = true, hasBatteryChargeLimit = true)
+        registry.select(ready).support.contributionWanted shouldBe false
+
+        // A future GrapheneOS build that drops or moves the key is exactly what the wizard can map.
+        registry.select(ready.copy(hasBatteryChargeLimit = false)).support.contributionWanted shouldBe true
     }
 
     @Test

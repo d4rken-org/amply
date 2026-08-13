@@ -14,6 +14,8 @@ const val SETTLING_WINDOW_MILLIS = 15_000L
  */
 fun ChargingState.isSettling(now: Long): Boolean {
     val p = pending ?: return false
+    // A latched request has no clock to run down — surfaces show the replug hint, not a spinner.
+    if (p.awaitingReplug) return false
     val age = now - p.requestedAt
     if (age !in 0 until SETTLING_WINDOW_MILLIS) return false // expired, or clock moved backwards
     val obs = observation
@@ -24,3 +26,9 @@ fun ChargingState.isSettling(now: Long): Boolean {
 
 /** The policy a settling request is converging on, or null when nothing is pending. Surfaces choose their own copy. */
 fun ChargingState.settlingTarget(): ChargePolicy? = pending?.target
+
+/**
+ * True while a written policy is waiting for the user to unplug and replug before the charging
+ * hardware can pick it up (plug-latched adapters). Mutually exclusive with [isSettling].
+ */
+fun ChargingState.isAwaitingReplug(): Boolean = pending?.awaitingReplug == true

@@ -46,6 +46,18 @@ data class ChargeSessionRecord(
      * interruption event ties back to this so a later restore can resolve it.
      */
     @SerialName("workId") val workId: String? = null,
+    /**
+     * Wall clock of the first disconnect observed inside a plug-latched adapter's replug grace
+     * window; null = not in grace. Persisted so the window survives process death (the expiry
+     * decision compares wall clocks, not elapsedRealtime).
+     */
+    @SerialName("disconnectedAtMillis") val disconnectedAtMillis: Long? = null,
+    /**
+     * Plug-latched adapters: the session override was written while external power was present, so
+     * the charging hardware has not picked it up and won't until an unplug→replug. Cleared by the
+     * replug ([FullChargeStore.markReplugged]); drives the "unplug and replug" session hint.
+     */
+    @SerialName("overrideAwaitingReplug") val overrideAwaitingReplug: Boolean = false,
 )
 
 /**
@@ -100,6 +112,7 @@ class FullChargeStore @Inject constructor(
         startedAtMillis: Long,
         workId: String? = null,
         provenance: WorkProvenance? = null,
+        overrideAwaitingReplug: Boolean = false,
     ) {
         sessionValue.update {
             ChargeSessionRecord(
@@ -108,12 +121,31 @@ class FullChargeStore @Inject constructor(
                 connectedSeen = false,
                 provenance = provenance,
                 workId = workId,
+                overrideAwaitingReplug = overrideAwaitingReplug,
             )
         }
     }
 
     suspend fun markConnected() {
         sessionValue.update { it?.copy(connectedSeen = true) }
+    }
+
+    /** Open the replug grace window: record the first disconnect a plug-latched session observed. */
+    suspend fun markDisconnected(nowMillis: Long) {
+        sessionValue.update { it?.copy(disconnectedAtMillis = nowMillis) }
+    }
+
+    /**
+     * A replug inside the grace window: the plug transition latched the session override, so both
+     * the window and the awaiting-replug hint end in one atomic edit.
+     */
+    suspend fun markReplugged() {
+        sessionValue.update { it?.copy(disconnectedAtMillis = null, overrideAwaitingReplug = false) }
+    }
+
+    /** Post-write reconciliation of the awaiting-replug hint (see ChargeSessionManager.begin). */
+    suspend fun setOverrideAwaitingReplug(awaiting: Boolean) {
+        sessionValue.update { it?.copy(overrideAwaitingReplug = awaiting) }
     }
 
     /** Adopt the current process as the session's owner and flag CONNECTED in a single atomic edit. */
