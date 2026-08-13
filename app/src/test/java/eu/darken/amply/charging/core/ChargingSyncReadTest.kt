@@ -329,6 +329,159 @@ class ChargingSyncReadTest {
             PendingRequest(other, t0, awaitingReplug = true)
     }
 
+    // --- computeUnconfirmedTarget: expected-but-missing hardware confirmation ---
+
+    private fun unconfirmed(
+        now: Long = t0 + UNCONFIRMED_THRESHOLD_MILLIS,
+        reqPolicy: ChargePolicy? = target,
+        reqAt: Long = t0,
+        observation: ChargeObservation = ChargeObservation.LastRequested(target),
+        hardware: ChargeObservation? = null,
+        expected: Boolean = true,
+    ) = computeUnconfirmedTarget(
+        reqPolicy = reqPolicy,
+        reqAt = reqAt,
+        now = now,
+        observation = observation,
+        hardware = hardware,
+        confirmationExpected = expected,
+    )
+
+    @Test
+    fun `an expected but missing confirmation surfaces the target after the threshold`() {
+        unconfirmed() shouldBe target
+    }
+
+    @Test
+    fun `inside the grace threshold nothing surfaces`() {
+        unconfirmed(now = t0 + UNCONFIRMED_THRESHOLD_MILLIS - 1) shouldBe null
+    }
+
+    @Test
+    fun `a backwards clock never surfaces a warning`() {
+        unconfirmed(now = t0 - 1) shouldBe null
+    }
+
+    @Test
+    fun `a matching hardware confirmation clears the warning`() {
+        unconfirmed(hardware = verified(target, BackendKind.BATTERY_HARDWARE)) shouldBe null
+    }
+
+    @Test
+    fun `hardware verifying a different policy still warns while the journal stands`() {
+        // WSS-only shape: the observation is only the last request, and state 5 while a fixed limit
+        // was requested means something else engaged adaptive — a real contradiction.
+        unconfirmed(hardware = verified(ChargePolicy.Adaptive, BackendKind.BATTERY_HARDWARE)) shouldBe target
+    }
+
+    @Test
+    fun `an authoritative readback of a different policy obsoletes the request`() {
+        // Shizuku shape: the settings verifiably hold another policy — a native/competing change
+        // replaced the request, and warning about the obsolete one would contradict the card title.
+        unconfirmed(
+            observation = verified(ChargePolicy.Adaptive, BackendKind.SHIZUKU),
+            hardware = verified(ChargePolicy.Adaptive, BackendKind.BATTERY_HARDWARE),
+        ) shouldBe null
+    }
+
+    @Test
+    fun `a readback verifying the requested policy with disagreeing hardware is the intended warning`() {
+        unconfirmed(observation = verified(target, BackendKind.SHIZUKU), hardware = null) shouldBe target
+    }
+
+    @Test
+    fun `an unrecognized configured value never warns`() {
+        unconfirmed(observation = unrecognized()) shouldBe null
+    }
+
+    @Test
+    fun `settings-level verification is not hardware confirmation`() {
+        unconfirmed(hardware = verified(target, BackendKind.SHIZUKU)) shouldBe target
+    }
+
+    @Test
+    fun `no expectation means no warning`() {
+        unconfirmed(expected = false) shouldBe null
+    }
+
+    @Test
+    fun `unsupported and setup states never warn`() {
+        unconfirmed(observation = ChargeObservation.Unsupported("n/a".toCaString())) shouldBe null
+        unconfirmed(observation = ChargeObservation.NeedsSetup("n/a".toCaString())) shouldBe null
+    }
+
+    @Test
+    fun `no recorded request never warns`() {
+        unconfirmed(reqPolicy = null) shouldBe null
+        unconfirmed(reqAt = 0L) shouldBe null
+    }
+
+    @Test
+    fun `the threshold exceeds the settling window`() {
+        // The doc contract that lets the detector ignore pending entirely.
+        (UNCONFIRMED_THRESHOLD_MILLIS > SETTLING_WINDOW_MILLIS) shouldBe true
+    }
+
+    // --- debounceUnconfirmed: the contradiction must hold stable before it surfaces ---
+
+    @Test
+    fun `a fresh candidate is held back until it proves stable`() {
+        val first = debounceUnconfirmed(target, now = t0, prevCandidate = null, prevSince = 0L)
+        first.surfaced shouldBe null
+        first.candidate shouldBe target
+
+        debounceUnconfirmed(
+            target,
+            now = t0 + UNCONFIRMED_STABILITY_MILLIS,
+            prevCandidate = first.candidate,
+            prevSince = first.sinceMillis,
+        ).surfaced shouldBe target
+    }
+
+    @Test
+    fun `a transient candidate that clears never surfaces`() {
+        // The plug-in transient: state 1 for the ~12s HAL transition, then state 4 clears it.
+        val first = debounceUnconfirmed(target, now = t0, prevCandidate = null, prevSince = 0L)
+        val cleared = debounceUnconfirmed(
+            null,
+            now = t0 + 12_000,
+            prevCandidate = first.candidate,
+            prevSince = first.sinceMillis,
+        )
+        cleared.surfaced shouldBe null
+        cleared.candidate shouldBe null
+
+        // A re-appearing candidate starts a fresh stability interval.
+        debounceUnconfirmed(
+            target,
+            now = t0 + 13_000,
+            prevCandidate = cleared.candidate,
+            prevSince = cleared.sinceMillis,
+        ).surfaced shouldBe null
+    }
+
+    @Test
+    fun `a changed candidate restarts the stability interval`() {
+        val first = debounceUnconfirmed(target, now = t0, prevCandidate = null, prevSince = 0L)
+        debounceUnconfirmed(
+            ChargePolicy.FixedLimit(90),
+            now = t0 + UNCONFIRMED_STABILITY_MILLIS,
+            prevCandidate = first.candidate,
+            prevSince = first.sinceMillis,
+        ).surfaced shouldBe null
+    }
+
+    @Test
+    fun `a backwards clock restarts rather than surfacing early`() {
+        val first = debounceUnconfirmed(target, now = t0, prevCandidate = null, prevSince = 0L)
+        debounceUnconfirmed(
+            target,
+            now = t0 - 1,
+            prevCandidate = first.candidate,
+            prevSince = first.sinceMillis,
+        ).surfaced shouldBe null
+    }
+
     private class FakeBackend(override val kind: BackendKind) : AccessBackend {
         override suspend fun status() = BackendStatus(true, true, "test".toCaString())
         override suspend fun read(namespace: SettingNamespace, key: String) = SettingRead(readable = false)

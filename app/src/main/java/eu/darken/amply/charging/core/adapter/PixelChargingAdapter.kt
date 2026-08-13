@@ -126,6 +126,20 @@ class PixelChargingAdapter @Inject constructor() : ChargingAdapter {
         return apply(policy, backend)
     }
 
+    /**
+     * A fixed limit is the only policy the hardware reliably reports: state 4 stays set for the
+     * ENTIRE plugged fixed-limit session, even far below the cap (see [eu.darken.amply.stats.core.
+     * StatsLimitHitDetector]). Adaptive is deliberately excluded — an idle adaptive profile reads
+     * NORMAL(1), so its absence proves nothing — and Unrestricted maps to the same ambiguous 1.
+     * States 1/4/5 all count as a live, unmasked channel: 4 is "expected and delivered" (the
+     * confirms check clears it), 5 while a fixed limit was requested is a real contradiction worth
+     * warning about. Thermal (2/3) masks the policy and invalid/unrecognized values prove nothing.
+     */
+    override fun confirmationExpected(policy: ChargePolicy, chargingStatus: Int?, plugged: Boolean): Boolean =
+        plugged &&
+            policy == ChargePolicy.FixedLimit(80) &&
+            chargingStatus in setOf(CHARGING_STATE_NORMAL, CHARGING_STATE_LONG_LIFE, CHARGING_STATE_ADAPTIVE)
+
     override fun nativeSettingsIntent(context: Context): Intent {
         val specific = Intent().setComponent(
             ComponentName(

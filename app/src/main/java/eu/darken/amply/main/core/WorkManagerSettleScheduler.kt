@@ -7,6 +7,7 @@ import androidx.work.WorkManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import eu.darken.amply.charging.core.SETTLING_WINDOW_MILLIS
 import eu.darken.amply.charging.core.SettleScheduler
+import eu.darken.amply.charging.core.UNCONFIRMED_THRESHOLD_MILLIS
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -23,13 +24,27 @@ class WorkManagerSettleScheduler @Inject constructor(
 ) : SettleScheduler {
 
     override fun schedule(requestedAtMillis: Long) {
-        val fireAt = requestedAtMillis + SETTLING_WINDOW_MILLIS + CLEAR_BUFFER_MILLIS
-        val delay = (fireAt - System.currentTimeMillis()).coerceAtLeast(0L)
+        enqueue(
+            SettleRefreshWorker.UNIQUE_NAME,
+            requestedAtMillis + SETTLING_WINDOW_MILLIS + CLEAR_BUFFER_MILLIS,
+        )
+        // Second, separate push at the hardware-unconfirmed threshold: the silent-failure case this
+        // detector exists for (no HAL transition) may produce no charging-status broadcast, and the
+        // dashboard's own deadline observer disarms when pending clears at the window — without this
+        // the warning could wait indefinitely for an unrelated refresh trigger.
+        enqueue(
+            UNCONFIRMED_UNIQUE_NAME,
+            requestedAtMillis + UNCONFIRMED_THRESHOLD_MILLIS + CLEAR_BUFFER_MILLIS,
+        )
+    }
+
+    private fun enqueue(uniqueName: String, fireAtMillis: Long) {
+        val delay = (fireAtMillis - System.currentTimeMillis()).coerceAtLeast(0L)
         val request = OneTimeWorkRequestBuilder<SettleRefreshWorker>()
             .setInitialDelay(delay, TimeUnit.MILLISECONDS)
             .build()
         WorkManager.getInstance(context).enqueueUniqueWork(
-            SettleRefreshWorker.UNIQUE_NAME,
+            uniqueName,
             ExistingWorkPolicy.REPLACE,
             request,
         )
@@ -37,5 +52,6 @@ class WorkManagerSettleScheduler @Inject constructor(
 
     private companion object {
         const val CLEAR_BUFFER_MILLIS = 1_000L
+        const val UNCONFIRMED_UNIQUE_NAME = "${SettleRefreshWorker.UNIQUE_NAME}_unconfirmed"
     }
 }
