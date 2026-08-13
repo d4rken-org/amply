@@ -26,6 +26,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import eu.darken.amply.R
+import eu.darken.amply.battery.core.BatteryReadout
+import eu.darken.amply.battery.ui.BatteryEffect
+import eu.darken.amply.battery.ui.chargePowerFallbackRes
 import eu.darken.amply.common.compose.AmplyCard
 import eu.darken.amply.common.compose.AmplyCardDefaults
 import eu.darken.amply.common.compose.AmplyPreview
@@ -33,6 +36,7 @@ import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.stats.core.ChargeCurvePoint
 import eu.darken.amply.stats.core.ChargeSessionSummary
 import eu.darken.amply.stats.core.ChargingType
+import eu.darken.amply.stats.core.StatsPowerCalculator
 import eu.darken.amply.stats.core.StatsSealReason
 
 /**
@@ -40,11 +44,16 @@ import eu.darken.amply.stats.core.StatsSealReason
  * State-hoisted; a null [state] shows a spinner while the ViewModel resolves the selection, and a
  * resolved state without a summary means the session no longer exists (discarded or cleared) — a
  * notice, never an eternal spinner. An open session's curve/summary keep updating live.
+ *
+ * [readout] is the *live* battery reading, and only the caller can say whether it belongs to the
+ * session being viewed — pass null for any session that isn't the one currently charging, or the
+ * current charge's wattage would be attributed to someone else's history.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StatsSessionDetailScreen(
     state: StatsDetailState?,
+    readout: BatteryReadout?,
     onBack: () -> Unit,
 ) {
     Scaffold(
@@ -98,7 +107,7 @@ fun StatsSessionDetailScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item { CurveCard(state.curve) }
-            item { SummaryCard(summary) }
+            item { SummaryCard(summary, readout) }
             if (summary.partial) {
                 item {
                     Text(
@@ -127,7 +136,7 @@ private fun CurveCard(curve: List<ChargeCurvePoint>) {
 }
 
 @Composable
-private fun SummaryCard(summary: ChargeSessionSummary) {
+private fun SummaryCard(summary: ChargeSessionSummary, readout: BatteryReadout?) {
     val notReported = stringResource(R.string.battery_value_not_reported)
     AmplyCard(verticalArrangement = Arrangement.spacedBy(AmplyCardDefaults.ItemSpacing)) {
         DetailRow(stringResource(R.string.stats_detail_started), StatsFormat.dateTime(summary.startedAtWallMillis))
@@ -137,6 +146,15 @@ private fun SummaryCard(summary: ChargeSessionSummary) {
         DetailRow(stringResource(R.string.stats_detail_level), StatsFormat.percentRange(summary.startPercent, summary.endPercent))
         DetailRow(stringResource(R.string.stats_detail_duration), StatsFormat.duration(summary.durationMillis) ?: notReported)
         DetailRow(stringResource(R.string.stats_detail_charging_type), stringResource(chargingTypeLabel(summary.chargingType)))
+        // Live, and only for the still-open session the caller vouched for: a closed session's numbers
+        // are all history, and a "now" row beside them would belong to a different charge.
+        if (readout != null && summary.endedAtWallMillis == null) {
+            DetailRow(
+                stringResource(R.string.stats_detail_power_now),
+                StatsFormat.power(StatsPowerCalculator.chargeMilliwatts(readout))
+                    ?: stringResource(chargePowerFallbackRes(BatteryEffect.from(readout))),
+            )
+        }
         DetailRow(stringResource(R.string.stats_detail_avg_power), StatsFormat.power(summary.avgPowerMilliwatts) ?: notReported)
         DetailRow(stringResource(R.string.stats_detail_peak_power), StatsFormat.power(summary.peakPowerMilliwatts) ?: notReported)
         DetailRow(
@@ -174,39 +192,64 @@ private fun DetailRow(label: String, value: String) {
     }
 }
 
+private val previewCurve = (0..20).map { i ->
+    ChargeCurvePoint(
+        elapsedFromStartMillis = i * 180_000L,
+        percent = (42 + i * 3).coerceAtMost(100),
+        powerMilliwatts = (25_000 - i * 900).coerceAtLeast(1_500),
+        temperatureTenthsC = 300 + i * 2,
+    )
+}
+
+private val previewSummary = ChargeSessionSummary(
+    id = 1,
+    startedAtWallMillis = System.currentTimeMillis() - 3_600_000,
+    endedAtWallMillis = System.currentTimeMillis(),
+    durationMillis = 3_600_000,
+    startPercent = 42,
+    endPercent = 100,
+    chargingType = ChargingType.AC,
+    avgPowerMilliwatts = 12_000,
+    peakPowerMilliwatts = 25_000,
+    minTemperatureTenthsC = 300,
+    avgTemperatureTenthsC = 320,
+    maxTemperatureTenthsC = 340,
+    limitHit = false,
+    partial = false,
+    fullReachedAtWallMillis = System.currentTimeMillis() - 60_000,
+    sealReason = StatsSealReason.UNPLUGGED,
+)
+
 @AmplyPreview
 @Composable
 private fun StatsSessionDetailScreenPreview() = PreviewWrapper {
-    val start = 0L
-    val curve = (0..20).map { i ->
-        ChargeCurvePoint(
-            elapsedFromStartMillis = start + i * 180_000L,
-            percent = (42 + i * 3).coerceAtMost(100),
-            powerMilliwatts = (25_000 - i * 900).coerceAtLeast(1_500),
-            temperatureTenthsC = 300 + i * 2,
-        )
-    }
+    StatsSessionDetailScreen(
+        state = StatsDetailState(summary = previewSummary, curve = previewCurve),
+        readout = null,
+        onBack = {},
+    )
+}
+
+@AmplyPreview
+@Composable
+private fun StatsSessionDetailScreenLivePreview() = PreviewWrapper {
+    // The open session that is charging right now: only here does the summary carry a "Power now".
     StatsSessionDetailScreen(
         state = StatsDetailState(
-            summary = ChargeSessionSummary(
-                id = 1,
-                startedAtWallMillis = System.currentTimeMillis() - 3_600_000,
-                endedAtWallMillis = System.currentTimeMillis(),
-                durationMillis = 3_600_000,
-                startPercent = 42,
-                endPercent = 100,
-                chargingType = ChargingType.AC,
-                avgPowerMilliwatts = 12_000,
-                peakPowerMilliwatts = 25_000,
-                minTemperatureTenthsC = 300,
-                avgTemperatureTenthsC = 320,
-                maxTemperatureTenthsC = 340,
-                limitHit = false,
-                partial = false,
-                fullReachedAtWallMillis = System.currentTimeMillis() - 60_000,
-                sealReason = StatsSealReason.UNPLUGGED,
+            summary = previewSummary.copy(
+                endedAtWallMillis = null,
+                endPercent = 78,
+                fullReachedAtWallMillis = null,
+                sealReason = null,
             ),
-            curve = curve,
+            curve = previewCurve,
+        ),
+        readout = BatteryReadout(
+            levelPercent = 78,
+            status = android.os.BatteryManager.BATTERY_STATUS_CHARGING,
+            plugged = android.os.BatteryManager.BATTERY_PLUGGED_AC,
+            voltageMillivolts = 4_100,
+            currentNowMicroamps = 2_050_000,
         ),
         onBack = {},
     )

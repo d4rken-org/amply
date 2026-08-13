@@ -2,6 +2,7 @@ package eu.darken.amply.main.ui.dashboard
 
 import android.os.BatteryManager
 import android.os.SystemClock
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -22,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import eu.darken.amply.R
 import eu.darken.amply.battery.core.BatteryReadout
 import eu.darken.amply.battery.ui.batteryStatusLabel
+import eu.darken.amply.battery.ui.chargePowerMilliwatts
 import eu.darken.amply.battery.ui.formatTemperature
 import eu.darken.amply.common.compose.AmplyNavigationCard
 import eu.darken.amply.common.compose.AmplyPreview
@@ -87,7 +89,7 @@ fun ChargingCard(
         onClickLabel = stringResource(R.string.dashboard_charging_open_action),
         title = stringResource(
             when {
-                charging -> R.string.dashboard_charging_title_charging
+                charging -> chargingTitle(chargingSpeed(chargePowerMilliwatts(battery)))
                 onCharger -> R.string.dashboard_charging_title_connected
                 else -> R.string.dashboard_charging_title_idle
             },
@@ -112,6 +114,18 @@ fun ChargingCard(
             is ChargingCardPresentation.Idle -> IdleBody(presentation)
         }
     }
+}
+
+/**
+ * The headline while charging. An unclassifiable draw (no figure, or a device that reports none)
+ * stays at the plain "Charging" — the card never guesses a speed it can't measure.
+ */
+@StringRes
+private fun chargingTitle(speed: ChargingSpeed?): Int = when (speed) {
+    ChargingSpeed.VERY_FAST -> R.string.dashboard_charging_title_very_fast
+    ChargingSpeed.FAST -> R.string.dashboard_charging_title_fast
+    ChargingSpeed.SLOW -> R.string.dashboard_charging_title_slow
+    ChargingSpeed.NORMAL, null -> R.string.dashboard_charging_title_charging
 }
 
 /**
@@ -242,6 +256,19 @@ private val previewCharging = BatteryReadout(
     currentNowMicroamps = 2_050_000,
 )
 
+// ~0.6 W — a trickle from a weak supply.
+private val previewChargingSlow = previewCharging.copy(
+    levelPercent = 41,
+    currentNowMicroamps = 150_000,
+)
+
+// ~19.8 W — a dual-cell pack reporting its own voltage on a high-power charger.
+private val previewChargingVeryFast = previewCharging.copy(
+    levelPercent = 22,
+    voltageMillivolts = 9_000,
+    currentNowMicroamps = 2_200_000,
+)
+
 private val previewHolding = previewCharging.copy(
     levelPercent = 80,
     status = BatteryManager.BATTERY_STATUS_NOT_CHARGING,
@@ -290,6 +317,36 @@ private fun ChargingCardLivePreview() = PreviewWrapper {
         ChargingCard(
             presentation = ChargingCardPresentation.Live(session = previewLiveSession),
             readout = previewHolding,
+            onOpenHub = {},
+            onRetryCapture = {},
+            nowElapsedRealtimeMillis = 4_320_000L,
+        )
+    }
+}
+
+@AmplyPreview
+@Composable
+private fun ChargingCardSpeedPreview() = PreviewWrapper {
+    // The headline follows the measured draw: trickle, fast (the default fixture), and a high-power
+    // charger. A device that reports no draw keeps the plain "Charging".
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        ChargingCard(
+            presentation = ChargingCardPresentation.Live(session = previewLiveSession),
+            readout = previewChargingSlow,
+            onOpenHub = {},
+            onRetryCapture = {},
+            nowElapsedRealtimeMillis = 4_320_000L,
+        )
+        ChargingCard(
+            presentation = ChargingCardPresentation.Live(session = previewLiveSession),
+            readout = previewChargingVeryFast,
+            onOpenHub = {},
+            onRetryCapture = {},
+            nowElapsedRealtimeMillis = 4_320_000L,
+        )
+        ChargingCard(
+            presentation = ChargingCardPresentation.Live(session = previewLiveSession),
+            readout = previewCharging.copy(currentNowMicroamps = null),
             onOpenHub = {},
             onRetryCapture = {},
             nowElapsedRealtimeMillis = 4_320_000L,

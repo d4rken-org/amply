@@ -140,4 +140,36 @@ class ChargingCardPresentationTest {
         ChargingCardPresentation.from(stats(), unplugged) shouldBe
             ChargingCardPresentation.Idle(lastSession = null, sessionCount = 0)
     }
+
+    // Speed buckets. An unknown draw is not a normal one — the headline falls back to plain "Charging".
+
+    @Test
+    fun `no measurable draw has no speed`() {
+        chargingSpeed(null) shouldBe null
+        chargingSpeed(0) shouldBe null
+        chargingSpeed(-1) shouldBe null
+    }
+
+    @Test
+    fun `anything under the AOSP slow bar is slow`() {
+        chargingSpeed(1) shouldBe ChargingSpeed.SLOW
+        chargingSpeed(4_999) shouldBe ChargingSpeed.SLOW
+    }
+
+    @Test
+    fun `between the slow and fast bars is normal`() {
+        chargingSpeed(5_000) shouldBe ChargingSpeed.NORMAL
+        chargingSpeed(7_500) shouldBe ChargingSpeed.NORMAL
+    }
+
+    @Test
+    fun `above the AOSP fast bar is fast`() {
+        chargingSpeed(7_501) shouldBe ChargingSpeed.FAST
+        chargingSpeed(15_000) shouldBe ChargingSpeed.FAST
+    }
+
+    @Test
+    fun `above twice the fast bar is very fast`() {
+        chargingSpeed(15_001) shouldBe ChargingSpeed.VERY_FAST
+    }
 }

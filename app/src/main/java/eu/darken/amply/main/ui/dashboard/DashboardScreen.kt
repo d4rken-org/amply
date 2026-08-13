@@ -84,6 +84,7 @@ import eu.darken.amply.fullcharge.core.InterruptionReason
 import eu.darken.amply.fullcharge.core.policyOrNull
 import eu.darken.amply.main.core.formatReport
 import eu.darken.amply.battery.core.BatteryReadout
+import eu.darken.amply.battery.ui.BatteryEffect
 import eu.darken.amply.main.ui.setup.AccessSetupGuide
 import eu.darken.amply.main.ui.setup.OemGuideCard
 import eu.darken.amply.main.ui.setup.UnsupportedDeviceCard

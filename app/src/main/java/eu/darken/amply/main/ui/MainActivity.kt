@@ -430,6 +430,14 @@ class MainActivity : ComponentActivity() {
                             val statsDetail by statsViewModel.detailState.collectAsState()
                             StatsSessionDetailScreen(
                                 state = statsDetail,
+                                // Live wattage only for the session that is actually charging now. The
+                                // detail query is by id and unrestricted, so it can resolve a dangling
+                                // open row from an earlier boot that the boot-scoped live query rejects
+                                // — attributing the current draw to it would be a fabrication.
+                                readout = state.batteryReadout.takeIf {
+                                    val live = state.stats.live
+                                    live != null && statsDetail?.summary?.id == live.id
+                                },
                                 onBack = {
                                     statsViewModel.closeSession()
                                     destination = detailOrigin
