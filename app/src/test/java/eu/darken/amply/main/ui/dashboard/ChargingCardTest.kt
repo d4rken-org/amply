@@ -160,7 +160,48 @@ class ChargingCardTest {
 
     @Test
     fun `the title follows the charger, not the capture state`() {
+        // 8 W measured, so the headline is the speed-classified one even with capture off.
         render(ChargingCardPresentation.Promo, readout = charging)
+        compose.onNodeWithText(string(R.string.dashboard_charging_title_fast)).assertExists()
+    }
+
+    // The headline classifies the measured draw, so the card says how the charge is going rather than
+    // only that it is happening.
+
+    @Test
+    fun `a high-power charger is titled very fast`() {
+        render(
+            ChargingCardPresentation.Live(session = liveSession),
+            readout = charging.copy(voltageMillivolts = 9_000, currentNowMicroamps = 2_200_000),
+        )
+        compose.onNodeWithText(string(R.string.dashboard_charging_title_very_fast)).assertExists()
+    }
+
+    @Test
+    fun `a trickle is titled slowly`() {
+        render(
+            ChargingCardPresentation.Live(session = liveSession),
+            readout = charging.copy(currentNowMicroamps = 150_000),
+        )
+        compose.onNodeWithText(string(R.string.dashboard_charging_title_slow)).assertExists()
+    }
+
+    @Test
+    fun `an ordinary draw keeps the plain title`() {
+        // 4000 mV * 1_500_000 uA = 6 W — between the slow and fast bars.
+        render(
+            ChargingCardPresentation.Live(session = liveSession),
+            readout = charging.copy(currentNowMicroamps = 1_500_000),
+        )
+        compose.onNodeWithText(string(R.string.dashboard_charging_title_charging)).assertExists()
+    }
+
+    @Test
+    fun `an unmeasurable draw never guesses a speed`() {
+        render(
+            ChargingCardPresentation.Live(session = liveSession),
+            readout = charging.copy(currentNowMicroamps = null),
+        )
         compose.onNodeWithText(string(R.string.dashboard_charging_title_charging)).assertExists()
     }
 

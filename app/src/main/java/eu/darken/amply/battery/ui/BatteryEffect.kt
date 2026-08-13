@@ -1,6 +1,8 @@
-package eu.darken.amply.main.ui.dashboard
+package eu.darken.amply.battery.ui
 
 import android.os.BatteryManager
+import androidx.annotation.StringRes
+import eu.darken.amply.R
 import eu.darken.amply.battery.core.BatteryReadout
 import eu.darken.amply.stats.core.StatsPowerCalculator
 
@@ -76,15 +78,31 @@ sealed interface BatteryEffect {
 }
 
 /**
- * Charge power for the charging card's reading line, or `null` when no figure may be shown.
+ * Charge power for a live reading line, or `null` when no figure may be shown.
  *
  * Delegates to [StatsPowerCalculator.chargeMilliwatts] rather than re-deriving the rule, so the
  * live headline and the recorded curve/peak/average can never disagree about what counts as charge
  * power.
  */
-fun chargePowerMilliwatts(readout: BatteryReadout): Int? = StatsPowerCalculator.chargeMilliwatts(
-    batteryStatus = readout.status,
-    plugged = readout.onCharger,
-    voltageMillivolts = readout.voltageMillivolts,
-    currentNowMicroamps = readout.currentNowMicroamps,
-)
+fun chargePowerMilliwatts(readout: BatteryReadout): Int? = StatsPowerCalculator.chargeMilliwatts(readout)
+
+/**
+ * What to show in place of a withheld charge power, as a string resource.
+ *
+ * "Not charging" is only used where the battery *positively* reported that it isn't taking charge
+ * (unplugged, held at a limit, full). Everywhere else the figure is missing rather than zero — a
+ * connected device with no usable status has not told us it isn't charging — so it falls back to the
+ * shared "Not reported".
+ */
+@StringRes
+fun chargePowerFallbackRes(effect: BatteryEffect): Int = when (effect) {
+    is BatteryEffect.OnBattery,
+    is BatteryEffect.ConnectedNotCharging,
+    is BatteryEffect.Full,
+    -> R.string.battery_value_not_charging
+
+    is BatteryEffect.Charging,
+    is BatteryEffect.Connected,
+    BatteryEffect.Unknown,
+    -> R.string.battery_value_not_reported
+}

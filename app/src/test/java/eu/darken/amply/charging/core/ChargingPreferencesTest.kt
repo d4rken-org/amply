@@ -249,6 +249,62 @@ class ChargingPreferencesTest {
         collectors.forEach { it.cancel() }
     }
 
+    // --- Plug-latched request bookkeeping ---------------------------------------------------------
+
+    @Test
+    fun `plug state at request is recorded and null when not provided`() = runTest {
+        preferences.recordRequested(ChargePolicy.Unrestricted, persistent = false, nowMillis = 1L, plugged = true)
+        preferences.lastRequestedPluggedNow() shouldBe true
+
+        preferences.recordRequested(ChargePolicy.Unrestricted, persistent = false, nowMillis = 2L)
+        preferences.lastRequestedPluggedNow() shouldBe null
+    }
+
+    @Test
+    fun `a new request resets the unplugged watermark`() = runTest {
+        preferences.recordRequested(ChargePolicy.Unrestricted, persistent = false, nowMillis = 1L, plugged = true)
+        preferences.recordUnpluggedSeen(nowMillis = 5L)
+        preferences.unpluggedSeenAtNow() shouldBe 5L
+
+        // The old watermark must not resolve the next request.
+        preferences.recordRequested(ChargePolicy.FixedLimit(80), persistent = false, nowMillis = 10L, plugged = true)
+        preferences.unpluggedSeenAtNow() shouldBe 0L
+    }
+
+    @Test
+    fun `the unplugged watermark is monotonic`() = runTest {
+        preferences.recordUnpluggedSeen(nowMillis = 10L)
+        preferences.recordUnpluggedSeen(nowMillis = 5L)
+        preferences.unpluggedSeenAtNow() shouldBe 10L
+    }
+
+    @Test
+    fun `a legacy record without the latched fields reads their defaults`() = runTest {
+        writeRawRecord(
+            """{"lastRequested":"adaptive","lastRequestedAt":5,""" +
+                """"protective":"fixed:90","lastPersistent":"adaptive"}""",
+        )
+
+        preferences.lastRequestedPluggedNow() shouldBe null
+        preferences.unpluggedSeenAtNow() shouldBe 0L
+        // …and the pre-existing fields still decode.
+        preferences.lastRequestedNow() shouldBe ChargePolicy.Adaptive
+        preferences.protectivePolicyNow() shouldBe ChargePolicy.FixedLimit(90)
+    }
+
+    @Test
+    fun `wrong-typed latched fields fall back alone`() = runTest {
+        writeRawRecord(
+            """{"lastRequested":"adaptive","lastRequestedAt":5,""" +
+                """"lastRequestedPlugged":"yes","unpluggedSeenAt":"soon"}""",
+        )
+
+        preferences.lastRequestedPluggedNow() shouldBe null
+        preferences.unpluggedSeenAtNow() shouldBe 0L
+        preferences.lastRequestedNow() shouldBe ChargePolicy.Adaptive
+        preferences.lastRequestedAtNow() shouldBe 5L
+    }
+
     /** Writes the stored JSON directly, standing in for a corrupt or foreign-written record. */
     private suspend fun writeRawRecord(json: String) {
         appDataStore.store.edit { it[stringPreferencesKey("policy.v2")] = json }

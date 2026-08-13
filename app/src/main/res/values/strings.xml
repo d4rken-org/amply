@@ -3,12 +3,15 @@
     <string name="tile_label" formatted="false">100% once</string>
     <string name="tile_active">Restore limit</string>
     <string name="tile_override_active">Temporary override active</string>
+    <string name="tile_replug_hint">Replug to apply</string>
     <string name="widget_description">Amply charge controls</string>
     <string name="session_channel_name">Full charge and restore</string>
     <string name="session_channel_description" formatted="false">Shows while Amply is allowing a full charge, and while it restores your limit afterwards</string>
     <string name="session_notification_title" formatted="false">Charging to 100% once</string>
     <string name="session_notification_armed">Waiting for a charger</string>
     <string name="session_notification_active">Charge protection returns at 100% or when unplugged.</string>
+    <string name="session_notification_replug">Unplug and replug the charger to start charging fully</string>
+    <string name="session_notification_grace">Plug back in within %1$d seconds to charge fully</string>
     <string name="session_notification_restore">Restore now</string>
     <string name="gesture_channel_name">Reconnect gesture</string>
     <string name="gesture_channel_description" formatted="false">Shows while the reconnect-for-100% gesture is watching for a replug</string>
@@ -81,6 +84,7 @@
     <string name="charging_message_applying">Applying %1$s…</string>
     <string name="charging_message_write_failed">Write failed</string>
     <string name="charging_message_verified">%1$s setting verified</string>
+    <string name="charging_message_applied_replug">%1$s set — takes effect after you unplug and replug</string>
     <string name="charging_message_requested">%1$s requested</string>
     <string name="charging_message_shizuku_granted">Shizuku permission granted</string>
     <string name="charging_message_shizuku_denied">Shizuku permission was not granted</string>
@@ -113,6 +117,7 @@
     <string name="adapter_name_oneplus">OnePlus/Oppo/Realme (diagnostics)</string>
     <string name="adapter_name_oplus_protection">ColorOS charging protection</string>
     <string name="adapter_name_lineageos">LineageOS charging control</string>
+    <string name="adapter_name_grapheneos">GrapheneOS charge limit</string>
 
     <!-- Adapter support detail (why a device is or isn\'t controllable) -->
     <string name="adapter_detail_requires_pixel">Requires a supported Google Pixel phone</string>
@@ -131,6 +136,9 @@
     <string name="adapter_detail_xiaomi_ready">Xiaomi charging protection detected; changes apply immediately</string>
     <string name="adapter_detail_requires_oplus">Requires a OnePlus, Oppo, or Realme device on ColorOS 15</string>
     <string name="adapter_detail_oplus_ready">ColorOS charging protection detected; control requires Shizuku</string>
+    <string name="adapter_detail_requires_grapheneos">Requires GrapheneOS</string>
+    <string name="adapter_detail_grapheneos_no_key">GrapheneOS detected, but its charge-limit setting is not present on this build</string>
+    <string name="adapter_detail_grapheneos_ready">GrapheneOS charge limit detected — changes take effect when the charger is reconnected</string>
     <string name="adapter_detail_requires_lineageos">Requires a qualified LineageOS device</string>
     <string name="adapter_detail_lineageos_no_provider">LineageOS charging control is not available on this build</string>
     <string name="adapter_detail_lineageos_ready">LineageOS charging control detected; control requires Shizuku</string>
@@ -366,6 +374,7 @@
     <string name="dashboard_applying">Applying…</string>
     <string name="dashboard_device_line">%1$s · Android API %2$d</string>
     <string name="dashboard_waiting_target">Waiting for the system to switch to %1$s — this can take about 15 seconds…</string>
+    <string name="dashboard_waiting_replug">Takes effect the next time you unplug and replug the charger</string>
     <string name="dashboard_settling_fallback_target">the new policy</string>
     <string name="dashboard_session_once_title" formatted="false">Charging to 100% once</string>
     <string name="dashboard_session_returns">%1$s will return automatically at 100%% or when you unplug.</string>
@@ -461,6 +470,7 @@
     <string name="battery_info_summary_power">%1$s · %2$s · %3$s · %4$s</string>
     <string name="battery_value_not_reported">Not reported</string>
     <string name="battery_value_unknown">Unknown</string>
+    <string name="battery_value_not_charging">Not charging</string>
     <string name="battery_hub_title">Battery &amp; charging</string>
     <string name="battery_hub_history_action">Charge history</string>
     <string name="battery_hub_section_now">Now</string>
@@ -484,6 +494,8 @@
     <string name="battery_detail_cycle_count">Charge cycles</string>
     <string name="battery_detail_voltage">Voltage</string>
     <string name="battery_detail_current">Current now</string>
+    <string name="battery_detail_power">Charge power</string>
+    <string name="battery_detail_charger_max">Charger max</string>
     <string name="battery_detail_charge_counter">Charge counter</string>
     <string name="battery_detail_temperature">Temperature</string>
     <string name="battery_status_charging">Charging</string>
@@ -522,7 +534,9 @@
     <string name="widget_button_full_once" formatted="false">1×100%</string>
     <string name="widget_status_charging_waiting" formatted="false">Charging to 100% · waiting…</string>
     <string name="widget_status_charging_once" formatted="false">Charging to 100% once</string>
+    <string name="widget_status_charging_replug" formatted="false">1×100% · replug to start</string>
     <string name="widget_status_waiting_suffix">%1$s · waiting for system…</string>
+    <string name="widget_status_replug_suffix">%1$s · replug to apply</string>
     <string name="widget_label_limited">Limited to %1$d%%</string>
     <string name="widget_label_unlimited" formatted="false">Unlimited (100%)</string>
     <string name="widget_label_adaptive">Adaptive charging</string>
@@ -531,6 +545,9 @@
 
     <!-- Battery statistics -->
     <string name="dashboard_charging_title_charging">Charging</string>
+    <string name="dashboard_charging_title_slow">Charging slowly</string>
+    <string name="dashboard_charging_title_fast">Charging fast</string>
+    <string name="dashboard_charging_title_very_fast">Charging very fast</string>
     <string name="dashboard_charging_title_connected">Connected</string>
     <string name="dashboard_charging_title_idle">Battery</string>
     <string name="dashboard_charging_open_action">Open battery &amp; charging</string>
@@ -580,6 +597,7 @@
     <string name="stats_detail_level">Level</string>
     <string name="stats_detail_duration">Duration</string>
     <string name="stats_detail_charging_type">Connection</string>
+    <string name="stats_detail_power_now">Power now</string>
     <string name="stats_detail_avg_power">Average power</string>
     <string name="stats_detail_peak_power">Peak power</string>
     <string name="stats_detail_temperature">Temperature range</string>

@@ -27,9 +27,11 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import eu.darken.amply.R
 import eu.darken.amply.battery.core.BatteryReadout
+import eu.darken.amply.battery.ui.BatteryEffect
 import eu.darken.amply.battery.ui.batteryHealthLabel
 import eu.darken.amply.battery.ui.batteryPlugLabel
 import eu.darken.amply.battery.ui.batteryStatusLabel
+import eu.darken.amply.battery.ui.chargePowerFallbackRes
 import eu.darken.amply.battery.ui.formatChargeCounter
 import eu.darken.amply.battery.ui.formatCurrent
 import eu.darken.amply.battery.ui.formatTemperature
@@ -38,6 +40,8 @@ import eu.darken.amply.common.compose.AmplyCard
 import eu.darken.amply.common.compose.AmplyCardDefaults
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
+import eu.darken.amply.stats.core.StatsPowerCalculator
+import eu.darken.amply.stats.ui.StatsFormat
 
 /**
  * The single battery/charging destination: the current or last charge and the full live readout, led
@@ -188,6 +192,21 @@ private fun ElectricalSection(readout: BatteryReadout) {
             stringResource(R.string.battery_detail_current),
             formatCurrent(readout.currentNowMicroamps) ?: notReported,
         )
+        // Voltage × current above is a magnitude in either direction; this row is the gated charge
+        // power, so a discharge draw can never be read here as charge power.
+        DetailRow(
+            stringResource(R.string.battery_detail_power),
+            StatsFormat.power(StatsPowerCalculator.chargeMilliwatts(readout))
+                ?: stringResource(chargePowerFallbackRes(BatteryEffect.from(readout))),
+        )
+        // Advertised, not measured: what the connected supply claims. Nothing connected means nothing
+        // to claim, so the extras are only read through while on a charger.
+        DetailRow(
+            stringResource(R.string.battery_detail_charger_max),
+            readout.takeIf { it.onCharger }
+                ?.let { StatsFormat.power(StatsPowerCalculator.advertisedMaxMilliwatts(it)) }
+                ?: notReported,
+        )
         DetailRow(
             stringResource(R.string.battery_detail_charge_counter),
             formatChargeCounter(readout.chargeCounterMicroampHours) ?: notReported,
@@ -254,6 +273,9 @@ private val previewCharging = BatteryReadout(
     currentNowMicroamps = 1_250_000,
     chargeCounterMicroampHours = 3_800_000,
     cycleCount = 142,
+    // A 9 V / 2 A charger advertising itself while the battery measures ~5.2 W.
+    maxChargingCurrentMicroamps = 2_000_000,
+    maxChargingVoltageMicrovolts = 9_000_000,
 )
 
 @AmplyPreview

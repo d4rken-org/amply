@@ -1,0 +1,54 @@
+package eu.darken.amply.charging.core.adapter
+
+import android.content.Context
+import android.content.Intent
+import android.os.BatteryManager
+import androidx.test.core.app.ApplicationProvider
+import eu.darken.amply.charging.core.BackendKind
+import eu.darken.amply.charging.core.ChargeObservation
+import eu.darken.amply.charging.core.ChargePolicy
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.types.shouldBeInstanceOf
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+
+@RunWith(RobolectricTestRunner::class)
+class GrapheneOsChargingAdapterHardwareTest {
+    private val context: Context = ApplicationProvider.getApplicationContext()
+    private val adapter = GrapheneOsChargingAdapter()
+
+    private fun seedBattery(plugged: Int, chargingStatus: Int) {
+        context.sendStickyBroadcast(
+            Intent(Intent.ACTION_BATTERY_CHANGED)
+                .putExtra(BatteryManager.EXTRA_PLUGGED, plugged)
+                .putExtra(BatteryManager.EXTRA_CHARGING_STATUS, chargingStatus),
+        )
+    }
+
+    @Test
+    fun `plugged long life broadcast verifies the fixed 80 limit`() {
+        // The tester-observed enforcing state: shield up, "Charging state: 4" (issue #49).
+        seedBattery(plugged = BatteryManager.BATTERY_PLUGGED_USB, chargingStatus = 4)
+
+        adapter.readHardware(context) shouldBe ChargeObservation.Verified(
+            ChargePolicy.FixedLimit(80),
+            BackendKind.BATTERY_HARDWARE,
+        )
+    }
+
+    @Test
+    fun `unplugged long life broadcast is not verified`() {
+        seedBattery(plugged = 0, chargingStatus = 4)
+
+        adapter.readHardware(context) shouldBe null
+    }
+
+    @Test
+    fun `plugged normal broadcast stays unknown`() {
+        // The tester-observed limit-off state: "Charging state: 1".
+        seedBattery(plugged = BatteryManager.BATTERY_PLUGGED_USB, chargingStatus = 1)
+
+        adapter.readHardware(context).shouldBeInstanceOf<ChargeObservation.Unknown>()
+    }
+}

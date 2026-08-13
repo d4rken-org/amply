@@ -64,6 +64,7 @@ import eu.darken.amply.charging.core.PendingRequest
 import eu.darken.amply.charging.core.SETTLING_WINDOW_MILLIS
 import eu.darken.amply.charging.core.access.AccessSnapshot
 import eu.darken.amply.charging.core.access.BackendStatus
+import eu.darken.amply.charging.core.isAwaitingReplug
 import eu.darken.amply.charging.core.isSettling
 import eu.darken.amply.charging.core.settlingTarget
 import eu.darken.amply.common.ca.CaString
@@ -84,6 +85,7 @@ import eu.darken.amply.fullcharge.core.InterruptionReason
 import eu.darken.amply.fullcharge.core.policyOrNull
 import eu.darken.amply.main.core.formatReport
 import eu.darken.amply.battery.core.BatteryReadout
+import eu.darken.amply.battery.ui.BatteryEffect
 import eu.darken.amply.main.ui.setup.AccessSetupGuide
 import eu.darken.amply.main.ui.setup.OemGuideCard
 import eu.darken.amply.main.ui.setup.UnsupportedDeviceCard
@@ -406,7 +408,8 @@ private fun StatusCard(
     // away from the dashboard (opening the battery hub); this clock is presentation-only.
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(pending) {
-        if (pending != null) {
+        // Awaiting-replug requests have no countdown to animate; the clock only serves isSettling.
+        if (pending != null && !pending.awaitingReplug) {
             val end = pending.requestedAt + SETTLING_WINDOW_MILLIS
             while (System.currentTimeMillis() < end) {
                 now = System.currentTimeMillis()
@@ -510,6 +513,16 @@ private fun StatusCard(
             Spacer(Modifier.height(4.dp))
             Text(
                 stringResource(R.string.dashboard_waiting_target, target),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.tertiary,
+            )
+        } else if (state.charging.isAwaitingReplug()) {
+            // Plug-latched adapters: the configured value is real (the title/readback above is
+            // honest) but the charging hardware only samples it at the next plug session. No
+            // spinner — there is no clock running down, only a condition the user completes.
+            Spacer(Modifier.height(4.dp))
+            Text(
+                stringResource(R.string.dashboard_waiting_replug),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.tertiary,
             )
@@ -1078,6 +1091,84 @@ private fun DashboardScreenApplyingPreview() = PreviewWrapper {
                 ),
                 observation = ChargeObservation.LastRequested(ChargePolicy.FixedLimit(80)),
                 pending = PendingRequest(ChargePolicy.FixedLimit(80), requestedAt),
+            ),
+        ),
+        adbCommand = "adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS",
+        onRefresh = {},
+        onSettings = {},
+        onStartFull = {},
+        onRestore = {},
+        onApply = {},
+        onQuickFullChargeChange = {},
+        onAlarmEnabledChange = {},
+        onAlarmTargetChange = {},
+        onFixNotifications = {},
+        onOpenBatteryHub = {},
+        onRetryCapture = {},
+        onPinWidget = {},
+        onAddTile = {},
+        onDismissQuickAccess = {},
+        onDismissInterruption = {},
+        onNativeSettings = {},
+        onOpenShizuku = {},
+        onAllowShizuku = {},
+        onGrantWss = {},
+        onCopyAdb = {},
+        onCopyWebUsbLink = {},
+        onPrepareSupportReport = {},
+        onCopySupportReport = {},
+        onOpenContribution = {},
+        onOpenSupportIssue = {},
+        onEmailSupport = {},
+        onHelp = {},
+    )
+}
+
+// GrapheneOS plug-latched pending: Unrestricted is configured (verified readback, green check) but
+// the hardware still holds the old 80% limit — the replug hint replaces the settling countdown.
+@AmplyPreview
+@Composable
+private fun DashboardScreenAwaitingReplugPreview() = PreviewWrapper {
+    DashboardScreen(
+        state = DashboardUiState(
+            onboardingComplete = true,
+            batteryReadout = BatteryReadout(
+                levelPercent = 80,
+                status = android.os.BatteryManager.BATTERY_STATUS_NOT_CHARGING,
+                plugged = android.os.BatteryManager.BATTERY_PLUGGED_USB,
+                temperatureTenthsC = 276,
+            ),
+            charging = ChargingState(
+                device = DeviceInfo("Google", "Pixel 9 Pro XL", 37, "preview"),
+                adapterName = "GrapheneOS charge limit".toCaString(),
+                adapterId = "grapheneos-chargelimit-v1",
+                supportedPolicies = listOf(
+                    ChargePolicy.FixedLimit(80),
+                    ChargePolicy.Unrestricted,
+                ),
+                syncVerification = true,
+                controlEnabled = true,
+                access = AccessSnapshot(
+                    direct = BackendStatus(
+                        available = true,
+                        granted = true,
+                        detail = "Charge-control access granted".toCaString(),
+                    ),
+                    shizuku = BackendStatus(
+                        available = false,
+                        granted = false,
+                        detail = "Shizuku not installed".toCaString(),
+                    ),
+                ),
+                observation = ChargeObservation.Verified(
+                    ChargePolicy.Unrestricted,
+                    BackendKind.DIRECT_WSS,
+                ),
+                pending = PendingRequest(
+                    ChargePolicy.Unrestricted,
+                    requestedAt = 1L,
+                    awaitingReplug = true,
+                ),
             ),
         ),
         adbCommand = "adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS",

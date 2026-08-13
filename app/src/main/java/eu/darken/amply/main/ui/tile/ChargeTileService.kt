@@ -12,6 +12,7 @@ import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
 import eu.darken.amply.R
 import eu.darken.amply.charging.core.ChargingRepository
+import eu.darken.amply.charging.core.isAwaitingReplug
 import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
@@ -60,7 +61,13 @@ class ChargeTileService : TileService() {
                         isPro = isPro,
                         active = sessionActive,
                         available = state.canApply,
-                        detail = (state.access?.label ?: state.adapterName).get(this@ChargeTileService),
+                        // Plug-latched pending beats the static access/adapter label: opening QS is
+                        // the tile's refresh cadence, so this is exactly when the hint is fresh.
+                        detail = if (state.isAwaitingReplug()) {
+                            getString(R.string.tile_replug_hint)
+                        } else {
+                            (state.access?.label ?: state.adapterName).get(this@ChargeTileService)
+                        },
                     )
                 }
             }

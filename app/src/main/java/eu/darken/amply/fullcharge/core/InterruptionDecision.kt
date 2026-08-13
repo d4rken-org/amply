@@ -31,8 +31,8 @@ object InterruptionDecisionEngine {
 
     /**
      * A session pickup that crossed a same-boot death warrants an event only when a restore was
-     * actually due (a `RESTORE_*` decision). `CONTINUE` / `MARK_CONNECTED` mean the session resumed
-     * unharmed — no event.
+     * actually due (a `RESTORE_*` decision). `CONTINUE` / `MARK_*` mean the session resumed
+     * unharmed — the replug-grace marks included, they just move the session along — no event.
      */
     fun shouldRecordForSession(survived: Boolean, sameBoot: Boolean, decision: SessionDecision): Boolean {
         if (!survived || !sameBoot) return false
@@ -42,7 +42,9 @@ object InterruptionDecisionEngine {
             SessionDecision.RESTORE_ARM_TIMEOUT,
             SessionDecision.RESTORE_SAFETY_TIMEOUT -> true
             SessionDecision.CONTINUE,
-            SessionDecision.MARK_CONNECTED -> false
+            SessionDecision.MARK_CONNECTED,
+            SessionDecision.MARK_DISCONNECTED,
+            SessionDecision.MARK_REPLUGGED -> false
         }
     }
 

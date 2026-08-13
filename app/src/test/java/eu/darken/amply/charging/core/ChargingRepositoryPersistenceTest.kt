@@ -10,6 +10,7 @@ import android.content.pm.ResolveInfo
 import android.os.Build
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.test.core.app.ApplicationProvider
+import eu.darken.amply.battery.core.BatteryReader
 import eu.darken.amply.charging.core.access.AccessResolver
 import eu.darken.amply.charging.core.access.DirectSettingsBackend
 import eu.darken.amply.charging.core.access.LineageSettingsClient
@@ -17,6 +18,7 @@ import eu.darken.amply.charging.core.access.ShizukuSettingsBackend
 import eu.darken.amply.charging.core.access.shizuku.ShizukuController
 import eu.darken.amply.charging.core.access.shizuku.ShizukuInstallationDetector
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
+import eu.darken.amply.charging.core.adapter.GrapheneOsChargingAdapter
 import eu.darken.amply.charging.core.adapter.LineageChargingAdapter
 import eu.darken.amply.charging.core.adapter.LineageLabAdapter
 import eu.darken.amply.charging.core.adapter.OnePlusChargingAdapter
@@ -102,6 +104,7 @@ class ChargingRepositoryPersistenceTest {
                 context = context,
                 lineage = LineageChargingAdapter(LineageSettingsClient(context)),
                 lineageLab = LineageLabAdapter(),
+                grapheneOs = GrapheneOsChargingAdapter(),
                 pixel = PixelChargingAdapter(),
                 samsungModern = SamsungModernChargingAdapter(),
                 samsungLegacy = SamsungLegacyChargingAdapter(),
@@ -121,6 +124,7 @@ class ChargingRepositoryPersistenceTest {
             settleScheduler = object : SettleScheduler {
                 override fun schedule(requestedAtMillis: Long) = Unit
             },
+            batteryReader = BatteryReader(context),
         )
     }
 

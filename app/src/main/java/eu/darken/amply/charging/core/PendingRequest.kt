@@ -9,4 +9,11 @@ package eu.darken.amply.charging.core
 data class PendingRequest(
     val target: ChargePolicy,
     val requestedAt: Long,
+    /**
+     * True when the write can only latch at the next plug transition (a
+     * [eu.darken.amply.charging.core.adapter.ChargingAdapter.policyLatchesAtPlug] adapter wrote while
+     * external power was present). Resolution is a *condition* — an observed unplug, or hardware
+     * evidence for the target — never the settling-window clock, so such a request carries no expiry.
+     */
+    val awaitingReplug: Boolean = false,
 )

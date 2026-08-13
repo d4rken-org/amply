@@ -70,4 +70,18 @@ class ChargingStateSupportLeadTest {
         ChargingState(device = device(hasProtectBattery = true), adapterId = null).hasSupportLead shouldBe true
         ChargingState(device = device(hasChargingOptimization = true), adapterId = null).hasSupportLead shouldBe true
     }
+
+    @Test
+    fun `grapheneos identity or its charge-limit key is a lead even when no adapter matched`() {
+        // A future ROM shipping the same key under a non-Google brand reaches the catch-all but
+        // still carries an actionable lead; same for GrapheneOS identity without the key.
+        ChargingState(
+            device = device().copy(hasBatteryChargeLimit = true),
+            adapterId = null,
+        ).hasSupportLead shouldBe true
+        ChargingState(
+            device = device().copy(hasGrapheneOsPackages = true),
+            adapterId = null,
+        ).hasSupportLead shouldBe true
+    }
 }

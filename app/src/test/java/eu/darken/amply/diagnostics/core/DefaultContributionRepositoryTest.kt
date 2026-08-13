@@ -9,6 +9,7 @@ import eu.darken.amply.charging.core.access.SettingNamespace
 import eu.darken.amply.charging.core.access.LineageHealthSummary
 import eu.darken.amply.charging.core.access.SettingsSnapshotSource
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
+import eu.darken.amply.charging.core.adapter.GrapheneOsChargingAdapter
 import eu.darken.amply.charging.core.adapter.LineageChargingAdapter
 import eu.darken.amply.charging.core.adapter.LineageLabAdapter
 import eu.darken.amply.charging.core.adapter.OnePlusChargingAdapter
@@ -53,6 +54,7 @@ class DefaultContributionRepositoryTest {
         context = ApplicationProvider.getApplicationContext(),
         lineage = LineageChargingAdapter(stubReader),
         lineageLab = LineageLabAdapter(),
+        grapheneOs = GrapheneOsChargingAdapter(),
         pixel = PixelChargingAdapter(),
         samsungModern = SamsungModernChargingAdapter(),
         samsungLegacy = SamsungLegacyChargingAdapter(),

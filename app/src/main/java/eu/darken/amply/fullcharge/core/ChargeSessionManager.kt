@@ -22,7 +22,10 @@ class ChargeSessionManager @Inject constructor(
 ) {
     private val mutex = Mutex()
 
-    suspend fun begin(nowMillis: Long = System.currentTimeMillis()): ApplyResult = mutex.withLock {
+    suspend fun begin(
+        nowMillis: Long = System.currentTimeMillis(),
+        pluggedAtStart: Boolean? = null,
+    ): ApplyResult = mutex.withLock {
         sessionStore.currentSession()?.let {
             return@withLock ApplyResult(
                 success = true,
@@ -90,9 +93,19 @@ class ChargeSessionManager @Inject constructor(
                 bootCount = bootCountProvider.current(),
                 createdAtMillis = nowMillis,
             ),
+            // Plug-latched adapter + started while plugged (or plug state unknown): the override
+            // write below cannot take effect until an unplug→replug, so the session must surface
+            // that instruction until the replug is observed.
+            overrideAwaitingReplug = adapter?.policyLatchesAtPlug == true && pluggedAtStart != false,
         )
         val result = repository.applyTemporary(overridePolicy)
         if (result.success) {
+            // Reconcile the persist-first conservative flag with the repository's authoritative
+            // post-write computation (it re-samples plug state around the write), so the session
+            // notification and the dashboard's pending hint can never disagree. Best-effort: a
+            // failure here leaves the conservative flag, which errs toward showing the hint.
+            val awaiting = repository.state.value.pending?.awaitingReplug == true
+            runCatching { sessionStore.setOverrideAwaitingReplug(awaiting) }
             result
         } else {
             // A two-key OEM transition can partially succeed. Keep recovery state unless the
@@ -125,6 +138,10 @@ class ChargeSessionManager @Inject constructor(
     }
 
     suspend fun markConnected() = sessionStore.markConnected()
+
+    suspend fun markDisconnected(nowMillis: Long) = sessionStore.markDisconnected(nowMillis)
+
+    suspend fun markReplugged() = sessionStore.markReplugged()
 }
 
 fun ChargeObservation.policyOrNull(): ChargePolicy? = when (this) {

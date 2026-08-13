@@ -29,6 +29,7 @@ class AdapterRegistrySelectionTest {
         context = ApplicationProvider.getApplicationContext(),
         lineage = LineageChargingAdapter(stubReader, setOf("oriole")),
         lineageLab = LineageLabAdapter(),
+        grapheneOs = GrapheneOsChargingAdapter(),
         pixel = PixelChargingAdapter(),
         samsungModern = SamsungModernChargingAdapter(),
         samsungLegacy = SamsungLegacyChargingAdapter(),
@@ -77,6 +78,56 @@ class AdapterRegistrySelectionTest {
             DeviceInfo("Google", "Pixel 8", 36, "test", hasChargingOptimization = true),
         )
         selection.adapter?.id shouldBe "google-pixel-lab-v1"
+    }
+
+    private fun graphene(
+        packages: Boolean = true,
+        key: Boolean = true,
+        systemUser: Boolean = true,
+    ) = DeviceInfo(
+        manufacturer = "Google",
+        model = "Pixel 9 Pro XL",
+        sdk = 37,
+        fingerprint = "test",
+        codename = "komodo",
+        hasChargingOptimization = false,
+        hasGrapheneOsPackages = packages,
+        hasBatteryChargeLimit = key,
+        isSystemUser = systemUser,
+    )
+
+    @Test
+    fun `grapheneos selects its live adapter ahead of the pixel adapter`() {
+        // Without the ordering, the Pixel probe (any Google/Pixel*) would swallow the device as a
+        // matched-but-diagnostics-only stock Pixel.
+        val selection = registry.select(graphene())
+        selection.adapter?.id shouldBe "grapheneos-chargelimit-v1"
+        selection.support.controlEnabled shouldBe true
+    }
+
+    @Test
+    fun `grapheneos without the key stays on its adapter as diagnostics-only`() {
+        val selection = registry.select(graphene(key = false))
+        selection.adapter?.id shouldBe "grapheneos-chargelimit-v1"
+        selection.support.controlEnabled shouldBe false
+        selection.support.contributionWanted shouldBe true
+    }
+
+    @Test
+    fun `a stock pixel with the key present is not treated as grapheneos`() {
+        // Identity is packages-only: the key alone must fall through to the Pixel adapter.
+        val selection = registry.select(
+            graphene(packages = false).copy(hasChargingOptimization = true),
+        )
+        selection.adapter?.id shouldBe "google-pixel-lab-v1"
+    }
+
+    @Test
+    fun `lineageos wins over the graphene adapter for lineage builds on pixel hardware`() {
+        // Both are ROM-identity adapters; a LineageOS Pixel carries the Lineage feature and no
+        // graphene packages, so ordering only matters for hypothetical both-signal devices — the
+        // Lineage pair stays first.
+        registry.select(lineageWithDeniedProperty("komodo", "Google")).adapter?.id shouldBe "lineageos-lab"
     }
 
     @Test

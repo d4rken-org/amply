@@ -39,12 +39,14 @@ data class DeviceSupportReport(
     val oplusRomVersion: Int?,
     val lineageOsVersion: String?,
     val isLineageOs: Boolean,
+    val isGrapheneOs: Boolean,
     /**
      * LineageOS charge-control probe: the bound provider plus the configured mode, which together bound what can
      * be said about HAL limit support. Null when unknown (not LineageOS, or no Shizuku) — never read as a negative.
      */
     val lineageHealth: LineageHealthSummary?,
     val hasProtectBattery: Boolean,
+    val hasBatteryChargeLimit: Boolean,
     val hasLineageSettingsProvider: Boolean,
     val adapterId: String?,
     val adapterMatched: Boolean,
@@ -89,8 +91,10 @@ class DeviceSupportReporter @Inject constructor(
             oplusRomVersion = device.oplusRomVersion,
             lineageOsVersion = device.lineageOsVersion,
             isLineageOs = device.isLineageOs,
+            isGrapheneOs = device.isGrapheneOs,
             lineageHealth = lineageHealth,
             hasProtectBattery = device.hasProtectBattery,
+            hasBatteryChargeLimit = device.hasBatteryChargeLimit,
             hasLineageSettingsProvider = device.hasLineageSettingsProvider,
             adapterId = selection.adapter?.id,
             adapterMatched = selection.support.matched,
@@ -123,7 +127,7 @@ internal fun sanitizeReportValue(value: String?, max: Int = 120): String {
 /** Deterministic, single stable schema. Keep field order fixed so reports are diff-friendly. */
 internal fun formatReport(report: DeviceSupportReport): String = buildString {
     appendLine("Amply device-support request")
-    appendLine("report_schema=8")
+    appendLine("report_schema=9")
     appendLine("app_version=${report.appVersionName} (${report.appVersionCode})")
     appendLine("distribution=${report.flavor}/${report.buildType}")
     appendLine("manufacturer=${report.manufacturer}")
@@ -143,6 +147,9 @@ internal fun formatReport(report: DeviceSupportReport): String = buildString {
     // and reads "none" even on LineageOS (see LineageOsDetector).
     appendLine("is_lineageos=${report.isLineageOs}")
     appendLine("lineageos_version=${report.lineageOsVersion ?: "none"}")
+    // Identity via core app.grapheneos.* packages — GrapheneOS exposes no property/feature marker
+    // and keeps a stock-shaped fingerprint (see DeviceInfo.isGrapheneOs).
+    appendLine("is_grapheneos=${report.isGrapheneOs}")
     // Observation, NOT a verdict. Provider selection branches on the configured mode before capability, so a
     // device in a time-based mode reports Deadline having never consulted either limit-capable provider. And
     // there is no negative case: Toggle also accepts MODE_LIMIT and enforces the cap itself. NOT_OBSERVED is
@@ -151,6 +158,7 @@ internal fun formatReport(report: DeviceSupportReport): String = buildString {
     appendLine("lineage_cc_mode=${report.lineageHealth?.mode ?: "unknown"}")
     appendLine("lineage_cc_limit_mechanism=${report.lineageHealth?.limitMechanism?.name ?: "UNKNOWN"}")
     appendLine("has_protect_battery=${report.hasProtectBattery}")
+    appendLine("has_battery_charge_limit=${report.hasBatteryChargeLimit}")
     appendLine("has_lineage_settings_provider=${report.hasLineageSettingsProvider}")
     appendLine("adapter=${report.adapterId ?: "none"}")
     appendLine("adapter_matched=${report.adapterMatched}")

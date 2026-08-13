@@ -17,14 +17,16 @@ import javax.inject.Singleton
 /**
  * Xiaomi HyperOS charging protection via `secure/security_pc_secure_protect_mode_key`
  * 0 = charge fully, 1 = "Intelligent charging" (heuristic
- * 80% hold decided by the OS — adaptive semantics, no hard cap exists). The key is absent in
- * factory state and the OEM UI treats absent as intelligent.
+ * 80% hold decided by the OS — adaptive semantics, no hard cap exists on HyperOS 2). The key is
+ * absent in factory state and the OEM UI treats absent as intelligent.
  *
  * The setting is a HyperOS ROM feature rather than a per-model one, so control is gated to the
  * HyperOS **major version** (2.x, from `ro.mi.os.version.code`) plus the Xiaomi manufacturer
  * (which also covers Redmi/POCO) and the system user (the secure namespace is per-user while
- * charging hardware is device-wide). HyperOS 1, pre-HyperOS MIUI, and a future HyperOS 3 fall
- * through to the diagnostics-only lab adapter until qualified.
+ * charging hardware is device-wide). HyperOS 1, pre-HyperOS MIUI, and HyperOS 3 fall through to
+ * the diagnostics-only lab adapter until qualified. A HyperOS 3 contribution report shows the
+ * same key with an added value 2 = "Battery protection" (candidate hard cap, unqualified — see
+ * the device-qualification ledger); the unrecognized-value decode below refuses it safely.
  *
  * Assumption (deliberate): the feature is treated as present on any HyperOS 2
  * device. A HyperOS 2 device that genuinely lacks Battery protection also reports the key absent,
@@ -111,8 +113,9 @@ class XiaomiChargingAdapter @Inject constructor() : ChargingAdapter {
         const val VALUE_CHARGE_FULLY = "0"
         const val VALUE_INTELLIGENT = "1"
 
-        // HyperOS 2.x (ro.mi.os.version.code). The mapping was verified on HyperOS 2.0; a future
-        // HyperOS 3 stays unqualified until checked, mirroring the One UI range gates.
+        // HyperOS 2.x (ro.mi.os.version.code). The mapping was verified on HyperOS 2.0; HyperOS 3
+        // stays unqualified (reported to add value 2 = "Battery protection" — see the
+        // device-qualification ledger), mirroring the One UI range gates.
         const val QUALIFIED_HYPEROS_VERSION = 2
     }
 }

@@ -35,6 +35,17 @@ internal data class PolicyState(
     @SerialName("lastRequestedAt") val lastRequestedAt: Long = 0L,
     @SerialName("protective") val protective: String? = null,
     @SerialName("lastPersistent") val lastPersistent: String? = null,
+    /**
+     * External-power state at the moment of the last request, recorded only by plug-latched adapters
+     * (null elsewhere). True means the write could not take effect yet and stays pending-until-replug.
+     */
+    @SerialName("lastRequestedPlugged") val lastRequestedPlugged: Boolean? = null,
+    /**
+     * Wall clock of the last observed unpowered moment while a plug-latched request was unresolved.
+     * A value after [lastRequestedAt] proves a plug transition happened since the write — the next
+     * plug session latches the configured value, so the request is resolved. 0 = never observed.
+     */
+    @SerialName("unpluggedSeenAt") val unpluggedSeenAt: Long = 0L,
 )
 
 /**
@@ -49,6 +60,8 @@ internal fun decodePolicyState(raw: String?, json: Json): PolicyState {
         lastRequestedAt = obj.longOrDefault("lastRequestedAt"),
         protective = obj.stringOrNull("protective"),
         lastPersistent = obj.stringOrNull("lastPersistent"),
+        lastRequestedPlugged = obj.booleanOrNull("lastRequestedPlugged"),
+        unpluggedSeenAt = obj.longOrDefault("unpluggedSeenAt"),
     )
 }
 
@@ -59,6 +72,9 @@ private fun JsonObject.stringOrNull(name: String): String? = primitiveOrNull(nam
 
 private fun JsonObject.longOrDefault(name: String, default: Long = 0L): Long =
     primitiveOrNull(name)?.takeUnless { it.isString }?.content?.toLongOrNull() ?: default
+
+private fun JsonObject.booleanOrNull(name: String): Boolean? =
+    primitiveOrNull(name)?.takeUnless { it.isString }?.content?.toBooleanStrictOrNull()
 
 @Singleton
 class ChargingPreferences @Inject constructor(
@@ -100,6 +116,7 @@ class ChargingPreferences @Inject constructor(
         policy: ChargePolicy,
         persistent: Boolean,
         nowMillis: Long = System.currentTimeMillis(),
+        plugged: Boolean? = null,
     ) {
         policyState.update { current ->
             current.copy(
@@ -111,13 +128,33 @@ class ChargingPreferences @Inject constructor(
                 } else {
                     current.protective
                 },
+                lastRequestedPlugged = plugged,
+                // Each request starts unresolved; a watermark from a previous request must not
+                // resolve this one (it can only postdate it if the wall clock moved backwards).
+                unpluggedSeenAt = 0L,
             )
+        }
+    }
+
+    /**
+     * Record that the device was observed without external power while a plug-latched request was
+     * unresolved. Monotonic and one-shot per request: once a watermark after the request exists,
+     * further observations change nothing (and cause no store write).
+     */
+    suspend fun recordUnpluggedSeen(nowMillis: Long = System.currentTimeMillis()) {
+        policyState.update { current ->
+            if (current.unpluggedSeenAt >= nowMillis) current else current.copy(unpluggedSeenAt = nowMillis)
         }
     }
 
     suspend fun lastRequestedNow(): ChargePolicy? = ChargePolicy.fromStableId(policyState.value().lastRequested)
 
     suspend fun lastRequestedAtNow(): Long = policyState.value().lastRequestedAt
+
+    /** Plug state at the last request (plug-latched adapters only); null = not recorded. */
+    suspend fun lastRequestedPluggedNow(): Boolean? = policyState.value().lastRequestedPlugged
+
+    suspend fun unpluggedSeenAtNow(): Long = policyState.value().unpluggedSeenAt
 
     suspend fun protectivePolicyNow(): ChargePolicy = policyState.value().protectivePolicy()
 

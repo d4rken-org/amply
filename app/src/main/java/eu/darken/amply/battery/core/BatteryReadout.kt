@@ -23,6 +23,17 @@ data class BatteryReadout(
     val currentNowMicroamps: Int? = null,
     val chargeCounterMicroampHours: Int? = null,
     val cycleCount: Int? = null,
+    /**
+     * Charger-advertised maximum, not a measurement: what the connected supply says it can deliver.
+     * Only meaningful while something is connected, and never a substitute for the measured draw.
+     *
+     * Sourced from the `max_charging_current` / `max_charging_voltage` extras of
+     * [android.content.Intent.ACTION_BATTERY_CHANGED]. The framework populates them, but their
+     * `BatteryManager` constants are `@hide` and absent from the public SDK, so `BatteryReader` reads
+     * the literal AOSP keys.
+     */
+    val maxChargingCurrentMicroamps: Int? = null,
+    val maxChargingVoltageMicrovolts: Int? = null,
 ) {
     /**
      * External power is reported. A null (not reported) [plugged] collapses conservatively to false —

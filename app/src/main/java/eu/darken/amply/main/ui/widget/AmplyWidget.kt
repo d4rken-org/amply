@@ -52,6 +52,7 @@ import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingPreferences
 import eu.darken.amply.charging.core.ChargingRepository
 import eu.darken.amply.charging.core.ChargingState
+import eu.darken.amply.charging.core.isAwaitingReplug
 import eu.darken.amply.charging.core.isSettling
 import eu.darken.amply.charging.core.settlingTarget
 import eu.darken.amply.fullcharge.core.FullChargeStore
@@ -117,7 +118,14 @@ class AmplyWidget : GlanceAppWidget() {
             val requestedTarget by preferences.lastRequested.collectAsState(initial = initialRequested)
 
             val display = widgetDisplay(state, sessionActive = session != null, now = System.currentTimeMillis())
-            val status = statusLine(context, display.sessionActive, display.settling, state, requestedTarget)
+            val status = statusLine(
+                context,
+                display.sessionActive,
+                display.settling,
+                display.awaitingReplug,
+                state,
+                requestedTarget,
+            )
             val showBrand = display.steady && LocalSize.current.width >= BRAND_MIN_WIDTH
             val titleStyle = TextStyle(color = TITLE_COLOR, fontWeight = FontWeight.Bold)
             Column(
@@ -233,21 +241,25 @@ private fun LockedWidget(context: Context) {
 
 /**
  * Structural (context-free) widget display derivation, kept pure so the branches are JVM-unit-testable.
- * `sessionActive` wins over everything; `settling` is the pending-request window; `steady` (a plain resting
- * policy, nothing in flight) is the only state that shows the brand mark.
+ * `sessionActive` wins over everything; `settling` is the pending-request window; `awaitingReplug` is a
+ * plug-latched adapter's condition-based pending (mutually exclusive with settling by construction);
+ * `steady` (a plain resting policy, nothing in flight) is the only state that shows the brand mark.
  */
 internal data class WidgetDisplay(
     val sessionActive: Boolean,
     val settling: Boolean,
+    val awaitingReplug: Boolean,
     val steady: Boolean,
 )
 
 internal fun widgetDisplay(state: ChargingState, sessionActive: Boolean, now: Long): WidgetDisplay {
     val settling = state.isSettling(now)
+    val awaitingReplug = state.isAwaitingReplug()
     return WidgetDisplay(
         sessionActive = sessionActive,
         settling = settling,
-        steady = !sessionActive && !settling,
+        awaitingReplug = awaitingReplug,
+        steady = !sessionActive && !settling && !awaitingReplug,
     )
 }
 
@@ -261,19 +273,30 @@ private fun statusLine(
     context: Context,
     sessionActive: Boolean,
     settling: Boolean,
+    awaitingReplug: Boolean,
     state: ChargingState,
     requestedTarget: ChargePolicy?,
 ): String {
     if (sessionActive) {
-        return if (settling) {
-            context.getString(R.string.widget_status_charging_waiting)
-        } else {
-            context.getString(R.string.widget_status_charging_once)
+        return when {
+            settling -> context.getString(R.string.widget_status_charging_waiting)
+            // Plug-latched adapters: the session exists but its override hasn't latched — claiming
+            // "charging to 100% once" would be false until the user re-seats the cable.
+            awaitingReplug -> context.getString(R.string.widget_status_charging_replug)
+            else -> context.getString(R.string.widget_status_charging_once)
         }
     }
     if (settling) {
         return context.getString(
             R.string.widget_status_waiting_suffix,
+            widgetLabel(context, state.settlingTarget() ?: requestedTarget),
+        )
+    }
+    // Plug-latched adapters: the value is configured (label it) but only takes effect at the next
+    // plug session. May linger while nothing observes a replug; never claims the reverse error.
+    if (awaitingReplug) {
+        return context.getString(
+            R.string.widget_status_replug_suffix,
             widgetLabel(context, state.settlingTarget() ?: requestedTarget),
         )
     }

@@ -43,7 +43,32 @@ class StoredRecordFormatTest {
         json.encodeToString(ChargeSessionRecord.serializer(), record) shouldBe
             """{"restorePolicy":"fixed:80","startedAtMillis":1000,"connectedSeen":true,""" +
             """"provenance":{"token":"tok-a","pid":42,"bootCount":7,"createdAtMillis":1000},""" +
-            """"workId":"wid-1"}"""
+            """"workId":"wid-1","overrideAwaitingReplug":false}"""
+    }
+
+    @Test
+    fun `session record with replug-grace fields encodes to the pinned shape`() {
+        val record = ChargeSessionRecord(
+            restorePolicy = ChargePolicy.FixedLimit(80),
+            startedAtMillis = 1_000L,
+            connectedSeen = true,
+            disconnectedAtMillis = 2_000L,
+            overrideAwaitingReplug = true,
+        )
+
+        json.encodeToString(ChargeSessionRecord.serializer(), record) shouldBe
+            """{"restorePolicy":"fixed:80","startedAtMillis":1000,"connectedSeen":true,""" +
+            """"disconnectedAtMillis":2000,"overrideAwaitingReplug":true}"""
+    }
+
+    /** A record from a build before the replug grace window must decode with the grace fields off. */
+    @Test
+    fun `pre-grace session records decode with grace defaults`() {
+        val stored = """{"restorePolicy":"fixed:80","startedAtMillis":1000,"connectedSeen":true}"""
+
+        val decoded = json.decodeFromString(ChargeSessionRecord.serializer(), stored)
+        decoded.disconnectedAtMillis shouldBe null
+        decoded.overrideAwaitingReplug shouldBe false
     }
 
     @Test

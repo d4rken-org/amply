@@ -43,4 +43,21 @@ class WidgetDisplayTest {
         display.settling shouldBe false
         display.steady shouldBe true
     }
+
+    @Test
+    fun `an awaiting-replug pending is its own state, never settling, and has no expiry`() {
+        val state = ChargingState(pending = PendingRequest(target, now, awaitingReplug = true))
+        val display = widgetDisplay(state, sessionActive = false, now = now + SETTLING_WINDOW_MILLIS * 100)
+        display.settling shouldBe false
+        display.awaitingReplug shouldBe true
+        display.steady shouldBe false
+    }
+
+    @Test
+    fun `an active session wins over an awaiting-replug pending`() {
+        val state = ChargingState(pending = PendingRequest(target, now, awaitingReplug = true))
+        val display = widgetDisplay(state, sessionActive = true, now = now + 1_000)
+        display.sessionActive shouldBe true
+        display.steady shouldBe false
+    }
 }

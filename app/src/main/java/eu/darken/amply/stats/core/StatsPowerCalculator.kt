@@ -1,6 +1,7 @@
 package eu.darken.amply.stats.core
 
 import android.os.BatteryManager
+import eu.darken.amply.battery.core.BatteryReadout
 import kotlin.math.abs
 
 /**
@@ -17,6 +18,9 @@ object StatsPowerCalculator {
 
     /** 250 W — generously above any phone/tablet charger; anything larger is a bad OEM reading. */
     const val MAX_PLAUSIBLE_MILLIWATTS = 250_000
+
+    /** AOSP's assumed charging voltage when a charger advertises a current but no voltage. */
+    private const val DEFAULT_CHARGING_VOLTAGE_MICROVOLTS = 5_000_000
 
     fun milliwatts(voltageMillivolts: Int?, currentNowMicroamps: Int?): Int? {
         if (voltageMillivolts == null || currentNowMicroamps == null) return null
@@ -48,5 +52,40 @@ object StatsPowerCalculator {
         if (!plugged) return null
         if (batteryStatus != BatteryManager.BATTERY_STATUS_CHARGING) return null
         return milliwatts(voltageMillivolts, currentNowMicroamps)
+    }
+
+    /** [chargeMilliwatts] straight off a readout; `null` readout (nothing observed) yields `null`. */
+    fun chargeMilliwatts(readout: BatteryReadout?): Int? {
+        if (readout == null) return null
+        return chargeMilliwatts(
+            batteryStatus = readout.status,
+            plugged = readout.onCharger,
+            voltageMillivolts = readout.voltageMillivolts,
+            currentNowMicroamps = readout.currentNowMicroamps,
+        )
+    }
+
+    /**
+     * What the connected charger *advertises* it can deliver, in milliwatts — not a measurement, and
+     * never a stand-in for [chargeMilliwatts].
+     *
+     * A missing/non-positive voltage falls back to 5 V, matching AOSP's own `BatteryStatus`: chargers
+     * that report a current but no voltage are USB-spec 5 V supplies, and dropping the figure entirely
+     * would hide the more commonly reported half of the pair.
+     */
+    fun advertisedMaxMilliwatts(maxCurrentMicroamps: Int?, maxVoltageMicrovolts: Int?): Int? {
+        if (maxCurrentMicroamps == null || maxCurrentMicroamps <= 0) return null
+        val microvolts = maxVoltageMicrovolts?.takeIf { it > 0 } ?: DEFAULT_CHARGING_VOLTAGE_MICROVOLTS
+        val mw = (maxCurrentMicroamps.toLong() / 1000L) * (microvolts.toLong() / 1000L) / 1000L
+        if (mw <= 0 || mw > MAX_PLAUSIBLE_MILLIWATTS) return null
+        return mw.toInt()
+    }
+
+    fun advertisedMaxMilliwatts(readout: BatteryReadout?): Int? {
+        if (readout == null) return null
+        return advertisedMaxMilliwatts(
+            maxCurrentMicroamps = readout.maxChargingCurrentMicroamps,
+            maxVoltageMicrovolts = readout.maxChargingVoltageMicrovolts,
+        )
     }
 }
