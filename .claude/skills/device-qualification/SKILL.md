@@ -161,7 +161,23 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
       **external** writes, the decisive question for Amply and open even on qualified HyperOS 2, remains
       unproven. Follow-up runs requested in the issue #48 thread: sustained hold at 80 with `current_now`, and
       the both-direction external-write test (adb `settings put` to `2` below the cap → hold; back to `0`
-      mid-hold → charging resumes past 80).
+      mid-hold → charging resumes past 80). Delivered 2026-08-14 — see the enforcement bullet below.
+    - **Both-direction external-write enforcement DEMONSTRATED (2026-08-14, issue #48, same `tanzanite`
+      device).** The contributor ran the requested protocol via on-device adb shell — the **shell UID, the same
+      write path Amply's Shizuku service uses**. (1) Below 80% plugged, UI manually set to "Charge fully",
+      `settings put secure security_pc_secure_protect_mode_key 2` → Battery Protection activated and the
+      Settings UI reflected it immediately, so the daemon reacts to external key writes, not just its own UI.
+      (2) Held at 80% for ~20 minutes plugged under active use without gaining a point; sysfs
+      `current_now` was permission-denied so there is no current reading, but the dumps corroborate the hold
+      indirectly (voltage 4228 mV at the hold vs 4391 mV after resume; charge counter 4283 vs 4341). (3)
+      `settings put … 0` mid-hold → charging resumed immediately, UI followed, level passed 80. Caveats: hold
+      evidence is level observation plus voltage/counter deltas, not a current measurement, and both dumps
+      show `status: 2` / `Charging state: 0` / `Charging policy: 0` — HyperOS 3 exposes **no hardware hold
+      signal**, so a future adapter gets readback-only verification (like Samsung, unlike Pixel/GrapheneOS).
+      This answers the decisive daemon-enforcement question for `tanzanite` mode `2`; still open before
+      support can ship: gate design (mode `2` is not HyperOS-3-wide — marblein below), the reviewed boundary
+      write-domain widening `{"0","1"}` → `+"2"` (`ChargingControlUserService`), factory/absent-key semantics
+      on HyperOS 3, and sessions/access-tiers/R8 on a test build (contributor is willing).
     - **Second HyperOS 3 data point (support mail, 2026-08-13): the hard-cap mode is NOT HyperOS-3-wide.** A
       Poco F5 `23049PCD8I` (`marblein`, Android 15 / SDK 35, HyperOS 3.0.2, ROM `OS3.0.2.0.VMRINXM`) reported
       via the contribution wizard only the two HyperOS-2-style modes on the same key (`1` = Intelligent
