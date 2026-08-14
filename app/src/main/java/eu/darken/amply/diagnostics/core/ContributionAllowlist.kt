@@ -19,8 +19,9 @@ object ContributionAllowlist {
         // Pixel charging optimization
         SettingId(SettingNamespace.SECURE, "charge_optimization_mode") to setOf("0", "1"),
         SettingId(SettingNamespace.SECURE, "adaptive_charging_enabled") to setOf("0", "1"),
-        // Xiaomi HyperOS charging protection
-        SettingId(SettingNamespace.SECURE, "security_pc_secure_protect_mode_key") to setOf("0", "1"),
+        // Xiaomi HyperOS charging protection ("2" = HyperOS 3 Battery protection, a named OEM mode
+        // observed on two devices — not user data)
+        SettingId(SettingNamespace.SECURE, "security_pc_secure_protect_mode_key") to setOf("0", "1", "2"),
         // GrapheneOS charging optimization
         SettingId(SettingNamespace.GLOBAL, "battery_charge_limit") to setOf("0", "1"),
         // Samsung battery protection

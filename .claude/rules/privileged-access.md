@@ -79,13 +79,26 @@ without a qualified device; record results in the qualification ledger (`device-
 
 ### Xiaomi
 
-Xiaomi control requires **all** of: Xiaomi manufacturer (covers Redmi/POCO, which report Xiaomi as
-manufacturer), `ro.mi.os.version.code == 2` (HyperOS 2.x — the ROM feature is version-scoped, not
-model-scoped), and the system user. Use `ro.mi.os.version.code`, NOT the frozen legacy
-`ro.miui.ui.version.code`. Do not widen to HyperOS 3+ without qualifying a device; record results in the qualification ledger (`device-qualification` skill). The single key is per-user `secure`, applied synchronously. Two deliberate
-assumptions: the feature is treated as present on any HyperOS 2 device (a device lacking it reads the key
-absent → a harmless false claim of control), and daemon-level enforcement of external writes is pending
-long-term observation (see Known gaps below).
+Two live adapters over the same per-user `secure` key (applied synchronously). Use `ro.mi.os.version.code`, NOT
+the frozen legacy `ro.miui.ui.version.code`.
+
+**HyperOS 2** (`xiaomi-hyperos2-v1`) requires **all** of: Xiaomi manufacturer (covers Redmi/POCO, which report
+Xiaomi as manufacturer), `ro.mi.os.version.code == 2` (the two-mode feature is version-scoped, not model-scoped),
+and the system user. Two deliberate assumptions: the feature is treated as present on any HyperOS 2 device (a
+device lacking it reads the key absent → a harmless false claim of control), and daemon-level enforcement of
+external writes is pending long-term observation (see Known gaps below).
+
+**HyperOS 3** (`xiaomi-hyperos3-v1`, adds mode `2` = Battery protection, hard cap 80%) requires **all** of:
+Xiaomi manufacturer, `ro.mi.os.version.code == 3`, a **physically-qualified device codename**
+(`XiaomiHyperOs3ChargingAdapter.QUALIFIED_CODENAMES`, ships with `tanzanite`), and the system user. The gate
+CANNOT be version-only: mode `2` is model-/build-dependent within HyperOS 3 (a Poco F5 `marblein` on HyperOS
+3.0.2 carries only the two old modes), the version property exposes no minor version, and no runtime probe for
+mode-2 presence exists — the key is absent in factory state and reading it returns only the current value. Both-
+direction hardware enforcement of external shell-UID writes was demonstrated on `tanzanite` (issue #48); no
+hardware hold signal exists in `dumpsys battery`, so verification is read-back only. The boundary write domain
+for the key is `{0,1,2}` **globally** — accepted on HyperOS 2 because no Amply code path emits `2` there and the
+HyperOS 2 decode refuses it. Widen the codename allowlist only with a qualified device plus a ledger row
+(`device-qualification` skill); unqualified HyperOS 3 devices fall to the lab adapter.
 
 ### GrapheneOS
 

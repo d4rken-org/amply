@@ -61,6 +61,19 @@ class ContributionReportTest {
     }
 
     @Test
+    fun `xiaomi hyperos3 battery protection value auto-discloses while unknown modes stay redacted`() {
+        val key = secure("security_pc_secure_protect_mode_key")
+        // "2" = HyperOS 3 Battery protection, a named OEM mode in the public domain.
+        deriveMatrix(
+            listOf(obs("full", key to "0"), obs("protect", key to "2")),
+        ).single().disclosure shouldBe Disclosure.AUTO
+        // A hypothetical fourth mode is not, and keeps the whole row opt-in.
+        deriveMatrix(
+            listOf(obs("full", key to "0"), obs("mystery", key to "3")),
+        ).single().disclosure shouldBe Disclosure.REDACTED
+    }
+
+    @Test
     fun `unknown key is redacted`() {
         deriveMatrix(
             listOf(

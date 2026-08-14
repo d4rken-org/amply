@@ -64,6 +64,8 @@ class ChargingControlUserServiceTest {
         SettingWritePolicy.validate("secure", "adaptive_charging_enabled", "0")
         SettingWritePolicy.validate("secure", "security_pc_secure_protect_mode_key", "0")
         SettingWritePolicy.validate("secure", "security_pc_secure_protect_mode_key", "1")
+        // "2" = HyperOS 3 Battery protection (qualified on tanzanite, issue #48).
+        SettingWritePolicy.validate("secure", "security_pc_secure_protect_mode_key", "2")
         SettingWritePolicy.validate("global", "protect_battery", "3")
         SettingWritePolicy.validate("global", "battery_protection_threshold", "95")
         SettingWritePolicy.validate("system", "regular_charge_protection_switch_state", "1")
@@ -72,7 +74,6 @@ class ChargingControlUserServiceTest {
     @Test
     fun `write policy rejects out-of-domain values`() {
         listOf(
-            Triple("secure", "security_pc_secure_protect_mode_key", "2"),
             Triple("secure", "security_pc_secure_protect_mode_key", "999"),
             Triple("secure", "charge_optimization_mode", "2"),
             Triple("global", "protect_battery", "2"),

@@ -19,6 +19,7 @@ import eu.darken.amply.charging.core.adapter.SamsungLabAdapter
 import eu.darken.amply.charging.core.adapter.SamsungLegacyChargingAdapter
 import eu.darken.amply.charging.core.adapter.SamsungModernChargingAdapter
 import eu.darken.amply.charging.core.adapter.XiaomiChargingAdapter
+import eu.darken.amply.charging.core.adapter.XiaomiHyperOs3ChargingAdapter
 import eu.darken.amply.charging.core.adapter.XiaomiLabAdapter
 import eu.darken.amply.common.ca.toCaString
 import io.kotest.matchers.collections.shouldContainExactly
@@ -60,6 +61,7 @@ class DefaultContributionRepositoryTest {
         samsungLegacy = SamsungLegacyChargingAdapter(),
         samsungLab = SamsungLabAdapter(),
         xiaomi = XiaomiChargingAdapter(),
+        xiaomiHyperOs3 = XiaomiHyperOs3ChargingAdapter(),
         xiaomiLab = XiaomiLabAdapter(),
         onePlus = OnePlusChargingAdapter(),
         onePlusLab = OnePlusLabAdapter(),

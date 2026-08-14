@@ -35,6 +35,7 @@ class AdapterRegistrySelectionTest {
         samsungLegacy = SamsungLegacyChargingAdapter(),
         samsungLab = SamsungLabAdapter(),
         xiaomi = XiaomiChargingAdapter(),
+        xiaomiHyperOs3 = XiaomiHyperOs3ChargingAdapter(),
         xiaomiLab = XiaomiLabAdapter(),
         onePlus = OnePlusChargingAdapter(),
         onePlusLab = OnePlusLabAdapter(),
@@ -151,11 +152,34 @@ class AdapterRegistrySelectionTest {
         registry.select(
             DeviceInfo("Xiaomi", "2306EPN60G", 35, "test", hyperOsVersion = 1),
         ).adapter?.id shouldBe "xiaomi-lab"
+        // HyperOS 3 without a qualified codename falls through via the hyperos3 allowlist.
         registry.select(
             DeviceInfo("Xiaomi", "2306EPN60G", 35, "test", hyperOsVersion = 3),
         ).adapter?.id shouldBe "xiaomi-lab"
         registry.select(
             DeviceInfo("Xiaomi", "M2101K6G", 33, "test"),
+        ).adapter?.id shouldBe "xiaomi-lab"
+    }
+
+    @Test
+    fun `a qualified HyperOS 3 codename selects the hyperos3 adapter with control`() {
+        val selection = registry.select(
+            DeviceInfo("Xiaomi", "24117RN76G", 36, "test", codename = "tanzanite", hyperOsVersion = 3, isSystemUser = true),
+        )
+        selection.adapter?.id shouldBe "xiaomi-hyperos3-v1"
+        selection.support.controlEnabled shouldBe true
+    }
+
+    @Test
+    fun `an unqualified HyperOS 3 codename falls through to the xiaomi lab adapter`() {
+        // marblein (HyperOS 3.0.2) carries only the two HyperOS-2-style modes — the reason the
+        // hyperos3 gate is a codename allowlist and not version-only.
+        registry.select(
+            DeviceInfo("Xiaomi", "23049PCD8I", 35, "test", codename = "marblein", hyperOsVersion = 3, isSystemUser = true),
+        ).adapter?.id shouldBe "xiaomi-lab"
+        // A future HyperOS major falls through too, even on a qualified codename.
+        registry.select(
+            DeviceInfo("Xiaomi", "24117RN76G", 37, "test", codename = "tanzanite", hyperOsVersion = 4, isSystemUser = true),
         ).adapter?.id shouldBe "xiaomi-lab"
     }
 

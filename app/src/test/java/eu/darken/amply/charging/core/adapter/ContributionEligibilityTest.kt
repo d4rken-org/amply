@@ -28,6 +28,7 @@ class ContributionEligibilityTest {
         samsungLegacy = SamsungLegacyChargingAdapter(),
         samsungLab = SamsungLabAdapter(),
         xiaomi = XiaomiChargingAdapter(),
+        xiaomiHyperOs3 = XiaomiHyperOs3ChargingAdapter(),
         xiaomiLab = XiaomiLabAdapter(),
         onePlus = OnePlusChargingAdapter(),
         onePlusLab = OnePlusLabAdapter(),

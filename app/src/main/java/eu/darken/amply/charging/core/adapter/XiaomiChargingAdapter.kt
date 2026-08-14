@@ -23,10 +23,10 @@ import javax.inject.Singleton
  * The setting is a HyperOS ROM feature rather than a per-model one, so control is gated to the
  * HyperOS **major version** (2.x, from `ro.mi.os.version.code`) plus the Xiaomi manufacturer
  * (which also covers Redmi/POCO) and the system user (the secure namespace is per-user while
- * charging hardware is device-wide). HyperOS 1, pre-HyperOS MIUI, and HyperOS 3 fall through to
- * the diagnostics-only lab adapter until qualified. A HyperOS 3 contribution report shows the
- * same key with an added value 2 = "Battery protection" (candidate hard cap, unqualified — see
- * the device-qualification ledger); the unrecognized-value decode below refuses it safely.
+ * charging hardware is device-wide). HyperOS 1 and pre-HyperOS MIUI fall through to the
+ * diagnostics-only lab adapter. HyperOS 3 is handled by [XiaomiHyperOs3ChargingAdapter] on
+ * qualified devices (same key, added value 2 = "Battery protection"); the unrecognized-value
+ * decode below still refuses a `2` safely — the mode does not exist on HyperOS 2.
  *
  * Assumption (deliberate): the feature is treated as present on any HyperOS 2
  * device. A HyperOS 2 device that genuinely lacks Battery protection also reports the key absent,
@@ -97,25 +97,136 @@ class XiaomiChargingAdapter @Inject constructor() : ChargingAdapter {
     override val observedSettingUris
         get() = listOf(Settings.Secure.getUriFor(KEY_MODE))
 
-    override fun nativeSettingsIntent(context: Context): Intent {
-        // No exported deep-link to the protection screen was found; the MIUI battery page
-        // (one tap away from it) resolves via the generic power-usage action.
-        val specific = Intent(Intent.ACTION_POWER_USAGE_SUMMARY).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        return if (specific.resolveActivity(context.packageManager) != null) {
-            specific
-        } else {
-            Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-    }
+    override fun nativeSettingsIntent(context: Context): Intent = xiaomiBatterySettingsIntent(context)
 
     companion object {
         const val KEY_MODE = "security_pc_secure_protect_mode_key"
         const val VALUE_CHARGE_FULLY = "0"
         const val VALUE_INTELLIGENT = "1"
 
-        // HyperOS 2.x (ro.mi.os.version.code). The mapping was verified on HyperOS 2.0; HyperOS 3
-        // stays unqualified (reported to add value 2 = "Battery protection" — see the
-        // device-qualification ledger), mirroring the One UI range gates.
+        // HyperOS 2.x (ro.mi.os.version.code). The mapping was verified on HyperOS 2.0,
+        // mirroring the One UI range gates. HyperOS 3 has its own codename-gated adapter.
         const val QUALIFIED_HYPEROS_VERSION = 2
+    }
+}
+
+/**
+ * Xiaomi HyperOS 3 charging protection — same key as HyperOS 2 with an added third mode:
+ * 0 = charge fully, 1 = "Intelligent charging" (adaptive), 2 = "Battery protection" (hard cap
+ * at 80% — issue #48 demonstrated both-direction hardware enforcement of external shell-UID
+ * writes on `tanzanite`, applied synchronously, Settings UI following each write).
+ *
+ * Unlike HyperOS 2 this gate needs a **qualified-codename allowlist** on top of the major
+ * version: mode 2 is NOT HyperOS-3-wide (a Poco F5 `marblein` on HyperOS 3.0.2 carries only
+ * modes 0/1), `ro.mi.os.version.code` exposes no minor version, and no runtime probe for
+ * mode-2 presence exists — the key is absent in factory state and reading it only returns the
+ * current value. Unqualified HyperOS 3 devices fall through to the lab adapter.
+ *
+ * `dumpsys battery` exposes no hardware hold signal on HyperOS 3 (`status: 2`,
+ * `Charging state: 0`, `Charging policy: 0` while demonstrably holding at the cap), so
+ * verification is settings read-back only.
+ */
+@Singleton
+class XiaomiHyperOs3ChargingAdapter @Inject constructor() : ChargingAdapter {
+    override val id = "xiaomi-hyperos3-v1"
+    override val displayName = R.string.adapter_name_xiaomi_protection.toCaString()
+
+    override val supportedPolicies = listOf(
+        ChargePolicy.FixedLimit(CAP_PERCENT),
+        ChargePolicy.Adaptive,
+        ChargePolicy.Unrestricted,
+    )
+
+    // Battery protection is the only Xiaomi mode with demonstrated hardware enforcement;
+    // Intelligent charging's hold remains unobserved on both HyperOS generations.
+    override val defaultProtectivePolicy = ChargePolicy.FixedLimit(CAP_PERCENT)
+    override val verification = VerificationStrategy.SYNC_READBACK
+
+    override fun probe(device: DeviceInfo): AdapterSupport {
+        val matched = device.manufacturer.equals("Xiaomi", ignoreCase = true) &&
+            device.hyperOsVersion == QUALIFIED_HYPEROS_VERSION &&
+            device.codename in QUALIFIED_CODENAMES
+        return AdapterSupport(
+            matched = matched,
+            controlEnabled = matched && device.isSystemUser,
+            detail = when {
+                !matched -> R.string.adapter_detail_requires_xiaomi_hyperos3
+                !device.isSystemUser -> R.string.adapter_detail_secondary_user
+                else -> R.string.adapter_detail_xiaomi_ready
+            },
+            contributionWanted = false,
+        )
+    }
+
+    override suspend fun read(backend: AccessBackend): ChargeObservation {
+        val mode = backend.read(SettingNamespace.SECURE, XiaomiChargingAdapter.KEY_MODE)
+        if (!mode.readable) {
+            return ChargeObservation.Unknown(
+                mode.error ?: R.string.charging_reason_settings_unreadable.toCaString(),
+            )
+        }
+        return when (mode.value) {
+            // Absent = intelligent mirrors the HyperOS 2 factory-state assumption but is
+            // UNVERIFIED on HyperOS 3 — pending the issue-#48 qualification run's
+            // factory/absent-key check; adjust if the evidence contradicts it.
+            null, XiaomiChargingAdapter.VALUE_INTELLIGENT ->
+                ChargeObservation.Verified(ChargePolicy.Adaptive, backend.kind)
+
+            XiaomiChargingAdapter.VALUE_CHARGE_FULLY ->
+                ChargeObservation.Verified(ChargePolicy.Unrestricted, backend.kind)
+
+            VALUE_BATTERY_PROTECTION ->
+                ChargeObservation.Verified(ChargePolicy.FixedLimit(CAP_PERCENT), backend.kind)
+
+            else -> ChargeObservation.Unknown(
+                R.string.charging_reason_value_unrecognized.toCaString(XiaomiChargingAdapter.KEY_MODE, mode.value),
+                unrecognizedValue = true,
+            )
+        }
+    }
+
+    override suspend fun apply(policy: ChargePolicy, backend: AccessBackend): Boolean {
+        val value = when (policy) {
+            // Value-match, not `is`: the OEM cap is hard-wired to 80, any other percent would
+            // be misrepresented by mode 2.
+            ChargePolicy.FixedLimit(CAP_PERCENT) -> VALUE_BATTERY_PROTECTION
+            ChargePolicy.Adaptive -> XiaomiChargingAdapter.VALUE_INTELLIGENT
+            ChargePolicy.Unrestricted -> XiaomiChargingAdapter.VALUE_CHARGE_FULLY
+            is ChargePolicy.FixedLimit, ChargePolicy.PauseAtFull -> return false
+        }
+        if (!backend.write(SettingMutation(SettingNamespace.SECURE, XiaomiChargingAdapter.KEY_MODE, value))) {
+            return false
+        }
+        val observed = read(backend)
+        return observed is ChargeObservation.Verified && observed.policy == policy
+    }
+
+    override val observedSettingUris
+        get() = listOf(Settings.Secure.getUriFor(XiaomiChargingAdapter.KEY_MODE))
+
+    override fun nativeSettingsIntent(context: Context): Intent = xiaomiBatterySettingsIntent(context)
+
+    companion object {
+        const val VALUE_BATTERY_PROTECTION = "2"
+        const val CAP_PERCENT = 80
+        const val QUALIFIED_HYPEROS_VERSION = 3
+
+        /**
+         * Widen ONLY with a physically-qualified device plus a Verified-devices ledger row
+         * (device-qualification skill). Version-only gating is impossible here: mode 2 is
+         * model-/build-dependent within HyperOS 3 and cannot be probed at runtime.
+         */
+        val QUALIFIED_CODENAMES = setOf("tanzanite")
+    }
+}
+
+// No exported deep-link to the protection screen was found; the MIUI battery page
+// (one tap away from it) resolves via the generic power-usage action.
+private fun xiaomiBatterySettingsIntent(context: Context): Intent {
+    val specific = Intent(Intent.ACTION_POWER_USAGE_SUMMARY).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    return if (specific.resolveActivity(context.packageManager) != null) {
+        specific
+    } else {
+        Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
 }

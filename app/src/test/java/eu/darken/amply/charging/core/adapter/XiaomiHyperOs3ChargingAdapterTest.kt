@@ -17,46 +17,55 @@ import io.kotest.matchers.types.shouldBeInstanceOf
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 
-class XiaomiChargingAdapterTest {
-    private val adapter = XiaomiChargingAdapter()
+class XiaomiHyperOs3ChargingAdapterTest {
+    private val adapter = XiaomiHyperOs3ChargingAdapter()
 
-    private fun xiaomi(
-        model: String = "2306EPN60G",
-        hyperOs: Int? = 2,
+    private fun xiaomi3(
+        model: String = "24117RN76G",
+        codename: String = "tanzanite",
+        hyperOs: Int? = 3,
         systemUser: Boolean = true,
         manufacturer: String = "Xiaomi",
     ) = DeviceInfo(
         manufacturer = manufacturer,
         model = model,
-        sdk = 35,
+        codename = codename,
+        sdk = 36,
         fingerprint = "test",
         hyperOsVersion = hyperOs,
         isSystemUser = systemUser,
     )
 
     @Test
-    fun `any HyperOS 2 Xiaomi device matches regardless of model`() {
-        adapter.probe(xiaomi()).matched shouldBe true
-        adapter.probe(xiaomi()).controlEnabled shouldBe true
-        adapter.probe(xiaomi()).detail shouldBe R.string.adapter_detail_xiaomi_ready
+    fun `a qualified codename on HyperOS 3 matches with control`() {
+        val support = adapter.probe(xiaomi3())
 
-        // The gate is the ROM version, not the model: a different HyperOS 2 model still matches.
-        adapter.probe(xiaomi(model = "23078PND5G")).matched shouldBe true
-        // Redmi/POCO report Xiaomi as manufacturer, so they qualify on HyperOS 2 too.
-        adapter.probe(xiaomi(model = "23021RAAEG")).matched shouldBe true
+        support.matched shouldBe true
+        support.controlEnabled shouldBe true
+        support.detail shouldBe R.string.adapter_detail_xiaomi_ready
+    }
+
+    @Test
+    fun `unqualified codenames fall through`() {
+        // marblein (Poco F5, HyperOS 3.0.2) is the real counterexample: same key, only modes 0/1,
+        // no Battery protection — the reason this gate cannot be version-only.
+        adapter.probe(xiaomi3(codename = "marblein", model = "23049PCD8I")).matched shouldBe false
+        adapter.probe(xiaomi3(codename = "")).matched shouldBe false
     }
 
     @Test
     fun `other HyperOS generations and non-Xiaomi devices do not match`() {
-        adapter.probe(xiaomi(hyperOs = 1)).matched shouldBe false // HyperOS 1 unverified
-        adapter.probe(xiaomi(hyperOs = 3)).matched shouldBe false // handled by the hyperos3 sibling when qualified
-        adapter.probe(xiaomi(hyperOs = null)).matched shouldBe false // pre-HyperOS MIUI
-        adapter.probe(xiaomi(manufacturer = "samsung")).matched shouldBe false
+        // HyperOS 2 stays with the hyperos2 adapter even for a qualified codename.
+        adapter.probe(xiaomi3(hyperOs = 2)).matched shouldBe false
+        // A future major version needs its own qualification, even on a qualified codename.
+        adapter.probe(xiaomi3(hyperOs = 4)).matched shouldBe false
+        adapter.probe(xiaomi3(hyperOs = null)).matched shouldBe false
+        adapter.probe(xiaomi3(manufacturer = "samsung")).matched shouldBe false
     }
 
     @Test
     fun `secondary user disables control`() {
-        val support = adapter.probe(xiaomi(systemUser = false))
+        val support = adapter.probe(xiaomi3(systemUser = false))
 
         support.matched shouldBe true
         support.controlEnabled shouldBe false
@@ -64,21 +73,22 @@ class XiaomiChargingAdapterTest {
     }
 
     @Test
-    fun `read maps both modes and treats the absent key as intelligent`() = runTest {
+    fun `read maps all three modes and treats the absent key as intelligent`() = runTest {
+        adapter.read(FakeBackend(values = mutableMapOf(XiaomiChargingAdapter.KEY_MODE to "2"))) shouldBe
+            ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.DIRECT_WSS)
         adapter.read(FakeBackend(values = mutableMapOf(XiaomiChargingAdapter.KEY_MODE to "1"))) shouldBe
             ChargeObservation.Verified(ChargePolicy.Adaptive, BackendKind.DIRECT_WSS)
         adapter.read(FakeBackend(values = mutableMapOf(XiaomiChargingAdapter.KEY_MODE to "0"))) shouldBe
             ChargeObservation.Verified(ChargePolicy.Unrestricted, BackendKind.DIRECT_WSS)
-        // Factory state: key absent until first change; OEM UI treats it as intelligent.
+        // Absent = intelligent mirrors HyperOS 2 but is UNVERIFIED on HyperOS 3 — pending the
+        // issue-#48 qualification run's factory/absent-key check.
         adapter.read(FakeBackend()) shouldBe
             ChargeObservation.Verified(ChargePolicy.Adaptive, BackendKind.DIRECT_WSS)
     }
 
     @Test
     fun `unrecognized values are flagged as such`() = runTest {
-        // "2" is a real HyperOS 3 mode (Battery protection) that does not exist on HyperOS 2 —
-        // this adapter deliberately refuses it rather than guessing.
-        val observed = adapter.read(FakeBackend(values = mutableMapOf(XiaomiChargingAdapter.KEY_MODE to "2")))
+        val observed = adapter.read(FakeBackend(values = mutableMapOf(XiaomiChargingAdapter.KEY_MODE to "3")))
 
         observed.shouldBeInstanceOf<ChargeObservation.Unknown>()
         observed.unrecognizedValue shouldBe true
@@ -93,15 +103,17 @@ class XiaomiChargingAdapterTest {
     }
 
     @Test
-    fun `apply writes the single mode key`() = runTest {
+    fun `apply writes the single mode key for all three policies`() = runTest {
         val backend = FakeBackend()
 
-        adapter.apply(ChargePolicy.Unrestricted, backend) shouldBe true
+        adapter.apply(ChargePolicy.FixedLimit(80), backend) shouldBe true
         adapter.apply(ChargePolicy.Adaptive, backend) shouldBe true
+        adapter.apply(ChargePolicy.Unrestricted, backend) shouldBe true
 
         backend.writes shouldContainExactly listOf(
-            SettingMutation(SettingNamespace.SECURE, XiaomiChargingAdapter.KEY_MODE, "0"),
+            SettingMutation(SettingNamespace.SECURE, XiaomiChargingAdapter.KEY_MODE, "2"),
             SettingMutation(SettingNamespace.SECURE, XiaomiChargingAdapter.KEY_MODE, "1"),
+            SettingMutation(SettingNamespace.SECURE, XiaomiChargingAdapter.KEY_MODE, "0"),
         )
     }
 
@@ -109,7 +121,8 @@ class XiaomiChargingAdapterTest {
     fun `apply rejects unsupported policies without writing`() = runTest {
         val backend = FakeBackend()
 
-        adapter.apply(ChargePolicy.FixedLimit(80), backend) shouldBe false
+        // The OEM cap is hard-wired to 80 — any other percent must be refused, not approximated.
+        adapter.apply(ChargePolicy.FixedLimit(85), backend) shouldBe false
         adapter.apply(ChargePolicy.PauseAtFull, backend) shouldBe false
 
         backend.writes shouldBe emptyList()
@@ -117,18 +130,20 @@ class XiaomiChargingAdapterTest {
 
     @Test
     fun `apply fails on rejected or dropped writes`() = runTest {
-        adapter.apply(ChargePolicy.Adaptive, FakeBackend(failWrites = true)) shouldBe false
+        adapter.apply(ChargePolicy.FixedLimit(80), FakeBackend(failWrites = true)) shouldBe false
         // Write reports success but the value never lands: read-back equality must fail.
-        // (Absent decodes as Adaptive, so use Unrestricted for the dropped-write check.)
-        adapter.apply(ChargePolicy.Unrestricted, FakeBackend(dropWrites = true)) shouldBe false
+        // (Absent decodes as Adaptive, so use a non-Adaptive policy for the dropped-write check.)
+        adapter.apply(ChargePolicy.FixedLimit(80), FakeBackend(dropWrites = true)) shouldBe false
     }
 
     @Test
     fun `session capabilities`() {
         adapter.sessionOverridePolicy shouldBe ChargePolicy.Unrestricted
-        adapter.defaultProtectivePolicy shouldBe ChargePolicy.Adaptive
+        adapter.defaultProtectivePolicy shouldBe ChargePolicy.FixedLimit(80)
         adapter.verification shouldBe VerificationStrategy.SYNC_READBACK
         adapter.reconnectGestureSupported shouldBe false
+        adapter.preferShizukuForWrites shouldBe false
+        adapter.policyLatchesAtPlug shouldBe false
     }
 
     private class FakeBackend(

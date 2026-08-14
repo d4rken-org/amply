@@ -134,6 +134,7 @@
     <string name="adapter_detail_secondary_user">Charging protection is device-wide; control is limited to the main user</string>
     <string name="adapter_detail_samsung_ready">Changes apply to the hardware immediately</string>
     <string name="adapter_detail_requires_xiaomi">Requires a verified Xiaomi device on HyperOS 2</string>
+    <string name="adapter_detail_requires_xiaomi_hyperos3">Requires a qualified Xiaomi device on HyperOS 3</string>
     <string name="adapter_detail_xiaomi_ready">Changes apply to the hardware immediately</string>
     <string name="adapter_detail_requires_oplus">Requires a OnePlus, Oppo, or Realme device on ColorOS 15</string>
     <string name="adapter_detail_oplus_ready">Charging control requires Shizuku on this device</string>
