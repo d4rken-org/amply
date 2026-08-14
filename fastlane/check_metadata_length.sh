@@ -24,9 +24,21 @@ failed=0
 warned=0
 checked=0
 
-# Count characters excluding only the trailing newline
+# Count characters excluding only the trailing newline.
+# POSIX-only: `wc -m` is locale-aware on both GNU coreutils and BSD (awk's length()
+# is byte-based in mawk, so it cannot replace it).
 count_chars() {
-    sed -z 's/\n$//' < "$1" | wc -m | tr -d '[:space:]'
+    local file="$1"
+    local chars
+    chars="$(wc -m < "$file" | tr -d '[:space:]')"
+
+    # `tail -c 1` output is empty exactly when the last byte is a newline (command
+    # substitution strips it), so a single trailing newline drops off the count.
+    if [ "$chars" -gt 0 ] && [ -z "$(tail -c 1 "$file")" ]; then
+        chars=$((chars - 1))
+    fi
+
+    printf '%s' "$chars"
 }
 
 check_file() {

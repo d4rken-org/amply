@@ -4,11 +4,18 @@ Modern phones can cap charging (often around 80%) to slow battery ageing. That's
 
 Features:
 
-* Switch charge-protection modes with one tap — from the app, a home-screen widget, or a Quick Settings tile.
+* Switch charge-protection modes with one tap.
 * Full charge once: temporarily lifts the limit, then automatically restores your protective policy at 100%, on unplug, or after a safety timeout.
 * Optional reconnect gesture: unplug and replug within a few seconds to start a full charge, no app needed.
 * Honest status: Amply tells you when a setting is verified, only last-requested, or unknown — it never fakes certainty.
 * Runs entirely on-device. No account, no ads, no tracking.
+
+Amply Pro adds:
+
+* Home-screen widget and Quick Settings tile for one-tap control without opening the app.
+* Charge history: every charge recorded with its level, speed, and temperature over time.
+
+Available as a yearly subscription with a free trial, or as a one-time purchase.
 
 Useful on any device — no ADB, Shizuku, or special permissions needed:
 
@@ -26,7 +33,7 @@ If direct control isn't available, Amply is still useful — battery details, th
 
 Direct control needs a one-time setup: grant WRITE_SECURE_SETTINGS via Shizuku, or from a computer over ADB. Amply walks you through each step.
 
-Amply is experimental, free, and open source (GPL-3.0).
+Amply is experimental and open source (GPL-3.0). Charge control is free; the extras above are what the upgrade funds.
 
 Changelog: https://amply.darken.eu/changelog
 

@@ -1,0 +1,27 @@
+<resources>
+    <!-- The tier word this flavor uses everywhere the brand title is composed. -->
+    <string name="app_name_upgrade_postfix" translatable="false">FOSS</string>
+
+    <!-- Upgrade screen — the FOSS build unlocks the extras on trust, via GitHub Sponsors. -->
+    <string name="upgrade_screen_title">Support Amply</string>
+    <string name="upgrade_screen_preamble">Amply has no ads and doesn\'t sell your data. Continued development is only made possible by you.</string>
+    <string name="upgrade_screen_why_title">What you unlock</string>
+    <string name="upgrade_screen_why_body">• Charge history with per-charge curves\n• Home-screen widget\n• Quick Settings tile\n• Support open-source work</string>
+    <string name="upgrade_screen_how_title">How to help</string>
+    <string name="upgrade_screen_how_body">Become a sponsor! Tap the button below to unlock all extra features and open my GitHub Sponsors profile.</string>
+    <string name="upgrade_screen_sponsor_action">Sponsor development</string>
+    <string name="upgrade_screen_sponsor_action_hint">The alternative are ads, analytics and trackers 🙁</string>
+    <string name="upgrade_screen_thanks_toast">Thank you for supporting open-source development ❤️</string>
+    <string name="upgrade_screen_sponsor_return_too_quick">Back already? Your support keeps Amply alive!</string>
+
+    <!-- Status views, reached from the settings entry. -->
+    <string name="upgrade_screen_status_free_title">Free version</string>
+    <string name="upgrade_screen_status_free_body">You are using the free version of Amply. Charge control stays free. The extras can be unlocked by supporting development.</string>
+    <string name="upgrade_screen_status_free_action">See upgrade options</string>
+    <string name="upgrade_screen_status_upgraded_title">Upgrade active</string>
+    <string name="upgrade_screen_status_upgraded_body">All extra features are unlocked. Thank you for supporting open-source development ❤️</string>
+    <string name="upgrade_screen_supporter_since">Supporter since %1$s</string>
+    <string name="upgrade_screen_recurring_title">Keep it going</string>
+    <string name="upgrade_screen_recurring_body">Amply keeps evolving through updates and fixes. If you\'d like to sustain that, consider a recurring donation via GitHub Sponsors.</string>
+    <string name="upgrade_screen_recurring_action">Open GitHub Sponsors</string>
+</resources>

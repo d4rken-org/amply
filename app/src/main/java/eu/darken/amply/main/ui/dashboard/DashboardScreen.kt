@@ -25,11 +25,11 @@ import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material.icons.twotone.Build
 import androidx.compose.material.icons.twotone.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -72,9 +72,11 @@ import eu.darken.amply.common.ca.CaString
 import eu.darken.amply.common.ca.caString
 import eu.darken.amply.common.ca.toCaString
 import eu.darken.amply.common.compose.AmplyCard
+import eu.darken.amply.common.compose.AmplyCardActionLabel
 import eu.darken.amply.common.compose.AmplyCardHeader
 import eu.darken.amply.common.compose.AmplyCardToggleIndicator
 import eu.darken.amply.common.compose.AmplyCardTone
+import eu.darken.amply.common.compose.AmplyClickableCard
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.AmplyToggleCard
 import eu.darken.amply.common.compose.PreviewWrapper
@@ -92,6 +94,7 @@ import eu.darken.amply.main.ui.setup.OemGuideCard
 import eu.darken.amply.main.ui.setup.UnsupportedDeviceCard
 import eu.darken.amply.stats.core.ChargeCurvePoint
 import eu.darken.amply.stats.core.StatsLiveSession
+import eu.darken.amply.upgrade.ui.brandTitle
 import kotlinx.coroutines.delay
 
 @Composable
@@ -125,6 +128,9 @@ fun DashboardScreen(
     onOpenSupportIssue: () -> Unit,
     onEmailSupport: () -> Unit,
     onHelp: () -> Unit,
+    // Unused while UpgradePromoCard is held back for launch (see its docs). Kept — together with the
+    // root wiring in MainActivity — so re-adding the card is a one-line change here.
+    onUpgrade: () -> Unit = {},
     // Injectable so a screenshot/preview fixture can render a live session at a believable age instead
     // of at "0m" — the screen is otherwise pure, and this is the one value it reads from the clock.
     nowElapsedRealtimeMillis: Long = SystemClock.elapsedRealtime(),
@@ -132,7 +138,16 @@ fun DashboardScreen(
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text(stringResource(R.string.app_name), fontWeight = FontWeight.SemiBold) },
+                title = {
+                    // The tier word appears only once the entitlement says it is real: free — and
+                    // "not answered yet", which is the state on every cold start — reads as the plain
+                    // app name, so the title can never claim an upgrade that isn't there.
+                    val isPro = state.upgrade?.isPro == true
+                    Text(
+                        brandTitle(includeQualifier = isPro, highlightQualifier = isPro),
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                },
                 actions = {
                     IconButton(onClick = onRefresh) {
                         Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.action_refresh))
@@ -336,6 +351,9 @@ fun DashboardScreen(
                                 widgetAdded = state.quickAccess.widgetAdded,
                                 tileAdded = state.quickAccess.tileAdded,
                                 tileRequestPending = state.tileRequestPending,
+                                // Settled and not upgraded only: an unsettled entitlement badges
+                                // nothing.
+                                showProBadge = shouldShowUpgradePromo(state.upgrade),
                                 onPinWidget = onPinWidget,
                                 onAddTile = onAddTile,
                                 onDismiss = onDismissQuickAccess,
@@ -768,6 +786,12 @@ private fun QuickFullChargeCardLargeFontPreview() = PreviewWrapper {
     )
 }
 
+/**
+ * The setup nudge for Shizuku, in its two flavors: required for control, or merely better. Like the
+ * upgrade promo, the whole card is the tap target — it carries exactly one action, and the action
+ * changes with [running] (allow Amply in a Shizuku that is up, or open/install one that isn't), so
+ * the card's click label follows it.
+ */
 @Composable
 private fun ShizukuBanner(
     running: Boolean,
@@ -775,14 +799,25 @@ private fun ShizukuBanner(
     onOpen: () -> Unit,
     onAllow: () -> Unit,
 ) {
-    AmplyCard(tone = AmplyCardTone.TertiaryContainer) {
-        Text(
-            stringResource(
+    val actionLabel = if (running) {
+        stringResource(R.string.dashboard_shizuku_allow)
+    } else {
+        stringResource(R.string.dashboard_shizuku_open)
+    }
+    AmplyClickableCard(
+        onClick = if (running) onAllow else onOpen,
+        onClickLabel = actionLabel,
+        tone = AmplyCardTone.TertiaryContainer,
+    ) {
+        AmplyCardHeader(
+            title = stringResource(
                 if (requiredForControl) R.string.dashboard_shizuku_required_title
                 else R.string.dashboard_shizuku_title,
             ),
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
+            // A wrench, matching the access setup guide: this card is setup work, not a status.
+            icon = Icons.TwoTone.Build,
+            iconTint = MaterialTheme.colorScheme.onTertiaryContainer,
+            titleStyle = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
         )
         Text(
             stringResource(
@@ -792,18 +827,22 @@ private fun ShizukuBanner(
             style = MaterialTheme.typography.bodySmall,
         )
         Spacer(Modifier.height(8.dp))
-        FilledTonalButton(
-            onClick = if (running) onAllow else onOpen,
+        AmplyCardActionLabel(
+            text = actionLabel,
+            color = MaterialTheme.colorScheme.onTertiaryContainer,
             modifier = Modifier.align(Alignment.End),
-        ) {
-            Text(
-                if (running) {
-                    stringResource(R.string.dashboard_shizuku_allow)
-                } else {
-                    stringResource(R.string.dashboard_shizuku_open)
-                },
-            )
-        }
+        )
+    }
+}
+
+// Both variants, and both action states: the card's one tap target changes what it does with the
+// label, so they have to be seen together.
+@AmplyPreview
+@Composable
+private fun ShizukuBannerPreview() = PreviewWrapper {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        ShizukuBanner(running = false, requiredForControl = true, onOpen = {}, onAllow = {})
+        ShizukuBanner(running = true, requiredForControl = false, onOpen = {}, onAllow = {})
     }
 }
 
@@ -909,6 +948,8 @@ private fun DashboardScreenPreview() = PreviewWrapper {
             quickFullChargeEnabled = true,
             // Presence check done, nothing discovered yet — renders the quick-access promotion.
             quickAccessChecked = true,
+            // Settled and not upgraded: the plain app-name title, plus the quick-access Pro badge.
+            upgrade = UpgradeSnapshot(isPro = false, isSettled = true),
             // A resolved interruption: the warning card sits under the hero until dismissed.
             interruption = InterruptionEvent(
                 occurredAtMillis = 0L,
@@ -981,13 +1022,15 @@ private fun DashboardScreenPreview() = PreviewWrapper {
 }
 
 // On the charger with capture enabled: the charging card renders the live session (the preview above
-// shows the same card, in the same slot, off the charger).
+// shows the same card, in the same slot, off the charger). Also the upgraded title — the preview
+// above is the free one, which stays the plain app name.
 @AmplyPreview
 @Composable
 private fun DashboardScreenLiveChargePreview() = PreviewWrapper {
     DashboardScreen(
         state = DashboardUiState(
             onboardingComplete = true,
+            upgrade = UpgradeSnapshot(isPro = true, isSettled = true),
             batteryReadout = BatteryReadout(
                 levelPercent = 78,
                 status = android.os.BatteryManager.BATTERY_STATUS_CHARGING,

@@ -22,4 +22,11 @@ enum class SettingsDestination {
     /** The recorded-session list (the data), reached from [BATTERY]'s top bar. */
     CHARGE_HISTORY,
     STATS_SESSION_DETAIL,
+
+    /**
+     * The upgrade screen. Reached from several places (the settings entry, a gated affordance, the
+     * dashboard promo, the tile/widget), so it records where to return to rather than assuming one
+     * parent — see `upgradeOrigin` at the composition root.
+     */
+    UPGRADE,
 }

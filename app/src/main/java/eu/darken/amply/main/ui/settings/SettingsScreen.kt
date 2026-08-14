@@ -12,6 +12,7 @@ import androidx.compose.material.icons.twotone.BugReport
 import androidx.compose.material.icons.twotone.Favorite
 import androidx.compose.material.icons.twotone.History
 import androidx.compose.material.icons.twotone.Settings
+import androidx.compose.material.icons.twotone.Stars
 import androidx.compose.material.icons.twotone.SupportAgent
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -30,10 +31,17 @@ import eu.darken.amply.common.settings.SettingsBaseItem
 import eu.darken.amply.common.settings.SettingsCategoryHeader
 import eu.darken.amply.common.settings.SettingsDivider
 import eu.darken.amply.common.settings.SettingsNavigationItem
+import eu.darken.amply.upgrade.ui.ProBadge
+import eu.darken.amply.upgrade.ui.brandTitleText
 
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    isPro: Boolean,
+    // Settled-and-not-Pro, which is NOT just `!isPro`: an entitlement that hasn't resolved yet must
+    // not badge gated rows at a paying user on cold start.
+    showProBadge: Boolean,
+    onUpgrade: () -> Unit,
     onGeneral: () -> Unit,
     gestureEnabled: Boolean,
     onCharging: () -> Unit,
@@ -97,7 +105,7 @@ fun SettingsScreen(
             // Charge recording is opted into once, from the battery hub's card — so the durable on/off
             // control and the retention window belong here, not next to the data they produce.
             item {
-                SettingsNavigationItem(
+                SettingsBaseItem(
                     title = stringResource(R.string.settings_charging_history_title),
                     subtitle = if (captureEnabled) {
                         stringResource(R.string.settings_charging_history_subtitle_on)
@@ -106,6 +114,9 @@ fun SettingsScreen(
                     },
                     icon = Icons.AutoMirrored.TwoTone.ShowChart,
                     onClick = onChargingHistory,
+                    // The row itself stays open to everyone: turning recording *off*, and the
+                    // retention window for data already recorded, must never sit behind the gate.
+                    trailingContent = { if (showProBadge) ProBadge() },
                 )
             }
             item { SettingsDivider() }
@@ -126,6 +137,22 @@ fun SettingsScreen(
                 item { SettingsDivider() }
             }
             item { SettingsCategoryHeader(stringResource(R.string.settings_category_other)) }
+            // Heads the "Other" category rather than the whole screen: it is the upgrade entry point
+            // and the place a user checks when they wonder whether their purchase applied, but it
+            // configures nothing — above the actual settings it read as the app's first preference.
+            item {
+                SettingsNavigationItem(
+                    title = brandTitleText(includeQualifier = true),
+                    subtitle = if (isPro) {
+                        stringResource(R.string.settings_pro_subtitle_active)
+                    } else {
+                        stringResource(R.string.settings_pro_subtitle_free)
+                    },
+                    icon = Icons.TwoTone.Stars,
+                    onClick = onUpgrade,
+                )
+            }
+            item { SettingsDivider() }
             item {
                 SettingsNavigationItem(
                     title = stringResource(R.string.settings_support_title),
@@ -181,6 +208,9 @@ private fun ExternalLinkIcon() {
 private fun SettingsScreenPreview() = PreviewWrapper {
     SettingsScreen(
         onBack = {},
+        isPro = false,
+        showProBadge = true,
+        onUpgrade = {},
         onGeneral = {},
         gestureEnabled = true,
         onCharging = {},
@@ -188,6 +218,30 @@ private fun SettingsScreenPreview() = PreviewWrapper {
         onChargingHistory = {},
         showDiagnostics = true,
         diagnosticsReady = true,
+        onDiagnostics = {},
+        onSupport = {},
+        onChangelog = {},
+        onAcknowledgements = {},
+        onPrivacy = {},
+    )
+}
+
+// Upgraded: the tier row states it, and the gated rows drop their badge.
+@AmplyPreview
+@Composable
+private fun SettingsScreenUpgradedPreview() = PreviewWrapper {
+    SettingsScreen(
+        onBack = {},
+        isPro = true,
+        showProBadge = false,
+        onUpgrade = {},
+        onGeneral = {},
+        gestureEnabled = true,
+        onCharging = {},
+        captureEnabled = true,
+        onChargingHistory = {},
+        showDiagnostics = false,
+        diagnosticsReady = false,
         onDiagnostics = {},
         onSupport = {},
         onChangelog = {},

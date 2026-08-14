@@ -1,0 +1,34 @@
+package eu.darken.amply.upgrade.core
+
+import eu.darken.amply.upgrade.core.billing.Sku
+
+/** Everything Amply sells. Both entries unlock the same feature set. */
+@Suppress("ClassName")
+interface OurSku {
+    interface Iap : OurSku {
+        object PRO_UPGRADE : Sku.Iap, Iap {
+            override val id: String = "eu.darken.amply.iap.upgrade.pro"
+        }
+    }
+
+    interface Sub : Sku.Subscription {
+        object PRO_UPGRADE : Sku.Subscription, Sub {
+            override val id: String = "upgrade.pro"
+            override val offers: Collection<Sku.Subscription.Offer> = setOf(BASE_OFFER, TRIAL_OFFER)
+
+            object BASE_OFFER : Sku.Subscription.Offer {
+                override val basePlanId: String = "upgrade-pro-baseplan"
+                override val offerId: String? = null
+            }
+
+            object TRIAL_OFFER : Sku.Subscription.Offer {
+                override val basePlanId: String = "upgrade-pro-baseplan"
+                override val offerId: String = "upgrade-pro-baseplan-trial"
+            }
+        }
+    }
+
+    companion object {
+        val PRO_SKUS = setOf(Sub.PRO_UPGRADE, Iap.PRO_UPGRADE)
+    }
+}

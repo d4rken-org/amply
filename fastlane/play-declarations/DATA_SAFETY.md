@@ -13,10 +13,24 @@ Source of truth for these answers: [`PRIVACY_POLICY.md`](../../PRIVACY_POLICY.md
 | Is all of the user data collected by your app encrypted in transit? | n/a (nothing collected) |
 | Do you provide a way for users to request that their data is deleted? | n/a (nothing collected) |
 | Does your app contain ads? | **No** |
-| Does your app have in-app purchases? | **No** |
+| Does your app have in-app purchases? | **Yes** (see below) |
 | Data used for tracking / advertising | **None** |
 
 Privacy policy URL: `https://amply.darken.eu/privacy`
+
+## In-app purchases
+
+The Play build sells an optional upgrade — a yearly subscription (with a free trial) and an
+equivalent one-time purchase — that unlocks the charge history, the home-screen widget and the Quick
+Settings tile. Charge control itself is free.
+
+This does not change the "no data collected" answer above. Purchases are processed entirely by
+Google Play; Amply never sees payment details and has no server to send them to. What it keeps
+locally is the entitlement bookkeeping — when Google Play last confirmed a purchase and which
+product it was — so the upgrade survives a Play outage. That never leaves the device.
+
+The FOSS build contains no billing code at all: its unlock is a local record written after a visit
+to the GitHub Sponsors page.
 
 ## Why "no data collected" is the correct answer
 

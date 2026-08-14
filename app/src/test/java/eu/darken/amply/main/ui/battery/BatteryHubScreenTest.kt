@@ -53,6 +53,9 @@ class BatteryHubScreenTest {
                 readout = readout,
                 captureEnabled = true,
                 teaser = ChargeTeaserState.None,
+                // Recording is on, so the badged opt-in card never renders — these cases are about
+                // the electrical section.
+                showProBadge = false,
                 onBack = {},
                 onOpenHistory = {},
                 onEnableCapture = {},

@@ -21,6 +21,8 @@ import eu.darken.amply.fullcharge.core.FullChargeStore
 import eu.darken.amply.fullcharge.core.ChargeSessionService
 import eu.darken.amply.main.core.QuickAccessStore
 import eu.darken.amply.main.ui.MainActivity
+import eu.darken.amply.upgrade.core.UpgradeRepo
+import eu.darken.amply.upgrade.core.isProForUi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,6 +36,7 @@ class ChargeTileService : TileService() {
     @Inject lateinit var repository: ChargingRepository
     @Inject lateinit var sessionStore: FullChargeStore
     @Inject lateinit var quickAccessStore: QuickAccessStore
+    @Inject lateinit var upgradeRepo: UpgradeRepo
 
     private var scope: CoroutineScope? = null
 
@@ -51,10 +54,12 @@ class ChargeTileService : TileService() {
         scope?.cancel()
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Default).also { worker ->
             worker.launch {
+                val isPro = upgradeRepo.isProForUi()
                 val sessionActive = sessionStore.currentSession() != null
                 val state = repository.refresh()
                 withContext(Dispatchers.Main) {
                     render(
+                        isPro = isPro,
                         active = sessionActive,
                         available = state.canApply,
                         // Pending states beat the static access/adapter label: opening QS is the
@@ -83,7 +88,12 @@ class ChargeTileService : TileService() {
     override fun onClick() {
         super.onClick()
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
-            if (sessionStore.currentSession() != null) {
+            if (!upgradeRepo.isProForUi()) {
+                // Checked before anything else, including a running session: the tile is the gated
+                // affordance, and opening the upgrade screen is a better answer than silently doing
+                // nothing. A session started elsewhere can still be ended from the app or the widget.
+                withContext(Dispatchers.Main) { openApp(requestNotifications = false, openUpgrade = true) }
+            } else if (sessionStore.currentSession() != null) {
                 startChargeService(ChargeSessionService.ACTION_RESTORE)
             } else if (!canShowNotifications()) {
                 withContext(Dispatchers.Main) { openApp(requestNotifications = true) }
@@ -121,10 +131,11 @@ class ChargeTileService : TileService() {
         PackageManager.PERMISSION_GRANTED
 
     @SuppressLint("StartActivityAndCollapseDeprecated")
-    private fun openApp(requestNotifications: Boolean) {
+    private fun openApp(requestNotifications: Boolean, openUpgrade: Boolean = false) {
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra(MainActivity.EXTRA_REQUEST_NOTIFICATIONS, requestNotifications)
+            if (openUpgrade) putExtra(MainActivity.EXTRA_OPEN_UPGRADE, true)
         }
         if (Build.VERSION.SDK_INT >= 34) {
             startActivityAndCollapse(
@@ -141,20 +152,32 @@ class ChargeTileService : TileService() {
         }
     }
 
-    private fun render(active: Boolean, available: Boolean, detail: String) {
+    private fun render(isPro: Boolean, active: Boolean, available: Boolean, detail: String) {
         qsTile?.apply {
             state = when {
+                // Never STATE_UNAVAILABLE for the upgrade lock: SystemUI renders that as an inert,
+                // untappable tile, and the whole point here is that the tap leads somewhere.
+                !isPro -> Tile.STATE_INACTIVE
                 active -> Tile.STATE_ACTIVE
                 available -> Tile.STATE_INACTIVE
                 else -> Tile.STATE_UNAVAILABLE
             }
-            label = getString(if (active) R.string.tile_active else R.string.tile_label)
+            label = getString(if (isPro && active) R.string.tile_active else R.string.tile_label)
             if (Build.VERSION.SDK_INT >= 29) {
-                subtitle = if (active) getString(R.string.tile_override_active) else detail
+                subtitle = when {
+                    !isPro -> getString(
+                        R.string.tile_upgrade_required,
+                        getString(R.string.app_name_upgraded_template, getString(R.string.app_name), upgradeTier()),
+                    )
+                    active -> getString(R.string.tile_override_active)
+                    else -> detail
+                }
             }
             updateTile()
         }
     }
+
+    private fun upgradeTier(): String = getString(R.string.app_name_upgrade_postfix)
 
     private companion object {
         val TAG = logTag("Tile", "ChargeTileService")
