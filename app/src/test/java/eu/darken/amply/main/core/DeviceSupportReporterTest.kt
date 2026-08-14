@@ -120,9 +120,9 @@ class DeviceSupportReporterTest {
     }
 
     @Test
-    fun `a grapheneos report carries identity and key presence`() {
-        // The triage-relevant pairing: identity without the key means the wizard should discover it;
-        // identity with the key means the live gate should have engaged.
+    fun `a grapheneos report carries identity and the key probe result`() {
+        // The probe is @Protected-denied on real GrapheneOS, so false is the expected value there;
+        // true would flag a ROM exposing a same-named key WITHOUT the GrapheneOS restriction.
         val text = formatReport(report(isGrapheneOs = true, hasBatteryChargeLimit = true))
         text shouldContain "is_grapheneos=true"
         text shouldContain "has_battery_charge_limit=true"

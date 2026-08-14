@@ -1236,12 +1236,16 @@ private fun DashboardScreenAwaitingReplugPreview() = PreviewWrapper {
                 device = DeviceInfo("Google", "Pixel 9 Pro XL", 37, "preview"),
                 adapterName = "GrapheneOS charge limit".toCaString(),
                 adapterId = "grapheneos-chargelimit-v1",
-                adapterDetail = "Changes take effect the next time the charger is reconnected".toCaString(),
+                adapterDetail = ("Charging control requires Shizuku; changes take effect the next " +
+                    "time the charger is reconnected").toCaString(),
                 supportedPolicies = listOf(
                     ChargePolicy.FixedLimit(80),
                     ChargePolicy.Unrestricted,
                 ),
                 syncVerification = true,
+                // GrapheneOS marks the key @Protected: only the shell UID (Shizuku) can touch it,
+                // so the realistic ready state is Shizuku-connected, direct access irrelevant.
+                writeRequiresShizuku = true,
                 controlEnabled = true,
                 access = AccessSnapshot(
                     direct = BackendStatus(
@@ -1250,14 +1254,14 @@ private fun DashboardScreenAwaitingReplugPreview() = PreviewWrapper {
                         detail = "Charge-control access granted".toCaString(),
                     ),
                     shizuku = BackendStatus(
-                        available = false,
-                        granted = false,
-                        detail = "Shizuku not installed".toCaString(),
+                        available = true,
+                        granted = true,
+                        detail = "Shizuku connected".toCaString(),
                     ),
                 ),
                 observation = ChargeObservation.Verified(
                     ChargePolicy.Unrestricted,
-                    BackendKind.DIRECT_WSS,
+                    BackendKind.SHIZUKU,
                 ),
                 pending = PendingRequest(
                     ChargePolicy.Unrestricted,

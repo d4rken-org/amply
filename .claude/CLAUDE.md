@@ -20,14 +20,15 @@ binary Adaptive/Unrestricted) is gated to the HyperOS 2.x ROM (`ro.mi.os.version
 gated to a **physically-qualified device-codename allowlist** (HAL enforcement is per-device) plus the provider and
 system user; **reads are unprivileged (ContentResolver), writes require Shizuku** (the shell UID holds
 `lineageos.permission.WRITE_SETTINGS`, which `WRITE_SECURE_SETTINGS` does not cover). **GrapheneOS charge limit**
-(world-readable `global battery_charge_limit`, binary FixedLimit(80)/Unrestricted, WSS-writable — no Shizuku) is
-gated to GrapheneOS identity (its `app.grapheneos.*` core packages; no property/feature/fingerprint marker exists)
-plus key presence and the system user; the ROM **latches the key at plug-session start** (`policyLatchesAtPlug`),
-so external writes take effect at the next unplug→replug — handled by a pending-until-replug verification state
-and a 30s session grace window; the reconnect gesture is unsupported there. Other Pixels, Samsung on
-unverified One UI versions (6/7, 9+), non-HyperOS-2 Xiaomi devices, non-ColorOS-15 Oplus devices, unqualified
-LineageOS builds, and GrapheneOS builds without the key remain diagnostics-only. See the qualification ledger
-(`.claude/skills/device-qualification/`) for the verified devices and mappings.
+(`global battery_charge_limit`, binary FixedLimit(80)/Unrestricted) is gated to GrapheneOS identity (its
+`app.grapheneos.*` core packages; no property/feature/fingerprint marker exists) plus the system user —
+**reads AND writes require Shizuku**: GrapheneOS marks the key `@Protected`, denying it to all third-party
+packages including WSS holders, with only the shell UID exempt. The ROM **latches the key at plug-session start**
+(`policyLatchesAtPlug`), so external writes take effect at the next unplug→replug — handled by a
+pending-until-replug verification state and a 30s session grace window; the reconnect gesture is unsupported
+there. Other Pixels, Samsung on unverified One UI versions (6/7, 9+), non-HyperOS-2 Xiaomi devices,
+non-ColorOS-15 Oplus devices, and unqualified LineageOS builds remain diagnostics-only. See the qualification
+ledger (`.claude/skills/device-qualification/`) for the verified devices and mappings.
 
 Package: `eu.darken.amply`. License: GPL-3.0-or-later. Status: pre-launch (current version in `VERSION`).
 

@@ -90,13 +90,27 @@ long-term observation (see Known gaps below).
 ### GrapheneOS
 
 GrapheneOS control requires **all** of: GrapheneOS identity (`DeviceInfo.isGrapheneOs` — resolved from the OS's
-core `app.grapheneos.*` packages via PackageManager `<queries>` entries; **no** graphene property, system feature,
-or fingerprint marker exists, verified on a real device), a present world-readable `global battery_charge_limit`
-key (the capability signal — GrapheneOS ships the toggle exactly where its implementation works), and the system
-user. Identity is deliberately **not** OR-ed with key presence: the adapter is registered ahead of the Pixel
-adapter, and a future stock Pixel shipping a same-named key must not be swallowed as GrapheneOS.
+core `app.grapheneos.*` system packages (FLAG_SYSTEM required) via PackageManager `<queries>` entries; **no**
+graphene property, system feature, or fingerprint marker exists, verified on a real device) and the system user.
+**Key presence is deliberately NOT a gate condition and cannot be**: GrapheneOS declares the key
+`@Protected(read = SYSTEM_UI, readWrite = SETTINGS)` (frameworks_base `c30c6393`) and its SettingsProvider throws
+`SecurityException` on reads and writes from every other package — **including `WRITE_SECURE_SETTINGS` holders**;
+the check is package-based and runs after the permission check (`e87c93a2`). The unprivileged probe therefore
+reads absent whether the key exists or not (verified via the issue-#49 beta report: probe false while the same
+report showed the limit enforcing). The feature is treated as present on any GrapheneOS build (Xiaomi-precedent
+assumption; their platform ships it for every Google device, which is every device GrapheneOS supports). Accepted
+failure mode, same class as Xiaomi's: on a build without the feature a shell-UID write could still create the row
+and read back, yielding a harmless false claim of configured control — no battery hazard, and the hardware decode
+(state 4) stays honest.
 
-The key is binary (`1` = fixed 80% cap with bypass charging, `0` = off) and WSS-writable — **no Shizuku needed**.
+**Access is Shizuku-only.** The one usable exemption in their enforcement is the shell UID ("ADB is used for
+testing"), which is how the Shizuku user service executes `settings get/put`. The adapter sets
+`preferShizukuForWrites`; direct reads come back unreadable (SecurityException → `access_read_blocked`) and
+`readSyncDirectFirst` falls through to the Shizuku backend. The key is binary (`1` = fixed 80% cap with bypass
+charging, `0` = off); an **absent key decodes as the factory off state** — upstream reads it through
+`BoolSetting(GLOBAL, BATTERY_CHARGE_LIMIT, /* default */ false)`, so a never-toggled device has no row and
+charges unrestricted.
+
 The defining quirk is **`policyLatchesAtPlug`**: the ROM samples the key only at plug-session start, so an external
 write reads back correctly but has no hardware effect until the next unplug→replug (the native Settings toggle
 applies live because Settings pokes the charging service directly). Three mechanisms handle this — the
@@ -108,10 +122,10 @@ enforcement evidence. The reconnect gesture is unsupported — its override writ
 broadcast, which the ROM has already sampled past.
 
 Qualification is **remote** (issue #49, Pixel 9 Pro XL `komodo`, GrapheneOS 2026080501 / Android 17): the tester
-physically observed enforcement (held at 80% with the shield and state 4) and the latch behavior. Package
-visibility of `app.grapheneos.*` from app context and the factory-absent key state are still unverified on-device;
-both fail closed (Pixel-adapter diagnostics, or diagnostics + contribution wizard). Record any new evidence in the
-qualification ledger (`device-qualification` skill).
+physically observed enforcement (held at 80% with the shield and state 4), the latch behavior, and — via the
+0.3.2-beta0 report — that package detection works from app context while unprivileged key access is denied.
+Shizuku-path writes are the same shell-UID mechanism the tester's adb commands proved. Record any new evidence in
+the qualification ledger (`device-qualification` skill).
 
 ### LineageOS
 

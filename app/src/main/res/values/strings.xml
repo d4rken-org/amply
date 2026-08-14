@@ -138,8 +138,7 @@
     <string name="adapter_detail_requires_oplus">Requires a OnePlus, Oppo, or Realme device on ColorOS 15</string>
     <string name="adapter_detail_oplus_ready">Charging control requires Shizuku on this device</string>
     <string name="adapter_detail_requires_grapheneos">Requires GrapheneOS</string>
-    <string name="adapter_detail_grapheneos_no_key">GrapheneOS detected, but its charge-limit setting is not present on this build</string>
-    <string name="adapter_detail_grapheneos_ready">Changes take effect the next time the charger is reconnected</string>
+    <string name="adapter_detail_grapheneos_ready">Charging control requires Shizuku; changes take effect the next time the charger is reconnected</string>
     <string name="adapter_detail_requires_lineageos">Requires a qualified LineageOS device</string>
     <string name="adapter_detail_lineageos_no_provider">LineageOS charging control is not available on this build</string>
     <string name="adapter_detail_lineageos_ready">Charging control requires Shizuku on this device</string>
@@ -414,7 +413,7 @@
     <string name="dashboard_shizuku_title">Better with Shizuku</string>
     <string name="dashboard_shizuku_body">Shizuku gives Amply exact policy readback instead of relying on hardware state and the last request.</string>
     <string name="dashboard_shizuku_required_title">Shizuku required to change charging</string>
-    <string name="dashboard_shizuku_required_body">This device stores its charging setting where only Shizuku can change it. Connect Shizuku to switch policies; without it Amply can still show the current state.</string>
+    <string name="dashboard_shizuku_required_body">This device stores its charging setting where only Shizuku can change it. Connect Shizuku to switch policies; until then the charging controls stay disabled.</string>
     <string name="dashboard_shizuku_allow">Allow access</string>
     <string name="dashboard_shizuku_open">Open Shizuku</string>
     <string name="dashboard_adb_copied">ADB command copied</string>

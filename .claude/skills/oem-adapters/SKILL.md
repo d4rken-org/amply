@@ -95,18 +95,22 @@ clobbering the user's native choice. Verified devices + coverage: see the qualif
 One live adapter (`grapheneos-chargelimit-v1`) for GrapheneOS's own "Limit to 80%" (Settings → Battery → Charging
 optimization). **ROM-identity adapter, ordered after the Lineage pair and BEFORE `pixel`** in `AdapterRegistry` —
 GrapheneOS ships only on Pixels, and the Pixel probe (any Google/Pixel*) would otherwise swallow the device as a
-matched-but-diagnostics-only stock Pixel. Gate: `DeviceInfo.isGrapheneOs` (core `app.grapheneos.*` packages via
-PackageManager `<queries>` — NO property/feature/fingerprint marker exists; verified empty on a real device) +
-`hasBatteryChargeLimit` (world-readable key presence — the capability signal, deliberately NOT part of identity) +
-system user. No lab adapter: a GrapheneOS build without the key stays on this adapter as diagnostics-only with
-`contributionWanted`.
+matched-but-diagnostics-only stock Pixel. Gate: `DeviceInfo.isGrapheneOs` (core `app.grapheneos.*` FLAG_SYSTEM
+packages via PackageManager `<queries>` — NO property/feature/fingerprint marker exists; verified on a real
+device) + system user. **Key presence is not — and cannot be — a gate condition**: the key is `@Protected`
+(below), so the unprivileged probe reads absent regardless; the feature is assumed present on any GrapheneOS
+build (their platform ships it for every Google device). No lab adapter; `contributionWanted = false`.
 
 Single key `global battery_charge_limit`: `1` = fixed 80% cap (bypass charging; hard-wired, no threshold key) →
-`FixedLimit(80)`, `0` = off → `Unrestricted`; absent/other → `Unknown(unrecognizedValue=true)` (factory-absent
-semantics unverified — refuse, don't guess). WSS-writable, **no Shizuku**. SYNC_READBACK with read-back equality;
-session override = Unrestricted; protective default = FixedLimit(80); `reapply == apply` (no observer-poke — see
-below); reconnect gesture **unsupported** (structurally: the gesture's override write lands strictly after the
-replug broadcast, which the ROM has already sampled past).
+`FixedLimit(80)`, `0` **or absent** → `Unrestricted` (upstream reads it via `BoolSetting(..., default false)` —
+absent IS the factory off state); other → `Unknown(unrecognizedValue=true)`. **Reads and writes are Shizuku-only**:
+GrapheneOS declares the key `@Protected(read = SYSTEM_UI, readWrite = SETTINGS)` (frameworks_base `c30c6393`) and
+throws SecurityException for every other package *including WSS holders* (`e87c93a2`); the shell UID is the one
+usable exemption, which is exactly the Shizuku user service's `settings get/put` path. `preferShizukuForWrites`;
+direct reads come back unreadable and `readSyncDirectFirst` falls through to Shizuku. SYNC_READBACK with read-back
+equality; session override = Unrestricted; protective default = FixedLimit(80); `reapply == apply` (no
+observer-poke — see below); reconnect gesture **unsupported** (structurally: the gesture's override write lands
+strictly after the replug broadcast, which the ROM has already sampled past).
 
 **The defining quirk: `policyLatchesAtPlug = true`.** GrapheneOS samples the key only at plug-session start; an
 external write updates the Settings UI live but has no hardware effect until the next unplug→replug (the native
