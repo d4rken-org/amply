@@ -80,21 +80,6 @@ fun SettingsScreen(
         },
     ) { padding ->
         LazyColumn(Modifier.padding(padding)) {
-            // First on purpose: this row is both the upgrade entry point and the place a user checks
-            // when they wonder whether their purchase actually applied.
-            item {
-                SettingsNavigationItem(
-                    title = brandTitleText(includeQualifier = true),
-                    subtitle = if (isPro) {
-                        stringResource(R.string.settings_pro_subtitle_active)
-                    } else {
-                        stringResource(R.string.settings_pro_subtitle_free)
-                    },
-                    icon = Icons.TwoTone.Stars,
-                    onClick = onUpgrade,
-                )
-            }
-            item { SettingsDivider() }
             item {
                 SettingsNavigationItem(
                     title = stringResource(R.string.settings_general_title),
@@ -152,6 +137,22 @@ fun SettingsScreen(
                 item { SettingsDivider() }
             }
             item { SettingsCategoryHeader(stringResource(R.string.settings_category_other)) }
+            // Heads the "Other" category rather than the whole screen: it is the upgrade entry point
+            // and the place a user checks when they wonder whether their purchase applied, but it
+            // configures nothing — above the actual settings it read as the app's first preference.
+            item {
+                SettingsNavigationItem(
+                    title = brandTitleText(includeQualifier = true),
+                    subtitle = if (isPro) {
+                        stringResource(R.string.settings_pro_subtitle_active)
+                    } else {
+                        stringResource(R.string.settings_pro_subtitle_free)
+                    },
+                    icon = Icons.TwoTone.Stars,
+                    onClick = onUpgrade,
+                )
+            }
+            item { SettingsDivider() }
             item {
                 SettingsNavigationItem(
                     title = stringResource(R.string.settings_support_title),
