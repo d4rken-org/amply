@@ -635,6 +635,10 @@ fun ProBadge(modifier: Modifier = Modifier) {
                 text = stringResource(R.string.app_name_upgrade_postfix),
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.SemiBold,
+                // The badge is a single short word; wrapping it into a two-line pill (which a narrow
+                // caller or a large font scale otherwise forces) reads as a layout bug.
+                maxLines = 1,
+                softWrap = false,
             )
         }
     }
