@@ -153,6 +153,17 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
     unknown, and whether value `2` is HyperOS-3-wide or model-specific is unconfirmed. A full qualification would
     also need the boundary write domain widened from `{"0","1"}` (`ChargingControlUserService`). The contributor
     has a working Shizuku setup (clean three-namespace, three-mode capture) — a strong candidate for a follow-up
-    qualification run; the report thread is in support mail ("Amply device-support discovery", 2026-08-07).
+    qualification run; the report thread is in support mail ("Amply device-support discovery", 2026-08-07) and
+    GitHub issue #48.
+    - **Follow-up (2026-08-13, comment on PR #52, same `tanzanite` device): cap-percent candidate 80 — still
+      unqualified.** The contributor claims mode `2` hard-caps at 80% and attached a `dumpsys battery` snapshot
+      at the cap (`level: 80`, `AC powered: true`). Not accepted as hold evidence: it is a single snapshot (no
+      sustained-hold observation, no current reading — a battery passing through 80 looks identical), the dump
+      itself reports `status: 2` (= CHARGING) with `Charging state: 0` / `Charging policy: 0` (no hardware hold
+      signal), and how mode `2` was set (native UI vs external write) is unstated — so daemon enforcement of
+      **external** writes, the decisive question for Amply and open even on qualified HyperOS 2, remains
+      unproven. Follow-up runs requested in the issue #48 thread: sustained hold at 80 with `current_now`, and
+      the both-direction external-write test (adb `settings put` to `2` below the cap → hold; back to `0`
+      mid-hold → charging resumes past 80).
 - **Pixel** — wireless at-threshold hold/charge-past and the widget under Shizuku-only remain unexercised (both share
   the verified wired mechanism).
