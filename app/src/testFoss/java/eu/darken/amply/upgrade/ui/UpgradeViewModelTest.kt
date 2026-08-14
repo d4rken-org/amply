@@ -245,6 +245,11 @@ class UpgradeViewModelTest {
             awaitTrue("the flow went deaf after the binding was released") {
                 vm.state.value.view == FossUpgradeView.STATUS_FREE
             }
+
+            // The neutral state reached collectors, rather than only being observable in the
+            // StateFlow's value between two emissions — a screen renders what it is handed.
+            seen.contains(null) shouldBe true
+            seen.contains(FossUpgradeView.PITCH) shouldBe true
         } finally {
             scope.cancel()
         }
