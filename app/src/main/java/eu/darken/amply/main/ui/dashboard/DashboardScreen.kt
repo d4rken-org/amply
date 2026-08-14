@@ -24,11 +24,11 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.twotone.Build
 import androidx.compose.material.icons.twotone.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -71,9 +71,11 @@ import eu.darken.amply.common.ca.CaString
 import eu.darken.amply.common.ca.caString
 import eu.darken.amply.common.ca.toCaString
 import eu.darken.amply.common.compose.AmplyCard
+import eu.darken.amply.common.compose.AmplyCardActionLabel
 import eu.darken.amply.common.compose.AmplyCardHeader
 import eu.darken.amply.common.compose.AmplyCardToggleIndicator
 import eu.darken.amply.common.compose.AmplyCardTone
+import eu.darken.amply.common.compose.AmplyClickableCard
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.AmplyToggleCard
 import eu.darken.amply.common.compose.PreviewWrapper
@@ -746,6 +748,12 @@ private fun QuickFullChargeCardLargeFontPreview() = PreviewWrapper {
     )
 }
 
+/**
+ * The setup nudge for Shizuku, in its two flavors: required for control, or merely better. Like the
+ * upgrade promo, the whole card is the tap target — it carries exactly one action, and the action
+ * changes with [running] (allow Amply in a Shizuku that is up, or open/install one that isn't), so
+ * the card's click label follows it.
+ */
 @Composable
 private fun ShizukuBanner(
     running: Boolean,
@@ -753,14 +761,25 @@ private fun ShizukuBanner(
     onOpen: () -> Unit,
     onAllow: () -> Unit,
 ) {
-    AmplyCard(tone = AmplyCardTone.TertiaryContainer) {
-        Text(
-            stringResource(
+    val actionLabel = if (running) {
+        stringResource(R.string.dashboard_shizuku_allow)
+    } else {
+        stringResource(R.string.dashboard_shizuku_open)
+    }
+    AmplyClickableCard(
+        onClick = if (running) onAllow else onOpen,
+        onClickLabel = actionLabel,
+        tone = AmplyCardTone.TertiaryContainer,
+    ) {
+        AmplyCardHeader(
+            title = stringResource(
                 if (requiredForControl) R.string.dashboard_shizuku_required_title
                 else R.string.dashboard_shizuku_title,
             ),
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
+            // A wrench, matching the access setup guide: this card is setup work, not a status.
+            icon = Icons.TwoTone.Build,
+            iconTint = MaterialTheme.colorScheme.onTertiaryContainer,
+            titleStyle = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
         )
         Text(
             stringResource(
@@ -770,18 +789,22 @@ private fun ShizukuBanner(
             style = MaterialTheme.typography.bodySmall,
         )
         Spacer(Modifier.height(8.dp))
-        FilledTonalButton(
-            onClick = if (running) onAllow else onOpen,
+        AmplyCardActionLabel(
+            text = actionLabel,
+            color = MaterialTheme.colorScheme.onTertiaryContainer,
             modifier = Modifier.align(Alignment.End),
-        ) {
-            Text(
-                if (running) {
-                    stringResource(R.string.dashboard_shizuku_allow)
-                } else {
-                    stringResource(R.string.dashboard_shizuku_open)
-                },
-            )
-        }
+        )
+    }
+}
+
+// Both variants, and both action states: the card's one tap target changes what it does with the
+// label, so they have to be seen together.
+@AmplyPreview
+@Composable
+private fun ShizukuBannerPreview() = PreviewWrapper {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        ShizukuBanner(running = false, requiredForControl = true, onOpen = {}, onAllow = {})
+        ShizukuBanner(running = true, requiredForControl = false, onOpen = {}, onAllow = {})
     }
 }
 

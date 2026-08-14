@@ -407,6 +407,27 @@ fun AmplyNavigationCard(
 }
 
 /**
+ * A flat, text-button-shaped action label for a card whose *surface* is the tap target
+ * ([AmplyClickableCard]). Deliberately **not** interactive: it names the card's one action for the
+ * eye while the surface owns the click, so a tap can never land on two targets and accessibility
+ * announces the single action the card declares via its `onClickLabel`. A card that needs a second,
+ * different action must use a real button instead.
+ */
+@Composable
+fun AmplyCardActionLabel(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.primary,
+) {
+    Text(
+        text,
+        modifier = modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        style = MaterialTheme.typography.labelLarge,
+        color = color,
+    )
+}
+
+/**
  * Shared inset block for monospace report/command previews. Selectable text on an inset surface.
  * When [maxHeight] is set the block caps at that height and scrolls (for long reports); when null it
  * wraps to content with no scroll container (for short snippets like a link or a command). Replaces
@@ -504,6 +525,19 @@ private fun AmplyCardPreview() = PreviewWrapper {
         }
         AmplyCard(tone = AmplyCardTone.PrimaryContainer) {
             Text("Primary-container tone (hero CTA).", style = MaterialTheme.typography.bodyMedium)
+        }
+        AmplyClickableCard(
+            onClick = {},
+            onClickLabel = "Upgrade",
+            tone = AmplyCardTone.SecondaryContainer,
+            verticalArrangement = Arrangement.spacedBy(AmplyCardDefaults.ItemSpacing),
+        ) {
+            AmplyCardHeader(title = "Clickable card", icon = Icons.AutoMirrored.Filled.KeyboardArrowRight)
+            Text(
+                "The whole surface is the tap target; the label below only names the action.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            AmplyCardActionLabel(text = "Upgrade", modifier = Modifier.align(Alignment.End))
         }
         AmplyCodeBlock(text = "adb shell settings put secure example 1", maxHeight = 120.dp)
     }
