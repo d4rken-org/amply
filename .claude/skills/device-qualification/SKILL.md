@@ -51,6 +51,7 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
 | Xiaomi | Xiaomi 13T `2306EPN60G` HyperOS 2.0 (`ro.mi.os.version.code=2`) | **Partial** — mapping/readback/session verified; the adaptive 80% hold could not be triggered, so daemon-level hardware enforcement is **not yet demonstrated** | Read matrix, both-direction writes, session at 100%, unknown-value refusal, R8 beta | 2026-07-21 |
 | OnePlus (Oplus) | OnePlus Nord CE4 Lite `CPH2621` ColorOS 15 (`ro.build.version.oplusrom=V15.0.0`) | Full — enforcement directly observable (device holds at 80%); external writes stick | Two mutually-exclusive `system` keys (Charging limit / Smart charging), WSS-only write rejected + Shizuku write succeeds for all three policies, WSS-only UX (controls disabled + Shizuku-required banner) | 2026-07-21 |
 | GrapheneOS | Pixel 9 Pro XL `komodo`, GrapheneOS 2026080501 / Android 17 — **REMOTE qualification via issue #49** (tester-run protocol, not maintainer hardware) | **Enforcement observed**: held at 80% with shield, `dumpsys battery` status=4/Charging state=4/policy=2 (limit on) vs 2/1/1 (off); shell-UID writes move the Settings UI live, **latch at plug-session start** — mid-session writes have no hardware effect until unplug→replug, replug reliably applies the current value | Key isolation (`settings list` diff → single `global battery_charge_limit` 0/1), write→UI both directions, mid-session no-op both directions, replug latch both directions, hardware signal both states. **NOT run**: app-context access tiers (WSS write from Amply, `app.grapheneos.*` package visibility), sessions/boot recovery, wireless, factory-absent key state, secondary user | 2026-08-12 |
+| Xiaomi (HyperOS 3) | Redmi Note 14 `24117RN76G` (`tanzanite`), HyperOS 3.0.302 / Android 16 (`ro.mi.os.version.code=3`) — **REMOTE qualification via issue #48** (contributor-run protocol, not maintainer hardware) | **Both-direction enforcement of EXTERNAL shell-UID writes observed** (the same write path as Amply's Shizuku service): `settings put … 2` below the cap → Battery protection active, Settings UI follows immediately, held at 80% for ~20 min under active use (voltage 4228 mV holding vs 4391 mV charging, charge counter 4283 vs 4341 corroborate; sysfs `current_now` permission-denied, so no current reading); `settings put … 0` mid-hold → charging resumes past 80 immediately. **No hardware hold signal**: `dumpsys battery` reports `status: 2` / `Charging state: 0` / `Charging policy: 0` in both states → read-back-only verification | Key mapping (three modes incl. `2` = Battery protection @80), external write → UI both directions, sustained hold, mid-hold release. **NOT run** (GrapheneOS-precedent landing; verify on the next beta via issue #48): app-context access tiers, sessions/boot recovery, factory-absent key state, wireless, R8 | 2026-08-14 |
 | GrapheneOS (follow-up) | Same device, **0.3.2-beta0 on-device report via issue #49** | **Package detection VERIFIED from app context** (`is_grapheneos=true` with the FLAG_SYSTEM check); **unprivileged key read DENIED** — `has_battery_charge_limit=false` while the very same report showed `battery_charging_status=4` (limit enforcing). Root cause in GrapheneOS source: the key is `@Protected(read = SYSTEM_UI, readWrite = SETTINGS)` (frameworks_base `c30c6393`); SettingsProvider throws SecurityException for all other packages **including WSS holders**, with the shell UID explicitly exempt ("ADB is used for testing", `e87c93a2`) — so the tester's earlier adb runs ARE the Shizuku-path evidence. Factory-absent semantics resolved from source: `BoolSetting(..., default false)` → absent = off | Detection + fail-closed probe verified live; adapter re-gated to Shizuku-only in response | 2026-08-13 |
 
 ## Known gaps
@@ -136,7 +137,8 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
   - **Wireless charging and secondary users**: NOT RUN (gated to system user).
 - **Xiaomi** — adaptive hardware enforcement of external writes unconfirmed; treat the adapter as provisional until
   the 80% hold is physically observed.
-  - **HyperOS 3 candidate mapping (contribution report, 2026-08-07 — unqualified, stays diagnostics-only).** A
+  - **HyperOS 3 candidate mapping (contribution report, 2026-08-07 — unqualified at the time; since landed,
+    see the LANDED bullet below).** A
     Redmi Note 14 `24117RN76G` (`tanzanite`, Android 16 / SDK 36, `ro.mi.os.version.code=3`, ROM
     `3.0.302.0.WOGMIXM.C08`) reported via the contribution wizard that the **same key**
     `secure/security_pc_secure_protect_mode_key` now carries **three** modes: `0` = Charge fully and
@@ -174,10 +176,9 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
       evidence is level observation plus voltage/counter deltas, not a current measurement, and both dumps
       show `status: 2` / `Charging state: 0` / `Charging policy: 0` — HyperOS 3 exposes **no hardware hold
       signal**, so a future adapter gets readback-only verification (like Samsung, unlike Pixel/GrapheneOS).
-      This answers the decisive daemon-enforcement question for `tanzanite` mode `2`; still open before
-      support can ship: gate design (mode `2` is not HyperOS-3-wide — marblein below), the reviewed boundary
-      write-domain widening `{"0","1"}` → `+"2"` (`ChargingControlUserService`), factory/absent-key semantics
-      on HyperOS 3, and sessions/access-tiers/R8 on a test build (contributor is willing).
+      This answers the decisive daemon-enforcement question for `tanzanite` mode `2`; the remaining items
+      (gate design, boundary widening, factory/absent-key semantics, sessions/access-tiers/R8) are tracked in
+      the landing bullet below.
     - **Second HyperOS 3 data point (support mail, 2026-08-13): the hard-cap mode is NOT HyperOS-3-wide.** A
       Poco F5 `23049PCD8I` (`marblein`, Android 15 / SDK 35, HyperOS 3.0.2, ROM `OS3.0.2.0.VMRINXM`) reported
       via the contribution wizard only the two HyperOS-2-style modes on the same key (`1` = Intelligent
@@ -187,5 +188,20 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
       one row in the privacy review (mapping possibly incomplete), and the device was previously rooted with
       FDE.ai driving the charge limit. Thread: support mail "Amply device-support discovery", 2026-08-13; the
       contributor was asked whether the settings screen shows any third mode / 80% option.
+    - **LANDED 2026-08-14: `xiaomi-hyperos3-v1`, gated to a qualified-codename allowlist (`tanzanite` only) —
+      GrapheneOS-precedent landing** (remote enforcement qualification via issue #48, see the Verified devices
+      row; app-level items open, all failing closed, to be verified by the contributor on the next beta):
+      - **Absent-key decode unverified**: absent decodes as Intelligent/Adaptive, mirroring HyperOS 2's
+        factory-state assumption; HyperOS 3 factory semantics are unknown. Worst case if wrong: a session
+        restore writes `1` onto a factory state that was not Intelligent — bounded, no battery hazard.
+        Next-beta ask: `settings delete secure security_pc_secure_protect_mode_key`, then `settings get` +
+        observe which mode the native UI shows.
+      - **Sessions / boot recovery / access tiers (WSS-only vs Shizuku) / R8**: NOT RUN on HyperOS 3;
+        the mechanism is the shared session engine + the same `secure`-namespace write path qualified on
+        HyperOS 2, but on-device confirmation is pending the next beta.
+      - **Adaptive (mode `1`) enforcement undemonstrated** — identical provisional status as HyperOS 2 (the
+        top-level Xiaomi gap above); only mode `2` has demonstrated hardware enforcement.
+      - The gate cannot widen past the codename allowlist: record any new HyperOS 3 device here plus a
+        Verified-devices row before adding its codename to `XiaomiHyperOs3ChargingAdapter.QUALIFIED_CODENAMES`.
 - **Pixel** — wireless at-threshold hold/charge-past and the widget under Shizuku-only remain unexercised (both share
   the verified wired mechanism).
