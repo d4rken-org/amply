@@ -376,6 +376,7 @@
     <string name="dashboard_device_line">%1$s · Android API %2$d</string>
     <string name="dashboard_waiting_target">Waiting for the system to switch to %1$s — this can take about 15 seconds…</string>
     <string name="dashboard_waiting_replug">Takes effect the next time you unplug and replug the charger</string>
+    <string name="dashboard_hw_unconfirmed">The charging hardware hasn\'t confirmed %1$s yet — it may not be applying</string>
     <string name="dashboard_settling_fallback_target">the new policy</string>
     <string name="dashboard_session_once_title" formatted="false">Charging to 100% once</string>
     <string name="dashboard_session_returns">%1$s will return automatically at 100%% or when you unplug.</string>

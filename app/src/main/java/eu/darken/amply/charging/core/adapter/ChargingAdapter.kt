@@ -76,6 +76,17 @@ interface ChargingAdapter {
      */
     val policyLatchesAtPlug: Boolean get() = false
 
+    /**
+     * Whether the charging hardware is currently EXPECTED to confirm [policy]: the policy class is
+     * one this hardware reliably reports, the evidence channel is live (plugged — unplugged sticky
+     * values are stale), and nothing is masking the signal (thermal throttling). Drives the
+     * "hardware never confirmed" warning: expected-and-missing is the contradiction worth showing.
+     * False by default — sync-readback adapters verify via settings and plug-latched adapters
+     * legitimately confirm only at the next plug session, so neither carries an expectation.
+     */
+    fun confirmationExpected(policy: ChargePolicy, chargingStatus: Int?, plugged: Boolean): Boolean =
+        false
+
     fun probe(device: DeviceInfo): AdapterSupport
     fun readHardware(context: Context): ChargeObservation? = null
     fun decodeHardware(chargingState: Int, plugged: Boolean): ChargeObservation? = null

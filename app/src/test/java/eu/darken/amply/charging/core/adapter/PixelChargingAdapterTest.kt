@@ -178,6 +178,37 @@ class PixelChargingAdapterTest {
         adapter.read(backend).shouldBeInstanceOf<ChargeObservation.Unknown>()
     }
 
+    // --- confirmationExpected: only a plugged fixed limit on a live, unmasked channel ---
+
+    @Test
+    fun `confirmation is expected for a plugged fixed limit on live channel states`() {
+        // 1 (normal — the contradiction case), 4 (delivered), 5 (something else engaged adaptive).
+        listOf(1, 4, 5).forEach { status ->
+            adapter.confirmationExpected(ChargePolicy.FixedLimit(80), status, plugged = true) shouldBe true
+        }
+    }
+
+    @Test
+    fun `thermal masking and invalid states carry no expectation`() {
+        listOf(0, 2, 3, 99, null).forEach { status ->
+            adapter.confirmationExpected(ChargePolicy.FixedLimit(80), status, plugged = true) shouldBe false
+        }
+    }
+
+    @Test
+    fun `unplugged never carries an expectation`() {
+        adapter.confirmationExpected(ChargePolicy.FixedLimit(80), 4, plugged = false) shouldBe false
+    }
+
+    @Test
+    fun `only the fixed limit is reliably reported`() {
+        // Adaptive idles at state 1 and Unrestricted maps to the same ambiguous 1 — absence of a
+        // confirmation proves nothing for either, so neither may warn.
+        adapter.confirmationExpected(ChargePolicy.Adaptive, 1, plugged = true) shouldBe false
+        adapter.confirmationExpected(ChargePolicy.Unrestricted, 1, plugged = true) shouldBe false
+        adapter.confirmationExpected(ChargePolicy.FixedLimit(90), 1, plugged = true) shouldBe false
+    }
+
     private class FakeBackend(
         private val readable: Boolean = true,
         private val values: MutableMap<String, String> = mutableMapOf(),
