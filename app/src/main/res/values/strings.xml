@@ -4,6 +4,7 @@
     <string name="tile_active">Restore limit</string>
     <string name="tile_override_active">Temporary override active</string>
     <string name="tile_replug_hint">Replug to apply</string>
+    <string name="tile_applying">Applying…</string>
     <string name="widget_description">Amply charge controls</string>
     <string name="session_channel_name">Full charge and restore</string>
     <string name="session_channel_description" formatted="false">Shows while Amply is allowing a full charge, and while it restores your limit afterwards</string>
