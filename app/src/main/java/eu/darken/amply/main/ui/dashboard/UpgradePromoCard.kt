@@ -24,8 +24,8 @@ import eu.darken.amply.common.compose.PreviewWrapper
  * The dashboard's upgrade ask. Shown only while the entitlement is settled and absent (see
  * [shouldShowUpgradePromo]) — an unsettled state would flash it at a paying user on cold start.
  *
- * Deliberately states what stays free, because the card sits on a screen full of charge controls that
- * are not gated; a bare "Upgrade" would read as if they were.
+ * The copy names no features: the upgrade screen is the single source of truth for what the upgrade
+ * contains, so this card cannot drift out of sync with it.
  *
  * The whole card is the tap target: it has exactly one action, and a card-sized ask whose only live
  * target was a small button in its corner made the rest of the card look inert. The action label

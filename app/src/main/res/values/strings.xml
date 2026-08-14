@@ -628,7 +628,7 @@
     <string name="settings_pro_subtitle_active">Upgrade active, thank you!</string>
     <string name="settings_pro_subtitle_free">Free version</string>
     <string name="dashboard_upgrade_title">Unlock the extras</string>
-    <string name="dashboard_upgrade_body">Charge history, the home-screen widget and the Quick Settings tile come with the upgrade. Charge control itself stays free.</string>
+    <string name="dashboard_upgrade_body">The upgrade adds extra features and supports development.</string>
     <string name="dashboard_upgrade_action">Upgrade</string>
 
     <!-- Tile + widget locked states -->
