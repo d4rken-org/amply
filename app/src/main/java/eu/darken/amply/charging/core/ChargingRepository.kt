@@ -53,6 +53,13 @@ data class ChargingState(
     val device: DeviceInfo = DeviceInfo.current(),
     val adapterName: CaString = R.string.adapter_name_detecting.toCaString(),
     val adapterId: String? = null,
+    /**
+     * Standing capability note for a control-enabled adapter (write latency, Shizuku requirement,
+     * replug semantics — the `adapter_detail_*_ready` strings). Null whenever control is unavailable:
+     * the gate-failure text already reaches the UI as the observation's reason, and populating both
+     * would print the same sentence twice.
+     */
+    val adapterDetail: CaString? = null,
     val supportedPolicies: List<ChargePolicy> = emptyList(),
     /**
      * The selected adapter's protective default (e.g. FixedLimit(80) on Pixel, Adaptive on Xiaomi), or
@@ -276,7 +283,11 @@ class ChargingRepository @Inject constructor(
         if (adapter == null || !selection.support.controlEnabled) {
             val detail = selection.support.detail.toCaString()
             val observation = ChargeObservation.Unsupported(detail)
-            mutableState.value = state.value.copy(observation = observation, message = detail)
+            // Also drop the standing ready note: this branch means the gate just failed on a fresh
+            // selection (a capability can vanish between refresh and tap), and the field's contract
+            // is "null whenever control is unavailable" — keeping a stale "changes apply
+            // immediately" under the failure reason would contradict it.
+            mutableState.value = state.value.copy(observation = observation, message = detail, adapterDetail = null)
             return ApplyResult(false, observation, context.getString(selection.support.detail))
         }
         if (policy !in adapter.supportedPolicies) {
@@ -500,6 +511,13 @@ class ChargingRepository @Inject constructor(
             controlEnabled = selection.support.controlEnabled,
             contributionWanted = selection.support.contributionWanted,
             guidedCaptureUseful = selection.support.guidedCaptureUseful,
+            // controlEnabled implies detail is the adapter's *_ready string (every probe's when-cascade
+            // pairs them), so this can never carry a gate-failure reason.
+            adapterDetail = if (adapter != null && selection.support.controlEnabled) {
+                selection.support.detail.toCaString()
+            } else {
+                null
+            },
             adapterResolved = true,
             access = access,
             observation = observation,
