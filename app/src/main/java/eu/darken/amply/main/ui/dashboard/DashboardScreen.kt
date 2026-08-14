@@ -93,6 +93,7 @@ import eu.darken.amply.main.ui.setup.OemGuideCard
 import eu.darken.amply.main.ui.setup.UnsupportedDeviceCard
 import eu.darken.amply.stats.core.ChargeCurvePoint
 import eu.darken.amply.stats.core.StatsLiveSession
+import eu.darken.amply.upgrade.ui.brandTitle
 import kotlinx.coroutines.delay
 
 @Composable
@@ -134,7 +135,16 @@ fun DashboardScreen(
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text(stringResource(R.string.app_name), fontWeight = FontWeight.SemiBold) },
+                title = {
+                    // The tier word appears only once the entitlement says it is real: free — and
+                    // "not answered yet", which is the state on every cold start — reads as the plain
+                    // app name, so the title can never claim an upgrade that isn't there.
+                    val isPro = state.upgrade?.isPro == true
+                    Text(
+                        brandTitle(includeQualifier = isPro, highlightQualifier = isPro),
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                },
                 actions = {
                     IconButton(onClick = onRefresh) {
                         Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.action_refresh))
@@ -983,13 +993,15 @@ private fun DashboardScreenPreview() = PreviewWrapper {
 }
 
 // On the charger with capture enabled: the charging card renders the live session (the preview above
-// shows the same card, in the same slot, off the charger).
+// shows the same card, in the same slot, off the charger). Also the upgraded title — the preview
+// above is the free one, which stays the plain app name.
 @AmplyPreview
 @Composable
 private fun DashboardScreenLiveChargePreview() = PreviewWrapper {
     DashboardScreen(
         state = DashboardUiState(
             onboardingComplete = true,
+            upgrade = UpgradeSnapshot(isPro = true, isSettled = true),
             batteryReadout = BatteryReadout(
                 levelPercent = 78,
                 status = android.os.BatteryManager.BATTERY_STATUS_CHARGING,

@@ -44,7 +44,7 @@ class DashboardShizukuBannerTest {
     // not connected — the branch that renders the "Shizuku required" banner.
     private fun render(shizukuRunning: Boolean) {
         compose.setContent {
-            DashboardScreen(
+            DashboardScreenUnderTest(
                 state = DashboardUiState(
                     onboardingComplete = true,
                     charging = ChargingState(
@@ -69,34 +69,8 @@ class DashboardShizukuBannerTest {
                         ),
                     ),
                 ),
-                adbCommand = "",
-                onRefresh = {},
-                onSettings = {},
-                onStartFull = {},
-                onRestore = {},
-                onApply = {},
-                onQuickFullChargeChange = {},
-                onAlarmEnabledChange = {},
-                onAlarmTargetChange = {},
-                onFixNotifications = {},
-                onOpenBatteryHub = {},
-                onRetryCapture = {},
-                onPinWidget = {},
-                onAddTile = {},
-                onDismissQuickAccess = {},
-                onDismissInterruption = {},
-                onNativeSettings = {},
                 onOpenShizuku = { opened++ },
                 onAllowShizuku = { allowed++ },
-                onGrantWss = {},
-                onCopyAdb = {},
-                onCopyWebUsbLink = {},
-                onOpenContribution = {},
-                onPrepareSupportReport = {},
-                onCopySupportReport = {},
-                onOpenSupportIssue = {},
-                onEmailSupport = {},
-                onHelp = {},
             )
         }
     }
