@@ -29,21 +29,33 @@ diagnostics-only lab adapter. An external `protect_battery=0` makes One UI forge
 to the OEM default on re-enable), so Amply restores the exact prior policy itself rather than trusting Samsung's
 bookkeeping. Verified devices + coverage: see the qualification ledger (`device-qualification` skill).
 
-## Xiaomi Adapter
+## Xiaomi Adapters
 
-One live adapter (`xiaomi-hyperos2-v1`), gated to the HyperOS ROM version (the setting is a ROM
-feature, not a per-model one): manufacturer Xiaomi (covers Redmi/POCO — they report Xiaomi as
-manufacturer) + `ro.mi.os.version.code == 2` (HyperOS 2.x) + system user. Use `ro.mi.os.version.code`,
-NOT the frozen legacy `ro.miui.ui.version.code`. Single key
-`secure/security_pc_secure_protect_mode_key`: `0`=charge fully, `1`=Intelligent (heuristic 80% hold →
-`ChargePolicy.Adaptive`), absent=Intelligent (factory state). No hard-cap mode exists **on HyperOS 2**; a
-HyperOS 3 contribution report (2026-08-07) shows the same key with a third value `2`="Battery protection" —
-a candidate hard-cap mode, unqualified (see the `device-qualification` skill). SYNC_READBACK
-with read-back equality; session override = Unrestricted; protective default = Adaptive. HyperOS 1,
-pre-HyperOS MIUI, and HyperOS 3 fall to `XiaomiLabAdapter` (diagnostics + contribution). Two
-documented assumptions: the feature is treated as present on any HyperOS 2 device (a device lacking it
-reads the key absent → a harmless false claim of control), and daemon-level enforcement of external
-writes is pending long-term observation (see the `device-qualification` skill).
+Two live adapters over the single key `secure/security_pc_secure_protect_mode_key` (both in
+`XiaomiChargingAdapter.kt`). Use `ro.mi.os.version.code`, NOT the frozen legacy `ro.miui.ui.version.code`.
+Manufacturer Xiaomi covers Redmi/POCO — they report Xiaomi as manufacturer.
+
+- **HyperOS 2 (`xiaomi-hyperos2-v1`)** — gated to the HyperOS ROM version (the two-mode setting is a ROM
+  feature, not a per-model one): manufacturer Xiaomi + `ro.mi.os.version.code == 2` + system user. Values:
+  `0`=charge fully, `1`=Intelligent (heuristic 80% hold → `ChargePolicy.Adaptive`), absent=Intelligent
+  (factory state); `2` does not exist on HyperOS 2 and decodes `Unknown(unrecognizedValue)`. Session
+  override = Unrestricted; protective default = Adaptive. Two documented assumptions: the feature is treated
+  as present on any HyperOS 2 device (a device lacking it reads the key absent → a harmless false claim of
+  control), and daemon-level enforcement of external writes is pending long-term observation.
+- **HyperOS 3 (`xiaomi-hyperos3-v1`)** — same key plus `2`="Battery protection" (hard cap →
+  `FixedLimit(80)`; both-direction enforcement of external shell-UID writes demonstrated on `tanzanite`,
+  issue #48). Gate: manufacturer Xiaomi + `ro.mi.os.version.code == 3` + **qualified-codename allowlist**
+  (`QUALIFIED_CODENAMES`, ships `tanzanite`) + system user. Version-only gating is impossible: mode `2` is
+  model-/build-dependent within HyperOS 3 (`marblein` on 3.0.2 has only 0/1), the property has no minor
+  version, and mode-2 presence cannot be probed (key absent in factory state). Session override =
+  Unrestricted; protective default = FixedLimit(80) — the only Xiaomi mode with demonstrated enforcement.
+  Absent=Intelligent mirrors HyperOS 2 but is **unverified on HyperOS 3** (pending the issue-#48
+  qualification run). No hardware decode: `dumpsys battery` exposes no hold signal on HyperOS 3.
+
+Both are SYNC_READBACK with read-back equality; writes are WSS-capable (`secure` namespace). HyperOS 1,
+pre-HyperOS MIUI, and unqualified HyperOS 3 devices fall to `XiaomiLabAdapter` (diagnostics + contribution).
+The boundary write domain for the key is `{0,1,2}` globally (see `privileged-access.md`). Qualification
+evidence: `device-qualification` skill.
 
 ## OnePlus / ColorOS Adapter
 

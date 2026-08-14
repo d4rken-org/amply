@@ -11,8 +11,10 @@ timeout.
 Several control adapters exist — four OEM adapters plus two custom-ROM adapters (LineageOS, GrapheneOS). **Pixel charging optimization** is capability-gated to Pixel 6a and newer phones on
 Android 15+ when Google's charging-optimization controller is present. **Samsung battery protection** (global
 `protect_battery` keys) is gated to verified One UI generations — One UI 8 multi-mode, and the legacy One UI 4/5
-toggle — on the system user. **Xiaomi charging protection** (secure `security_pc_secure_protect_mode_key`,
-binary Adaptive/Unrestricted) is gated to the HyperOS 2.x ROM (`ro.mi.os.version.code == 2`) on Xiaomi devices.
+toggle — on the system user. **Xiaomi charging protection** (secure `security_pc_secure_protect_mode_key`)
+has two adapters: binary Adaptive/Unrestricted gated to the HyperOS 2.x ROM (`ro.mi.os.version.code == 2`), and a
+HyperOS 3 three-mode variant adding a FixedLimit(80) hard cap — gated to HyperOS 3 **plus a qualified-codename
+allowlist** (mode `2` is not HyperOS-3-wide and cannot be probed at runtime).
 **OnePlus/ColorOS charging protection** (mutually-exclusive `system` keys `regular_/smart_charge_protection_switch_state`
 = FixedLimit(80)/Adaptive) is gated to ColorOS 15 (`ro.build.version.oplusrom == 15`) across the Oplus family
 (OnePlus/Oppo/Realme) — **writes require Shizuku** (system namespace). **LineageOS charging control** (the private
@@ -26,7 +28,7 @@ system user; **reads are unprivileged (ContentResolver), writes require Shizuku*
 packages including WSS holders, with only the shell UID exempt. The ROM **latches the key at plug-session start**
 (`policyLatchesAtPlug`), so external writes take effect at the next unplug→replug — handled by a
 pending-until-replug verification state and a 30s session grace window; the reconnect gesture is unsupported
-there. Other Pixels, Samsung on unverified One UI versions (6/7, 9+), non-HyperOS-2 Xiaomi devices,
+there. Other Pixels, Samsung on unverified One UI versions (6/7, 9+), unqualified Xiaomi devices,
 non-ColorOS-15 Oplus devices, and unqualified LineageOS builds remain diagnostics-only. See the qualification
 ledger (`.claude/skills/device-qualification/`) for the verified devices and mappings.
 
