@@ -53,6 +53,13 @@ data class ChargingState(
     val device: DeviceInfo = DeviceInfo.current(),
     val adapterName: CaString = R.string.adapter_name_detecting.toCaString(),
     val adapterId: String? = null,
+    /**
+     * Standing capability note for a control-enabled adapter (write latency, Shizuku requirement,
+     * replug semantics — the `adapter_detail_*_ready` strings). Null whenever control is unavailable:
+     * the gate-failure text already reaches the UI as the observation's reason, and populating both
+     * would print the same sentence twice.
+     */
+    val adapterDetail: CaString? = null,
     val supportedPolicies: List<ChargePolicy> = emptyList(),
     /**
      * The selected adapter's protective default (e.g. FixedLimit(80) on Pixel, Adaptive on Xiaomi), or
@@ -78,6 +85,14 @@ data class ChargingState(
     val access: AccessSnapshot? = null,
     val observation: ChargeObservation = ChargeObservation.Unknown(R.string.charging_reason_loading.toCaString()),
     val pending: PendingRequest? = null,
+    /**
+     * Standing contradiction: the charging hardware was EXPECTED to confirm the last requested
+     * policy (see [eu.darken.amply.charging.core.adapter.ChargingAdapter.confirmationExpected]) and
+     * still has not, well past the settling window. Catches both a stuck apply and "plugged in
+     * today, HAL never engaged" — the silent-failure class where the configured setting reads back
+     * fine while charging is not actually limited. Null whenever no expectation exists.
+     */
+    val unconfirmedTarget: ChargePolicy? = null,
     val busy: Boolean = false,
     // Set only while a Shizuku-driven WRITE_SECURE_SETTINGS grant is in flight, so the setup card can
     // show a progress cue on that specific action without conflating it with a policy apply (both busy).
@@ -143,6 +158,12 @@ class ChargingRepository @Inject constructor(
     private val batteryReader: BatteryReader,
 ) {
     private val operationMutex = Mutex()
+
+    // Debounce carry-over for the hardware-unconfirmed detector (see debounceUnconfirmed). Only
+    // touched inside refreshLocked, which always runs under operationMutex. Process death resets it —
+    // the warning then just needs one more stability interval, never the unsafe direction.
+    private var unconfirmedCandidate: ChargePolicy? = null
+    private var unconfirmedSince: Long = 0L
     // Separate from operationMutex: the ~25s grant deliberately never holds operationMutex (see below),
     // but manual and automatic callers must still be single-flighted against each other.
     private val grantMutex = Mutex()
@@ -249,11 +270,12 @@ class ChargingRepository @Inject constructor(
     }
 
     /**
-     * Sync-readback adapters use world-readable / unprivileged keys, so the DIRECT provider read is
+     * Most sync-readback adapters use world-readable keys, so the DIRECT provider read is
      * authoritative and — unlike a Shizuku user-service bind, which can block up to ~15s on a cold process
      * ([ShizukuController.service]) — never stalls. Read direct first so that bind is never on the critical
-     * path (the widget/tile refresh after a tap); consult Shizuku only as a fallback when the direct read is
-     * not authoritative on some ROM. A nominally "ready" but misbehaving Shizuku service therefore can no
+     * path (the widget/tile refresh after a tap); consult Shizuku as the fallback when the direct read is
+     * not authoritative — including GrapheneOS's @Protected key, where the direct read is always denied
+     * and Shizuku (shell UID) is the only readable path. A nominally "ready" but misbehaving Shizuku service therefore can no
      * longer delay verification.
      */
     private suspend fun readSyncWithFallback(adapter: ChargingAdapter): ChargeObservation? {
@@ -276,7 +298,15 @@ class ChargingRepository @Inject constructor(
         if (adapter == null || !selection.support.controlEnabled) {
             val detail = selection.support.detail.toCaString()
             val observation = ChargeObservation.Unsupported(detail)
-            mutableState.value = state.value.copy(observation = observation, message = detail)
+            // Also drop the standing ready note and any hardware-unconfirmed warning: this branch
+            // means the gate just failed on a fresh selection (a capability can vanish between
+            // refresh and tap), and both fields' contracts exclude Unsupported states.
+            mutableState.value = state.value.copy(
+                observation = observation,
+                message = detail,
+                adapterDetail = null,
+                unconfirmedTarget = null,
+            )
             return ApplyResult(false, observation, context.getString(selection.support.detail))
         }
         if (policy !in adapter.supportedPolicies) {
@@ -297,6 +327,8 @@ class ChargingRepository @Inject constructor(
             mutableState.value = state.value.copy(
                 observation = observation,
                 message = R.string.charging_message_setup_required.toCaString(),
+                // NeedsSetup never warns (detector contract); drop a now-contradictory stale warning.
+                unconfirmedTarget = null,
             )
             return ApplyResult(false, observation, "Setup required")
         }
@@ -329,10 +361,14 @@ class ChargingRepository @Inject constructor(
             log(TAG, Logging.Priority.ERROR) { "Settings write failed for ${policy.stableId}" }
             val observation = ChargeObservation.Unknown(R.string.charging_reason_write_failed.toCaString())
             // Clear any stale pending so the failure is not masked by a prior request's "applying…" cue.
+            // The old unconfirmed warning goes too: a multi-key write can fail after partially changing
+            // configuration, so the previous target is no longer a safe standing claim — the next
+            // refresh recomputes from live evidence.
             mutableState.value = state.value.copy(
                 busy = false,
                 observation = observation,
                 pending = null,
+                unconfirmedTarget = null,
                 message = R.string.charging_message_write_failed.toCaString(),
             )
             return ApplyResult(false, observation, "Write failed")
@@ -390,6 +426,10 @@ class ChargingRepository @Inject constructor(
                 access = access,
                 observation = observation,
                 pending = pending,
+                // A fresh write voids any prior contradiction: the detector re-arms via refresh once
+                // the new request is past its own grace threshold. Stale warnings must never render
+                // over a new request's settling phase (all three publication copies clear this).
+                unconfirmedTarget = null,
                 message = message,
             )
             // Always schedule an eventual surface re-push, even for a settled write (pending == null).
@@ -413,6 +453,7 @@ class ChargingRepository @Inject constructor(
                 busy = false,
                 observation = ChargeObservation.LastRequested(policy),
                 pending = PendingRequest(policy, now, awaitingReplug = fallbackAwaitsReplug(adapter, pluggedAtWrite)),
+                unconfirmedTarget = null,
             )
             settleScheduler.schedule(now)
             throw e
@@ -426,6 +467,7 @@ class ChargingRepository @Inject constructor(
                 busy = false,
                 observation = observation,
                 pending = PendingRequest(policy, now, awaitingReplug = fallbackAwaitsReplug(adapter, pluggedAtWrite)),
+                unconfirmedTarget = null,
                 message = message,
             )
             settleScheduler.schedule(now)
@@ -437,6 +479,13 @@ class ChargingRepository @Inject constructor(
         val selection: AdapterSelection = registry.select()
         val access = accessResolver.snapshot()
         val adapter = selection.adapter
+        // ONE sticky observation for everything hardware-derived this refresh — plug state, the
+        // hardware decode, and the confirmation expectation must join on the same readout
+        // (BatteryReader's doc: never pair plug state across two sticky reads). Behavior-identical
+        // to the previous per-call adapter.readHardware(context): a missing extra decodes as
+        // INVALID(0) and an unreadable broadcast as unplugged, both yielding the same results.
+        val battery = batteryReader.read()
+        val hardware = adapter?.decodeHardware(battery.chargingStatus ?: 0, battery.onCharger)
         val observation = when {
             adapter == null -> ChargeObservation.Unsupported(selection.support.detail.toCaString())
             !selection.support.controlEnabled -> ChargeObservation.Unsupported(selection.support.detail.toCaString())
@@ -454,7 +503,7 @@ class ChargingRepository @Inject constructor(
                     // A readable-but-unrecognized OEM value must not be masked by a stale last
                     // request — the state is genuinely unknown, and a session start refuses on it.
                     read is ChargeObservation.Unknown && read.unrecognizedValue -> read
-                    else -> adapter.readHardware(context)
+                    else -> hardware
                         ?: preferences.lastRequestedNow()?.let(ChargeObservation::LastRequested)
                         ?: read
                         ?: ChargeObservation.Unknown(R.string.charging_reason_state_unavailable.toCaString())
@@ -465,22 +514,24 @@ class ChargingRepository @Inject constructor(
         // or WSS the settings readback is `Verified` while the HAL is still converging, so pending would
         // otherwise never clear until the window expired.
         val latches = adapter?.policyLatchesAtPlug == true
-        val battery = if (latches) batteryReader.read() else null
         // Plug-latched adapters: an observed unpowered moment durably resolves an unresolved latched
         // request — the plug session that sampled the old value is over, so the next one samples the
         // new value. Persisted as a watermark so a later *plugged* refresh still knows it happened.
-        if (latches && battery?.plugged == 0 &&
+        if (latches && battery.plugged == 0 &&
             preferences.lastRequestedPluggedNow() == true &&
             preferences.unpluggedSeenAtNow() <= preferences.lastRequestedAtNow()
         ) {
             preferences.recordUnpluggedSeen(System.currentTimeMillis())
         }
+        val reqPolicy = preferences.lastRequestedNow()
+        val reqAt = preferences.lastRequestedAtNow()
+        val now = System.currentTimeMillis()
         val pending = computeRefreshPending(
-            reqPolicy = preferences.lastRequestedNow(),
-            reqAt = preferences.lastRequestedAtNow(),
-            now = System.currentTimeMillis(),
+            reqPolicy = reqPolicy,
+            reqAt = reqAt,
+            now = now,
             observation = observation,
-            hardware = adapter?.readHardware(context),
+            hardware = hardware,
             verification = adapter?.verification ?: VerificationStrategy.ASYNC_HARDWARE,
             policyLatchesAtPlug = latches,
             reqPlugged = if (latches) preferences.lastRequestedPluggedNow() else null,
@@ -488,6 +539,19 @@ class ChargingRepository @Inject constructor(
             battery = battery,
             limitPercent = adapter?.latchedLimitPercent() ?: NO_LATCHED_LIMIT,
         )
+        val rawUnconfirmed = computeUnconfirmedTarget(
+            reqPolicy = reqPolicy,
+            reqAt = reqAt,
+            now = now,
+            observation = observation,
+            hardware = hardware,
+            confirmationExpected = reqPolicy != null &&
+                adapter?.confirmationExpected(reqPolicy, battery.chargingStatus, battery.onCharger) == true,
+        )
+        val debounce = debounceUnconfirmed(rawUnconfirmed, now, unconfirmedCandidate, unconfirmedSince)
+        unconfirmedCandidate = debounce.candidate
+        unconfirmedSince = debounce.sinceMillis
+        val unconfirmedTarget = debounce.surfaced
         val built = ChargingState(
             device = DeviceInfo.current(context),
             adapterName = adapter?.displayName ?: R.string.adapter_name_unsupported.toCaString(),
@@ -500,10 +564,18 @@ class ChargingRepository @Inject constructor(
             controlEnabled = selection.support.controlEnabled,
             contributionWanted = selection.support.contributionWanted,
             guidedCaptureUseful = selection.support.guidedCaptureUseful,
+            // controlEnabled implies detail is the adapter's *_ready string (every probe's when-cascade
+            // pairs them), so this can never carry a gate-failure reason.
+            adapterDetail = if (adapter != null && selection.support.controlEnabled) {
+                selection.support.detail.toCaString()
+            } else {
+                null
+            },
             adapterResolved = true,
             access = access,
             observation = observation,
             pending = pending,
+            unconfirmedTarget = unconfirmedTarget,
             busy = false,
             // grantingWss is intentionally left default here; mergeRefreshedState (below) carries an
             // in-flight grant's spinner over from the previous state so a concurrent refresh can't clear it.
@@ -532,11 +604,12 @@ class ChargingRepository @Inject constructor(
 
 /**
  * Read a sync-readback adapter's configured state, preferring the [direct] provider and consulting
- * [shizuku] (may be null when not ready) only as a fallback. Direct reads of these adapters' world-readable
- * keys are authoritative and cannot stall, so an *authoritative* direct read — [ChargeObservation.Verified]
+ * [shizuku] (may be null when not ready) only as a fallback. A direct read of a world-readable key is
+ * authoritative and cannot stall, so an *authoritative* direct read — [ChargeObservation.Verified]
  * or a readable-but-unrecognized OEM value — short-circuits without ever binding the Shizuku user service
- * (both backends read the same settings provider, so Shizuku could not report anything stronger). Only a
- * genuinely unreadable direct result falls back to Shizuku.
+ * (both backends read the same settings provider, so Shizuku could not report anything stronger). A
+ * genuinely unreadable direct result falls back to Shizuku — the routine case for GrapheneOS's @Protected
+ * key, which the provider denies to Amply but not to the shell UID.
  */
 internal suspend fun readSyncDirectFirst(
     adapter: ChargingAdapter,
@@ -657,6 +730,69 @@ internal fun computeRefreshPending(
     if (confirmed) return null
     return PendingRequest(reqPolicy, reqAt)
 }
+
+/**
+ * Standing contradiction detector behind [ChargingState.unconfirmedTarget]: the last requested policy
+ * was EXPECTED to be hardware-confirmed (see ChargingAdapter.confirmationExpected — live channel,
+ * reliably-reported policy class, nothing masking) and still is not, well past the settling window.
+ *
+ * No pending interplay is needed: the threshold exceeds the settling window, so a windowed pending has
+ * always expired by the time this can fire, and plug-latched pendings belong to adapters whose
+ * expectation is false by default. The threshold's slack (2× the window vs the measured ~11–12s Pixel
+ * HAL transition) keeps a merely-slow transition from flickering a warning; `now < reqAt` (backwards
+ * clock) falls under the same guard.
+ */
+internal fun computeUnconfirmedTarget(
+    reqPolicy: ChargePolicy?,
+    reqAt: Long,
+    now: Long,
+    observation: ChargeObservation,
+    hardware: ChargeObservation?,
+    confirmationExpected: Boolean,
+): ChargePolicy? {
+    if (reqPolicy == null || reqAt <= 0L) return null
+    if (observation is ChargeObservation.Unsupported || observation is ChargeObservation.NeedsSetup) return null
+    // An authoritative readback of a DIFFERENT configured policy means a competing/native change
+    // already replaced the request — warning that the obsolete request "may not be applying" would
+    // contradict the very policy the card above verifies. Same for a readable-but-unrecognized
+    // value (the state a session start refuses on). A readback verifying the REQUESTED policy while
+    // the hardware disagrees is exactly the contradiction this detector exists for.
+    if (observation is ChargeObservation.Verified && observation.policy != reqPolicy) return null
+    if (observation is ChargeObservation.Unknown && observation.unrecognizedValue) return null
+    if (now - reqAt < UNCONFIRMED_THRESHOLD_MILLIS) return null
+    if (!confirmationExpected) return null
+    if (hardwareConfirms(hardware, reqPolicy)) return null
+    return reqPolicy
+}
+
+/**
+ * Stability debounce over the raw detector output: the contradiction must hold across refreshes for
+ * [UNCONFIRMED_STABILITY_MILLIS] before it surfaces. Damps the plug-in transient — a device plugged
+ * in with an OLD fixed-limit request legitimately reads state 1 for the ~11–12s HAL transition, and
+ * the age threshold alone (measured from the write, not the plug) would warn instantly. Pure:
+ * callers thread the previous (candidate, sinceMillis) pair through.
+ */
+internal fun debounceUnconfirmed(
+    candidate: ChargePolicy?,
+    now: Long,
+    prevCandidate: ChargePolicy?,
+    prevSince: Long,
+): UnconfirmedDebounce {
+    if (candidate == null) return UnconfirmedDebounce(null, 0L, surfaced = null)
+    // A changed candidate — or a backwards clock, which voids the stability evidence — restarts.
+    val since = if (candidate == prevCandidate && now >= prevSince) prevSince else now
+    val surfaced = candidate.takeIf { now - since >= UNCONFIRMED_STABILITY_MILLIS }
+    return UnconfirmedDebounce(candidate, since, surfaced)
+}
+
+internal data class UnconfirmedDebounce(
+    val candidate: ChargePolicy?,
+    val sinceMillis: Long,
+    val surfaced: ChargePolicy?,
+)
+
+internal const val UNCONFIRMED_THRESHOLD_MILLIS = 2 * SETTLING_WINDOW_MILLIS
+internal const val UNCONFIRMED_STABILITY_MILLIS = SETTLING_WINDOW_MILLIS
 
 /** Sentinel for "no latched fixed-limit cap": no observable percent can exceed it, disabling limit-disproof. */
 internal const val NO_LATCHED_LIMIT = 100

@@ -4,6 +4,7 @@
     <string name="tile_active">Restore limit</string>
     <string name="tile_override_active">Temporary override active</string>
     <string name="tile_replug_hint">Replug to apply</string>
+    <string name="tile_applying">Applying…</string>
     <string name="widget_description">Amply charge controls</string>
     <string name="session_channel_name">Full charge and restore</string>
     <string name="session_channel_description" formatted="false">Shows while Amply is allowing a full charge, and while it restores your limit afterwards</string>
@@ -126,22 +127,22 @@
     <string name="adapter_detail_no_tablet">Pixel tablets are not supported</string>
     <string name="adapter_detail_no_controller">Google\'s charging-optimization controller is not available</string>
     <string name="adapter_detail_disabled_build">Adapter disabled in this build</string>
-    <string name="adapter_detail_pixel_ready">Supported Pixel capability detected; charging hardware may take about 15 seconds to react</string>
+    <string name="adapter_detail_pixel_ready">Charging changes take about 15 seconds to reach the hardware</string>
     <string name="adapter_detail_lab_diagnostics">Detected for diagnostics only; no unverified writes are exposed</string>
     <string name="adapter_detail_requires_samsung">Requires a Samsung device on a verified One UI version</string>
     <string name="adapter_detail_samsung_no_key">The battery-protection setting is not present on this device</string>
     <string name="adapter_detail_secondary_user">Charging protection is device-wide; control is limited to the main user</string>
-    <string name="adapter_detail_samsung_ready">Samsung battery protection detected; changes apply immediately</string>
+    <string name="adapter_detail_samsung_ready">Changes apply to the hardware immediately</string>
     <string name="adapter_detail_requires_xiaomi">Requires a verified Xiaomi device on HyperOS 2</string>
-    <string name="adapter_detail_xiaomi_ready">Xiaomi charging protection detected; changes apply immediately</string>
+    <string name="adapter_detail_requires_xiaomi_hyperos3">Requires a qualified Xiaomi device on HyperOS 3</string>
+    <string name="adapter_detail_xiaomi_ready">Changes apply to the hardware immediately</string>
     <string name="adapter_detail_requires_oplus">Requires a OnePlus, Oppo, or Realme device on ColorOS 15</string>
-    <string name="adapter_detail_oplus_ready">ColorOS charging protection detected; control requires Shizuku</string>
+    <string name="adapter_detail_oplus_ready">Charging control requires Shizuku on this device</string>
     <string name="adapter_detail_requires_grapheneos">Requires GrapheneOS</string>
-    <string name="adapter_detail_grapheneos_no_key">GrapheneOS detected, but its charge-limit setting is not present on this build</string>
-    <string name="adapter_detail_grapheneos_ready">GrapheneOS charge limit detected. Changes take effect when the charger is reconnected</string>
+    <string name="adapter_detail_grapheneos_ready">Charging control requires Shizuku; changes take effect the next time the charger is reconnected</string>
     <string name="adapter_detail_requires_lineageos">Requires a qualified LineageOS device</string>
     <string name="adapter_detail_lineageos_no_provider">LineageOS charging control is not available on this build</string>
-    <string name="adapter_detail_lineageos_ready">LineageOS charging control detected; control requires Shizuku</string>
+    <string name="adapter_detail_lineageos_ready">Charging control requires Shizuku on this device</string>
     <string name="adapter_detail_none">No charging adapter is known for this device</string>
 
     <!-- Access backend detail + summary labels -->
@@ -375,6 +376,7 @@
     <string name="dashboard_device_line">%1$s · Android API %2$d</string>
     <string name="dashboard_waiting_target">Waiting for the system to switch to %1$s. This can take about 15 seconds…</string>
     <string name="dashboard_waiting_replug">Takes effect the next time you unplug and replug the charger</string>
+    <string name="dashboard_hw_unconfirmed">The charging hardware hasn\'t confirmed %1$s yet. It may not be applying</string>
     <string name="dashboard_settling_fallback_target">the new policy</string>
     <string name="dashboard_session_once_title" formatted="false">Charging to 100% once</string>
     <string name="dashboard_session_returns">%1$s will return automatically at 100%% or when you unplug.</string>
@@ -412,7 +414,7 @@
     <string name="dashboard_shizuku_title">Better with Shizuku</string>
     <string name="dashboard_shizuku_body">Shizuku gives Amply exact policy readback instead of relying on hardware state and the last request.</string>
     <string name="dashboard_shizuku_required_title">Shizuku required to change charging</string>
-    <string name="dashboard_shizuku_required_body">This device stores its charging setting where only Shizuku can change it. Connect Shizuku to switch policies; without it Amply can still show the current state.</string>
+    <string name="dashboard_shizuku_required_body">This device stores its charging setting where only Shizuku can change it. Connect Shizuku to switch policies; until then the charging controls stay disabled.</string>
     <string name="dashboard_shizuku_allow">Allow access</string>
     <string name="dashboard_shizuku_open">Open Shizuku</string>
     <string name="dashboard_adb_copied">ADB command copied</string>

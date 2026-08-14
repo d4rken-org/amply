@@ -28,6 +28,7 @@ import eu.darken.amply.charging.core.adapter.SamsungLabAdapter
 import eu.darken.amply.charging.core.adapter.SamsungLegacyChargingAdapter
 import eu.darken.amply.charging.core.adapter.SamsungModernChargingAdapter
 import eu.darken.amply.charging.core.adapter.XiaomiChargingAdapter
+import eu.darken.amply.charging.core.adapter.XiaomiHyperOs3ChargingAdapter
 import eu.darken.amply.charging.core.adapter.XiaomiLabAdapter
 import eu.darken.amply.common.AppDataStore
 import eu.darken.amply.common.serialization.SerializationModule
@@ -110,6 +111,7 @@ class ChargingRepositoryPersistenceTest {
                 samsungLegacy = SamsungLegacyChargingAdapter(),
                 samsungLab = SamsungLabAdapter(),
                 xiaomi = XiaomiChargingAdapter(),
+                xiaomiHyperOs3 = XiaomiHyperOs3ChargingAdapter(),
                 xiaomiLab = XiaomiLabAdapter(),
                 onePlus = OnePlusChargingAdapter(),
                 onePlusLab = OnePlusLabAdapter(),

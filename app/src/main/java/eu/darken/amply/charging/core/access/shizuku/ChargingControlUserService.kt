@@ -199,8 +199,12 @@ internal object SettingWritePolicy {
             // Pixel charging optimization
             "charge_optimization_mode" to setOf("0", "1"),
             "adaptive_charging_enabled" to setOf("0", "1"),
-            // Xiaomi HyperOS charging protection
-            "security_pc_secure_protect_mode_key" to setOf("0", "1"),
+            // Xiaomi HyperOS charging protection. "2" = HyperOS 3 "Battery protection" (hard cap 80,
+            // qualified on tanzanite — issue #48 / ledger). The domain is global, so "2" is also
+            // boundary-writable on HyperOS 2 devices: accepted, no Amply code path emits it there
+            // (the HyperOS 2 adapter maps no policy to it and its decode refuses it) — the boundary
+            // owns the per-key domain, not per-ROM routing.
+            "security_pc_secure_protect_mode_key" to setOf("0", "1", "2"),
         ),
         "global" to mapOf(
             // GrapheneOS charge limit (1 = fixed 80% cap; the ROM latches it at plug-session start)

@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material.icons.twotone.Build
 import androidx.compose.material.icons.twotone.Settings
 import androidx.compose.material3.Button
@@ -501,6 +502,18 @@ private fun StatusCard(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        // Standing adapter fact (write latency, Shizuku requirement, replug semantics) — only set
+        // while control is enabled, so it never repeats a gate-failure reason shown above. Hidden
+        // while a replug is pending: the transient hint below states the same fact as an instruction,
+        // and printing both would say "reconnect the charger" twice on latched adapters.
+        state.charging.adapterDetail?.takeIf { !state.charging.isAwaitingReplug() }?.let {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                it.asComposable(),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Spacer(Modifier.height(4.dp))
         Text(
             stringResource(
@@ -529,6 +542,30 @@ private fun StatusCard(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.tertiary,
             )
+        } else if (state.charging.unconfirmedTarget != null) {
+            // The hardware was expected to confirm this policy and hasn't, well past the settling
+            // window — the configured setting may not actually be applying. Beats the apply
+            // message, which narrates exactly the request this contradicts.
+            Spacer(Modifier.height(8.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.WarningAmber,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.error,
+                )
+                Text(
+                    stringResource(
+                        R.string.dashboard_hw_unconfirmed,
+                        state.charging.unconfirmedTarget.shortLabel().asComposable(),
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         } else {
             // The repository's apply message describes the request the settling line already
             // narrates, so only show it once settling has resolved.
@@ -930,6 +967,7 @@ private fun DashboardScreenPreview() = PreviewWrapper {
                 device = DeviceInfo("Google", "Pixel 8", 36, "preview"),
                 adapterName = "Pixel Charge Control".toCaString(),
                 adapterId = "pixel",
+                adapterDetail = "Charging changes take about 15 seconds to reach the hardware".toCaString(),
                 supportedPolicies = listOf(
                     ChargePolicy.FixedLimit(80),
                     ChargePolicy.Adaptive,
@@ -1078,6 +1116,79 @@ private fun DashboardScreenLiveChargePreview() = PreviewWrapper {
 }
 
 // Mid-apply: spinner, "Applying…", and the waiting line with the duration hint.
+// The hardware-unconfirmed contradiction: an 80% limit was requested well past the settling window,
+// the device is plugged and charging, and the HAL never reported the long-life hold.
+@AmplyPreview
+@Composable
+private fun DashboardScreenHwUnconfirmedPreview() = PreviewWrapper {
+    DashboardScreen(
+        state = DashboardUiState(
+            onboardingComplete = true,
+            batteryReadout = BatteryReadout(
+                levelPercent = 84,
+                status = android.os.BatteryManager.BATTERY_STATUS_CHARGING,
+                plugged = android.os.BatteryManager.BATTERY_PLUGGED_AC,
+                temperatureTenthsC = 305,
+            ),
+            charging = ChargingState(
+                device = DeviceInfo("Google", "Pixel 8", 36, "preview"),
+                adapterName = "Pixel Charge Control".toCaString(),
+                adapterId = "pixel",
+                adapterDetail = "Charging changes take about 15 seconds to reach the hardware".toCaString(),
+                supportedPolicies = listOf(
+                    ChargePolicy.FixedLimit(80),
+                    ChargePolicy.Adaptive,
+                    ChargePolicy.Unrestricted,
+                ),
+                reconnectSupported = true,
+                controlEnabled = true,
+                access = AccessSnapshot(
+                    direct = BackendStatus(
+                        available = true,
+                        granted = true,
+                        detail = "Charge-control access granted".toCaString(),
+                    ),
+                    shizuku = BackendStatus(
+                        available = false,
+                        granted = false,
+                        detail = "Shizuku not installed".toCaString(),
+                    ),
+                ),
+                observation = ChargeObservation.LastRequested(ChargePolicy.FixedLimit(80)),
+                unconfirmedTarget = ChargePolicy.FixedLimit(80),
+            ),
+        ),
+        adbCommand = "adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS",
+        onRefresh = {},
+        onSettings = {},
+        onStartFull = {},
+        onRestore = {},
+        onApply = {},
+        onQuickFullChargeChange = {},
+        onAlarmEnabledChange = {},
+        onAlarmTargetChange = {},
+        onFixNotifications = {},
+        onOpenBatteryHub = {},
+        onRetryCapture = {},
+        onPinWidget = {},
+        onAddTile = {},
+        onDismissQuickAccess = {},
+        onDismissInterruption = {},
+        onNativeSettings = {},
+        onOpenShizuku = {},
+        onAllowShizuku = {},
+        onGrantWss = {},
+        onCopyAdb = {},
+        onCopyWebUsbLink = {},
+        onPrepareSupportReport = {},
+        onCopySupportReport = {},
+        onOpenContribution = {},
+        onOpenSupportIssue = {},
+        onEmailSupport = {},
+        onHelp = {},
+    )
+}
+
 @AmplyPreview
 @Composable
 private fun DashboardScreenApplyingPreview() = PreviewWrapper {
@@ -1168,11 +1279,16 @@ private fun DashboardScreenAwaitingReplugPreview() = PreviewWrapper {
                 device = DeviceInfo("Google", "Pixel 9 Pro XL", 37, "preview"),
                 adapterName = "GrapheneOS charge limit".toCaString(),
                 adapterId = "grapheneos-chargelimit-v1",
+                adapterDetail = ("Charging control requires Shizuku; changes take effect the next " +
+                    "time the charger is reconnected").toCaString(),
                 supportedPolicies = listOf(
                     ChargePolicy.FixedLimit(80),
                     ChargePolicy.Unrestricted,
                 ),
                 syncVerification = true,
+                // GrapheneOS marks the key @Protected: only the shell UID (Shizuku) can touch it,
+                // so the realistic ready state is Shizuku-connected, direct access irrelevant.
+                writeRequiresShizuku = true,
                 controlEnabled = true,
                 access = AccessSnapshot(
                     direct = BackendStatus(
@@ -1181,14 +1297,14 @@ private fun DashboardScreenAwaitingReplugPreview() = PreviewWrapper {
                         detail = "Charge-control access granted".toCaString(),
                     ),
                     shizuku = BackendStatus(
-                        available = false,
-                        granted = false,
-                        detail = "Shizuku not installed".toCaString(),
+                        available = true,
+                        granted = true,
+                        detail = "Shizuku connected".toCaString(),
                     ),
                 ),
                 observation = ChargeObservation.Verified(
                     ChargePolicy.Unrestricted,
-                    BackendKind.DIRECT_WSS,
+                    BackendKind.SHIZUKU,
                 ),
                 pending = PendingRequest(
                     ChargePolicy.Unrestricted,

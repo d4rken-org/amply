@@ -58,11 +58,13 @@ interface ChargingAdapter {
     val reconnectGestureSupported: Boolean get() = false
 
     /**
-     * Prefer Shizuku over direct WSS for writes. Set by adapters whose keys live in the `system`
-     * namespace: `WRITE_SECURE_SETTINGS` covers secure/global but not system, so a direct write
-     * would silently fail — Shizuku (shell UID) can write system. Reads are unaffected (system is
-     * world-readable). Direct WSS is still tried as a last resort, and read-back verification
-     * catches a write that did not land.
+     * Prefer Shizuku over direct WSS for writes. Two adapter classes set it: keys in the `system`
+     * namespace (OnePlus/ColorOS — `WRITE_SECURE_SETTINGS` covers secure/global but not system, so
+     * a direct write silently fails while reads stay world-readable), and per-key access-controlled
+     * keys (GrapheneOS's `@Protected` charge limit — the provider rejects reads AND writes from
+     * everyone but its own system packages and the shell UID, WSS or not; there the direct read
+     * comes back unreadable and the sync-read fallback consults Shizuku). Direct WSS is still tried
+     * as a last resort, and read-back verification catches a write that did not land.
      */
     val preferShizukuForWrites: Boolean get() = false
 
@@ -75,6 +77,17 @@ interface ChargingAdapter {
      * engine's disconnect grace window.
      */
     val policyLatchesAtPlug: Boolean get() = false
+
+    /**
+     * Whether the charging hardware is currently EXPECTED to confirm [policy]: the policy class is
+     * one this hardware reliably reports, the evidence channel is live (plugged — unplugged sticky
+     * values are stale), and nothing is masking the signal (thermal throttling). Drives the
+     * "hardware never confirmed" warning: expected-and-missing is the contradiction worth showing.
+     * False by default — sync-readback adapters verify via settings and plug-latched adapters
+     * legitimately confirm only at the next plug session, so neither carries an expectation.
+     */
+    fun confirmationExpected(policy: ChargePolicy, chargingStatus: Int?, plugged: Boolean): Boolean =
+        false
 
     fun probe(device: DeviceInfo): AdapterSupport
     fun readHardware(context: Context): ChargeObservation? = null
