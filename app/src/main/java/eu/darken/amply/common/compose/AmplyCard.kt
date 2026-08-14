@@ -38,6 +38,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -248,6 +249,12 @@ fun AmplyCardToggleIndicator(checked: Boolean, enabled: Boolean = true) {
  * minimum touch target that would otherwise inflate the whole header row and push the body down. The
  * control keeps its full touch target (it just overlaps neighbouring empty space invisibly). Pass a
  * single composable; wrap multiple controls in your own `Row`.
+ *
+ * [titleAccessory] is a *non-interactive* marker (a badge) that belongs to the title itself, so it
+ * sits inline right after it in the leading group rather than in [trailing] — which is where a card's
+ * control lives, and is floated to the far end. The title becomes weighted (`fill = false`) while an
+ * accessory is present: the unweighted accessory is then measured first and keeps its intrinsic
+ * width, so a long title wraps instead of squeezing the marker out of the row.
  */
 @Composable
 fun AmplyCardHeader(
@@ -256,6 +263,7 @@ fun AmplyCardHeader(
     icon: ImageVector? = null,
     iconTint: Color = MaterialTheme.colorScheme.primary,
     titleStyle: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.titleMedium,
+    titleAccessory: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
 ) {
     if (trailing == null) {
@@ -269,7 +277,12 @@ fun AmplyCardHeader(
             if (icon != null) {
                 Icon(icon, contentDescription = null, tint = iconTint)
             }
-            Text(title, style = titleStyle, modifier = Modifier.weight(1f))
+            Text(
+                title,
+                style = titleStyle,
+                modifier = if (titleAccessory != null) Modifier.weight(1f, fill = false) else Modifier.weight(1f),
+            )
+            titleAccessory?.invoke()
         }
         return
     }
@@ -283,7 +296,12 @@ fun AmplyCardHeader(
                 if (icon != null) {
                     Icon(icon, contentDescription = null, tint = iconTint)
                 }
-                Text(title, style = titleStyle)
+                Text(
+                    title,
+                    style = titleStyle,
+                    modifier = if (titleAccessory != null) Modifier.weight(1f, fill = false) else Modifier,
+                )
+                titleAccessory?.invoke()
             }
             // Box keeps the trailing slot to exactly one measurable regardless of what the caller
             // emits (conditional/empty or multiple children), so the layout below can't crash.
@@ -488,5 +506,47 @@ private fun AmplyCardPreview() = PreviewWrapper {
             Text("Primary-container tone (hero CTA).", style = MaterialTheme.typography.bodyMedium)
         }
         AmplyCodeBlock(text = "adb shell settings put secure example 1", maxHeight = 120.dp)
+    }
+}
+
+// The title accessory in both header variants, and against a title long enough to compete for the
+// row: the marker must keep its width and let the title wrap, not the other way round.
+@AmplyPreview
+@Preview(showBackground = true, name = "Compact width", widthDp = 320)
+@Composable
+private fun AmplyCardHeaderAccessoryPreview() = PreviewWrapper {
+    Column(
+        modifier = Modifier.padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        AmplyCard(verticalArrangement = Arrangement.spacedBy(AmplyCardDefaults.ItemSpacing)) {
+            AmplyCardHeader(
+                title = "Short title",
+                icon = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                titleAccessory = { PreviewAccessory() },
+            )
+            AmplyCardHeader(
+                title = "A title long enough that it has to wrap beside the marker",
+                icon = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                titleAccessory = { PreviewAccessory() },
+                trailing = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun PreviewAccessory() {
+    Surface(
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Text(
+            "Marker",
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+        )
     }
 }
