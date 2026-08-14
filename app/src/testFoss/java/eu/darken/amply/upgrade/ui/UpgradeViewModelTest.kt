@@ -23,6 +23,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
@@ -204,6 +205,88 @@ class UpgradeViewModelTest {
         // No second thanks-toast, and — the part that matters — the original "supporter since" date
         // survives untouched.
         cache.upgrade.value() shouldBe existing
+    }
+
+    // The ViewModel is activity-scoped, so the visit binding — not the ViewModel's lifetime — is what
+    // decides which view an entry gets. These cover the binding being taken, released, and taken
+    // again, including an entry that starts on top of a previous visit's leftovers.
+
+    private fun collectViews(vm: UpgradeViewModel, into: MutableList<FossUpgradeView?>): CoroutineScope {
+        val scope = CoroutineScope(Dispatchers.Unconfined)
+        scope.launch { vm.state.collect { into += it.view } }
+        return scope
+    }
+
+    @Test fun `each visit binds its own view and leaving releases the binding`(): Unit = runBlocking {
+        val vm = viewModel(realCache(), webpageTool(opened = true))
+        val seen = mutableListOf<FossUpgradeView?>()
+        val scope = collectViews(vm, seen)
+        try {
+            vm.onVisitStart(manage = true)
+            awaitTrue("the manage entry never reached the status view") {
+                vm.state.value.view == FossUpgradeView.STATUS_FREE
+            }
+
+            // Leaving must go back to neutral, or the next entry renders this visit's view first.
+            vm.onVisitEnd()
+            awaitTrue("the binding was never released") { vm.state.value.view == null }
+
+            vm.onVisitStart(manage = false)
+            awaitTrue("the plain entry never reached the pitch") {
+                vm.state.value.view == FossUpgradeView.PITCH
+            }
+
+            vm.onVisitEnd()
+            awaitTrue("the second binding was never released") { vm.state.value.view == null }
+
+            // And the state flow is still live after a release: set-to-null keeps the handle's flow
+            // instance the state combine captured, which handle.remove() would detach.
+            vm.onVisitStart(manage = true)
+            awaitTrue("the flow went deaf after the binding was released") {
+                vm.state.value.view == FossUpgradeView.STATUS_FREE
+            }
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test fun `a manage entry over a restored plain binding never shows the pitch`(): Unit = runBlocking {
+        val cache = realCache()
+        cache.upgrade.value(
+            FossUpgrade(upgradedAt = Instant.EPOCH, upgradeType = FossUpgrade.Type.GITHUB_SPONSORS),
+        )
+        // Process death took the screen but not the handle: the previous (plain) visit's keys are
+        // restored, and they say "pitch". Key names are the ViewModel's own, spelled out because they
+        // are the wire format a restored handle arrives with.
+        val restored = SavedStateHandle(
+            mapOf(
+                "upgrade_manage" to false,
+                "show_upgrade_options" to true,
+            ),
+        )
+        val vm = viewModel(cache, webpageTool(opened = true), restored)
+
+        vm.onVisitStart(manage = true)
+
+        val seen = mutableListOf<FossUpgradeView?>()
+        val scope = collectViews(vm, seen)
+        try {
+            awaitTrue("the manage entry never reached the upgraded status") {
+                vm.state.value.view == FossUpgradeView.STATUS_UPGRADED
+            }
+            // An upgraded user opening the status entry: the pitch is exactly what must not appear,
+            // because the host dismisses the screen on a pitch-plus-upgraded combination.
+            seen.contains(FossUpgradeView.PITCH) shouldBe false
+
+            // The composition root can flip `manage` in place (a widget's "open upgrade" intent
+            // landing on the open status view); the host rebinds, and the pitch is then correct.
+            vm.onVisitStart(manage = false)
+            awaitTrue("the rebind never reached the pitch") {
+                vm.state.value.view == FossUpgradeView.PITCH
+            }
+        } finally {
+            scope.cancel()
+        }
     }
 
     @Test fun `a failed write restores the marker so the visit can still be redeemed`() {

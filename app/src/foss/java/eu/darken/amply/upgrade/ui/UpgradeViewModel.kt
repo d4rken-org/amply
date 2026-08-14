@@ -52,6 +52,24 @@ class UpgradeViewModel @Inject constructor(
     }
 
     /**
+     * Called when the screen leaves. Releases the visit binding so the next entry decides the view
+     * from its own `manage`, never from the one this visit left behind: the ViewModel is
+     * activity-scoped, so a leftover binding means the next visit renders the previous visit's view
+     * for a frame — the pitch flashing over a status entry, or an auto-dismiss firing on it.
+     *
+     * Set to null rather than removed. [SavedStateHandle.remove] detaches the `getStateFlow`
+     * instance the state combine captured, so later writes would update a *fresh* flow while the
+     * combine keeps the stale one and never sees another value.
+     */
+    fun onVisitEnd() {
+        log(TAG) { "onVisitEnd()" }
+        // Explicit type argument: a bare `handle[KEY_MANAGE] = null` gives the setter nothing to
+        // infer its element type from.
+        handle.set<Boolean>(KEY_MANAGE, null)
+        handle[KEY_SHOW_UPGRADE_OPTIONS] = false
+    }
+
+    /**
      * Which presentation to render. The manage entry (settings "upgrade status") gets a status view
      * first; the pitch only appears once a free user asks for the upgrade options. Being upgraded
      * wins over that choice — completing the sponsor flow from the pitch must land on the upgraded

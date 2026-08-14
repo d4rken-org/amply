@@ -3,6 +3,7 @@ package eu.darken.amply.upgrade.ui
 import android.widget.Toast
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -33,8 +34,17 @@ fun UpgradeScreenHost(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Per-visit, not per-ViewModel: the ViewModel is activity-scoped and outlives this screen.
-    LaunchedEffect(Unit) { vm.onVisitStart(manage) }
+    // Per-visit, not per-ViewModel: the ViewModel is activity-scoped and outlives this screen. Keyed
+    // on `manage` as well, because the composition root can change it in place while this screen
+    // stays composed (a widget's "open upgrade" intent arriving on the open status view) — keyed on
+    // Unit the binding would never be redone and the screen would keep the previous entry's view.
+    LaunchedEffect(vm, manage) { vm.onVisitStart(manage) }
+
+    // ...and released when the screen leaves, so the next entry decides from its own `manage` rather
+    // than inheriting this visit's binding.
+    DisposableEffect(Unit) {
+        onDispose { vm.onVisitEnd() }
+    }
 
     // Seeded from the ViewModel's handle-backed pending launch: after a process death while the
     // sponsor page was open, a blank tracker would swallow the very first return. The handle is the
@@ -66,16 +76,12 @@ fun UpgradeScreenHost(
 
     val state by vm.state.collectAsStateWithLifecycle()
 
-    // The pitch is a request to upgrade: once the upgrade lands, the request is answered and the
-    // user goes back to what they were doing. The manage views are the destination itself and stay.
-    LaunchedEffect(state.view, state.isPro) {
-        if (state.view == FossUpgradeView.PITCH && state.isPro) onBack()
+    LaunchedEffect(state.view, state.isPro, manage) {
+        if (shouldDismissUpgradeScreen(view = state.view, isPro = state.isPro, manage = manage)) onBack()
     }
 
     UpgradeScreen(
-        // Until the visit binding lands (one frame): the plain entry keeps rendering the pitch
-        // exactly as before, only the manage entry waits for the status decision.
-        view = state.view ?: FossUpgradeView.PITCH.takeIf { !manage },
+        view = upgradeViewFor(view = state.view, manage = manage),
         supporterSince = state.supporterSince,
         snackbarHostState = snackbarHostState,
         onGithubSponsors = vm::goGithubSponsors,
@@ -84,3 +90,24 @@ fun UpgradeScreenHost(
         onNavigateUp = onBack,
     )
 }
+
+/**
+ * Which presentation to render for a given entry. [view] is the ViewModel's decision and is null
+ * until this visit's binding lands (one frame): the plain entry keeps rendering the pitch exactly as
+ * before, only the manage entry waits for the status decision rather than flashing the pitch it is
+ * there to replace.
+ *
+ * Pure and frame-order-independent on purpose — this is the part of the host that a stale state can
+ * get wrong, and it is worth being able to assert without standing up the whole screen.
+ */
+internal fun upgradeViewFor(view: FossUpgradeView?, manage: Boolean): FossUpgradeView? =
+    view ?: FossUpgradeView.PITCH.takeIf { !manage }
+
+/**
+ * The pitch is a request to upgrade: once the upgrade lands the request is answered, so the screen
+ * closes and the user goes back to what they were doing. The manage views are the destination itself
+ * and stay — and [manage] is checked here too, not just via the view: a manage entry that arrives
+ * while the previous visit's PITCH is still bound would otherwise dismiss itself on sight.
+ */
+internal fun shouldDismissUpgradeScreen(view: FossUpgradeView?, isPro: Boolean, manage: Boolean): Boolean =
+    view == FossUpgradeView.PITCH && isPro && !manage
