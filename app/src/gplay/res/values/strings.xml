@@ -57,8 +57,8 @@
 
     <!-- Grace: the upgrade is still active locally while Google Play can\'t re-confirm it. -->
     <string name="upgrade_screen_grace_title">Confirming your purchase</string>
-    <string name="upgrade_screen_grace_body_short">Your upgrade is still active. Waiting for Google Play to re-confirm the purchase — everything stays unlocked in the meantime.</string>
-    <string name="upgrade_screen_grace_body">Your upgrade is still active, but Google Play hasn\'t confirmed the purchase for a while. If you bought it, restore the purchase and check that Google Play uses the account that bought it. If the subscription ended or the purchase was refunded, the upgrade will turn off by itself — nothing else to do.</string>
+    <string name="upgrade_screen_grace_body_short">Your upgrade is still active. Waiting for Google Play to re-confirm the purchase. Everything stays unlocked in the meantime.</string>
+    <string name="upgrade_screen_grace_body">Your upgrade is still active, but Google Play hasn\'t confirmed the purchase for a while. If you bought it, restore the purchase and check that Google Play uses the account that bought it. If the subscription ended or the purchase was refunded, the upgrade will turn off by itself, nothing else to do.</string>
 
     <!-- Billing error copy. -->
     <string name="upgrade_error_unavailable_title">Google Play is unavailable</string>

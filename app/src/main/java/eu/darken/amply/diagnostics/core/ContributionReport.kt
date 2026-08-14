@@ -109,7 +109,7 @@ internal fun formatContributionReport(report: ReviewedContributionReport): Strin
         // sends a maintainer chasing a privacy decision that never happened.
         if (report.changedRowCount == 0) {
             appendLine(
-                "(no settings changed across the captured modes — " +
+                "(no settings changed across the captured modes: " +
                     "nothing differed in ${report.scannedNamespaces.joinToString(", ")})",
             )
         } else {
@@ -136,7 +136,7 @@ internal fun formatContributionReport(report: ReviewedContributionReport): Strin
 }.trimEnd('\n')
 
 internal fun contributionIssueTitle(report: ReviewedContributionReport): String =
-    "[Device support] ${report.manufacturer} ${report.model} — settings discovery".trim()
+    "[Device support] ${report.manufacturer} ${report.model}: settings discovery".trim()
 
 /** Markdown issue body (also used verbatim for copy/share). Uses a fence longer than any backtick run in the body. */
 internal fun contributionIssueBody(report: ReviewedContributionReport): String {
@@ -145,7 +145,7 @@ internal fun contributionIssueBody(report: ReviewedContributionReport): String {
     return buildString {
         appendLine("Thanks for helping add support for your device. Everything below was collected on-device and reviewed by you before sending.")
         appendLine()
-        appendLine("This is *candidate discovery* to help a maintainer reproduce the mapping — not a guarantee of support.")
+        appendLine("This is *candidate discovery* to help a maintainer reproduce the mapping, not a guarantee of support.")
         appendLine()
         appendLine(fence)
         appendLine(body)

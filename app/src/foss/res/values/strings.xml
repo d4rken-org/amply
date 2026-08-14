@@ -16,7 +16,7 @@
 
     <!-- Status views, reached from the settings entry. -->
     <string name="upgrade_screen_status_free_title">Free version</string>
-    <string name="upgrade_screen_status_free_body">You are using the free version of Amply. Charge control stays free — the extras can be unlocked by supporting development.</string>
+    <string name="upgrade_screen_status_free_body">You are using the free version of Amply. Charge control stays free. The extras can be unlocked by supporting development.</string>
     <string name="upgrade_screen_status_free_action">See upgrade options</string>
     <string name="upgrade_screen_status_upgraded_title">Upgrade active</string>
     <string name="upgrade_screen_status_upgraded_body">All extra features are unlocked. Thank you for supporting open-source development ❤️</string>

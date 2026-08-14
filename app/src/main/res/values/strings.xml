@@ -33,7 +33,7 @@
     <string name="recovery_notification_title">Charge limit needs attention</string>
     <string name="recovery_notification_body">Open Amply and restart Shizuku to restore your protective policy.</string>
     <string name="recovery_notification_body_convergence">The protective policy was rewritten, but the charging hardware has not confirmed it yet. Open Amply to check.</string>
-    <string name="recovery_notification_body_unavailable">Your charge mode wasn\'t changed — charging control isn\'t available right now. Open Amply to check your setup.</string>
+    <string name="recovery_notification_body_unavailable">Your charge mode wasn\'t changed. Charging control isn\'t available right now. Open Amply to check your setup.</string>
     <string name="recovering_notification_title">Restoring charge limit</string>
     <string name="recovering_notification_body">Confirming the protective policy with the charging hardware.</string>
     <string name="setup_unsupported_title">This device isn\'t supported yet</string>
@@ -66,11 +66,11 @@
     <string name="onboarding_continue_action">Get started</string>
     <string name="onboarding_caveats_title">Before you start</string>
     <string name="onboarding_caveat_compat_title">Amply does not work on every device</string>
-    <string name="onboarding_caveat_compat_body">Charge control needs support from your device’s ROM, and a permission that apps cannot grant themselves — you set it up by hand.</string>
+    <string name="onboarding_caveat_compat_body">Charge control needs support from your device’s ROM, and a permission that apps cannot grant themselves. You set it up by hand.</string>
     <string name="onboarding_caveat_support_title">Supported devices</string>
     <string name="onboarding_caveat_support_body">Currently: Pixel 6a or newer phones on Android 15+, Samsung on verified One UI versions, Xiaomi on HyperOS 2, and OnePlus, Oppo, or Realme on ColorOS 15. Amply checks your exact device and shows what works.</string>
     <string name="onboarding_caveat_setup_title">Manual setup required</string>
-    <string name="onboarding_caveat_setup_body">You grant the permission yourself — with one ADB command from a computer, or through the Shizuku app. Some devices require Shizuku. The dashboard walks you through the right option.</string>
+    <string name="onboarding_caveat_setup_body">You grant the permission yourself: with one ADB command from a computer, or through the Shizuku app. Some devices require Shizuku. The dashboard walks you through the right option.</string>
     <string name="onboarding_page_progress">Page %1$d of %2$d</string>
 
     <!-- Charging policy labels -->
@@ -84,7 +84,7 @@
     <string name="charging_message_applying">Applying %1$s…</string>
     <string name="charging_message_write_failed">Write failed</string>
     <string name="charging_message_verified">%1$s setting verified</string>
-    <string name="charging_message_applied_replug">%1$s set — takes effect after you unplug and replug</string>
+    <string name="charging_message_applied_replug">%1$s set: takes effect after you unplug and replug</string>
     <string name="charging_message_requested">%1$s requested</string>
     <string name="charging_message_shizuku_granted">Shizuku permission granted</string>
     <string name="charging_message_shizuku_denied">Shizuku permission was not granted</string>
@@ -138,7 +138,7 @@
     <string name="adapter_detail_oplus_ready">ColorOS charging protection detected; control requires Shizuku</string>
     <string name="adapter_detail_requires_grapheneos">Requires GrapheneOS</string>
     <string name="adapter_detail_grapheneos_no_key">GrapheneOS detected, but its charge-limit setting is not present on this build</string>
-    <string name="adapter_detail_grapheneos_ready">GrapheneOS charge limit detected — changes take effect when the charger is reconnected</string>
+    <string name="adapter_detail_grapheneos_ready">GrapheneOS charge limit detected. Changes take effect when the charger is reconnected</string>
     <string name="adapter_detail_requires_lineageos">Requires a qualified LineageOS device</string>
     <string name="adapter_detail_lineageos_no_provider">LineageOS charging control is not available on this build</string>
     <string name="adapter_detail_lineageos_ready">LineageOS charging control detected; control requires Shizuku</string>
@@ -276,17 +276,17 @@
     <string name="setup_access_ready_body">Charge-control access is granted.</string>
     <string name="setup_access_setup_body">Amply needs one durable Android permission to change the charge policy.</string>
     <string name="setup_access_option_shizuku">Option 1 · Shizuku (recommended)</string>
-    <string name="setup_access_shizuku_hint">With Shizuku, Amply can confirm the configured policy and run diagnostics — not just write it. Start or install Shizuku and allow Amply; the durable permission is then granted automatically. The button below is a manual fallback if that fails.</string>
+    <string name="setup_access_shizuku_hint">With Shizuku, Amply can confirm the configured policy and run diagnostics, not just write it. Start or install Shizuku and allow Amply; the durable permission is then granted automatically. The button below is a manual fallback if that fails.</string>
     <string name="setup_access_grant_shizuku">Grant permission with Shizuku</string>
     <string name="setup_access_granting_shizuku">Granting…</string>
     <string name="setup_access_allow_shizuku">Allow Amply in Shizuku</string>
     <string name="setup_access_open_shizuku">Open Shizuku</string>
     <string name="setup_access_option_computer">Option 2 · Computer</string>
-    <string name="setup_access_webusb_hint">Easiest — no ADB install needed. On the computer your phone is plugged into, open this link in Chrome or Edge to grant control over USB. Shizuku is still needed for diagnostics and reliable readback.</string>
+    <string name="setup_access_webusb_hint">Easiest: no ADB install needed. On the computer your phone is plugged into, open this link in Chrome or Edge to grant control over USB. Shizuku is still needed for diagnostics and reliable readback.</string>
     <string name="setup_access_copy_webusb">Copy web helper link</string>
     <string name="setup_access_adb_hint">Or, if you already have ADB set up on that computer, run:</string>
     <string name="setup_access_copy_adb">Copy ADB command</string>
-    <string name="setup_access_adb_refresh_note">Amply detects the permission automatically once it runs — or tap Refresh in the top bar.</string>
+    <string name="setup_access_adb_refresh_note">Amply detects the permission automatically once it runs, or tap Refresh in the top bar.</string>
 
     <!-- Contribution wizard ("Help add support") -->
     <string name="contribution_title">Help add support</string>
@@ -304,7 +304,7 @@
     <!-- Step: intro / consent -->
     <string name="contribution_intro_title">Help add support for your device</string>
     <string name="contribution_intro_body">You\'ll switch your phone\'s battery-protection setting a few times while Amply records which hidden settings change. Nothing is sent until you review it and choose what to include.</string>
-    <string name="contribution_intro_candidate_note">This produces candidate information to help a maintainer — it does not enable control on your device.</string>
+    <string name="contribution_intro_candidate_note">This produces candidate information to help a maintainer. It does not enable control on your device.</string>
 
     <!-- Step: details -->
     <string name="contribution_details_title">About this device</string>
@@ -314,7 +314,7 @@
     <string name="contribution_rom_label">Software version</string>
     <string name="contribution_rom_hint">From Settings › About phone, e.g. \"One UI 8\", \"HyperOS 2\", \"ColorOS 15\"</string>
     <string name="contribution_notes_label">Anything else? (optional)</string>
-    <string name="contribution_notes_pii_warning">Don\'t enter serial numbers, IMEI, or account names — this goes into a public report.</string>
+    <string name="contribution_notes_pii_warning">Don\'t enter serial numbers, IMEI, or account names. This goes into a public report.</string>
 
     <!-- Step: capture -->
     <string name="contribution_capture_title">Capture each mode</string>
@@ -325,7 +325,7 @@
     <string name="contribution_capture_action">Capture this mode</string>
     <string name="contribution_label_required">Give this mode a name first.</string>
     <string name="contribution_label_duplicate">You already captured a mode with that name.</string>
-    <string name="contribution_status_no_change">That mode changed no settings — recorded anyway.</string>
+    <string name="contribution_status_no_change">That mode changed no settings, recorded anyway.</string>
     <string name="contribution_status_shizuku_required">Shizuku access is required to capture.</string>
     <string name="contribution_capture_empty_error">Nothing could be read from the settings providers. Check that Shizuku is still running, then try again.</string>
     <string name="contribution_undo_last">Undo last</string>
@@ -340,7 +340,7 @@
 
     <!-- Step: review -->
     <string name="contribution_review_title">Review what to send</string>
-    <string name="contribution_review_body">Known charging settings are included automatically. Everything else is hidden — reveal a row to inspect it on your device, then choose whether to include it.</string>
+    <string name="contribution_review_body">Known charging settings are included automatically. Everything else is hidden: reveal a row to inspect it on your device, then choose whether to include it.</string>
     <string name="contribution_review_auto">Included</string>
     <string name="contribution_review_hidden">Hidden</string>
     <string name="contribution_review_reveal">Reveal</string>
@@ -373,7 +373,7 @@
     <string name="setup_unsupported_allow_shizuku_action">Allow Amply in Shizuku</string>
     <string name="dashboard_applying">Applying…</string>
     <string name="dashboard_device_line">%1$s · Android API %2$d</string>
-    <string name="dashboard_waiting_target">Waiting for the system to switch to %1$s — this can take about 15 seconds…</string>
+    <string name="dashboard_waiting_target">Waiting for the system to switch to %1$s. This can take about 15 seconds…</string>
     <string name="dashboard_waiting_replug">Takes effect the next time you unplug and replug the charger</string>
     <string name="dashboard_settling_fallback_target">the new policy</string>
     <string name="dashboard_session_once_title" formatted="false">Charging to 100% once</string>
@@ -407,7 +407,7 @@
     <string name="settings_reconnect_enabled_body">Watch for a quick unplug and reconnect that starts a one-time full charge. Keeps an ongoing notification while it watches.</string>
     <string name="settings_reconnect_enabled_unavailable">Not available on this device</string>
     <string name="settings_reconnect_any_level_title">Any charge level</string>
-    <string name="settings_reconnect_any_level_body" formatted="false">Arm the gesture whenever a protective policy is detected — not just while the 80% limit is holding the battery.</string>
+    <string name="settings_reconnect_any_level_body" formatted="false">Arm the gesture whenever a protective policy is detected, not just while the 80% limit is holding the battery.</string>
     <string name="settings_reconnect_any_level_hint">More sensitive: any unplug/replug of 2–10 seconds starts a full charge, e.g. also below 80%. Momentary power cuts shorter than 2 seconds, like a car cutting USB power while starting, never trigger.</string>
     <string name="dashboard_shizuku_title">Better with Shizuku</string>
     <string name="dashboard_shizuku_body">Shizuku gives Amply exact policy readback instead of relying on hardware state and the last request.</string>
@@ -433,7 +433,7 @@
     <string name="dashboard_interruption_reason_user">Amply was stopped while it was watching a temporary full charge.</string>
     <string name="dashboard_interruption_reason_other">Amply was interrupted while it was watching a temporary full charge.</string>
     <string name="dashboard_interruption_outcome_restored">Your charge limit has been restored now.</string>
-    <string name="dashboard_interruption_outcome_pending">Your charge limit could not be restored yet — Amply keeps retrying. Check the current policy below.</string>
+    <string name="dashboard_interruption_outcome_pending">Your charge limit could not be restored yet. Amply keeps retrying. Check the current policy below.</string>
     <string name="dashboard_interruption_outcome_unconfirmed">Your charge limit was written again, but the charging hardware has not confirmed it. Check the current policy below.</string>
     <string name="dashboard_interruption_dismiss_action">Dismiss</string>
 
@@ -553,13 +553,13 @@
     <string name="dashboard_charging_open_action">Open battery &amp; charging</string>
     <string name="dashboard_charging_history_hint">Turn on charge recording to also see speed, power, and temperature curves here</string>
     <string name="dashboard_stats_last">Last charge: %1$s</string>
-    <string name="dashboard_stats_recording_empty">Recording — no completed session yet</string>
+    <string name="dashboard_stats_recording_empty">Recording: no completed session yet</string>
     <string name="dashboard_stats_loading">Loading…</string>
     <string name="dashboard_stats_unavailable">Statistics are unavailable right now</string>
     <string name="dashboard_charging_indeterminate">Can\'t read the battery right now</string>
     <string name="dashboard_stats_live_since">Since %1$s</string>
-    <string name="dashboard_stats_live_starting">Charger detected — recording is starting…</string>
-    <string name="dashboard_stats_live_start_failed">Charger detected — recording couldn\'t start</string>
+    <string name="dashboard_stats_live_starting">Charger detected, recording is starting…</string>
+    <string name="dashboard_stats_live_start_failed">Charger detected, recording couldn\'t start</string>
     <string name="dashboard_stats_retry_action">Retry</string>
     <plurals name="dashboard_stats_session_count">
         <item quantity="one">%1$d recorded session</item>
@@ -569,7 +569,7 @@
     <string name="charge_history_loading">Loading…</string>
     <string name="charge_history_unavailable">Charge history is unavailable right now</string>
     <string name="stats_capture_title">Record statistics</string>
-    <string name="stats_capture_subtitle">Records each charge in detail — level, charging speed, and temperature over time. While on, Amply keeps a permanent notification and runs continuously.</string>
+    <string name="stats_capture_subtitle">Records each charge in detail: level, charging speed, and temperature over time. While on, Amply keeps a permanent notification and runs continuously.</string>
     <string name="stats_capture_optin_action">Start recording</string>
     <string name="stats_capture_optin_hint">You can turn recording off again in Settings › Charging history.</string>
     <string name="stats_retention_title">Keep history for</string>
@@ -625,7 +625,7 @@
     <string name="upgrade_retry_action">Try again</string>
 
     <!-- Settings row + dashboard promo -->
-    <string name="settings_pro_subtitle_active">Upgrade active — thank you!</string>
+    <string name="settings_pro_subtitle_active">Upgrade active, thank you!</string>
     <string name="settings_pro_subtitle_free">Free version</string>
     <string name="dashboard_upgrade_title">Unlock the extras</string>
     <string name="dashboard_upgrade_body">Charge history, the home-screen widget and the Quick Settings tile come with the upgrade. Charge control itself stays free.</string>
