@@ -270,11 +270,12 @@ class ChargingRepository @Inject constructor(
     }
 
     /**
-     * Sync-readback adapters use world-readable / unprivileged keys, so the DIRECT provider read is
+     * Most sync-readback adapters use world-readable keys, so the DIRECT provider read is
      * authoritative and — unlike a Shizuku user-service bind, which can block up to ~15s on a cold process
      * ([ShizukuController.service]) — never stalls. Read direct first so that bind is never on the critical
-     * path (the widget/tile refresh after a tap); consult Shizuku only as a fallback when the direct read is
-     * not authoritative on some ROM. A nominally "ready" but misbehaving Shizuku service therefore can no
+     * path (the widget/tile refresh after a tap); consult Shizuku as the fallback when the direct read is
+     * not authoritative — including GrapheneOS's @Protected key, where the direct read is always denied
+     * and Shizuku (shell UID) is the only readable path. A nominally "ready" but misbehaving Shizuku service therefore can no
      * longer delay verification.
      */
     private suspend fun readSyncWithFallback(adapter: ChargingAdapter): ChargeObservation? {
@@ -603,11 +604,12 @@ class ChargingRepository @Inject constructor(
 
 /**
  * Read a sync-readback adapter's configured state, preferring the [direct] provider and consulting
- * [shizuku] (may be null when not ready) only as a fallback. Direct reads of these adapters' world-readable
- * keys are authoritative and cannot stall, so an *authoritative* direct read — [ChargeObservation.Verified]
+ * [shizuku] (may be null when not ready) only as a fallback. A direct read of a world-readable key is
+ * authoritative and cannot stall, so an *authoritative* direct read — [ChargeObservation.Verified]
  * or a readable-but-unrecognized OEM value — short-circuits without ever binding the Shizuku user service
- * (both backends read the same settings provider, so Shizuku could not report anything stronger). Only a
- * genuinely unreadable direct result falls back to Shizuku.
+ * (both backends read the same settings provider, so Shizuku could not report anything stronger). A
+ * genuinely unreadable direct result falls back to Shizuku — the routine case for GrapheneOS's @Protected
+ * key, which the provider denies to Amply but not to the shell UID.
  */
 internal suspend fun readSyncDirectFirst(
     adapter: ChargingAdapter,

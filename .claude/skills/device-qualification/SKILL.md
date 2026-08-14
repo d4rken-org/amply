@@ -51,6 +51,7 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
 | Xiaomi | Xiaomi 13T `2306EPN60G` HyperOS 2.0 (`ro.mi.os.version.code=2`) | **Partial** — mapping/readback/session verified; the adaptive 80% hold could not be triggered, so daemon-level hardware enforcement is **not yet demonstrated** | Read matrix, both-direction writes, session at 100%, unknown-value refusal, R8 beta | 2026-07-21 |
 | OnePlus (Oplus) | OnePlus Nord CE4 Lite `CPH2621` ColorOS 15 (`ro.build.version.oplusrom=V15.0.0`) | Full — enforcement directly observable (device holds at 80%); external writes stick | Two mutually-exclusive `system` keys (Charging limit / Smart charging), WSS-only write rejected + Shizuku write succeeds for all three policies, WSS-only UX (controls disabled + Shizuku-required banner) | 2026-07-21 |
 | GrapheneOS | Pixel 9 Pro XL `komodo`, GrapheneOS 2026080501 / Android 17 — **REMOTE qualification via issue #49** (tester-run protocol, not maintainer hardware) | **Enforcement observed**: held at 80% with shield, `dumpsys battery` status=4/Charging state=4/policy=2 (limit on) vs 2/1/1 (off); shell-UID writes move the Settings UI live, **latch at plug-session start** — mid-session writes have no hardware effect until unplug→replug, replug reliably applies the current value | Key isolation (`settings list` diff → single `global battery_charge_limit` 0/1), write→UI both directions, mid-session no-op both directions, replug latch both directions, hardware signal both states. **NOT run**: app-context access tiers (WSS write from Amply, `app.grapheneos.*` package visibility), sessions/boot recovery, wireless, factory-absent key state, secondary user | 2026-08-12 |
+| GrapheneOS (follow-up) | Same device, **0.3.2-beta0 on-device report via issue #49** | **Package detection VERIFIED from app context** (`is_grapheneos=true` with the FLAG_SYSTEM check); **unprivileged key read DENIED** — `has_battery_charge_limit=false` while the very same report showed `battery_charging_status=4` (limit enforcing). Root cause in GrapheneOS source: the key is `@Protected(read = SYSTEM_UI, readWrite = SETTINGS)` (frameworks_base `c30c6393`); SettingsProvider throws SecurityException for all other packages **including WSS holders**, with the shell UID explicitly exempt ("ADB is used for testing", `e87c93a2`) — so the tester's earlier adb runs ARE the Shizuku-path evidence. Factory-absent semantics resolved from source: `BoolSetting(..., default false)` → absent = off | Detection + fail-closed probe verified live; adapter re-gated to Shizuku-only in response | 2026-08-13 |
 
 ## Known gaps
 
@@ -116,18 +117,14 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
     ROM: install/launch/onboarding/dashboard/settings with no crashes, honest "Unsupported device" reporting, live
     battery monitoring across simulated plug/level transitions, and the charge alarm firing at threshold.
 - **GrapheneOS** — landed **live** on remote qualification (issue #49; the only OEM row not tested on maintainer
-  hardware). Open items, all failing closed:
-  - **`app.grapheneos.*` package visibility from app context is unverified** — `<queries>` package entries are
-    specified platform behavior (not SELinux-fragile like `ro.lineage.*`), but GrapheneOS hardens aggressively. If
-    the packages are hidden, `isGrapheneOs` is false and the device falls to the Pixel adapter as
-    matched/diagnostics-only — no unsafe write path, but support silently vanishes; the first tester report of
-    "still unsupported" on the test build should check `is_grapheneos=` in the device report.
-  - **App-context WSS write unverified** — the tester's writes ran as shell UID; an Amply-originated
-    `Settings.Global.putString` under granted WSS is expected to behave identically (same namespace rules) but has
-    not been observed. The read-back-equality check catches a silently-failing write.
-  - **Factory-absent key state unknown** — the tester's device had the key present while off; whether a
-    never-toggled install exposes it is unverified. Absent → gate fails closed → diagnostics + contribution wizard
-    (`adapter_detail_grapheneos_no_key`), and `read()` refuses (`unrecognizedValue`) so a session never clobbers it.
+  hardware), then **re-gated to Shizuku-only** after the 0.3.2-beta0 on-device report (see the follow-up ledger
+  row). Resolved since the landing PR: package visibility ✔ verified from app context; app-context WSS access ✘
+  resolved as DENIED (`@Protected` — the reason for the re-gate, not a bug in Amply); factory-absent key state ✔
+  resolved from upstream source (`BoolSetting` default false → absent decodes as Unrestricted). Still open, all
+  failing closed or cosmetic:
+  - **Shizuku end-to-end on real hardware unverified** — the shell-UID `settings get/put` mechanism is proven (the
+    tester's adb runs), but Amply's own Shizuku service driving it, plus sessions/boot recovery/R8 smoke, await the
+    next beta report on issue #49.
   - **State 4 below the limit unverified** — evidence was sampled at the 80% hold; if the ROM reports 4 only while
     holding, a FixedLimit pending clears late (at the hold) instead of instantly. Cosmetic.
   - **A plugged restore configures but cannot enforce** — restore-at-100%, the 24h safety timeout,
@@ -137,7 +134,6 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
     session/recovery closed, pending-until-replug hint shown — and the exposure is one charge cycle,
     bounded by the plug session the user is already in. Deliberately NOT treated as a defect.
   - **Wireless charging and secondary users**: NOT RUN (gated to system user).
-  - Sessions/boot-recovery/R8 smoke on real GrapheneOS hardware: pending the test build posted to issue #49.
 - **Xiaomi** — adaptive hardware enforcement of external writes unconfirmed; treat the adapter as provisional until
   the 80% hold is physically observed.
   - **HyperOS 3 candidate mapping (contribution report, 2026-08-07 — unqualified, stays diagnostics-only).** A

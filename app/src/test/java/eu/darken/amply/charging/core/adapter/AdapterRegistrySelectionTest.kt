@@ -106,11 +106,13 @@ class AdapterRegistrySelectionTest {
     }
 
     @Test
-    fun `grapheneos without the key stays on its adapter as diagnostics-only`() {
+    fun `grapheneos keeps control without the key probe`() {
+        // The real-device shape: @Protected denies the unprivileged probe, so the key always reads
+        // absent from app context (issue-#49 beta report) — control must not gate on it.
         val selection = registry.select(graphene(key = false))
         selection.adapter?.id shouldBe "grapheneos-chargelimit-v1"
-        selection.support.controlEnabled shouldBe false
-        selection.support.contributionWanted shouldBe true
+        selection.support.controlEnabled shouldBe true
+        selection.support.contributionWanted shouldBe false
     }
 
     @Test

@@ -88,8 +88,11 @@ data class DeviceInfo(
                     Settings.Global.getString(it.contentResolver, KEY_PROTECT_BATTERY) != null
                 }.getOrDefault(false)
             } ?: false,
-            // GrapheneOS's charge-limit key, world-readable in `global`. Presence is the capability
-            // gate (the OS only ships the toggle where its implementation works); fail closed.
+            // GrapheneOS's charge-limit key. NOT a gate: GrapheneOS marks the key @Protected, so
+            // this unprivileged read throws SecurityException (→ false) on real GrapheneOS whether
+            // the key exists or not — verified via the issue-#49 beta report. Kept as a diagnostic
+            // signal only: true would indicate a ROM exposing a same-named key WITHOUT the
+            // GrapheneOS restriction, which is worth seeing in a device-support report.
             hasBatteryChargeLimit = context?.let {
                 runCatching {
                     Settings.Global.getString(it.contentResolver, KEY_BATTERY_CHARGE_LIMIT) != null

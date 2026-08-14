@@ -58,13 +58,15 @@ class GrapheneOsChargingAdapterTest {
     }
 
     @Test
-    fun `a missing key keeps control off and asks for a contribution`() {
+    fun `the unprobeable key never gates control`() {
+        // @Protected denies the unprivileged key probe on real GrapheneOS (hasBatteryChargeLimit is
+        // always false there — verified via the issue-#49 beta report), so presence is assumed.
         val support = adapter.probe(graphene(key = false))
 
         support.matched shouldBe true
-        support.controlEnabled shouldBe false
-        support.detail shouldBe R.string.adapter_detail_grapheneos_no_key
-        support.contributionWanted shouldBe true
+        support.controlEnabled shouldBe true
+        support.detail shouldBe R.string.adapter_detail_grapheneos_ready
+        support.contributionWanted shouldBe false
     }
 
     @Test
@@ -79,19 +81,17 @@ class GrapheneOsChargingAdapterTest {
     @Test
     fun `read maps both values`() = runTest {
         adapter.read(backend("1")) shouldBe
-            ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.DIRECT_WSS)
+            ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.SHIZUKU)
         adapter.read(backend("0")) shouldBe
-            ChargeObservation.Verified(ChargePolicy.Unrestricted, BackendKind.DIRECT_WSS)
+            ChargeObservation.Verified(ChargePolicy.Unrestricted, BackendKind.SHIZUKU)
     }
 
     @Test
-    fun `an absent key is unrecognized, not a policy`() = runTest {
-        // The gate required presence; factory-absent semantics are unverified. Refusing keeps a
-        // session start from overwriting a state this adapter cannot restore.
-        val observed = adapter.read(FakeBackend())
-
-        observed.shouldBeInstanceOf<ChargeObservation.Unknown>()
-        observed.unrecognizedValue shouldBe true
+    fun `an absent key is the factory off state`() = runTest {
+        // Upstream reads the key via BoolSetting(..., default false): a never-toggled device has no
+        // row and charges unrestricted, so absence decodes as exactly that.
+        adapter.read(FakeBackend()) shouldBe
+            ChargeObservation.Verified(ChargePolicy.Unrestricted, BackendKind.SHIZUKU)
     }
 
     @Test
@@ -177,7 +177,8 @@ class GrapheneOsChargingAdapterTest {
         adapter.verification shouldBe VerificationStrategy.SYNC_READBACK
         adapter.policyLatchesAtPlug shouldBe true
         adapter.reconnectGestureSupported shouldBe false
-        adapter.preferShizukuForWrites shouldBe false
+        // Not a namespace need: the key is @Protected and only the shell UID (Shizuku) may touch it.
+        adapter.preferShizukuForWrites shouldBe true
     }
 
     private fun backend(value: String) =
@@ -189,7 +190,8 @@ class GrapheneOsChargingAdapterTest {
         private val failWrites: Boolean = false,
         private val dropWrites: Boolean = false,
     ) : AccessBackend {
-        override val kind = BackendKind.DIRECT_WSS
+        // The realistic provenance on GrapheneOS: only the shell UID (Shizuku) can read the key.
+        override val kind = BackendKind.SHIZUKU
         val writes = mutableListOf<SettingMutation>()
 
         override suspend fun status() = BackendStatus(true, true, "test".toCaString())

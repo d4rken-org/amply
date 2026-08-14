@@ -73,13 +73,13 @@ class ContributionEligibilityTest {
     }
 
     @Test
-    fun `grapheneos with the key does not solicit, without it it does`() {
+    fun `grapheneos never solicits a contribution regardless of the key probe`() {
+        // The unprivileged key probe is @Protected-denied on real GrapheneOS, so its result carries
+        // no information; the keys are fully mapped and nothing is left to discover.
         val ready = device("Google", model = "Pixel 9 Pro XL", sdk = 37)
             .copy(hasChargingOptimization = false, hasGrapheneOsPackages = true, hasBatteryChargeLimit = true)
         registry.select(ready).support.contributionWanted shouldBe false
-
-        // A future GrapheneOS build that drops or moves the key is exactly what the wizard can map.
-        registry.select(ready.copy(hasBatteryChargeLimit = false)).support.contributionWanted shouldBe true
+        registry.select(ready.copy(hasBatteryChargeLimit = false)).support.contributionWanted shouldBe false
     }
 
     @Test

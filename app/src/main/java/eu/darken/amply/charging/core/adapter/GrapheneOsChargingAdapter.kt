@@ -23,7 +23,16 @@ import javax.inject.Singleton
  * .claude/skills/device-qualification/):
  *
  * - `global battery_charge_limit` — "Limit to 80%": `1` = hard 80% cap (with bypass charging),
- *   `0` = off. Hard-wired to 80, no threshold key. World-readable; writes need only WSS.
+ *   `0` = off. Hard-wired to 80, no threshold key.
+ *
+ * **Access is Shizuku-only.** GrapheneOS declares the key `@Protected(read = SYSTEM_UI, readWrite =
+ * SETTINGS)` (frameworks_base c30c6393) and its SettingsProvider throws SecurityException on both
+ * reads and writes from every other package — including WRITE_SECURE_SETTINGS holders; the check is
+ * package-based and runs after the permission check (e87c93a2). The one exemption Amply can use is
+ * the shell UID ("ADB is used for testing" in their enforcement), which is exactly how the Shizuku
+ * user service executes `settings get/put`. Verified on-device via the issue-#49 beta run: the
+ * unprivileged key probe returned false while the same report showed the limit enforcing
+ * (charging state 4), i.e. reads fail closed as designed.
  *
  * The defining quirk is [policyLatchesAtPlug]: GrapheneOS samples the key only at the START of a
  * plug session. An external write updates the Settings UI live but has no hardware effect until
@@ -39,10 +48,17 @@ import javax.inject.Singleton
  * this ROM. The reconnect gesture stays unsupported: its override write lands strictly after the
  * replug broadcast, which this ROM has already sampled past.
  *
- * Identity is package-based ([DeviceInfo.isGrapheneOs]); capability is the key's presence — the OS
- * ships the toggle exactly where its implementation works, and GrapheneOS is a single vendor on a
- * narrow Pixel-only device set, so no codename allowlist is needed. Registered BEFORE the Pixel
- * adapter, whose Google+Pixel probe would otherwise swallow every GrapheneOS device.
+ * Identity is package-based ([DeviceInfo.isGrapheneOs]). The key's presence is deliberately NOT a
+ * gate condition: `@Protected` makes it unprobeable from app context (the unprivileged read is
+ * denied whether the key exists or not), so the feature is treated as present on any GrapheneOS
+ * build — the Xiaomi-precedent assumption, with the same accepted failure mode: on a hypothetical
+ * build without the feature, a shell-UID write can still create the row and read it back, so Amply
+ * would claim configured control that no charging component consumes. That is a harmless false
+ * claim (no battery hazard — nothing enforces anything), and the hardware decode stays honest
+ * (state 4 never appears). Their charge-limit implementation ships in the platform for every
+ * Google device (BatteryChargeLimit.isGoogleDevice()), which is every device GrapheneOS supports,
+ * so the assumption has no known counterexample. Registered BEFORE the Pixel adapter, whose
+ * Google+Pixel probe would otherwise swallow every GrapheneOS device.
  */
 @Singleton
 class GrapheneOsChargingAdapter @Inject constructor() : ChargingAdapter {
@@ -57,6 +73,12 @@ class GrapheneOsChargingAdapter @Inject constructor() : ChargingAdapter {
     override val verification = VerificationStrategy.SYNC_READBACK
     override val policyLatchesAtPlug = true
 
+    // Not because the namespace needs it (global is WSS-writable elsewhere) but because the key is
+    // @Protected: a direct write throws SecurityException no matter which permissions Amply holds,
+    // while the shell UID is exempt. Reads share the restriction; readSyncDirectFirst's direct
+    // attempt comes back unreadable and falls through to the Shizuku backend.
+    override val preferShizukuForWrites = true
+
     override val observedSettingUris
         get() = listOf(Settings.Global.getUriFor(KEY_CHARGE_LIMIT))
 
@@ -64,16 +86,17 @@ class GrapheneOsChargingAdapter @Inject constructor() : ChargingAdapter {
         val matched = device.isGrapheneOs
         return AdapterSupport(
             matched = matched,
-            controlEnabled = matched && device.hasBatteryChargeLimit && device.isSystemUser,
+            // No key-presence condition: @Protected denies the unprivileged probe regardless of
+            // whether the key exists, so presence is assumed on GrapheneOS (see the class doc).
+            controlEnabled = matched && device.isSystemUser,
             detail = when {
                 !matched -> R.string.adapter_detail_requires_grapheneos
-                !device.hasBatteryChargeLimit -> R.string.adapter_detail_grapheneos_no_key
                 !device.isSystemUser -> R.string.adapter_detail_secondary_user
                 else -> R.string.adapter_detail_grapheneos_ready
             },
-            // A GrapheneOS build without the key is exactly what the contribution wizard can map
-            // (e.g. a future release that moves or renames it).
-            contributionWanted = matched && !device.hasBatteryChargeLimit,
+            // The keys are fully mapped; there is nothing for a contribution to discover, and the
+            // guided wizard's capture (Shizuku, shell UID) would only re-find the known key.
+            contributionWanted = false,
         )
     }
 
@@ -85,11 +108,12 @@ class GrapheneOsChargingAdapter @Inject constructor() : ChargingAdapter {
             )
         }
         return when (limit.value) {
-            VALUE_OFF -> ChargeObservation.Verified(ChargePolicy.Unrestricted, backend.kind)
+            // Absence IS the factory off state, by upstream definition: GrapheneOS reads the key
+            // through BoolSetting(Scope.GLOBAL, BATTERY_CHARGE_LIMIT, /* default */ false)
+            // (frameworks_base c30c6393), so a never-toggled device has no row and charges
+            // unrestricted. Decoding it as such is what lets a session run on a fresh install.
+            null, VALUE_OFF -> ChargeObservation.Verified(ChargePolicy.Unrestricted, backend.kind)
             VALUE_LIMITED -> ChargeObservation.Verified(ChargePolicy.FixedLimit(LIMIT_PERCENT), backend.kind)
-            // Includes absence: the gate required the key, so a missing value mid-run is an anomaly,
-            // and the factory-absent state is unverified — refuse rather than guess (a session start
-            // refuses on this instead of overwriting a state it cannot restore).
             else -> ChargeObservation.Unknown(
                 R.string.charging_reason_value_unrecognized.toCaString(
                     KEY_CHARGE_LIMIT, limit.value.toString(),
