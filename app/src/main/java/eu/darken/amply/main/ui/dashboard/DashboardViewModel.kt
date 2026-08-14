@@ -121,7 +121,10 @@ data class UpgradeSnapshot(
     val isSettled: Boolean,
 )
 
-/** The promo card is an ask; it has no business appearing before we know the answer, or after a yes. */
+/**
+ * The upgrade ask — currently the Pro badges, and the promo card once it returns — has no business
+ * appearing before we know the answer, or after a yes.
+ */
 fun shouldShowUpgradePromo(upgrade: UpgradeSnapshot?): Boolean =
     upgrade != null && upgrade.isSettled && !upgrade.isPro
 

@@ -127,6 +127,8 @@ fun DashboardScreen(
     onOpenSupportIssue: () -> Unit,
     onEmailSupport: () -> Unit,
     onHelp: () -> Unit,
+    // Unused while UpgradePromoCard is held back for launch (see its docs). Kept — together with the
+    // root wiring in MainActivity — so re-adding the card is a one-line change here.
     onUpgrade: () -> Unit = {},
     // Injectable so a screenshot/preview fixture can render a live session at a believable age instead
     // of at "0m" — the screen is otherwise pure, and this is the one value it reads from the clock.
@@ -332,12 +334,6 @@ fun DashboardScreen(
                             )
                         }
                     }
-                    // Outside the contributionWanted block: an unsupported device we want no
-                    // contribution data from still gets the promo, same as a supported one. The two
-                    // branches are mutually exclusive, so the item key stays unique.
-                    if (shouldShowUpgradePromo(state.upgrade)) {
-                        item(key = "dashboard.upgrade") { UpgradePromoCard(onUpgrade = onUpgrade) }
-                    }
                 } else {
                     // Promote the widget/tile shortcuts only once setup is done (the setup guide above
                     // has disappeared) and while at least one shortcut is still undiscovered.
@@ -354,19 +350,14 @@ fun DashboardScreen(
                                 widgetAdded = state.quickAccess.widgetAdded,
                                 tileAdded = state.quickAccess.tileAdded,
                                 tileRequestPending = state.tileRequestPending,
-                                // Same settled-and-not-Pro condition as the promo card below: an
-                                // unsettled entitlement badges nothing.
+                                // Settled and not upgraded only: an unsettled entitlement badges
+                                // nothing.
                                 showProBadge = shouldShowUpgradePromo(state.upgrade),
                                 onPinWidget = onPinWidget,
                                 onAddTile = onAddTile,
                                 onDismiss = onDismissQuickAccess,
                             )
                         }
-                    }
-                    // Directly after the quick-access promotion, which advertises the two shortcuts
-                    // this card is the way to unlock.
-                    if (shouldShowUpgradePromo(state.upgrade)) {
-                        item(key = "dashboard.upgrade") { UpgradePromoCard(onUpgrade = onUpgrade) }
                     }
                     val access = state.charging.access
                     when {
@@ -920,7 +911,7 @@ private fun DashboardScreenPreview() = PreviewWrapper {
             quickFullChargeEnabled = true,
             // Presence check done, nothing discovered yet — renders the quick-access promotion.
             quickAccessChecked = true,
-            // Settled and not upgraded: the one combination that renders the upgrade promo.
+            // Settled and not upgraded: the plain app-name title, plus the quick-access Pro badge.
             upgrade = UpgradeSnapshot(isPro = false, isSettled = true),
             // A resolved interruption: the warning card sits under the hero until dismissed.
             interruption = InterruptionEvent(

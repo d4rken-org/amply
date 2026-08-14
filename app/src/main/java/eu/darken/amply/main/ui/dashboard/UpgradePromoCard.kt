@@ -30,6 +30,12 @@ import eu.darken.amply.common.compose.PreviewWrapper
  * The whole card is the tap target: it has exactly one action, and a card-sized ask whose only live
  * target was a small button in its corner made the rest of the card look inert. The action label
  * below is therefore just a label — the surface owns the tap.
+ *
+ * Currently **not rendered on the dashboard**: a pre-launch decision holds the upgrade ask back until
+ * there is a user base to promote it to (the upgrade stays discoverable through the Pro badges, the
+ * locked tile/widget, and the settings row). It used to sit in `DashboardScreen` after the alarm card
+ * — after the quick-access promotion on a supported device, and after the contribution card on an
+ * unsupported one — and is kept intact for that reintroduction.
  */
 @Composable
 fun UpgradePromoCard(
