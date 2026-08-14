@@ -150,7 +150,8 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
     was written as a garbage-value guard; `2` is now known to be a real, named OEM mode). This is a settings mapping
     only: **no behavioral evidence** (the optional effect prompts were skipped), the cap percentage is unknown
     (modeling mode `2` needs a concrete `FixedLimit` percent), factory/absent-key semantics on HyperOS 3 are
-    unknown, and whether value `2` is HyperOS-3-wide or model-specific is unconfirmed. A full qualification would
+    unknown, and whether value `2` is HyperOS-3-wide or model-specific was initially unconfirmed (answered
+    2026-08-13: **not** HyperOS-3-wide — see the marblein data point below). A full qualification would
     also need the boundary write domain widened from `{"0","1"}` (`ChargingControlUserService`). The contributor
     has a working Shizuku setup (clean three-namespace, three-mode capture) — a strong candidate for a follow-up
     qualification run; the report thread is in support mail ("Amply device-support discovery", 2026-08-07) and
@@ -165,5 +166,14 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
       unproven. Follow-up runs requested in the issue #48 thread: sustained hold at 80 with `current_now`, and
       the both-direction external-write test (adb `settings put` to `2` below the cap → hold; back to `0`
       mid-hold → charging resumes past 80).
+    - **Second HyperOS 3 data point (support mail, 2026-08-13): the hard-cap mode is NOT HyperOS-3-wide.** A
+      Poco F5 `23049PCD8I` (`marblein`, Android 15 / SDK 35, HyperOS 3.0.2, ROM `OS3.0.2.0.VMRINXM`) reported
+      via the contribution wizard only the two HyperOS-2-style modes on the same key (`1` = Intelligent
+      charging, `0` = Charge fully) — no value `2` and no hard-cap option captured. So mode `2` is model-
+      and/or Android-16/OS-3.0.3-dependent, and a future HyperOS 3 gate cannot infer the hard-cap mode from
+      `ro.mi.os.version.code == 3` alone. Caveats: the wizard saw `changed_rows=2` but the contributor withheld
+      one row in the privacy review (mapping possibly incomplete), and the device was previously rooted with
+      FDE.ai driving the charge limit. Thread: support mail "Amply device-support discovery", 2026-08-13; the
+      contributor was asked whether the settings screen shows any third mode / 80% option.
 - **Pixel** — wireless at-threshold hold/charge-past and the widget under Shizuku-only remain unexercised (both share
   the verified wired mechanism).
