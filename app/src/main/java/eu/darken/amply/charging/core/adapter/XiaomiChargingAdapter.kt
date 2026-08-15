@@ -166,9 +166,8 @@ class XiaomiHyperOs3ChargingAdapter @Inject constructor() : ChargingAdapter {
             )
         }
         return when (mode.value) {
-            // Absent = intelligent mirrors the HyperOS 2 factory-state assumption but is
-            // UNVERIFIED on HyperOS 3 — pending the issue-#48 qualification run's
-            // factory/absent-key check; adjust if the evidence contradicts it.
+            // Absent = intelligent, VERIFIED on tanzanite (issue #48, 2026-08-14): deleting the
+            // key made the native battery settings fall back to Intelligent charging.
             null, XiaomiChargingAdapter.VALUE_INTELLIGENT ->
                 ChargeObservation.Verified(ChargePolicy.Adaptive, backend.kind)
 

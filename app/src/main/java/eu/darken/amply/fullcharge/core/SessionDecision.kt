@@ -1,5 +1,6 @@
 package eu.darken.amply.fullcharge.core
 
+import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.fullcharge.core.ChargeSessionRecord
 
@@ -48,6 +49,32 @@ object SessionStartDecider {
             ?: defaultProtective
         return SessionStartDecision.Start(restorePolicy)
     }
+}
+
+/**
+ * Decides whether a settings-change notification observed during an active session is a genuine
+ * native change (cancel the session without restoring) or noise (ignore, keep the session).
+ *
+ * Android dispatches settings notifications asynchronously, so the session's OWN override write can
+ * be delivered after the observer registers, and an OEM provider may notify without any value
+ * change at all — both observed on HyperOS 3 `tanzanite`, where blind cancellation ended the
+ * session mid-charge and the protective policy was never restored (issue #48). Where the adapter's
+ * configuration is synchronously readable, a notification whose readback still decodes to the
+ * session's override policy is therefore treated as noise. Deliberate trade-off: a native change
+ * that still decodes to the override policy — re-selecting the same value, or on multi-key
+ * adapters editing an auxiliary key the decoded policy ignores (e.g. Samsung's threshold while the
+ * PauseAtFull override is active) — is indistinguishable from that noise and keeps the session
+ * running, and the later restore can overwrite such an auxiliary edit with pre-session values.
+ * Accepted: only reachable by editing protection settings mid-session, and never a charge-safety
+ * regression (the protective policy still comes back).
+ *
+ * Everything else cancels, preserving the previous blanket behavior: a different verified policy
+ * is a real native change; an unrecognized or unreadable value cannot be attributed to the
+ * session; and without sync readback (Pixel, [readback] null) nothing can be verified.
+ */
+object NativeChangeGuard {
+    fun shouldCancel(readback: ChargeObservation?, overridePolicy: ChargePolicy): Boolean =
+        !(readback is ChargeObservation.Verified && readback.policy == overridePolicy)
 }
 
 enum class SessionDecision {

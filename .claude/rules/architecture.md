@@ -69,7 +69,12 @@ ordering, session overrides) lives in the **`oem-adapters` skill** — read it b
   override), expiry or a backwards clock restores as before. `full` and the 24h safety timeout keep priority. On
   every other adapter `replugGraceMillis` is 0 and the decision table is unchanged.
 - While active, the service watches the adapter's settings URIs; an unexpected native/system change **cancels without
-  restoring**, so Amply never overwrites a newer external choice.
+  restoring**, so Amply never overwrites a newer external choice. Cancellation requires a **real** change
+  (`NativeChangeGuard`): settings notifications are dispatched asynchronously, so the session's own override write can
+  arrive after the observer registers, and an OEM provider may notify without any value change (both observed on
+  HyperOS 3 `tanzanite`, issue #48 — blind cancellation ended the session with the protective policy never restored).
+  On sync-readback adapters a notification whose readback still decodes to the session override is ignored as noise;
+  without sync readback (Pixel) any notification still cancels.
 - Boot recovery runs the restore *inside the service* with a bounded convergence check (re-write until the HAL
   confirms or budget expires), because a boot-time write can race the observer registration. The pending target is
   persisted so a killed service resumes.
