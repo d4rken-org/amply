@@ -31,6 +31,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -93,6 +94,51 @@ class ChargeSessionService : Service() {
                     // fast-path check above but before we acquire the lock, so its own write must not be
                     // mistaken for a native change and cancelled.
                     if (restoring) return@withExclusive
+                    // Only cancel on a REAL native change. Notifications also arrive for the
+                    // session's own override write (async dispatch can outrun the observer
+                    // registration in beginOrResume) and, on some OEM providers, without any value
+                    // change at all — both fatal here, because cancelling ends the session with the
+                    // protective policy never restored (observed on HyperOS 3, issue #48). Where
+                    // the configuration is synchronously readable, a readback still matching the
+                    // override is that noise; without readback (Pixel) cancel as before.
+                    if (fullChargeStore.currentSession() != null) {
+                        val overridePolicy = repository.currentAdapter()?.sessionOverridePolicy
+                            ?: ChargePolicy.Unrestricted
+                        // Holding the dispatch lock across the readback is bounded by the same
+                        // backend a restore would need anyway (worst case one cold Shizuku bind on
+                        // GrapheneOS; every other adapter reads direct).
+                        val readback = try {
+                            repository.syncReadback()
+                        } catch (e: TimeoutCancellationException) {
+                            // A Shizuku bind/command timeout is a failed READBACK, not this
+                            // observer being cancelled — rethrowing would silently drop the
+                            // notification and keep a session alive past a genuine native change.
+                            log(TAG, Logging.Priority.WARN) {
+                                "Readback for the native-change check timed out"
+                            }
+                            null
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            // Unverifiable counts as a change: same conservative end state as the
+                            // pre-guard blanket cancel.
+                            log(TAG, Logging.Priority.WARN) {
+                                "Readback for the native-change check failed: ${e.message}"
+                            }
+                            null
+                        }
+                        if (!NativeChangeGuard.shouldCancel(readback, overridePolicy)) {
+                            log(TAG) {
+                                "Ignoring settings notification; readback still matches the " +
+                                    "session override: $readback"
+                            }
+                            return@withExclusive
+                        }
+                        log(TAG, Logging.Priority.INFO) {
+                            "Native settings change during session (readback=$readback); " +
+                                "cancelling without restore"
+                        }
+                    }
                     // Respect a native Settings change instead of restoring over the user's choice.
                     manager.cancelWithoutRestore()
                     unregisterSettingObserver()
