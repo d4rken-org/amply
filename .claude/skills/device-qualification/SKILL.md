@@ -219,3 +219,46 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
         Verified-devices row before adding its codename to `XiaomiHyperOs3ChargingAdapter.QUALIFIED_CODENAMES`.
 - **Pixel** — wireless at-threshold hold/charge-past and the widget under Shizuku-only remain unexercised (both share
   the verified wired mechanism).
+- **HONOR / MagicOS** — **no adapter of any kind exists** (not even a lab adapter), so HONOR devices fall through
+  every probe to the null branch of `AdapterRegistry` and `adapter=none` is a genuine registry miss. There is no
+  HONOR-related read anywhere in the codebase: no property, no system feature, no package lookup.
+    - **First HONOR mapping candidate (support mail, 2026-08-14): HONOR Magic8 Pro `BKQ-N49`** (codename `HNBKQ`
+      from the fingerprint, MagicOS 10.0.0.193, Android 16 / SDK 36, contribution schema 2, app 0.3.2-beta0). The
+      three earlier HONOR reports produced nothing: #35 (`MTN-NX1M`, Magic8 Lite) captured `changed_rows=0` across
+      all three namespaces, #40 and #47 carried no capture at all.
+    - The contributor captured the **full 2×2 factorial** of two independent features, which is the only capture
+      design that can attribute two keys to two features. Both changed rows are in the `system` namespace:
+
+      | Mode | Smart battery capacity | smart charge | `UserSmartPeakCap` | `asw_ui_state` |
+      | --- | --- | --- | --- | --- |
+      | off | off | off | 1 | 1 |
+      | Smart battery capacity | **on** | off | 0 | 1 |
+      | smart charge | off | **on** | 1 | 0 |
+      | both | **on** | **on** | 0 | 0 |
+
+      `UserSmartPeakCap` anti-correlates perfectly with Smart battery capacity, `asw_ui_state` with smart charge;
+      both are **1-when-disabled**. Inverted polarity is not itself a problem (every adapter owns its decode), and
+      "peak capacity 1 = uncapped" fits the name equally well.
+    - **Blocker 1 — no behavioral evidence.** All four `user_reported_effect` values are `unsure`, so nothing
+      here distinguishes a real control from a mirror. `asw_ui_state` is specifically suspect: a `_ui_`-named key
+      is the same class as the Oplus `_status` mirrors that `OnePlusChargingAdapter` deliberately never writes.
+      If it is a mirror, the real smart-charge control produced no diff row at all and lives outside the settings
+      providers. **Next step is the both-direction external-write test** (`settings put system <key> <value>` from
+      the shell UID, then check whether HONOR's own battery screen and the charging hardware follow), the same
+      test that settled `tanzanite`. The contributor completed the Shizuku-gated wizard, so they have a working
+      Shizuku setup and are a strong candidate to run it.
+    - **Blocker 2 — no gate signal identified.** The fingerprint is stock-shaped
+      (`HONOR/BKQ-N49/HNBKQ:16/HONORBKQ-N49/10.0.0.193C636E4R106P1:user/release-keys`), so fingerprint sniffing
+      is out for the same reason it was for LineageOS. Whether a MagicOS-exclusive property analogous to
+      `ro.mi.os.version.code` exists **and is readable from an `untrusted_app` process** is unknown and cannot be
+      settled by adb `getprop` (adb runs as shell — see the SELinux trap above). `Build.MANUFACTURER == "HONOR"`
+      alone is a manufacturer gate with no ROM scoping, weaker than every existing OEM gate.
+    - **Level-reporting hazard to test at qualification.** The reporter states Smart battery capacity "still
+      displays 100% when fully charged" while capping. A ROM reporting a synthetic 100% at a real ~80% would
+      trip `full = status == BATTERY_STATUS_FULL || percent >= 100` in `ChargeSessionService`, ending a session
+      early via `RESTORE_FULL`, and would corrupt `StatsLimitHitDetector`. Verify before any adapter ships.
+    - `rom_version=magicos 10.0.0.193` in the report is **free text typed by the contributor**, not a detector
+      output; `one_ui_version=none` / `hyperos_version=none` are the real detectors correctly returning null.
+      Note also that contribution reports carry **no codename field** (unlike the direct device-support report),
+      so an allowlist entry can only come from the fingerprint or a follow-up.
+    - Tracking: GitHub issue #66.
