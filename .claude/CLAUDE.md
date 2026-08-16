@@ -19,9 +19,12 @@ allowlist** (mode `2` is not HyperOS-3-wide and cannot be probed at runtime).
 = FixedLimit(80)/Adaptive) is gated to ColorOS 15 (`ro.build.version.oplusrom == 15`) across the Oplus family
 (OnePlus/Oppo/Realme) — **writes require Shizuku** (system namespace). **LineageOS charging control** (the private
 `lineagesettings` provider, keys `charging_control_enabled`/`_mode`/`_charging_limit`) is manufacturer-agnostic —
-gated to a **physically-qualified device-codename allowlist** (HAL enforcement is per-device) plus the provider and
-system user; **reads are unprivileged (ContentResolver), writes require Shizuku** (the shell UID holds
-`lineageos.permission.WRITE_SETTINGS`, which `WRITE_SECURE_SETTINGS` does not cover). **GrapheneOS charge limit**
+it matches every LineageOS build that ships the provider (plus the system user), but control is gated on
+**enforcement observed on the device itself** (HAL enforcement is per-build, and a read-back proves only that the
+ROM stored the value): a device stays a candidate with controls off until the user runs a verification and the cap
+is seen holding, and loses them for good if the battery is seen charging past it. **Reads are unprivileged
+(ContentResolver), writes require Shizuku** (the shell UID holds `lineageos.permission.WRITE_SETTINGS`, which
+`WRITE_SECURE_SETTINGS` does not cover). **GrapheneOS charge limit**
 (`global battery_charge_limit`, binary FixedLimit(80)/Unrestricted) is gated to GrapheneOS identity (its
 `app.grapheneos.*` core packages; no property/feature/fingerprint marker exists) plus the system user —
 **reads AND writes require Shizuku**: GrapheneOS marks the key `@Protected`, denying it to all third-party
@@ -29,7 +32,8 @@ packages including WSS holders, with only the shell UID exempt. The ROM **latche
 (`policyLatchesAtPlug`), so external writes take effect at the next unplug→replug — handled by a
 pending-until-replug verification state and a 30s session grace window; the reconnect gesture is unsupported
 there. Other Pixels, Samsung on unverified One UI versions (6/7, 9+), unqualified Xiaomi devices,
-non-ColorOS-15 Oplus devices, and unqualified LineageOS builds remain diagnostics-only. See the qualification
+non-ColorOS-15 Oplus devices, and LineageOS builds without the settings provider remain diagnostics-only. See the
+qualification
 ledger (`.claude/skills/device-qualification/`) for the verified devices and mappings.
 
 Package: `eu.darken.amply`. License: GPL-3.0-or-later. Status: pre-launch (current version in `VERSION`).
@@ -49,6 +53,7 @@ constraints:
 Under `app/src/main/java/eu/darken/amply/`:
 
 - `charging/core` — policies, device capability checks, OEM adapters, WSS, Shizuku access (`access/shizuku`, `adapter`)
+- `charging/core/enforcement` — the observed-enforcement gate: verdict engine, durable evidence, monitor watcher
 - `fullcharge/core` — temporary sessions, boot recovery, reconnect gesture
 - `main/ui` — activity, onboarding, dashboard, settings, setup guide, `tile`, `widget`
 - `diagnostics/core` + `diagnostics/ui` — "Help add support" contribution wizard: read-only multi-mode setting

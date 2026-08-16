@@ -142,9 +142,10 @@ the qualification ledger (`device-qualification` skill).
 
 ### LineageOS
 
-LineageOS control requires **all** of: LineageOS (`DeviceInfo.isLineageOs`), a **physically-qualified
-device codename** (`Build.DEVICE` ∈ `LineageChargingAdapter.QUALIFIED_CODENAMES`), the `lineagesettings` provider
-present, and the system user.
+LineageOS control requires **all** of: LineageOS (`DeviceInfo.isLineageOs`), the `lineagesettings` provider
+present, the system user, and **observed enforcement evidence** for this exact build (see "Enforcement evidence
+gate" below). The adapter *matches* every provider-carrying LineageOS build; what it may *do* there is decided by
+the evidence, not by a codename.
 
 **Detect LineageOS with the `org.lineageos.android` system feature, never `ro.lineage.build.version`.** All five
 `ro.lineage.*` properties are labelled `u:object_r:custom_version_prop:s0`, which SELinux denies to
@@ -154,14 +155,16 @@ adapter (verified on oriole / LineageOS 23.2 / Android 16). `hasSystemFeature` n
 permission. `lineageOsVersion` remains a **secondary identity signal** — `isLineageOs` ORs it in so derivatives that
 relabel the property still match — and is normally null on real hardware; it is not "diagnostics only".
 
-**Blocker before the first codename is added to `QUALIFIED_CODENAMES`:** the live gate is codename-scoped, but HAL
-capability is *build*-scoped — oriole exposed the LIMIT mode bit on LineageOS 20 and dropped it on 23.2 on identical
-hardware. A bare codename entry would therefore claim more than any single qualification run proves. Scope the entry
-by codename **plus** the qualified Lineage generation / API level (and treat a property-only or derivative match as
-insufficient for the live gate), or qualify every build you intend to cover. It is **manufacturer-agnostic** (LineageOS runs on many OEMs), so the Lineage
-live/lab adapters are ordered **before all OEM adapters** in `AdapterRegistry` — a LineageOS build on Samsung/
-Xiaomi/OnePlus hardware must never be swallowed by a manufacturer-based lab adapter. Unqualified LineageOS builds
-fall to `LineageLabAdapter` (diagnostics/contribution).
+`QUALIFIED_CODENAMES` survives as the **maintainer fast path** only (still empty): a codename there skips
+verification entirely. It is deliberately no longer what makes the adapter reachable, because HAL capability is
+*build*-scoped — oriole exposed the LIMIT mode bit on LineageOS 20 and dropped it on 23.2 on identical hardware —
+so a bare codename entry claims more than any single qualification run proves. Add one only with a qualified device
+plus a ledger row, and only when you mean every build on that device.
+
+LineageOS is **manufacturer-agnostic** (it runs on many OEMs), so the Lineage live/lab adapters are ordered
+**before all OEM adapters** in `AdapterRegistry` — a LineageOS build on Samsung/Xiaomi/OnePlus hardware must never
+be swallowed by a manufacturer-based lab adapter. A build **without** the settings provider does not match the live
+adapter at all and falls to `LineageLabAdapter` (diagnostics/contribution), which keeps that ordering for it.
 
 The three keys live in the private `content://lineagesettings/system` provider — **NOT** any AOSP `settings`
 namespace. Modeled as `SettingNamespace.LINEAGE_SYSTEM`: **reads are unprivileged** (`LineageSettingsClient`,
@@ -174,10 +177,33 @@ Writable keys/domains (`LineageSettingWritePolicy`, independent of the adapter):
 
 **Crucial gate rationale:** the setting can be written while the `vendor.lineage.health.IChargingControl` HAL never
 actually limits (the `mIsLimitSet:false` class of bug) — setting readback does **not** prove hardware enforcement.
-That is why the gate is a qualified-codename allowlist, not "any LineageOS device": a device must be physically
-proven (see the qualification protocol) before its codename is added. The adapter also **refuses** (reads
+That is why control is never granted on "any LineageOS device": the hardware must be proven, either by the
+maintainer (a ledger row) or by the user's own device under the enforcement evidence gate. The adapter also
+**refuses** (reads
 `Unknown(unrecognizedValue=true)`) any native state it cannot restore exactly — AUTO/CUSTOM schedule modes, off-tick
 limits, or an absent/malformed `enabled` — so a temporary session never clobbers the user's own choice.
+
+## Enforcement Evidence Gate
+
+For adapters that set `ChargingAdapter.enforcementEvidenceRequired` (LineageOS today), a settings read-back is
+**not** a licence to offer control: it proves the ROM stored the value, not that the charging hardware acts on it.
+`AdapterRegistry.select()` therefore takes an explicit `EnforcementEvidenceState` — **no default**, so "the caller
+forgot", "not read yet" and "genuinely nothing stored" cannot collapse into control-enabled — and resolves a tier in
+this order: **REFUTED** (or a corrupt record, which may be one) → control off, contribution wanted; **CONFIRMED**
+(maintainer codename or a local confirmation) → control as probed; **UNDER_TEST** (the user started verification) →
+control as probed, but no surface may claim the cap is proven; otherwise **CANDIDATE** → control off. Callers that
+only need adapter *capabilities* pass `EnforcementEvidenceState.Loading`, which can never enable control.
+
+Evidence is produced by `charging/core/enforcement/`: a pure `EnforcementVerdictEngine` over the monitor's battery
+ticks, persisted by `EnforcementEvidenceStore`. Three properties are load-bearing and must not be relaxed:
+
+- **CONFIRM needs a sustained plateau**, not one `StatsLimitHitDetector.heldNow` tick (which also fires on thermal
+  suspension and weak chargers), while **REFUTE keys on an upward level trend** through the cap and deliberately
+  ignores the reported battery status, which a ROM can misreport while charging past the limit.
+- Evidence is scoped to a **composite build identity** (fingerprint + incremental + build time + provider version
+  code, hashed). `Build.FINGERPRINT` alone is useless here: LineageOS spoofs it to stock.
+- A refutation is **terminal** for its scope, and a corrupt record is treated as a refutation. Both are fail-closed
+  on purpose — the one error this gate exists to prevent is claiming protection that isn't there.
 
 ## Foreground Service Requirement
 
