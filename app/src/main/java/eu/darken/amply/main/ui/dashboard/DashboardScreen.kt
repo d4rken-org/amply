@@ -1252,7 +1252,6 @@ private fun DashboardScreenConditionalPolicyPreview() = PreviewWrapper {
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
-        onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
         onPinWidget = {},
