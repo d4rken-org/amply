@@ -76,6 +76,8 @@ class ChargeSessionService : Service() {
     // Written under the dispatch lock, but read by the battery receiver/monitor loop outside it.
     @Volatile private var recoveryJob: Job? = null
     private var settingObserverRegistered = false
+    // Whether this service instance has already swept the Bluetooth profile proxies (see evaluateRules).
+    private var bluetoothReconciled = false
     @Volatile private var restoring = false
     // One-shot interruption assessment for a freshly resumed persisted session: set when
     // beginOrResume picks up an existing session, consumed by the first battery evaluation, and
@@ -303,8 +305,13 @@ class ChargeSessionService : Service() {
                 plugged = plugged,
                 plugKind = plugKind,
                 sessionActive = sessionActive,
-                reconcileBluetooth = reconcileBluetooth,
+                // Always on this instance's first pass, whichever command brought the service up: a
+                // process that was not running missed every ACL broadcast in the meantime, and the
+                // stored snapshot is only as good as the last one it received. After that the
+                // receiver keeps it current and the sweep would just cost Binder round-trips.
+                reconcileBluetooth = reconcileBluetooth || !bluetoothReconciled,
             )
+            bluetoothReconciled = true
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
