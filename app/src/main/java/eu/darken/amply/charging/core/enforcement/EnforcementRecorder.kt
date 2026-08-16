@@ -147,7 +147,7 @@ class EnforcementRecorder @Inject constructor(
         progress = outcome.progress
         val verdict = outcome.verdict ?: return
         // The engine keeps reaching the same verdict while the condition holds; only a change is news.
-        if (existing?.verdict == verdict && existing.adapterId == adapter.id) return
+        if (existing != null && existing.verdict == verdict && existing.adapterId == adapter.id) return
         persist(verdict, adapter.id, outcome.progress?.epoch?.capPercent ?: 0, sample)
     }
 

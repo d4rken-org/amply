@@ -210,7 +210,9 @@ fun DashboardScreen(
                 // Directly under the hero on BOTH branches: on an unverified or refuted device the
                 // hero's "unsupported" line is exactly what this card has to explain, and while a
                 // verification is running it qualifies the policy the hero states.
-                state.charging.enforcement?.let { enforcement ->
+                // CONFIRMED renders nothing, so it must not claim a list slot either — an empty item
+                // would still cost the list's 12.dp inter-item spacing.
+                state.charging.enforcement?.takeIf { it != EnforcementStatus.CONFIRMED }?.let { enforcement ->
                     item(key = "dashboard.enforcement") {
                         EnforcementCard(status = enforcement, onStartVerification = onStartVerification)
                     }
