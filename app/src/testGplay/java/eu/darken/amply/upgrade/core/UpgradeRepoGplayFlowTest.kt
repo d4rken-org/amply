@@ -1,5 +1,6 @@
 package eu.darken.amply.upgrade.core
 
+import android.app.Activity
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.test.core.app.ApplicationProvider
 import eu.darken.amply.common.AppDataStore
@@ -7,11 +8,17 @@ import eu.darken.amply.common.serialization.SerializationModule
 import com.android.billingclient.api.BillingResult
 import eu.darken.amply.upgrade.core.billing.BillingData
 import eu.darken.amply.upgrade.core.billing.BillingManager
+import eu.darken.amply.upgrade.core.billing.GplayServiceUnavailableException
+import eu.darken.amply.upgrade.core.billing.ItemAlreadyOwnedBillingException
+import eu.darken.amply.upgrade.core.billing.PendingPurchaseBillingException
+import eu.darken.amply.upgrade.core.billing.Sku
 import eu.darken.amply.upgrade.core.billing.TestPurchases
 import eu.darken.amply.upgrade.core.billing.client.BillingConnection
 import eu.darken.amply.upgrade.core.billing.client.BillingConnectionProvider
 import eu.darken.amply.upgrade.core.billing.toBillingData
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.types.shouldBeInstanceOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,6 +37,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
@@ -76,12 +84,28 @@ class UpgradeRepoGplayFlowTest {
         override val freshBillingData: Flow<FreshData> = emptyFlow()
         override val purchaseFailures: Flow<BillingResult> = emptyFlow()
         override val connectionFailures: Flow<Long> = emptyFlow()
+
+        var strictAnswer: () -> BillingData = { BillingData(emptyList()) }
+        var refreshAnswer: () -> BillingData = { BillingData(emptyList()) }
+        var launchAnswer: () -> Unit = {}
+
+        override suspend fun refreshStrict(): BillingData = strictAnswer()
+
+        override suspend fun refresh(): BillingData = refreshAnswer()
+
+        override suspend fun startIapFlow(activity: Activity, sku: Sku, offer: Sku.Subscription.Offer?) =
+            launchAnswer()
     }
 
     private fun manager(
         billingData: Flow<BillingData>,
         failureSettled: Flow<Boolean> = MutableStateFlow(false),
-    ): BillingManager = FakeBillingManager(billingData, failureSettled)
+    ): FakeBillingManager = FakeBillingManager(billingData, failureSettled)
+
+    private fun freeManager(): FakeBillingManager = manager(MutableStateFlow(BillingData(emptyList())))
+
+    // The launch path needs an Activity to hand to Play; only its identity matters here.
+    private fun activity(): Activity = Robolectric.buildActivity(Activity::class.java).get()
 
     @Test fun `an owned purchase settles as pro`(): Unit = runBlocking {
         val repo = UpgradeRepoGplay(
@@ -191,6 +215,76 @@ class UpgradeRepoGplayFlowTest {
             repo.upgradeInfo.map { it.isSettled }.first { it } shouldBe true
         }
     }
+
+    @Test fun `a pending payment stays visible while grace keeps the upgrade`(): Unit = runBlocking {
+        // The audience that needs the explanation most: the upgrade runs on grace while Play is still
+        // processing the payment that will renew it. Dropping the data in the grace branch left them
+        // with a silent screen.
+        val cache = cache()
+        cache.stampLastProState(iapId, System.currentTimeMillis())
+        val repo = UpgradeRepoGplay(
+            manager(MutableStateFlow(listOf(TestPurchases.purchase(iapId, pending = true)).toBillingData())),
+            cache,
+        )
+
+        withTimeout(TIMEOUT_MS) {
+            val info = repo.upgradeInfo.first { it.isSettled } as UpgradeRepoGplay.Info
+            info.isPro shouldBe true
+            info.pending shouldBe listOf(OurSku.Iap.PRO_UPGRADE)
+        }
+    }
+
+    // region the strict gate lookup
+
+    @Test fun `verifyPurchaseStateNow fails closed instead of substituting grace`(): Unit = runBlocking {
+        val cache = cache()
+        cache.stampLastProState(iapId, System.currentTimeMillis())
+        val manager = freeManager().apply {
+            strictAnswer = { throw GplayServiceUnavailableException(RuntimeException("one product type failed")) }
+        }
+        val repo = UpgradeRepoGplay(manager, cache)
+
+        // Even a recent owner gets the error: a gate that can't verify must not let a purchase
+        // through on the strength of a grace window.
+        shouldThrow<GplayServiceUnavailableException> { repo.verifyPurchaseStateNow() }
+    }
+
+    @Test fun `verifyPurchaseStateNow reports the fresh split state`(): Unit = runBlocking {
+        val manager = freeManager().apply {
+            strictAnswer = {
+                listOf(
+                    TestPurchases.purchase(iapId),
+                    TestPurchases.purchase(OurSku.Sub.PRO_UPGRADE.id, token = "sub", pending = true),
+                ).toBillingData()
+            }
+        }
+        val repo = UpgradeRepoGplay(manager, cache())
+
+        val info = repo.verifyPurchaseStateNow()
+
+        info.upgrades.map { it.sku } shouldBe listOf(OurSku.Iap.PRO_UPGRADE)
+        info.pending shouldBe listOf(OurSku.Sub.PRO_UPGRADE)
+        info.isSettled shouldBe true
+    }
+
+    @Test fun `an already-owned recovery reports a pending payment instead of restore tips`(): Unit = runBlocking {
+        // Play refuses to re-sell a product whose payment it is still processing. The already-owned
+        // dialog would tell the user to restore, which cannot help.
+        val manager = freeManager().apply {
+            launchAnswer = { throw ItemAlreadyOwnedBillingException(RuntimeException("launch result")) }
+            refreshAnswer = { listOf(TestPurchases.purchase(iapId, pending = true)).toBillingData() }
+        }
+        val repo = UpgradeRepoGplay(manager, cache())
+
+        val errors = mutableListOf<Throwable>()
+        withTimeout(TIMEOUT_MS) {
+            repo.launchBillingFlowNow(activity(), OurSku.Iap.PRO_UPGRADE, null) { errors.add(it) }
+        }
+
+        errors.single().shouldBeInstanceOf<PendingPurchaseBillingException>()
+    }
+
+    // endregion
 
     @Test fun `wasEverPro tracks whether this install ever confirmed a purchase`(): Unit = runBlocking {
         val cache = cache()

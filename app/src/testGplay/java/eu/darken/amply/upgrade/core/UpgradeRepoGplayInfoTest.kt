@@ -70,6 +70,42 @@ class UpgradeRepoGplayInfoTest {
         info.pending shouldBe listOf(OurSku.Sub.PRO_UPGRADE)
     }
 
+    @Test fun `a pending payment for a product this app doesn't sell is dropped`() {
+        UpgradeRepoGplay.Info(
+            billingData = listOf(TestPurchases.purchase("com.example.other", pending = true)).toBillingData(),
+        ).pending.isEmpty() shouldBe true
+    }
+
+    @Test fun `a renewing subscription is seen even when its product is unknown`() {
+        // The pre-purchase gate asks this, and it reads the RAW purchases on purpose: a subscription
+        // whose product ID this build doesn't know (legacy SKU, renamed product) still renews and
+        // still bills, so it has to keep blocking a second purchase.
+        UpgradeRepoGplay.Info(
+            billingData = listOf(
+                TestPurchases.purchase("com.example.legacy.sub", autoRenewing = true),
+            ).toBillingData(),
+        ).apply {
+            upgrades.isEmpty() shouldBe true
+            hasAutoRenewingSubscription shouldBe true
+        }
+    }
+
+    @Test fun `a one-time purchase never reads as renewing`() {
+        // Which is what makes scanning both product types safe: the wider input cannot produce a
+        // false positive.
+        UpgradeRepoGplay.Info(
+            billingData = listOf(TestPurchases.purchase(iapId)).toBillingData(),
+        ).hasAutoRenewingSubscription shouldBe false
+    }
+
+    @Test fun `a pending subscription does not read as renewing`() {
+        // Nothing is being billed yet: the payment hasn't gone through, and the pending gate is what
+        // blocks this purchase, not the renewal one.
+        UpgradeRepoGplay.Info(
+            billingData = listOf(TestPurchases.purchase(subId, autoRenewing = true, pending = true)).toBillingData(),
+        ).hasAutoRenewingSubscription shouldBe false
+    }
+
     @Test fun `grace alone is enough to stay pro`() {
         val info = UpgradeRepoGplay.Info(gracePeriod = true, billingData = null)
 
