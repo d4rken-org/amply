@@ -66,6 +66,9 @@ class RuleEngineTest {
         proSettled: Boolean = true,
         lastPersistent: ChargePolicy? = null,
         defaultProtective: ChargePolicy = limit80,
+        supportedPolicyIds: Set<String> = emptySet(),
+        lastRequestedPolicy: ChargePolicy? = null,
+        lastRequestedAt: Long = 0L,
     ) = RuleEngine.evaluate(
         rules = rules,
         snapshot = snapshot,
@@ -75,6 +78,9 @@ class RuleEngineTest {
         proSettled = proSettled,
         lastPersistent = lastPersistent,
         defaultProtective = defaultProtective,
+        supportedPolicyIds = supportedPolicyIds,
+        lastRequestedPolicy = lastRequestedPolicy,
+        lastRequestedAt = lastRequestedAt,
     )
 
     private fun activeOn(rule: ChargeRule, baseline: ChargePolicy = limit80) = RuleRuntimeState(
@@ -251,6 +257,101 @@ class RuleEngineTest {
         // user's fresh choice on the very next tick.
         decision.action shouldBe RuleAction.AdoptExternal(setOf("top", "other"))
         decision.suspendedRuleIds shouldBe setOf("top", "other")
+    }
+
+    @Test
+    fun `an unrecognized configured value is external divergence, not a rule's own state`() {
+        // The rules layer only ever writes values Amply can name, so an unnameable one is by
+        // definition somebody else's — and carrying on as if the rule owned the policy would end in
+        // overwriting a mode Amply cannot reproduce.
+        val top = btRule("top", policy = adaptive)
+        val other = btRule("other", policy = limit90)
+
+        val decision = evaluate(
+            rules = listOf(top, other),
+            snapshot = connected(carAddress),
+            runtime = activeOn(top),
+            configured = ChargeObservation.Unknown("vendor mode 7".toCaString(), unrecognizedValue = true),
+        )
+
+        decision.action shouldBe RuleAction.AdoptExternal(setOf("top", "other"))
+        decision.suspendedRuleIds shouldBe setOf("top", "other")
+    }
+
+    @Test
+    fun `a merely unreadable state is not divergence`() {
+        val rule = btRule("a", policy = adaptive)
+
+        evaluate(
+            rules = listOf(rule),
+            snapshot = connected(carAddress),
+            runtime = activeOn(rule),
+            configured = ChargeObservation.Unknown("no backend".toCaString()),
+        ).action shouldBe RuleAction.Noop
+    }
+
+    @Test
+    fun `a newer journal entry naming another policy is external divergence`() {
+        // Every Amply write path records into the shared journal after the physical write, so an
+        // entry newer than this activation naming a different policy proves something else wrote
+        // past the rules layer. This is the only divergence signal on adapters with no readback.
+        val top = btRule("top", policy = adaptive)
+        val other = btRule("other", policy = limit90)
+        val runtime = activeOn(top).copy(lastWriteAt = 1_000L)
+
+        val decision = evaluate(
+            rules = listOf(top, other),
+            snapshot = connected(carAddress),
+            runtime = runtime,
+            lastRequestedPolicy = full,
+            lastRequestedAt = 2_000L,
+        )
+
+        decision.action shouldBe RuleAction.AdoptExternal(setOf("top", "other"))
+    }
+
+    @Test
+    fun `the rules layer's own write is not divergence`() {
+        val rule = btRule("a", policy = adaptive)
+        val runtime = activeOn(rule).copy(lastWriteAt = 1_000L)
+
+        // Same policy, newer stamp: this is exactly what the rules layer's own write looks like once
+        // the repository's journal entry lands (the stamp is copied from it, so equality is normal).
+        evaluate(
+            rules = listOf(rule),
+            snapshot = connected(carAddress),
+            runtime = runtime,
+            lastRequestedPolicy = adaptive,
+            lastRequestedAt = 2_000L,
+        ).action shouldBe RuleAction.Noop
+
+        // A journal entry OLDER than the activation is history, not an overwrite.
+        evaluate(
+            rules = listOf(rule),
+            snapshot = connected(carAddress),
+            runtime = runtime,
+            lastRequestedPolicy = full,
+            lastRequestedAt = 500L,
+        ).action shouldBe RuleAction.Noop
+    }
+
+    @Test
+    fun `a policy this adapter cannot apply never matches`() {
+        // Decodable, but not in the adapter's list: matching on it would park the layer in a
+        // permanently failing pending phase, since the write path refuses it.
+        val unsupported = btRule("unsupported", policy = ChargePolicy.PauseAtFull)
+        val usable = btRule("usable", policy = adaptive)
+        val supported = setOf(adaptive.stableId, limit80.stableId)
+
+        evaluate(listOf(unsupported), connected(carAddress), supportedPolicyIds = supported)
+            .action shouldBe RuleAction.Noop
+
+        evaluate(listOf(unsupported, usable), connected(carAddress), supportedPolicyIds = supported)
+            .action.shouldBeInstanceOf<RuleAction.Activate>().rule.id shouldBe "usable"
+
+        // An empty set means adapter selection has not resolved yet, which must not disable rules.
+        evaluate(listOf(unsupported), connected(carAddress), supportedPolicyIds = emptySet())
+            .action.shouldBeInstanceOf<RuleAction.Activate>()
     }
 
     @Test

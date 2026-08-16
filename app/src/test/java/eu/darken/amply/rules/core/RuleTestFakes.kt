@@ -39,6 +39,9 @@ internal class FakeChargeGateway(
     var writeSucceeds: Boolean = true,
     var chargerTypeSupport: Boolean = true,
     var defaultProtective: ChargePolicy = ChargePolicy.FixedLimit(80),
+    var supportedIds: Set<String> = emptySet(),
+    /** Set to model the repository's own journal write, which every real write performs. */
+    var journal: ChargingPreferences? = null,
 ) : RuleChargeGateway {
 
     val writes = mutableListOf<ChargePolicy>()
@@ -49,6 +52,9 @@ internal class FakeChargeGateway(
     override suspend fun applyTemporary(policy: ChargePolicy): Boolean {
         writes += policy
         onWrite?.invoke(policy)
+        // The real repository records every successful write to the shared journal, under
+        // NonCancellable, before returning — the rules layer's lastWriteAt stamp copies from it.
+        if (writeSucceeds) journal?.recordRequested(policy, persistent = false)
         // Model a sync-readback adapter: what was successfully written becomes what reads back, so a
         // test only sees "external divergence" when it deliberately sets [configured] behind our
         // back. A fake with no readback at all (null) stays that way — that is the async-hardware case.
@@ -61,6 +67,8 @@ internal class FakeChargeGateway(
     override fun chargerTypeSupported(): Boolean = chargerTypeSupport
 
     override fun defaultProtectivePolicy(): ChargePolicy = defaultProtective
+
+    override fun supportedPolicyIds(): Set<String> = supportedIds
 }
 
 internal class FakeBluetoothSource(

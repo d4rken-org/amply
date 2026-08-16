@@ -102,6 +102,10 @@ class RuleApplier @Inject constructor(
             ruleList.any { it.enabled && it.policy != null && it.matches(snapshot) }
         val configured = if (relevant) readConfigured() else null
         val lastPersistent = preferences.lastPersistentPolicyNow()
+        // The shared write journal: whatever Amply last wrote, from any component. Read as a pair so
+        // the policy and its timestamp can never be sampled either side of a concurrent write.
+        val lastRequestedPolicy = preferences.lastRequestedNow()
+        val lastRequestedAt = preferences.lastRequestedAtNow()
 
         val inputs = { proSettled: Boolean ->
             RuleEngine.evaluate(
@@ -113,6 +117,9 @@ class RuleApplier @Inject constructor(
                 proSettled = proSettled,
                 lastPersistent = lastPersistent,
                 defaultProtective = gateway.defaultProtectivePolicy(),
+                supportedPolicyIds = gateway.supportedPolicyIds(),
+                lastRequestedPolicy = lastRequestedPolicy,
+                lastRequestedAt = lastRequestedAt,
             )
         }
         // Resolve the entitlement only when the outcome actually depends on it: isProSettled() can
@@ -172,13 +179,17 @@ class RuleApplier @Inject constructor(
     }
 
     /**
-     * The user (or the widget/tile) just wrote a persistent policy: it outranks the rules layer, so
+     * The user (or the widget/tile) is writing a persistent policy: it outranks the rules layer, so
      * drop rule ownership without restoring and suspend **every** rule that currently matches. Only
      * the winner would be too narrow — the second-priority rule would re-apply over the same choice
      * on the very next tick.
      *
-     * Call this only *after* the write succeeded: a refused write leaves the user's intent unrealized,
-     * and suspending rules for it would disable them for nothing.
+     * Called *before* the write, alongside persisting the pending recovery target — not after it
+     * succeeds. Suspending ahead of the write is the safe order because that persisted target owns
+     * convergence to the explicit policy on every failure path (a failed write, a killed process, a
+     * reboot), so the end state is the explicit policy whether or not this particular write lands.
+     * Suspending afterwards would instead leave a window where the policy is already written and
+     * every rule is still armed to overwrite it on the next tick.
      */
     suspend fun suspendMatchingCohort(plugged: Boolean, plugKind: PlugKind?) = mutex.withLock {
         val ruleList = store.rulesNow()
@@ -310,7 +321,11 @@ class RuleApplier @Inject constructor(
             false
         }
         if (written) {
-            store.updateRuntime { onSuccess(it).copy(lastApplyFailed = false) }
+            // Stamped by COPYING the journal entry the repository just wrote, never from an
+            // independent clock read: the engine compares the two, and two separate `now`s could
+            // differ by milliseconds and make the rules layer look overwritten by its own write.
+            val stamp = preferences.lastRequestedAtNow()
+            store.updateRuntime { onSuccess(it).copy(lastApplyFailed = false, lastWriteAt = stamp) }
         } else {
             // Keep the pending phase: the write is still owed, and the 30s monitor tick retries it.
             log(TAG, Logging.Priority.ERROR) { "Rule write for ${policy.stableId} failed" }
