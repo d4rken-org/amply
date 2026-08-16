@@ -248,6 +248,44 @@ class BillingManagerTest {
         withTimeout(TIMEOUT_MS) { attempts.receive() }
     }
 
+    @Test fun `a strict gate failure on a dead connection still tears the connection down`(): Unit = runBlocking {
+        // The gate's throw happens AFTER useConnection already returned (the refresh hands back a
+        // partial result instead of throwing), so its dead-binder detection never sees it. Without
+        // the explicit invalidation the dying connection stays installed and every later purchase
+        // check keeps talking to the corpse.
+        val pending = TestPurchases.purchase(iapId, pending = true)
+        val attempts = Channel<Unit>(Channel.UNLIMITED)
+        val dying = client(iap = FakeBillingClient.Answer(purchases = listOf(pending)))
+        val subQueries = AtomicInteger(0)
+        // The binder dies BETWEEN the two refreshes: the connect loop's initial one is complete (so
+        // its own reconciliation invalidates nothing), and only the gate's own round-trip loses SUBS.
+        dying.beforeAnswer = { type ->
+            if (type == BillingClient.ProductType.SUBS && subQueries.incrementAndGet() == 2) {
+                dying.answers = dying.answers +
+                    (BillingClient.ProductType.SUBS to failing(BillingResponseCode.SERVICE_DISCONNECTED))
+            }
+        }
+        val manager = connectedManager(dying, client(), attempts = attempts)
+
+        // Connection 1 is established and its initial refresh committed.
+        withTimeout(TIMEOUT_MS) { manager.billingData.first() }
+        withTimeout(TIMEOUT_MS) { attempts.receive() }
+
+        withTimeout(TIMEOUT_MS) {
+            shouldThrow<GplayServiceUnavailableException> { manager.refreshStrict() }
+        }
+
+        // The dead connection was uninstalled and the loop reconnected, instead of the next caller
+        // being handed the same corpse.
+        withTimeout(TIMEOUT_MS) { attempts.receive() }
+        // That torn-down connection is a failed loop iteration and signals as one…
+        withTimeout(TIMEOUT_MS) { manager.connectionFailures.first() }
+        // …but the gate's own partial refresh must never reach the feed — a gate the user aborted
+        // mid-purchase is not a reconciliation outcome. This refresh confirmed nothing (only a
+        // payment in progress), so running it through the reconciliation path WOULD have signalled.
+        withTimeoutOrNull(QUIET_MS) { manager.connectionFailures.first() } shouldBe null
+    }
+
     // endregion
 
     // region pending payments
