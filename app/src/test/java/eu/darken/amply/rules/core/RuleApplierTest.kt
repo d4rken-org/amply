@@ -3,8 +3,10 @@ package eu.darken.amply.rules.core
 import eu.darken.amply.charging.core.BackendKind
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
+import eu.darken.amply.charging.core.ChargingPreferences
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactly
+import io.kotest.matchers.longs.shouldBeGreaterThan
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,6 +38,7 @@ class RuleApplierTest {
         val gateway: FakeChargeGateway,
         val bluetooth: FakeBluetoothSource,
         val upgrade: FakeUpgradeRepo,
+        val preferences: ChargingPreferences,
         val scope: CoroutineScope,
     )
 
@@ -46,19 +49,20 @@ class RuleApplierTest {
         val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
         val dataStore = testDataStore(scope, tempDir)
         val store = testRulesStore(dataStore)
+        val preferences = testPreferences(dataStore)
         val gateway = FakeChargeGateway()
         val bluetooth = FakeBluetoothSource()
         val upgrade = FakeUpgradeRepo()
         val applier = RuleApplier(
             store = store,
             gateway = gateway,
-            preferences = testPreferences(dataStore),
+            preferences = preferences,
             upgradeRepo = upgrade,
             bluetooth = bluetooth,
             bootCountProvider = bootCount(bootCountValue),
         )
         try {
-            Fixture(applier, store, gateway, bluetooth, upgrade, scope).block()
+            Fixture(applier, store, gateway, bluetooth, upgrade, preferences, scope).block()
         } finally {
             scope.cancel()
         }
@@ -117,6 +121,27 @@ class RuleApplierTest {
         store.runtimeNow().phase shouldBe RulePhase.ACTIVE
         store.runtimeNow().lastApplyFailed shouldBe false
         gateway.writes shouldContainExactly listOf(adaptive, adaptive)
+    }
+
+    @Test
+    fun `a successful write stamps the journal's own timestamp, not a fresh clock read`() = fixture {
+        // The engine compares these two to spot another component writing past the rules layer, so
+        // the stamp must be a COPY. Two independent `now`s could differ by milliseconds and make the
+        // layer look overwritten by its own write.
+        gateway.journal = preferences
+        applier.addRule(btRule())
+        connect()
+
+        applier.evaluate(plugged = false, plugKind = null, sessionActive = false)
+
+        val journalAt = preferences.lastRequestedAtNow()
+        journalAt shouldBeGreaterThan 0L
+        store.runtimeNow().lastWriteAt shouldBe journalAt
+
+        // And the layer must not then read its own write as divergence on the following tick.
+        applier.evaluate(plugged = false, plugKind = null, sessionActive = false)
+        store.runtimeNow().phase shouldBe RulePhase.ACTIVE
+        store.runtimeNow().suspendedRuleIds.shouldBeEmpty()
     }
 
     @Test

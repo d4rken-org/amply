@@ -41,6 +41,7 @@ internal fun decodeRuleRuntimeState(raw: String?): RuleRuntimeState {
         baselinePolicyId = baselinePolicyId,
         suspendedRuleIds = obj.stringSet("suspendedRuleIds"),
         lastApplyFailed = obj.booleanOrDefault("lastApplyFailed"),
+        lastWriteAt = obj.longOrDefault("lastWriteAt"),
     )
 }
 
@@ -51,6 +52,9 @@ private fun JsonObject.stringOrNull(name: String): String? = primitiveOrNull(nam
 
 private fun JsonObject.booleanOrDefault(name: String, default: Boolean = false): Boolean =
     primitiveOrNull(name)?.takeUnless { it.isString }?.content?.toBooleanStrictOrNull() ?: default
+
+private fun JsonObject.longOrDefault(name: String, default: Long = 0L): Long =
+    primitiveOrNull(name)?.takeUnless { it.isString }?.content?.toLongOrNull() ?: default
 
 private fun JsonObject.stringSet(name: String): Set<String> = (this[name] as? JsonArray)
     ?.mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }

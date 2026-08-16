@@ -29,6 +29,12 @@ interface RuleChargeGateway {
 
     /** Last-resort baseline when the current state is unreadable and Amply's journal is empty. */
     fun defaultProtectivePolicy(): ChargePolicy
+
+    /**
+     * Stable ids the selected adapter can actually apply. Empty when no adapter is selected, which
+     * the engine reads permissively — "not resolved" must not disable every rule.
+     */
+    fun supportedPolicyIds(): Set<String>
 }
 
 @Singleton
@@ -43,6 +49,7 @@ class ChargingRuleGateway @Inject constructor(
         AdapterFacts(
             chargerTypeSupported = adapter?.policyLatchesAtPlug != true,
             defaultProtective = adapter?.defaultProtectivePolicy ?: ChargePolicy.FixedLimit(80),
+            supportedPolicyIds = adapter?.supportedPolicies.orEmpty().map { it.stableId }.toSet(),
         )
     }
 
@@ -55,8 +62,11 @@ class ChargingRuleGateway @Inject constructor(
 
     override fun defaultProtectivePolicy(): ChargePolicy = adapterFacts.defaultProtective
 
+    override fun supportedPolicyIds(): Set<String> = adapterFacts.supportedPolicyIds
+
     private data class AdapterFacts(
         val chargerTypeSupported: Boolean,
         val defaultProtective: ChargePolicy,
+        val supportedPolicyIds: Set<String>,
     )
 }

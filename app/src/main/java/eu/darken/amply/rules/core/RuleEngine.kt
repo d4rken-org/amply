@@ -73,9 +73,24 @@ object RuleEngine {
         /** Amply's own journal of the user's last persistent choice; fallback baseline only. */
         lastPersistent: ChargePolicy?,
         defaultProtective: ChargePolicy,
+        /**
+         * Stable ids the selected adapter can actually apply. Empty means "not resolved yet", which
+         * is permissive — an unresolved adapter must not silently disable every rule.
+         */
+        supportedPolicyIds: Set<String>,
+        /** The last policy ANY Amply component wrote, and when, from the shared write journal. */
+        lastRequestedPolicy: ChargePolicy?,
+        lastRequestedAt: Long,
     ): RuleDecision {
         val byId = rules.associateBy { it.id }
-        val matching = rules.filter { it.enabled && it.policy != null && it.matches(snapshot) }
+        val matching = rules.filter {
+            it.enabled &&
+                it.policy != null &&
+                // A policy this adapter does not offer would be refused by the write path anyway;
+                // matching on it would park the layer in a permanently failing pending phase.
+                (supportedPolicyIds.isEmpty() || it.policyId in supportedPolicyIds) &&
+                it.matches(snapshot)
+        }
         // A suspended rule that no longer exists, is disabled, or no longer matches has served its
         // purpose: the user has moved on from the situation their manual override belonged to.
         val suspended = runtime.suspendedRuleIds.filter { id ->
@@ -134,22 +149,41 @@ object RuleEngine {
 
         if (ownsPolicy) {
             val baseline = runtime.baselinePolicy
-            // External divergence is only claimable against a real readback: without one, "different"
-            // is indistinguishable from "unreadable", and adopting on a guess would abandon a
-            // perfectly good rule activation. Only from a SETTLED activation, too — while a write is
-            // still pending, "configured != target" is the ordinary look of a write that failed or
-            // hasn't landed, and treating that as the user's choice would suspend every rule.
-            val verified = (configured as? ChargeObservation.Verified)?.policy
-                ?.takeIf { runtime.phase == RulePhase.ACTIVE }
+            // Divergence is claimed only from a SETTLED activation: while a write is still pending,
+            // "configured != target" is the ordinary look of a write that failed or hasn't landed,
+            // and treating that as the user's choice would suspend every rule.
+            val settledActive = runtime.phase == RulePhase.ACTIVE
             val written = runtime.targetPolicy ?: activeRule?.policy
-            if (verified != null && written != null && verified != written) {
-                // Adopt what is actually configured (no restore — the user's newer choice wins) and
-                // suspend every rule that currently matches, not just the winner: otherwise the
-                // second-priority rule would immediately re-apply over the same manual choice.
-                return RuleDecision(
-                    RuleAction.AdoptExternal(matching.map { it.id }.toSet()),
-                    matching.map { it.id }.toSet(),
-                )
+
+            // (1) The configured state itself contradicts what the rules layer wrote. A readable but
+            // UNRECOGNIZED value counts: the rules layer only ever writes values Amply can name, so
+            // an unnameable one is by definition somebody else's — and it must not be overwritten,
+            // which is exactly what carrying on as if the rule still owned the policy would do.
+            // Without any readback nothing is claimed: "different" would be indistinguishable from
+            // "unreadable", and adopting on a guess abandons a perfectly good activation.
+            val readbackDiverged = settledActive && when {
+                configured is ChargeObservation.Verified -> written != null && configured.policy != written
+                configured is ChargeObservation.Unknown -> configured.unrecognizedValue
+                else -> false
+            }
+
+            // (2) Amply's own write journal moved past the rules layer. Every write path — a session
+            // override or its restore, a failed override's rollback, boot-recovery rewrites, an
+            // explicit persistent policy — records into that journal (under NonCancellable, after
+            // the physical write), so an entry that is NEWER than this activation and names a
+            // DIFFERENT policy proves another component overwrote the rule's policy. This is the
+            // only divergence signal available on adapters that cannot read their state back at all.
+            val journalDiverged = settledActive &&
+                lastRequestedAt > runtime.lastWriteAt &&
+                lastRequestedPolicy != null &&
+                lastRequestedPolicy != runtime.targetPolicy
+
+            if (readbackDiverged || journalDiverged) {
+                // Adopt what is actually configured (no restore — the newer choice wins) and suspend
+                // every rule that currently matches, not just the winner: otherwise the
+                // second-priority rule would immediately re-apply over the same choice.
+                val cohort = matching.map { it.id }.toSet()
+                return RuleDecision(RuleAction.AdoptExternal(cohort), cohort)
             }
             if (baseline == null) {
                 // Nothing recorded to restore to: don't invent one, just drop the bookkeeping.
@@ -165,9 +199,8 @@ object RuleEngine {
                 return RuleDecision(action, suspended)
             }
             val targetPolicy = winner.policy!!
-            val settled = runtime.phase == RulePhase.ACTIVE
             // Also covers editing the active rule's policy: same rule, different target.
-            if (activeStillWins && settled && runtime.targetPolicyId == winner.policyId) {
+            if (activeStillWins && settledActive && runtime.targetPolicyId == winner.policyId) {
                 return RuleDecision(RuleAction.Noop, suspended)
             }
             return RuleDecision(RuleAction.Switch(winner, targetPolicy, baseline), suspended)

@@ -126,6 +126,14 @@ data class RuleRuntimeState(
     @SerialName("suspendedRuleIds") val suspendedRuleIds: Set<String> = emptySet(),
     /** The last rule write failed; the ~30s monitor tick retries and the UI shows a warning. */
     @SerialName("lastApplyFailed") val lastApplyFailed: Boolean = false,
+    /**
+     * Wall clock of the rules layer's last successful write, **copied from the shared write journal**
+     * (`ChargingPreferences.lastRequestedAt`) rather than sampled independently. Copying is what makes
+     * the comparison sound: a journal entry newer than this one is necessarily somebody else's write,
+     * whereas two independent clock reads could differ by a few milliseconds and make the rules layer
+     * look overwritten by itself. 0 = never written.
+     */
+    @SerialName("lastWriteAt") val lastWriteAt: Long = 0L,
 ) {
     val targetPolicy: ChargePolicy?
         get() = ChargePolicy.fromStableId(targetPolicyId)
