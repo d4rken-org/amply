@@ -5,13 +5,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.twotone.ArrowBack
 import androidx.compose.material.icons.automirrored.twotone.OpenInNew
+import androidx.compose.material.icons.automirrored.twotone.Rule
 import androidx.compose.material.icons.automirrored.twotone.ShowChart
 import androidx.compose.material.icons.twotone.Bolt
 import androidx.compose.material.icons.twotone.Book
 import androidx.compose.material.icons.twotone.BugReport
 import androidx.compose.material.icons.twotone.Favorite
 import androidx.compose.material.icons.twotone.History
-import androidx.compose.material.icons.twotone.Rule
 import androidx.compose.material.icons.twotone.Settings
 import androidx.compose.material.icons.twotone.Stars
 import androidx.compose.material.icons.twotone.SupportAgent
@@ -113,7 +113,7 @@ fun SettingsScreen(
                     } else {
                         stringResource(R.string.settings_rules_subtitle_off)
                     },
-                    icon = Icons.TwoTone.Rule,
+                    icon = Icons.AutoMirrored.TwoTone.Rule,
                     onClick = onChargeRules,
                     // The row stays open to everyone: switching a rule off, or deleting it, must
                     // never sit behind the gate.
