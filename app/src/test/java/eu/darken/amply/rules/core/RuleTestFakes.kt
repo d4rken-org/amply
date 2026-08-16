@@ -39,7 +39,17 @@ internal class FakeChargeGateway(
     var writeSucceeds: Boolean = true,
     var chargerTypeSupport: Boolean = true,
     var defaultProtective: ChargePolicy = ChargePolicy.FixedLimit(80),
-    var supportedIds: Set<String> = emptySet(),
+    /**
+     * What a control-capable adapter offers. Defaulted rather than empty because the engine reads an
+     * empty set strictly — that is the diagnostics-only lab adapters' answer, and it means no rule
+     * can act at all.
+     */
+    var supportedIds: Set<String> = setOf(
+        ChargePolicy.FixedLimit(80),
+        ChargePolicy.FixedLimit(90),
+        ChargePolicy.Adaptive,
+        ChargePolicy.Unrestricted,
+    ).map { it.stableId }.toSet(),
     /** Set to model the repository's own journal write, which every real write performs. */
     var journal: ChargingPreferences? = null,
 ) : RuleChargeGateway {
