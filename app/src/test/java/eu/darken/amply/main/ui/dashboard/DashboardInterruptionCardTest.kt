@@ -66,6 +66,7 @@ class DashboardInterruptionCardTest {
                 onFixNotifications = {},
                 onOpenBatteryHub = {},
                 onRetryCapture = {},
+                onStartVerification = {},
                 onPinWidget = {},
                 onAddTile = {},
                 onDismissQuickAccess = {},

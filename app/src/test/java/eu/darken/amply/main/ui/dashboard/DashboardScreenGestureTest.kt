@@ -379,6 +379,7 @@ private fun DashboardScreenForTest(state: DashboardUiState) {
         onFixNotifications = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
+        onStartVerification = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
