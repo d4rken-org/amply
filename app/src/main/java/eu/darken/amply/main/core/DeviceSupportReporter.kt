@@ -1,22 +1,58 @@
 package eu.darken.amply.main.core
 
+import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.Build
+import android.provider.Settings
 import dagger.hilt.android.qualifiers.ApplicationContext
 import eu.darken.amply.BuildConfig
 import eu.darken.amply.charging.core.DeviceInfo
+import eu.darken.amply.charging.core.SettingProbe
+import eu.darken.amply.charging.core.probeSetting
 import eu.darken.amply.charging.core.access.LineageHealthSummary
 import eu.darken.amply.charging.core.access.SettingsSnapshotSource
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
+import eu.darken.amply.charging.core.adapter.OnePlusChargingAdapter
 import eu.darken.amply.common.AmplyLinks
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URLEncoder
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/**
+ * Presence of the two mutually-exclusive Oplus (OnePlus/Oppo/Realme) charge-protection keys.
+ *
+ * Diagnostics only — live Oplus control is gated on the ColorOS 15 ROM version and never consults these. They are
+ * collected because that ROM property is otherwise the *sole* Oplus signal in a report, and it reads "none" on every
+ * pre-rebrand build, so a report from an unqualified Oppo/OnePlus/Realme device carries nothing at all about the
+ * family it just matched. Observed on an Oppo F11 Pro (CPH1969, ColorOS 11), whose report could not distinguish
+ * "this ROM has no charge protection" from "we never looked".
+ *
+ * Deliberately not part of [eu.darken.amply.charging.core.DeviceInfo]: that snapshot is rebuilt on every dashboard
+ * refresh from the main thread, and these are two synchronous provider calls that gate nothing.
+ */
+data class OplusKeyProbes(
+    val regular: SettingProbe,
+    val smart: SettingProbe,
+) {
+    companion object {
+        val UNPROBED = OplusKeyProbes(SettingProbe.ABSENT, SettingProbe.ABSENT)
+
+        /** Call from an IO context. Reads presence only — never a value. */
+        fun read(resolver: ContentResolver) = OplusKeyProbes(
+            regular = probeSetting {
+                Settings.System.getString(resolver, OnePlusChargingAdapter.KEY_REGULAR)
+            },
+            smart = probeSetting {
+                Settings.System.getString(resolver, OnePlusChargingAdapter.KEY_SMART)
+            },
+        )
+    }
+}
 
 /**
  * Immutable snapshot of best-effort, non-privileged device metadata used to ask the developer to add
@@ -45,8 +81,14 @@ data class DeviceSupportReport(
      * be said about HAL limit support. Null when unknown (not LineageOS, or no Shizuku) — never read as a negative.
      */
     val lineageHealth: LineageHealthSummary?,
-    val hasProtectBattery: Boolean,
-    val hasBatteryChargeLimit: Boolean,
+    /**
+     * Unprivileged key-presence probes. Tri-state on purpose: a refused read is not evidence of absence, and
+     * these reports are frequently the only evidence available for a device nobody owns.
+     */
+    val protectBatteryProbe: SettingProbe,
+    val batteryChargeLimitProbe: SettingProbe,
+    val oplusKeys: OplusKeyProbes,
+    /** Provider resolution, not a settings read — it cannot be refused, so it stays a Boolean. */
     val hasLineageSettingsProvider: Boolean,
     val adapterId: String?,
     val adapterMatched: Boolean,
@@ -93,8 +135,9 @@ class DeviceSupportReporter @Inject constructor(
             isLineageOs = device.isLineageOs,
             isGrapheneOs = device.isGrapheneOs,
             lineageHealth = lineageHealth,
-            hasProtectBattery = device.hasProtectBattery,
-            hasBatteryChargeLimit = device.hasBatteryChargeLimit,
+            protectBatteryProbe = device.protectBatteryProbe,
+            batteryChargeLimitProbe = device.batteryChargeLimitProbe,
+            oplusKeys = OplusKeyProbes.read(context.contentResolver),
             hasLineageSettingsProvider = device.hasLineageSettingsProvider,
             adapterId = selection.adapter?.id,
             adapterMatched = selection.support.matched,
@@ -127,7 +170,7 @@ internal fun sanitizeReportValue(value: String?, max: Int = 120): String {
 /** Deterministic, single stable schema. Keep field order fixed so reports are diff-friendly. */
 internal fun formatReport(report: DeviceSupportReport): String = buildString {
     appendLine("Amply device-support request")
-    appendLine("report_schema=9")
+    appendLine("report_schema=10")
     appendLine("app_version=${report.appVersionName} (${report.appVersionCode})")
     appendLine("distribution=${report.flavor}/${report.buildType}")
     appendLine("manufacturer=${report.manufacturer}")
@@ -157,8 +200,15 @@ internal fun formatReport(report: DeviceSupportReport): String = buildString {
     appendLine("lineage_cc_provider=${report.lineageHealth?.provider?.name ?: "unknown"}")
     appendLine("lineage_cc_mode=${report.lineageHealth?.mode ?: "unknown"}")
     appendLine("lineage_cc_limit_mechanism=${report.lineageHealth?.limitMechanism?.name ?: "UNKNOWN"}")
-    appendLine("has_protect_battery=${report.hasProtectBattery}")
-    appendLine("has_battery_charge_limit=${report.hasBatteryChargeLimit}")
+    // present|absent|read_denied. "read_denied" means the platform refused the read, so the key may well exist —
+    // never read it as evidence the OEM lacks the setting. "absent" means nothing came back, which is usually but
+    // not provably a real negative (see SettingProbe).
+    appendLine("probe_protect_battery=${report.protectBatteryProbe.reportValue}")
+    appendLine("probe_battery_charge_limit=${report.batteryChargeLimitProbe.reportValue}")
+    // The Oplus pair. Live control is gated on the ColorOS 15 ROM version, so these decide nothing; they exist so
+    // a report from an unqualified Oppo/OnePlus/Realme build says something about the family at all.
+    appendLine("probe_regular_charge_protection=${report.oplusKeys.regular.reportValue}")
+    appendLine("probe_smart_charge_protection=${report.oplusKeys.smart.reportValue}")
     appendLine("has_lineage_settings_provider=${report.hasLineageSettingsProvider}")
     appendLine("adapter=${report.adapterId ?: "none"}")
     appendLine("adapter_matched=${report.adapterMatched}")

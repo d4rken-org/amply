@@ -5,6 +5,7 @@ import eu.darken.amply.charging.core.BackendKind
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.DeviceInfo
+import eu.darken.amply.charging.core.SettingProbe
 import eu.darken.amply.charging.core.access.AccessBackend
 import eu.darken.amply.charging.core.access.BackendStatus
 import eu.darken.amply.charging.core.access.SettingMutation
@@ -32,7 +33,7 @@ class SamsungChargingAdaptersTest {
         sdk = 36,
         fingerprint = "test",
         oneUiVersion = oneUi,
-        hasProtectBattery = hasKey,
+        protectBatteryProbe = if (hasKey) SettingProbe.PRESENT else SettingProbe.ABSENT,
         isSystemUser = systemUser,
     )
 

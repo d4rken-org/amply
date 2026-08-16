@@ -29,7 +29,7 @@ class ChargingStateSupportLeadTest {
         hyperOsVersion = hyperOsVersion,
         oplusRomVersion = oplusRomVersion,
         lineageOsVersion = lineageOsVersion,
-        hasProtectBattery = hasProtectBattery,
+        protectBatteryProbe = if (hasProtectBattery) SettingProbe.PRESENT else SettingProbe.ABSENT,
         hasLineageSettingsProvider = hasLineageSettingsProvider,
     )
 
@@ -76,7 +76,7 @@ class ChargingStateSupportLeadTest {
         // A future ROM shipping the same key under a non-Google brand reaches the catch-all but
         // still carries an actionable lead; same for GrapheneOS identity without the key.
         ChargingState(
-            device = device().copy(hasBatteryChargeLimit = true),
+            device = device().copy(batteryChargeLimitProbe = SettingProbe.PRESENT),
             adapterId = null,
         ).hasSupportLead shouldBe true
         ChargingState(

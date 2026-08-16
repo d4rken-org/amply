@@ -2,6 +2,7 @@ package eu.darken.amply.charging.core.adapter
 
 import androidx.test.core.app.ApplicationProvider
 import eu.darken.amply.charging.core.DeviceInfo
+import eu.darken.amply.charging.core.SettingProbe
 import eu.darken.amply.charging.core.access.LineageChargeReadout
 import eu.darken.amply.charging.core.access.LineageChargeReader
 import eu.darken.amply.common.ca.toCaString
@@ -47,7 +48,7 @@ class AdapterRegistrySelectionTest {
         sdk = 36,
         fingerprint = "test",
         oneUiVersion = oneUi,
-        hasProtectBattery = true,
+        protectBatteryProbe = SettingProbe.PRESENT,
         isSystemUser = true,
     )
 
@@ -93,7 +94,7 @@ class AdapterRegistrySelectionTest {
         codename = "komodo",
         hasChargingOptimization = false,
         hasGrapheneOsPackages = packages,
-        hasBatteryChargeLimit = key,
+        batteryChargeLimitProbe = if (key) SettingProbe.PRESENT else SettingProbe.ABSENT,
         isSystemUser = systemUser,
     )
 

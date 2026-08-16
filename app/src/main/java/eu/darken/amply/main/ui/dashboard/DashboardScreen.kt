@@ -61,6 +61,7 @@ import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingState
 import eu.darken.amply.charging.core.DeviceInfo
+import eu.darken.amply.charging.core.SettingProbe
 import eu.darken.amply.charging.core.PendingRequest
 import eu.darken.amply.charging.core.SETTLING_WINDOW_MILLIS
 import eu.darken.amply.charging.core.access.AccessSnapshot
@@ -1550,7 +1551,14 @@ private fun DashboardScreenSamsungPreview() = PreviewWrapper {
         state = DashboardUiState(
             onboardingComplete = true,
             charging = ChargingState(
-                device = DeviceInfo("samsung", "SM-X210", 36, "preview", oneUiVersion = 80000, hasProtectBattery = true),
+                device = DeviceInfo(
+                    "samsung",
+                    "SM-X210",
+                    36,
+                    "preview",
+                    oneUiVersion = 80000,
+                    protectBatteryProbe = SettingProbe.PRESENT,
+                ),
                 adapterName = "Samsung battery protection".toCaString(),
                 adapterId = "samsung-oneui8-v1",
                 supportedPolicies = listOf(

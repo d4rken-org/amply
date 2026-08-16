@@ -5,6 +5,7 @@ import eu.darken.amply.charging.core.BackendKind
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.DeviceInfo
+import eu.darken.amply.charging.core.SettingProbe
 import eu.darken.amply.charging.core.access.AccessBackend
 import eu.darken.amply.charging.core.access.BackendStatus
 import eu.darken.amply.charging.core.access.SettingMutation
@@ -33,7 +34,7 @@ class GrapheneOsChargingAdapterTest {
         // The real GrapheneOS shape: no Settings-Intelligence controller.
         hasChargingOptimization = false,
         hasGrapheneOsPackages = packages,
-        hasBatteryChargeLimit = key,
+        batteryChargeLimitProbe = if (key) SettingProbe.PRESENT else SettingProbe.ABSENT,
         isSystemUser = systemUser,
     )
 
