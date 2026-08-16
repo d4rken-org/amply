@@ -45,6 +45,9 @@ class RuleApplier @Inject constructor(
     val rules: Flow<List<ChargeRule>> = store.rules
     val runtime: Flow<RuleRuntimeState> = store.runtime
 
+    /** Point read for a one-shot caller (the editor loading a rule); collection is via [rules]. */
+    suspend fun rulesNow(): List<ChargeRule> = store.rulesNow()
+
     /** False on plug-latched adapters — the editor hides charger-type conditions there. */
     fun chargerTypeSupported(): Boolean = gateway.chargerTypeSupported()
 
