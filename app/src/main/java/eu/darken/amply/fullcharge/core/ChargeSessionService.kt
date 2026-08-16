@@ -219,7 +219,21 @@ class ChargeSessionService : Service() {
                 // persisted and the override write: from that moment the session owes the restore,
                 // and clearing any later would leave both layers claiming the baseline across a
                 // write that can fail or die with the process.
-                afterPersisted = ruleApplier::clearActiveAfterSessionPersist,
+                //
+                // Contained, because begin() runs this between persisting the session and writing
+                // the override: letting a DataStore failure escape would abort the start after the
+                // record exists, stranding a session whose override write never ran. Stale rule
+                // bookkeeping is the far cheaper failure — the next evaluation clears it against the
+                // live session anyway.
+                afterPersisted = {
+                    try {
+                        ruleApplier.clearActiveAfterSessionPersist()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        log(TAG, Logging.Priority.WARN) { "Rule ownership handoff failed: ${e.message}" }
+                    }
+                },
             )
             if (!result.success) {
                 log(TAG, Logging.Priority.WARN) { "Unable to start full-charge session: ${result.message}" }
