@@ -93,11 +93,6 @@ import eu.darken.amply.battery.ui.BatteryEffect
 import eu.darken.amply.main.ui.setup.AccessSetupGuide
 import eu.darken.amply.main.ui.setup.OemGuideCard
 import eu.darken.amply.main.ui.setup.UnsupportedDeviceCard
-import eu.darken.amply.rules.core.ChargeRule
-import eu.darken.amply.rules.core.RuleCondition
-import eu.darken.amply.rules.core.RulePhase
-import eu.darken.amply.rules.core.RuleRuntimeState
-import eu.darken.amply.rules.ui.displayTitle
 import eu.darken.amply.stats.core.ChargeCurvePoint
 import eu.darken.amply.stats.core.StatsLiveSession
 import eu.darken.amply.upgrade.ui.brandTitle
@@ -116,7 +111,6 @@ fun DashboardScreen(
     onAlarmEnabledChange: (Boolean) -> Unit,
     onAlarmTargetChange: (Int) -> Unit,
     onFixNotifications: () -> Unit,
-    onOpenConditions: () -> Unit,
     onOpenBatteryHub: () -> Unit,
     onRetryCapture: () -> Unit,
     onPinWidget: () -> Unit,
@@ -290,15 +284,6 @@ fun DashboardScreen(
                         )
                     }
                     item(key = "dashboard.policy") { PolicyCard(state, onApply, onNativeSettings) }
-                    // Right below the policy it conditionally overrides, and above the reconnect
-                    // gesture — the two read as one group of "things that change the policy for you".
-                    item(key = "dashboard.conditions") {
-                        ConditionsCard(
-                            state = state.conditions,
-                            showProBadge = shouldShowUpgradePromo(state.upgrade),
-                            onOpen = onOpenConditions,
-                        )
-                    }
                     // Hidden where the adapter lacks the gesture's hardware signal (non-Pixel) —
                     // unless it is still switched on and needs a way to be turned off.
                     if (state.charging.reconnectSupported || state.quickFullChargeEnabled) {
@@ -529,19 +514,6 @@ private fun StatusCard(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        }
-        // Provenance, not a second policy claim: the title above already says what the policy is,
-        // this says who chose it. Withheld while a session or a settling write owns the display —
-        // those are the current authors, and naming a rule there would be wrong.
-        if (!settling && presentation != SessionPresentation.ACTIVE) {
-            state.conditions.activeRule?.let { rule ->
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    stringResource(R.string.dashboard_hero_condition, rule.displayTitle()),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
         }
         Spacer(Modifier.height(4.dp))
         Text(
@@ -986,24 +958,6 @@ private fun DashboardScreenPreview() = PreviewWrapper {
                 outcome = InterruptionOutcome.RESTORED_LATE,
                 workId = "preview",
             ),
-            // A condition currently holding the 80% limit — renders both the conditions card and the
-            // hero's provenance line, which agree with the verified policy below.
-            conditions = ConditionsState(
-                rules = listOf(
-                    ChargeRule(
-                        id = "desk",
-                        label = "Desk",
-                        condition = RuleCondition.BluetoothDevice("AA:BB:CC:DD:EE:FF", "Desk speaker"),
-                        policyId = ChargePolicy.FixedLimit(80).stableId,
-                    ),
-                ),
-                runtime = RuleRuntimeState(
-                    phase = RulePhase.ACTIVE,
-                    activeRuleId = "desk",
-                    targetPolicyId = ChargePolicy.FixedLimit(80).stableId,
-                    baselinePolicyId = ChargePolicy.Adaptive.stableId,
-                ),
-            ),
             // Held at the 80% limit: paired with the policy so the reading reads as the effect.
             batteryReadout = BatteryReadout(
                 levelPercent = 80,
@@ -1047,7 +1001,6 @@ private fun DashboardScreenPreview() = PreviewWrapper {
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
-        onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
         onPinWidget = {},
@@ -1142,7 +1095,6 @@ private fun DashboardScreenLiveChargePreview() = PreviewWrapper {
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
-        onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
         onPinWidget = {},
@@ -1217,7 +1169,6 @@ private fun DashboardScreenHwUnconfirmedPreview() = PreviewWrapper {
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
-        onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
         onPinWidget = {},
@@ -1290,7 +1241,6 @@ private fun DashboardScreenApplyingPreview() = PreviewWrapper {
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
-        onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
         onPinWidget = {},
@@ -1374,7 +1324,6 @@ private fun DashboardScreenAwaitingReplugPreview() = PreviewWrapper {
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
-        onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
         onPinWidget = {},
@@ -1444,7 +1393,6 @@ private fun DashboardScreenSessionActivePreview() = PreviewWrapper {
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
-        onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
         onPinWidget = {},
@@ -1516,7 +1464,6 @@ private fun DashboardScreenSessionRecordedPreview() = PreviewWrapper {
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
-        onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
         onPinWidget = {},
@@ -1576,7 +1523,6 @@ private fun DashboardScreenWssOnlyPreview() = PreviewWrapper {
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
-        onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
         onPinWidget = {},
@@ -1650,7 +1596,6 @@ private fun DashboardScreenSamsungPreview() = PreviewWrapper {
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
-        onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
         onPinWidget = {},
@@ -1718,7 +1663,6 @@ private fun DashboardScreenOnePlusNeedsShizukuPreview() = PreviewWrapper {
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
-        onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
         onPinWidget = {},
@@ -1774,7 +1718,6 @@ private fun DashboardScreenUnsupportedPreview() = PreviewWrapper {
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
-        onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
         onPinWidget = {},

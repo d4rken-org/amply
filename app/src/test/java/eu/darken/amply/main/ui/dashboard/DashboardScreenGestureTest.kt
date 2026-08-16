@@ -377,7 +377,6 @@ private fun DashboardScreenForTest(state: DashboardUiState) {
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
-        onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
         onPinWidget = {},

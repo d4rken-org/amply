@@ -64,7 +64,6 @@ class DashboardInterruptionCardTest {
                 onAlarmEnabledChange = {},
                 onAlarmTargetChange = {},
                 onFixNotifications = {},
-                onOpenConditions = {},
                 onOpenBatteryHub = {},
                 onRetryCapture = {},
                 onPinWidget = {},
