@@ -212,7 +212,15 @@ class ChargeSessionService : Service() {
             // is configured right now is the rule's temporary override, so the session must restore
             // the user's real policy, not the override.
             val ruleBaseline = ruleApplier.readActiveBaseline()
-            val result = manager.begin(pluggedAtStart = currentPlugged(), restoreOverride = ruleBaseline)
+            val result = manager.begin(
+                pluggedAtStart = currentPlugged(),
+                restoreOverride = ruleBaseline,
+                // Handed over inside begin(), in the window between the session record being
+                // persisted and the override write: from that moment the session owes the restore,
+                // and clearing any later would leave both layers claiming the baseline across a
+                // write that can fail or die with the process.
+                afterPersisted = ruleApplier::clearActiveAfterSessionPersist,
+            )
             if (!result.success) {
                 log(TAG, Logging.Priority.WARN) { "Unable to start full-charge session: ${result.message}" }
                 if (fullChargeStore.currentSession() != null) SessionNotifications.showRecovery(this)
@@ -220,9 +228,6 @@ class ChargeSessionService : Service() {
                 SurfaceUpdater.updateNow(this)
                 return
             }
-            // Strictly after the session record exists: a refused or failed start must leave the rules
-            // layer owning the baseline, or nothing would owe it back.
-            if (fullChargeStore.currentSession() != null) ruleApplier.clearActiveAfterSessionPersist()
         } else {
             // Resuming a persisted session: assess whether this process is picking up work a dead
             // process left behind. Threaded (one-shot) into the first battery evaluation below.
@@ -651,16 +656,16 @@ class ChargeSessionService : Service() {
             ACTION_RESTORE -> if (recoveryJob?.isActive != true) restoreAndContinue()
             ACTION_MONITOR -> if (recoveryJob?.isActive != true) continueGestureOrStop()
             // A rule edit or a Bluetooth connection change. Gated on recovery like ACTION_MONITOR: a
-            // rule write must never race the boot-recovery convergence loop. The Bluetooth
-            // reconciliation runs here (and only here) because this is the path a process that may
-            // have missed ACL broadcasts comes back through.
+            // rule write must never race the boot-recovery convergence loop. No forced Bluetooth
+            // sweep here — the once-per-service-instance one in evaluateRules already covers the
+            // missed-broadcast case, and sweeping on every ACL event risks a lagging profile proxy
+            // writing a just-disconnected address back over the receiver's fresher snapshot.
             ACTION_EVALUATE_RULES -> if (recoveryJob?.isActive != true) {
                 val (plugged, plugKind) = currentPlug()
                 evaluateRules(
                     plugged = plugged,
                     plugKind = plugKind,
                     sessionActive = fullChargeStore.currentSession() != null,
-                    reconcileBluetooth = true,
                 )
                 continueGestureOrStop()
             }
@@ -721,6 +726,19 @@ class ChargeSessionService : Service() {
             // Assess whether this recovery is picking up work a dead process left behind, BEFORE the
             // flow mutates the pending target.
             val pickup = interruptionAssessor.captureRecoveryPickup()
+            // A persisted session already carries the baseline as its restore target, so rule
+            // bookkeeping left ACTIVE beside it is stale: recovery is about to write policies, and
+            // the rules layer must not come back afterwards claiming to own the result.
+            if (fullChargeStore.currentSession() != null) {
+                try {
+                    ruleApplier.clearActiveAfterSessionPersist()
+                } catch (e: CancellationException) {
+                    // A cancelled recovery job must actually stop here, not carry on into the flow.
+                    throw e
+                } catch (e: Exception) {
+                    log(TAG, Logging.Priority.WARN) { "Rule ownership clear failed: ${e.message}" }
+                }
+            }
             val result = BootRecoveryFlow(recoveryHooks).run()
             log(TAG) { "Boot recovery outcome: ${result.outcome}" }
             // A converged recovery restored the protective policy, so clear any lingering alarm.
@@ -849,6 +867,17 @@ class ChargeSessionService : Service() {
         // instead of leaving charging in whatever transient state the session had. An explicit persistent
         // choice is new owed work, so it gets a fresh work id.
         fullChargeStore.setPendingRecoveryTarget(policy, UUID.randomUUID().toString(), currentWorkProvenance())
+        // Suspend the rules layer here, in the same persisted-intent step and BEFORE the write: a
+        // process death between the write and a post-success suspension would leave the explicit
+        // policy configured with every rule still armed to overwrite it on the next tick.
+        val (pluggedNow, plugKindNow) = currentPlug()
+        try {
+            ruleApplier.suspendMatchingCohort(pluggedNow, plugKindNow)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log(TAG, Logging.Priority.WARN) { "Rule suspension failed: ${e.message}" }
+        }
         restoring = true
         coordinator.close()
         try {
@@ -865,16 +894,6 @@ class ChargeSessionService : Service() {
                 // interruption warning it supersedes and drop the recovery notification.
                 SessionNotifications.cancelRecovery(this)
                 interruptionAssessor.onExplicitPolicyWrite()
-                // An explicit user choice outranks the rules layer. Only after the write actually
-                // landed: suspending rules for a refused write would disable them for nothing.
-                val (plugged, plugKind) = currentPlug()
-                try {
-                    ruleApplier.suspendMatchingCohort(plugged, plugKind)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    log(TAG, Logging.Priority.WARN) { "Rule suspension failed: ${e.message}" }
-                }
             } else {
                 log(TAG, Logging.Priority.ERROR) { "Persistent policy write failed: ${result.message}" }
                 SessionNotifications.showRecovery(this)

@@ -29,10 +29,18 @@ class ChargeSessionManager @Inject constructor(
      * override permanent and lose the user's own baseline. The session record is durable and survives
      * process death, so handing it the true baseline makes it the single owner of that restore.
      */
+    /**
+     * [afterPersisted] runs in the window between the session record being persisted and the override
+     * write. That is the only correct place for the charge-conditions handoff: the session durably
+     * owes the restore from the moment its record exists, and clearing rule ownership any later
+     * leaves both layers claiming the baseline across a write that can fail, be cancelled, or die
+     * with the process. It must not throw — it runs inside the session mutex.
+     */
     suspend fun begin(
         nowMillis: Long = System.currentTimeMillis(),
         pluggedAtStart: Boolean? = null,
         restoreOverride: ChargePolicy? = null,
+        afterPersisted: (suspend () -> Unit)? = null,
     ): ApplyResult = mutex.withLock {
         sessionStore.currentSession()?.let {
             return@withLock ApplyResult(
@@ -106,6 +114,7 @@ class ChargeSessionManager @Inject constructor(
             // that instruction until the replug is observed.
             overrideAwaitingReplug = adapter?.policyLatchesAtPlug == true && pluggedAtStart != false,
         )
+        afterPersisted?.invoke()
         val result = repository.applyTemporary(overridePolicy)
         if (result.success) {
             // Reconcile the persist-first conservative flag with the repository's authoritative
