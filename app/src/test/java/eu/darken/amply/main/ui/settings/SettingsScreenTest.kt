@@ -48,8 +48,6 @@ class SettingsScreenTest {
                 onGeneral = {},
                 gestureEnabled = true,
                 onCharging = {},
-                activeRuleCount = 0,
-                onChargeRules = {},
                 captureEnabled = true,
                 onChargingHistory = {},
                 showDiagnostics = true,
