@@ -200,8 +200,22 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
       and/or Android-16/OS-3.0.3-dependent, and a future HyperOS 3 gate cannot infer the hard-cap mode from
       `ro.mi.os.version.code == 3` alone. Caveats: the wizard saw `changed_rows=2` but the contributor withheld
       one row in the privacy review (mapping possibly incomplete), and the device was previously rooted with
-      FDE.ai driving the charge limit. Thread: support mail "Amply device-support discovery", 2026-08-13; the
-      contributor was asked whether the settings screen shows any third mode / 80% option.
+      FDE.ai driving the charge limit. Thread: support mail "Amply device-support discovery", 2026-08-13.
+      **Confirmed by native-UI screenshot (2026-08-14, same thread):** the F5's Battery protection screen
+      shows a "Charging protection" group with exactly two entries — "Charge fully" and "Intelligent charging"
+      (described as stopping at 80% "in applicable situations", i.e. the adaptive mode) — and no hard-cap
+      option anywhere. This upgrades the finding from a wizard-capture inference to a direct observation of
+      the OEM UI. It does **not** resolve the cause: `tanzanite` differs from `marblein` in both model and
+      Android 16 / ROM 3.0.3, so model-dependence vs Android-16/OS-3.0.3-dependence remain confounded, and
+      the codename gate stays the only sound design either way.
+      **Support status for `marblein`: correctly diagnostics-only, and NOT a candidate for
+      `xiaomi-hyperos3-v1`.** That adapter's protective default is `FixedLimit(80)` = mode `2`, which this
+      device lacks; allowlisting the codename would let `apply()` write `"2"`, read it back from the settings
+      row, and decode `Verified(FixedLimit(80))` while the daemon ignores it — a false claim of an active cap.
+      The device's real surface is the two-mode HyperOS 2 one (`1`/`0`), reachable only by widening
+      `QUALIFIED_HYPEROS_VERSION` from `2`, whose sole protective mode is Adaptive — blocked on the
+      project-wide open item above (adaptive enforcement unobserved on both HyperOS generations), not on
+      anything specific to this device.
     - **LANDED 2026-08-14: `xiaomi-hyperos3-v1`, gated to a qualified-codename allowlist (`tanzanite` only) —
       GrapheneOS-precedent landing** (remote enforcement qualification via issue #48, see the Verified devices
       row). **First on-device verification run (2026-08-14, issue #48; contributor-run, presumably on
