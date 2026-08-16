@@ -2,7 +2,6 @@ package eu.darken.amply.upgrade.core
 
 import android.app.Activity
 import com.android.billingclient.api.BillingClient.BillingResponseCode
-import com.android.billingclient.api.Purchase
 import eu.darken.amply.common.debug.logging.Logging.Priority.ERROR
 import eu.darken.amply.common.debug.logging.Logging.Priority.INFO
 import eu.darken.amply.common.debug.logging.Logging.Priority.VERBOSE
@@ -14,6 +13,7 @@ import eu.darken.amply.upgrade.core.billing.BillingData
 import eu.darken.amply.upgrade.core.billing.BillingManager
 import eu.darken.amply.upgrade.core.billing.GplayServiceUnavailableException
 import eu.darken.amply.upgrade.core.billing.ItemAlreadyOwnedBillingException
+import eu.darken.amply.upgrade.core.billing.PendingPurchaseBillingException
 import eu.darken.amply.upgrade.core.billing.PurchasedSku
 import eu.darken.amply.upgrade.core.billing.Sku
 import eu.darken.amply.upgrade.core.billing.SkuDetails
@@ -269,7 +269,18 @@ class UpgradeRepoGplay @Inject constructor(
                     // Reconciled only if the restore actually returned the SKU Play claims is owned —
                     // a grace-only isPro doesn't count, the entitlement is still missing.
                     if (restored?.upgrades?.any { it.sku == sku } != true) {
-                        onError(e)
+                        if (restored?.pending?.isNotEmpty() == true) {
+                            // Play blocks re-purchasing a product whose payment it is still
+                            // processing. "Already owned" is technically what Play said, but the
+                            // dialog's restore tips are the wrong advice: nothing to restore, and the
+                            // entitlement lands by itself once the payment clears.
+                            log(TAG, INFO) { "Already-owned recovery found a pending payment" }
+                            onError(PendingPurchaseBillingException(e))
+                        } else {
+                            // Couldn't reconcile the entitlement (account mismatch, Play quirk) —
+                            // fall back to the already-owned dialog with restore tips.
+                            onError(e)
+                        }
                     }
                 }
 
@@ -314,13 +325,16 @@ class UpgradeRepoGplay @Inject constructor(
     suspend fun querySkus(vararg skus: Sku): Collection<SkuDetails> = billingManager.querySkus(*skus)
 
     /**
-     * Strict subscription lookup for the pre-purchase gate: fresh SUBS-only query with explicit
-     * failure. No grace substitution and no cross-product-type tolerance — callers must treat any
-     * error as "couldn't verify" and fail closed.
+     * Strict purchase-state lookup for the pre-purchase gates: a fresh COMPLETE round-trip with
+     * explicit failure. No grace substitution and no partial tolerance (unlike [refresh] and
+     * [restorePurchaseNow]) — callers must treat any error as "couldn't verify" and fail closed.
+     * Covers both product types and pending payments, because both can make a purchase wrong: a
+     * renewing subscription (double billing) and a payment Play is still processing (Play rejects the
+     * re-purchase).
      */
-    suspend fun queryCurrentSubscriptions(): Collection<Purchase> {
-        log(TAG) { "queryCurrentSubscriptions()" }
-        return billingManager.querySubscriptions()
+    suspend fun verifyPurchaseStateNow(): Info {
+        log(TAG) { "verifyPurchaseStateNow()" }
+        return Info(billingData = billingManager.refreshStrict(), isSettled = true)
     }
 
     override suspend fun refresh() {
@@ -449,7 +463,8 @@ class UpgradeRepoGplay @Inject constructor(
      * [restorePurchaseNow]. Only relinquishes the upgrade if we haven't had it for a while (grace
      * period). READ-ONLY: this runs on replayed shared-flow data too, so it must never stamp the
      * grace cache — see [recordProState]. [settled] comes from the caller, never from `billingData`
-     * nullness: the grace branch returns an Info with `billingData = null` that may well be settled.
+     * nullness: a null-data Info can be perfectly settled (a real empty snapshot), and the grace
+     * branch carries the data through anyway.
      */
     private suspend fun BillingData?.toUpgradeInfo(settled: Boolean): Info {
         // Branch on MAPPED upgrades, not raw purchases: a purchase list containing only products this
@@ -464,7 +479,11 @@ class UpgradeRepoGplay @Inject constructor(
         log(TAG) { "toUpgradeInfo(): lastProAt=${snapshot.lastProAt}, data=$this" }
         return if (isWithinGrace(snapshot.lastProAt, graceWindowMs(snapshot.lastProSku))) {
             log(TAG, VERBOSE) { "Not currently pro, but were recently — staying pro through the grace window" }
-            Info(gracePeriod = true, billingData = null, isSettled = settled)
+            // billingData is carried through, not dropped: this branch is only reached when the
+            // mapped upgrades are empty, so entitlement stays empty either way — but a pending
+            // payment must stay visible, and a grace user waiting on one is exactly who needs the
+            // explanation.
+            Info(gracePeriod = true, billingData = this, isSettled = settled)
         } else {
             mapped
         }
@@ -513,6 +532,20 @@ class UpgradeRepoGplay @Inject constructor(
             }
             ?.distinct()
             ?: emptySet()
+
+        /**
+         * Any owned purchase Play still bills on a schedule. Deliberately computed from the RAW
+         * PURCHASED purchases instead of [upgrades]: the mapping drops products this app doesn't
+         * know, and the pre-purchase gate must keep blocking on a renewing subscription with an
+         * unknown or legacy product ID — being wrong there means billing the user twice for the same
+         * upgrade. Both product types are scanned; a one-time purchase reports `isAutoRenewing =
+         * false`, so the broader input cannot produce a false positive.
+         *
+         * Computed on access, not in the initializer: an Info is built for every mapping pass, and
+         * only the purchase gate needs this.
+         */
+        val hasAutoRenewingSubscription: Boolean
+            get() = billingData?.purchases?.any { it.isAutoRenewing } == true
 
         override val isPro: Boolean = upgrades.isNotEmpty() || gracePeriod
 

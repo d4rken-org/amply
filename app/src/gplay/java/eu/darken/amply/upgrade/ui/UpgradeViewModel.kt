@@ -15,6 +15,7 @@ import eu.darken.amply.upgrade.core.OurSku
 import eu.darken.amply.upgrade.core.UpgradeRepoGplay
 import eu.darken.amply.upgrade.core.billing.GplayServiceUnavailableException
 import eu.darken.amply.upgrade.core.billing.OfferUnavailableBillingException
+import eu.darken.amply.upgrade.core.billing.PendingPurchaseBillingException
 import eu.darken.amply.upgrade.core.billing.Sku
 import eu.darken.amply.upgrade.core.billing.SkuDetails
 import kotlinx.coroutines.CancellationException
@@ -76,9 +77,10 @@ class UpgradeViewModel @Inject constructor(
     private val activeOp = MutableStateFlow<BusyOp?>(null)
     private val retryTrigger = MutableStateFlow(0)
 
-    // Test seam: the diagnostics threshold compares wall-clock time, which coroutine test dispatchers
-    // can't advance.
+    // Test seams: the diagnostics threshold compares wall-clock time and the gate's bound runs on a
+    // real dispatcher, neither of which a coroutine test dispatcher can advance.
     internal var clock: () -> Long = { System.currentTimeMillis() }
+    internal var verifyTimeoutMs: Long = VERIFY_TIMEOUT_MS
 
     /**
      * The unconfirmed-episode stamp, re-emitted when the episode crosses the diagnostics threshold:
@@ -165,8 +167,10 @@ class UpgradeViewModel @Inject constructor(
             null
         }
         // Owners and grace users don't depend on offer prices: their status and management actions
-        // render immediately and price problems are not their problem.
-        val priceIndependent = ownership.ownsAnything || grace != null
+        // render immediately and price problems are not their problem. A user waiting on a pending
+        // payment is in the same position — the pending hint is their answer, and both offers are
+        // locked anyway, so a price failure must not replace it with an error screen.
+        val priceIndependent = ownership.ownsAnything || grace != null || current.pending.isNotEmpty()
 
         val done = queries as? SkuQueries.Done
         if (done == null) {
@@ -295,44 +299,80 @@ class UpgradeViewModel @Inject constructor(
         return true
     }
 
+    /**
+     * Outcome of the pre-purchase check with Play. Both purchase paths share it: they buy
+     * alternatives of the same entitlement from the same account, so a check only one of them runs is
+     * exactly how a double charge slips through. [Blocked] means the user was already told why.
+     */
+    private sealed interface PurchaseGate {
+        data class Clear(val info: UpgradeRepoGplay.Info) : PurchaseGate
+        data object Blocked : PurchaseGate
+    }
+
+    // Fails closed: no fresh, complete answer from Play (error, timeout) means no purchase. Bounded,
+    // because the repo waits for a healthy connection indefinitely and a tap must not park the
+    // single-flight guard through an outage.
+    private suspend fun runPurchaseGate(): PurchaseGate {
+        val info = try {
+            withTimeoutOrNull(verifyTimeoutMs) { upgradeRepo.verifyPurchaseStateNow() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log(TAG, WARN) { "Purchase verification errored: ${e.asLog()}" }
+            events.tryEmit(UpgradeEvents.Error(e))
+            return PurchaseGate.Blocked
+        }
+        if (info == null) {
+            log(TAG, WARN) { "Purchase verification timed out" }
+            events.tryEmit(UpgradeEvents.PurchaseCheckFailed)
+            return PurchaseGate.Blocked
+        }
+        if (info.pending.isNotEmpty()) {
+            // Play rejects a purchase while it is still processing a payment for this account, and
+            // the alternative product would charge twice for the same features.
+            log(TAG, INFO) { "Purchase blocked: a payment is still pending" }
+            events.tryEmit(UpgradeEvents.PurchasePending)
+            return PurchaseGate.Blocked
+        }
+        return PurchaseGate.Clear(info)
+    }
+
+    // A launch that failed on a pending payment is not an error the user can act on: it gets the
+    // informational dialog instead of the already-owned copy and its restore tips.
+    private fun onLaunchError(error: Throwable) {
+        if (error is PendingPurchaseBillingException) {
+            events.tryEmit(UpgradeEvents.PurchasePending)
+        } else {
+            events.tryEmit(UpgradeEvents.Error(error))
+        }
+    }
+
     fun onGoIap(activity: Activity) {
         log(TAG) { "onGoIap($activity)" }
         viewModelScope.launch {
             // Single-flight: repeated taps must not stack verifications or billing launches.
             if (!acquireOp(BusyOp.IAP)) return@launch
             try {
-                // Hard gate against double-billing: verify against a FRESH SUBS-only query — the
-                // replayed upgradeInfo can be stale or built from partial results. Fails closed: no
-                // verified "not set to renew" (or no sub at all), no one-time purchase.
-                val subscriptions = try {
-                    withTimeoutOrNull(VERIFY_TIMEOUT_MS) { upgradeRepo.queryCurrentSubscriptions() }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    log(TAG, WARN) { "Subscription verification errored: ${e.asLog()}" }
-                    events.tryEmit(UpgradeEvents.Error(e))
+                val gate = runPurchaseGate()
+                if (gate !is PurchaseGate.Clear) return@launch
+                // Hard gate against double-billing, against the FRESH result — the replayed
+                // upgradeInfo can be stale or built from partial results. Asked of the RAW purchases
+                // (see Info.hasAutoRenewingSubscription), never of the mapped upgrades: a renewing
+                // subscription with an unknown or legacy product ID must block the one-time purchase
+                // too, or the user pays for the upgrade twice.
+                if (gate.info.hasAutoRenewingSubscription) {
+                    log(TAG, INFO) { "IAP purchase blocked: subscription is still set to renew" }
+                    events.tryEmit(UpgradeEvents.SubscriptionStillRenewing)
                     return@launch
                 }
-                when {
-                    subscriptions == null -> {
-                        log(TAG, WARN) { "Subscription verification timed out" }
-                        events.tryEmit(UpgradeEvents.SubscriptionCheckFailed)
-                    }
-
-                    subscriptions.any { it.isAutoRenewing } -> {
-                        log(TAG, INFO) { "IAP purchase blocked: subscription is still set to renew" }
-                        events.tryEmit(UpgradeEvents.SubscriptionStillRenewing)
-                    }
-
-                    // Suspends until the Play sheet launch resolved, so the single-flight guard
-                    // covers the whole tap-to-sheet window, not just the verification.
-                    else -> upgradeRepo.launchBillingFlowNow(
-                        activity,
-                        OurSku.Iap.PRO_UPGRADE,
-                        null,
-                        onError = { events.tryEmit(UpgradeEvents.Error(it)) },
-                    )
-                }
+                // Suspends until the Play sheet launch resolved, so the single-flight guard covers
+                // the whole tap-to-sheet window, not just the verification.
+                upgradeRepo.launchBillingFlowNow(
+                    activity,
+                    OurSku.Iap.PRO_UPGRADE,
+                    null,
+                    onError = ::onLaunchError,
+                )
             } finally {
                 activeOp.value = null
             }
@@ -353,6 +393,32 @@ class UpgradeViewModel @Inject constructor(
         viewModelScope.launch {
             if (!acquireOp(BusyOp.SUBSCRIPTION)) return@launch
             try {
+                // Same fresh check as the one-time path: a pending payment (for either product) must
+                // block this launch too — Play would reject it, or bill it on top.
+                val gate = runPurchaseGate()
+                if (gate !is PurchaseGate.Clear) return@launch
+                // The reactive UI can be stale (the purchase was made on another device), and Play
+                // happily sells the subscription alongside an owned one-time purchase — the user
+                // would pay for the upgrade twice. The strict refresh already committed into the
+                // shared billing data, so the screen re-renders to the ownership state, and the
+                // restore-success toast explains why nothing launched. Deliberately the MAPPED
+                // upgrades, not isPro: grace users (mapped upgrades empty) may legitimately
+                // re-purchase.
+                if (gate.info.upgrades.isNotEmpty()) {
+                    log(TAG, INFO) { "Subscription purchase blocked: fresh check found an owned upgrade" }
+                    events.tryEmit(UpgradeEvents.RestoreSucceeded)
+                    return@launch
+                }
+                // Same breadth as the one-time path's renewal guard: an auto-renewing subscription
+                // with an unknown or legacy product ID (which maps to zero upgrades, so the block
+                // above passed) must still block a new subscription — two renewing subscriptions for
+                // the same features is the same double-billing. Reuses the existing
+                // manage-subscription dialog.
+                if (gate.info.hasAutoRenewingSubscription) {
+                    log(TAG, INFO) { "Subscription purchase blocked: another subscription is still set to renew" }
+                    events.tryEmit(UpgradeEvents.SubscriptionStillRenewing)
+                    return@launch
+                }
                 // launchBillingFlowNow suspends until the launch resolved, so the guard covers the
                 // whole tap-to-sheet window. The flow itself runs on the repo's own scope, so closing
                 // the screen mid-launch doesn't abort the purchase.
@@ -360,7 +426,7 @@ class UpgradeViewModel @Inject constructor(
                     activity,
                     OurSku.Sub.PRO_UPGRADE,
                     offer,
-                    onError = { events.tryEmit(UpgradeEvents.Error(it)) },
+                    onError = ::onLaunchError,
                 )
             } finally {
                 activeOp.value = null

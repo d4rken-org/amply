@@ -13,7 +13,16 @@ sealed interface UpgradeEvents {
      */
     data object RestoreInconclusive : UpgradeEvents
     data object SubscriptionStillRenewing : UpgradeEvents
-    data object SubscriptionCheckFailed : UpgradeEvents
+
+    /**
+     * Play answered, no completed purchase exists, but a payment is still being processed. Purely
+     * informational: nothing to fix, nothing to restore — the upgrade unlocks by itself once Play
+     * clears the payment, and a new purchase would be rejected (or double-charge) in the meantime.
+     */
+    data object PurchasePending : UpgradeEvents
+
+    /** The pre-purchase check with Play didn't finish, so the purchase was not started. */
+    data object PurchaseCheckFailed : UpgradeEvents
 
     /** A billing failure that has no dedicated dialog; the host renders its mapped copy. */
     data class Error(val error: Throwable) : UpgradeEvents

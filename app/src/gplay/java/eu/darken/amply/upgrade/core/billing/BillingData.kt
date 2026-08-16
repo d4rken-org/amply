@@ -20,8 +20,15 @@ data class BillingData(
     val pendingPurchases: Collection<Purchase> = emptyList(),
 )
 
-internal fun Collection<Purchase>.purchased(): List<Purchase> =
-    filter { it.purchaseState == PurchaseState.PURCHASED }
+/**
+ * Owned right now. The ONLY state that may grant an entitlement, stamp the grace cache or be
+ * acknowledged — a PENDING purchase is a payment Play is still processing, and acknowledging one is
+ * rejected permanently.
+ */
+internal val Purchase.isPurchased: Boolean
+    get() = purchaseState == PurchaseState.PURCHASED
+
+internal fun Collection<Purchase>.purchased(): List<Purchase> = filter { it.isPurchased }
 
 internal fun Collection<Purchase>.pending(): List<Purchase> =
     filter { it.purchaseState == PurchaseState.PENDING }

@@ -159,21 +159,32 @@ class BillingConnectionReducerTest {
         ).shouldBeEmpty()
     }
 
-    @Test fun `a pending purchase owns nothing, so it must not swallow a failed query`() {
-        // Otherwise a pending IAP next to a broken SUBS query would read as "verified, nothing
-        // owned" — and a real subscription behind that failure would look lapsed.
+    @Test fun `a pending payment for a product we sell counts as a find`() {
+        // It grants nothing, but it IS an answer about this account: Play is processing a payment for
+        // our own SKU, so the sibling type's failure no longer has to be reported as "couldn't
+        // verify" — and the pending purchase must reach the UI either way.
+        BillingConnection.combinePurchaseResults(
+            iap = Result.success(listOf(TestPurchases.purchase(iapId, pending = true))),
+            sub = Result.failure(IllegalStateException("subs query broke")),
+        ).map { it.purchaseToken } shouldBe listOf("token-$iapId")
+    }
+
+    @Test fun `an unknown pending product proves nothing and lets the failure through`() {
+        // A product this build doesn't know says nothing about the type whose query failed, so
+        // treating it as a find would swallow a real "couldn't verify".
         shouldThrow<IllegalStateException> {
             BillingConnection.combinePurchaseResults(
-                iap = Result.success(listOf(TestPurchases.purchase(iapId, pending = true))),
+                iap = Result.success(listOf(TestPurchases.purchase("some.other.product", pending = true))),
                 sub = Result.failure(IllegalStateException("subs query broke")),
             )
         }
 
-        // Nothing failed: the pending purchase is still reported, because the UI has to show it.
+        // Nothing failed, so there is nothing to report — this function only decides whether the
+        // refresh learned enough; the purchase itself still travels through the reducer state.
         BillingConnection.combinePurchaseResults(
-            iap = Result.success(listOf(TestPurchases.purchase(iapId, pending = true))),
+            iap = Result.success(listOf(TestPurchases.purchase("some.other.product", pending = true))),
             sub = Result.success(emptyList()),
-        ).map { it.purchaseToken } shouldBe listOf("token-$iapId")
+        ).shouldBeEmpty()
     }
 
     // endregion

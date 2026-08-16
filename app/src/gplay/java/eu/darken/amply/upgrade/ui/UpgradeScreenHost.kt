@@ -48,6 +48,7 @@ fun UpgradeScreenHost(
     var showRestoreInconclusive by rememberSaveable { mutableStateOf(false) }
     var showStillRenewing by rememberSaveable { mutableStateOf(false) }
     var showCheckFailed by rememberSaveable { mutableStateOf(false) }
+    var showPurchasePending by rememberSaveable { mutableStateOf(false) }
     // Plain remember, unlike its siblings: a Throwable is only nominally Serializable — our billing
     // exceptions carry non-serializable payloads (a Sku, a BillingResult), so saving one would crash
     // on the very rotation it is meant to survive. Losing an error dialog is the cheaper failure.
@@ -74,7 +75,8 @@ fun UpgradeScreenHost(
                 UpgradeEvents.RestoreFailed -> showRestoreFailed = true
                 UpgradeEvents.RestoreInconclusive -> showRestoreInconclusive = true
                 UpgradeEvents.SubscriptionStillRenewing -> showStillRenewing = true
-                UpgradeEvents.SubscriptionCheckFailed -> showCheckFailed = true
+                UpgradeEvents.PurchaseCheckFailed -> showCheckFailed = true
+                UpgradeEvents.PurchasePending -> showPurchasePending = true
                 is UpgradeEvents.Error -> error = event.error
             }
         }
@@ -125,9 +127,23 @@ fun UpgradeScreenHost(
     if (showCheckFailed) {
         AlertDialog(
             onDismissRequest = { showCheckFailed = false },
-            text = { Text(stringResource(R.string.upgrade_screen_sub_check_failed_message)) },
+            text = { Text(stringResource(R.string.upgrade_screen_purchase_check_failed_message)) },
             confirmButton = {
                 TextButton(onClick = { showCheckFailed = false }) {
+                    Text(stringResource(R.string.upgrade_dismiss_action))
+                }
+            },
+        )
+    }
+
+    if (showPurchasePending) {
+        // Purely informational: there is nothing to fix and nothing to restore, so dismissing is the
+        // only action.
+        AlertDialog(
+            onDismissRequest = { showPurchasePending = false },
+            text = { Text(stringResource(R.string.upgrade_screen_pending_dialog_message)) },
+            confirmButton = {
+                TextButton(onClick = { showPurchasePending = false }) {
                     Text(stringResource(R.string.upgrade_dismiss_action))
                 }
             },

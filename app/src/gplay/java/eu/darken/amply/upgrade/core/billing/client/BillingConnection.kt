@@ -21,6 +21,9 @@ import eu.darken.amply.upgrade.core.billing.BillingManager.Companion.tryMapUserF
 import eu.darken.amply.upgrade.core.billing.OfferUnavailableBillingException
 import eu.darken.amply.upgrade.core.billing.Sku
 import eu.darken.amply.upgrade.core.billing.SkuDetails
+import eu.darken.amply.upgrade.core.billing.isPurchased
+import eu.darken.amply.upgrade.core.billing.pending
+import eu.darken.amply.upgrade.core.billing.purchased
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -212,13 +215,40 @@ class BillingConnection(
     }
 
     /**
-     * The purchases of a refresh plus whether it covered both product types: a partial result (one
-     * query failed) is still authoritative for what it FOUND, but must not be treated as proof of
-     * absence for the type that couldn't be checked.
+     * The full outcome of a refresh: what it committed, what it actually CONFIRMED, and how far it
+     * got. A partial result (one query failed) is still authoritative for what it FOUND, but must not
+     * be treated as proof of absence for the type that couldn't be checked — so callers that need to
+     * fail closed, or to feed the grace episode clock, get the provenance instead of having to infer
+     * it from the merged view.
      */
     data class PurchaseRefresh(
+        /**
+         * The committed reducer state (queries merged with retained snapshots and surviving events) —
+         * the same view the reactive [purchases] flow emits.
+         */
         val purchases: Collection<Purchase>,
+        /**
+         * ONLY what these queries returned as owned: never retained state of a failed type, so a
+         * consumer can tell "Play said so just now" from "we still remember this".
+         */
+        val confirmed: Collection<Purchase> = emptyList(),
+        /**
+         * A confirmed PURCHASED purchase of a product this app knows. Fail-safe default: "we couldn't
+         * confirm the upgrade" is the direction that keeps the grace bookkeeping honest.
+         */
+        val hasConfirmedProPurchase: Boolean = false,
         val isComplete: Boolean,
+        /**
+         * Commit time under `reducerLock` — the same instant stamped on this refresh's [FreshUpdate],
+         * so a confirmation and a later failure signal are ordered by when they HAPPENED.
+         */
+        val occurredAt: Long = System.currentTimeMillis(),
+        /**
+         * Why the refresh is incomplete (the failed type's already user-friendly-mapped exception),
+         * null when complete. Carried rather than thrown: a partial refresh that found something is
+         * still useful, only the caller can decide whether partial is good enough.
+         */
+        val partialError: Throwable? = null,
     )
 
     // Serializes concurrent refreshes (manual, background, auto-restore): an older query that got
@@ -246,6 +276,13 @@ class BillingConnection(
             // authoritative even when its sibling failed — verified absence (e.g. a refunded IAP)
             // must not be discarded just because the SUB query errored.
             val isComplete = iap.isSuccess && sub.isSuccess
+            // Only what the queries CONFIRMED as owned — retained stale data of a failed type stays
+            // out (it would keep re-stamping the grace window), and so do pending purchases (they
+            // prove no ownership).
+            val confirmed = (iap.getOrNull().orEmpty() + sub.getOrNull().orEmpty())
+                .purchased()
+                .sortedByDescending { it.purchaseTime }
+            var committedAt = 0L
             val committed = synchronized(reducerLock) {
                 val next = state.value.withQueryResults(
                     iap = iap.getOrNull(),
@@ -253,19 +290,18 @@ class BillingConnection(
                     genAtQueryStart = genAtQueryStart,
                 )
                 state.value = next
+                committedAt = System.currentTimeMillis()
                 if (iap.isSuccess || sub.isSuccess) {
-                    // Only what the queries CONFIRMED as owned — retained stale data of a failed
-                    // type stays out of the fresh stream (it would keep re-stamping the grace
-                    // window), and so do pending purchases (they prove no ownership).
-                    val confirmed = (iap.getOrNull().orEmpty() + sub.getOrNull().orEmpty())
-                        .filter { it.purchaseState == PurchaseState.PURCHASED }
-                        .sortedByDescending { it.purchaseTime }
-                    // A surviving overlay entry (purchase event newer than the query start, or of a
-                    // failed type) means this result does NOT prove total absence: it must not count
-                    // as a full snapshot, or an empty query racing a fresh purchase event would start
-                    // a false unconfirmed-grace episode.
-                    val provesAbsence = isComplete && next.overlay.isEmpty()
-                    freshUpdatesChannel.trySend(FreshUpdate(confirmed, isFullSnapshot = provesAbsence))
+                    // A surviving OWNED overlay entry (purchase event newer than the query start, or
+                    // of a failed type) means this result does NOT prove total absence: it must not
+                    // count as a full snapshot, or an empty query racing a fresh purchase event would
+                    // start a false unconfirmed-grace episode. A surviving PENDING entry proves
+                    // nothing about ownership, so it must not suppress the bookkeeping either — a
+                    // payment in progress would otherwise freeze the episode clock.
+                    val provesAbsence = isComplete && next.overlay.none { it.purchase.isPurchased }
+                    freshUpdatesChannel.trySend(
+                        FreshUpdate(confirmed, isFullSnapshot = provesAbsence, occurredAt = committedAt),
+                    )
                 }
                 next
             }
@@ -273,21 +309,30 @@ class BillingConnection(
             // Support-log anchor, at INFO because purchase complaints arrive as debug recordings.
             // Logs what these queries CONFIRMED, kept distinct from the committed view: merged()
             // retains a failed type's previous purchases, so reporting it as "what Play returned"
-            // would be false certainty. Product IDs only — never the Purchase, which carries order
-            // and token data.
+            // would be false certainty. Pending ids are listed separately — "bought it, still not
+            // upgraded" reports are exactly this state. Product IDs only — never the Purchase, which
+            // carries order and token data.
             log(TAG, INFO) {
-                val confirmedIds = (iap.getOrNull().orEmpty() + sub.getOrNull().orEmpty()).flatMap { it.products }
-                "refreshPurchases(): confirmed=$confirmedIds, isComplete=$isComplete, " +
+                val returned = iap.getOrNull().orEmpty() + sub.getOrNull().orEmpty()
+                val confirmedIds = returned.purchased().flatMap { it.products }
+                val pendingIds = returned.pending().flatMap { it.products }
+                "refreshPurchases(): confirmed=$confirmedIds, pending=$pendingIds, isComplete=$isComplete, " +
                     "iapOk=${iap.isSuccess}, subOk=${sub.isSuccess}, merged=${committed.merged().size}"
             }
 
-            // Throws when nothing OWNED was found and a query failed, so the caller can tell "not
-            // owned" apart from "couldn't verify" (a pending purchase owns nothing).
-            combinePurchaseResults(iap, sub)
+            // Throws when the refresh learned nothing usable and a query failed, so the caller can
+            // tell "not owned" apart from "couldn't verify".
+            combinePurchaseResults(iap, sub, skuTypeOf)
 
             PurchaseRefresh(
                 purchases = committed.merged(),
+                confirmed = confirmed,
+                hasConfirmedProPurchase = confirmed.any { purchase ->
+                    purchase.products.any { skuTypeOf(it) != null }
+                },
                 isComplete = isComplete,
+                occurredAt = committedAt,
+                partialError = iap.exceptionOrNull() ?: sub.exceptionOrNull(),
             )
         }
     }
@@ -331,41 +376,6 @@ class BillingConnection(
         return purchaseData.filter {
             it.purchaseState == PurchaseState.PURCHASED || it.purchaseState == PurchaseState.PENDING
         }
-    }
-
-    /**
-     * Strict SUBS-only query for the pre-purchase subscription gate: unlike [refreshPurchases], a
-     * failure propagates (no cross-type tolerance) — callers must be able to fail closed on
-     * "couldn't verify". Commits through the reducer like any query, so the reactive [purchases] flow
-     * picks up the fresh renewal state, and emits a partial fresh update: it proves what the SUBS
-     * query found, never the absence of anything it didn't cover.
-     */
-    suspend fun querySubscriptions(): Collection<Purchase> = refreshMutex.withLock {
-        log(TAG) { "querySubscriptions()" }
-        val genAtQueryStart = state.value.eventGen
-        val subs = queryPurchases(BillingClient.ProductType.SUBS)
-        val committed = synchronized(reducerLock) {
-            val next = state.value.withQueryResults(
-                iap = null,
-                sub = subs,
-                genAtQueryStart = genAtQueryStart,
-            )
-            state.value = next
-            freshUpdatesChannel.trySend(
-                FreshUpdate(subs.filter { it.purchaseState == PurchaseState.PURCHASED }, isFullSnapshot = false),
-            )
-            next
-        }
-        // The COMMITTED view, not the raw response: a purchase event that arrived after the query
-        // started survives the commit as a newer overlay and must reach the gate too — otherwise a
-        // just-purchased renewing sub could slip past the fail-closed double-billing check.
-        // Non-IAP overlays only; untyped (unknown product) entries stay in on the safe side.
-        val byToken = LinkedHashMap<String, Purchase>()
-        subs.forEach { byToken[it.purchaseToken] = it }
-        committed.overlay
-            .filter { it.type != Sku.Type.IAP }
-            .forEach { byToken[it.purchase.purchaseToken] = it.purchase }
-        byToken.values.sortedByDescending { it.purchaseTime }
     }
 
     suspend fun acknowledgePurchase(purchase: Purchase): BillingResult {
@@ -550,23 +560,30 @@ class BillingConnection(
         }
 
         /**
-         * Combines the two product-type query results: a COMPLETED purchase found by either type is
-         * authoritative; an error is propagated whenever nothing found is actually owned, so callers
-         * can tell "not owned" apart from "couldn't verify one product type". A pending purchase
-         * grants nothing, so it must not swallow the sibling type's failure — it is still returned
-         * (the UI needs it) whenever a completed purchase is present or no query failed. Treating
-         * any found purchase as authoritative is safe because every product this app sells is a Pro
-         * SKU (see [OurSku.PRO_SKUS]). Pure and unit-tested.
+         * Combines the two product-type query results: an error is only propagated when the refresh
+         * learned nothing usable, so callers can tell "not owned" apart from "couldn't verify one
+         * product type". A PURCHASED result of ANY product suppresses the error — every product this
+         * app sells is an upgrade SKU (see [OurSku.PRO_SKUS]), so it is by construction relevant. A
+         * PENDING result only counts when it maps to a KNOWN upgrade SKU: it grants nothing, and an
+         * unknown pending product says nothing about the type whose query failed, so treating it as
+         * a find would swallow a real "couldn't verify". Pure and unit-tested.
          */
         internal fun combinePurchaseResults(
             iap: Result<Collection<Purchase>>,
             sub: Result<Collection<Purchase>>,
+            typeOf: (String) -> Sku.Type? = DEFAULT_SKU_TYPE_RESOLVER,
         ): Collection<Purchase> {
-            val found = iap.getOrNull().orEmpty() + sub.getOrNull().orEmpty()
-            if (found.none { it.purchaseState == PurchaseState.PURCHASED }) {
-                (iap.exceptionOrNull() ?: sub.exceptionOrNull())?.let { throw it }
+            val returned = iap.getOrNull().orEmpty() + sub.getOrNull().orEmpty()
+            val found = returned.filter { purchase ->
+                purchase.isPurchased || purchase.products.any { typeOf(it) != null }
             }
-            return found.sortedByDescending { it.purchaseTime }
+            return when {
+                found.isNotEmpty() -> found.sortedByDescending { it.purchaseTime }
+                else -> {
+                    (iap.exceptionOrNull() ?: sub.exceptionOrNull())?.let { throw it }
+                    emptyList()
+                }
+            }
         }
     }
 }
