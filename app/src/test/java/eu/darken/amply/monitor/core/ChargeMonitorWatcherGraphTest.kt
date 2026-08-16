@@ -10,6 +10,7 @@ import dagger.hilt.android.testing.HiltAndroidTest
 import dagger.hilt.android.testing.HiltTestApplication
 import dagger.hilt.components.SingletonComponent
 import eu.darken.amply.alarm.core.ChargeAlarmWatcher
+import eu.darken.amply.rules.core.RulesWatcher
 import eu.darken.amply.stats.core.ChargeStatsWatcher
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
@@ -60,5 +61,19 @@ class ChargeMonitorWatcherGraphTest {
 
         watchers.map { it.id } shouldContain "battery_stats"
         watchers.any { it is ChargeStatsWatcher } shouldBe true
+    }
+
+    @Test
+    fun `the charge rules watcher is bound into the monitor watcher set`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val watchers = EntryPointAccessors.fromApplication(
+            context,
+            WatcherEntryPoint::class.java,
+        ).watchers()
+
+        // Keep-alive only (rules are evaluated by the service directly), so an absent binding would
+        // not break a tick — it would let the service stop while rules still need it.
+        watchers.map { it.id } shouldContain "charge_rules"
+        watchers.any { it is RulesWatcher } shouldBe true
     }
 }
