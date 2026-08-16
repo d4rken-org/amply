@@ -74,7 +74,7 @@ internal enum class SubscriptionAction {
  * Display-only ownership mapping from the (replayed) upgradeInfo. Conservative: if ANY record for the
  * sub SKU still claims auto-renew (e.g. a retained purchase event next to fresher query data), treat
  * it as renewing — that can only under-offer the one-time purchase, never enable it wrongly; the
- * actual purchase gate re-verifies against a fresh SUBS query in the ViewModel.
+ * actual purchase gate re-verifies against a fresh, complete Play check in the ViewModel.
  */
 internal fun UpgradeRepoGplay.Info.toOwnership() = Ownership(
     hasIap = upgrades.any { it.sku == OurSku.Iap.PRO_UPGRADE },

@@ -5,7 +5,6 @@ import android.content.Context
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.test.core.app.ApplicationProvider
 import com.android.billingclient.api.BillingResult
-import com.android.billingclient.api.Purchase
 import com.android.billingclient.api.TestProductDetails
 import eu.darken.amply.common.AppDataStore
 import eu.darken.amply.common.WebpageTool
@@ -16,6 +15,7 @@ import eu.darken.amply.upgrade.core.UpgradeRepoGplay
 import eu.darken.amply.upgrade.core.billing.BillingData
 import eu.darken.amply.upgrade.core.billing.BillingManager
 import eu.darken.amply.upgrade.core.billing.GplayServiceUnavailableException
+import eu.darken.amply.upgrade.core.billing.ItemAlreadyOwnedBillingException
 import eu.darken.amply.upgrade.core.billing.Sku
 import eu.darken.amply.upgrade.core.billing.SkuDetails
 import eu.darken.amply.upgrade.core.billing.TestPurchases
@@ -28,6 +28,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
@@ -50,8 +51,9 @@ import org.robolectric.annotation.Config
 import java.io.File
 
 /**
- * The screen's decisions that cost money if they are wrong: whether a one-time purchase may be
- * started while a subscription still renews, and what a restore is allowed to claim afterwards.
+ * The screen's decisions that cost money if they are wrong: whether a purchase may be started at all
+ * (a renewing subscription, an already-owned upgrade, a payment Play is still processing, or a check
+ * that never finished), and what a restore is allowed to claim afterwards.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -82,8 +84,10 @@ class GplayUpgradeViewModelTest {
         override val purchaseFailures: Flow<BillingResult> = emptyFlow()
         override val connectionFailures: Flow<Long> = emptyFlow()
 
-        var subscriptionsAnswer: () -> Collection<Purchase> = { emptyList() }
+        var strictAnswer: suspend () -> BillingData = { BillingData(emptyList()) }
         var refreshAnswer: () -> BillingData = { BillingData(emptyList()) }
+        var launchAnswer: () -> Unit = {}
+        val launches: MutableList<Sku> = mutableListOf()
 
         override suspend fun querySkus(vararg skus: Sku): Collection<SkuDetails> = skus.map { sku ->
             when (sku) {
@@ -98,9 +102,16 @@ class GplayUpgradeViewModelTest {
             }
         }
 
-        override suspend fun querySubscriptions(): Collection<Purchase> = subscriptionsAnswer()
+        override suspend fun refreshStrict(): BillingData = strictAnswer()
 
         override suspend fun refresh(): BillingData = refreshAnswer()
+
+        // Records what actually reached Play: the gate tests below assert that a blocked tap never
+        // gets this far.
+        override suspend fun startIapFlow(activity: Activity, sku: Sku, offer: Sku.Subscription.Offer?) {
+            launches.add(sku)
+            launchAnswer()
+        }
     }
 
     @Before fun setup() {
@@ -132,13 +143,13 @@ class GplayUpgradeViewModelTest {
     // The purchase paths need an Activity to hand to Play; only its identity matters here.
     private fun activity(): Activity = Robolectric.buildActivity(Activity::class.java).get()
 
-    // region the pre-purchase subscription gate
+    // region the pre-purchase gate
 
-    @Test fun `a failed subscription check fails closed`(): Unit = runBlocking {
-        // "Couldn't verify" must never be read as "no subscription": that is the reading that lets a
+    @Test fun `a failed purchase check fails closed`(): Unit = runBlocking {
+        // "Couldn't verify" must never be read as "nothing owned": that is the reading that lets a
         // user pay twice.
         val manager = freeManager().apply {
-            subscriptionsAnswer = { throw GplayServiceUnavailableException(RuntimeException("play down")) }
+            strictAnswer = { throw GplayServiceUnavailableException(RuntimeException("play down")) }
         }
         val vm = viewModel(manager)
 
@@ -146,31 +157,166 @@ class GplayUpgradeViewModelTest {
 
         val event = withTimeout(TIMEOUT_MS) { vm.events.first() }
         event.shouldBeInstanceOf<UpgradeEvents.Error>()
+        manager.launches shouldBe emptyList()
     }
 
     @Test fun `a subscription that is not set to renew lets the purchase through`(): Unit = runBlocking {
         val manager = freeManager().apply {
-            subscriptionsAnswer = { listOf(TestPurchases.purchase(subId, autoRenewing = false)) }
+            strictAnswer = { listOf(TestPurchases.purchase(subId, autoRenewing = false)).toBillingData() }
         }
         val vm = viewModel(manager)
 
         vm.onGoIap(activity())
 
-        // No blocking event: the launch itself is attempted (and fails without a real Play sheet,
-        // which surfaces as an error rather than the still-renewing refusal).
+        // No blocking event, and the launch really was attempted.
         val event = withTimeoutOrNull(QUIET_MS) { vm.events.first() }
-        (event is UpgradeEvents.SubscriptionStillRenewing) shouldBe false
+        event shouldBe null
+        manager.launches shouldBe listOf(OurSku.Iap.PRO_UPGRADE)
     }
 
     @Test fun `a renewing subscription is refused with the manage-subscription prompt`(): Unit = runBlocking {
         val manager = freeManager().apply {
-            subscriptionsAnswer = { listOf(TestPurchases.purchase(subId, autoRenewing = true)) }
+            strictAnswer = { listOf(TestPurchases.purchase(subId, autoRenewing = true)).toBillingData() }
         }
         val vm = viewModel(manager)
 
         vm.onGoIap(activity())
 
         withTimeout(TIMEOUT_MS) { vm.events.first() } shouldBe UpgradeEvents.SubscriptionStillRenewing
+        manager.launches shouldBe emptyList()
+    }
+
+    @Test fun `a renewing subscription with an unknown product still blocks the one-time purchase`(): Unit =
+        runBlocking {
+            // The gate reads the RAW purchases, never the mapped upgrades: a subscription whose
+            // product ID this build doesn't know (legacy SKU, renamed product) still renews and still
+            // bills, so letting the one-time purchase through here charges the user twice.
+            val manager = freeManager().apply {
+                strictAnswer = {
+                    listOf(TestPurchases.purchase("some.unknown.subscription", autoRenewing = true)).toBillingData()
+                }
+            }
+            val vm = viewModel(manager)
+
+            vm.onGoIap(activity())
+
+            withTimeout(TIMEOUT_MS) { vm.events.first() } shouldBe UpgradeEvents.SubscriptionStillRenewing
+            manager.launches shouldBe emptyList()
+        }
+
+    @Test fun `a pending payment blocks the one-time purchase`(): Unit = runBlocking {
+        val manager = freeManager().apply {
+            strictAnswer = { listOf(TestPurchases.purchase(iapId, pending = true)).toBillingData() }
+        }
+        val vm = viewModel(manager)
+
+        vm.onGoIap(activity())
+
+        withTimeout(TIMEOUT_MS) { vm.events.first() } shouldBe UpgradeEvents.PurchasePending
+        manager.launches shouldBe emptyList()
+    }
+
+    @Test fun `a pending payment blocks the subscription purchase`(): Unit = runBlocking {
+        // SKU-agnostic on purpose: the two products are alternatives, so a pending payment for either
+        // one must block both — completing both charges the user twice.
+        val manager = freeManager().apply {
+            strictAnswer = { listOf(TestPurchases.purchase(iapId, pending = true)).toBillingData() }
+        }
+        val vm = viewModel(manager)
+
+        vm.onGoSubscriptionTrial(activity())
+
+        withTimeout(TIMEOUT_MS) { vm.events.first() } shouldBe UpgradeEvents.PurchasePending
+        manager.launches shouldBe emptyList()
+    }
+
+    @Test fun `a gate timeout blocks the one-time purchase`(): Unit = runBlocking {
+        val manager = freeManager().apply {
+            strictAnswer = {
+                delay(TIMEOUT_MS)
+                BillingData(emptyList())
+            }
+        }
+        val vm = viewModel(manager).apply { verifyTimeoutMs = GATE_TIMEOUT_MS }
+
+        vm.onGoIap(activity())
+
+        withTimeout(TIMEOUT_MS) { vm.events.first() } shouldBe UpgradeEvents.PurchaseCheckFailed
+        manager.launches shouldBe emptyList()
+    }
+
+    @Test fun `a gate timeout blocks the subscription purchase too`(): Unit = runBlocking {
+        // The subscription path used to launch unverified: a slow Play means we don't know whether a
+        // payment is already pending, so it must fail closed like the one-time path.
+        val manager = freeManager().apply {
+            strictAnswer = {
+                delay(TIMEOUT_MS)
+                BillingData(emptyList())
+            }
+        }
+        val vm = viewModel(manager).apply { verifyTimeoutMs = GATE_TIMEOUT_MS }
+
+        vm.onGoSubscription(activity())
+
+        withTimeout(TIMEOUT_MS) { vm.events.first() } shouldBe UpgradeEvents.PurchaseCheckFailed
+        manager.launches shouldBe emptyList()
+    }
+
+    @Test fun `a subscription purchase is blocked when the fresh check finds an owned upgrade`(): Unit =
+        runBlocking {
+            // The screen can be stale (the one-time purchase was made on another device) and Play
+            // sells the subscription right next to an owned one-time upgrade — launching here charges
+            // the user a second time.
+            val manager = freeManager().apply {
+                strictAnswer = { listOf(TestPurchases.purchase(iapId)).toBillingData() }
+            }
+            val vm = viewModel(manager)
+
+            vm.onGoSubscription(activity())
+
+            withTimeout(TIMEOUT_MS) { vm.events.first() } shouldBe UpgradeEvents.RestoreSucceeded
+            manager.launches shouldBe emptyList()
+        }
+
+    @Test fun `a subscription purchase is blocked when an unknown renewing subscription exists`(): Unit =
+        runBlocking {
+            // Unknown product ID means zero mapped upgrades, so the ownership block above lets it
+            // through. It still renews and still bills, and a second subscription for the same
+            // features is the same double charge.
+            val manager = freeManager().apply {
+                strictAnswer = {
+                    listOf(TestPurchases.purchase("some.unknown.subscription", autoRenewing = true)).toBillingData()
+                }
+            }
+            val vm = viewModel(manager)
+
+            vm.onGoSubscription(activity())
+
+            withTimeout(TIMEOUT_MS) { vm.events.first() } shouldBe UpgradeEvents.SubscriptionStillRenewing
+            manager.launches shouldBe emptyList()
+        }
+
+    @Test fun `a cleared gate lets the subscription purchase launch`(): Unit = runBlocking {
+        val vm = viewModel(freeManager())
+
+        vm.onGoSubscription(activity())
+
+        withTimeoutOrNull(QUIET_MS) { vm.events.first() } shouldBe null
+    }
+
+    @Test fun `a pending-payment launch failure surfaces as the pending dialog`(): Unit = runBlocking {
+        // Play can only report this at launch time (the gate saw a clean state moments earlier): the
+        // already-owned error dialog with its restore tips would be the wrong advice. The recovery
+        // restore finds the pending payment, so the repo reports it as such.
+        val manager = freeManager().apply {
+            launchAnswer = { throw ItemAlreadyOwnedBillingException(RuntimeException("already owned")) }
+            refreshAnswer = { listOf(TestPurchases.purchase(iapId, pending = true)).toBillingData() }
+        }
+        val vm = viewModel(manager)
+
+        vm.onGoIap(activity())
+
+        withTimeout(TIMEOUT_MS) { vm.events.first() } shouldBe UpgradeEvents.PurchasePending
     }
 
     // endregion
@@ -230,5 +376,8 @@ class GplayUpgradeViewModelTest {
     private companion object {
         const val TIMEOUT_MS = 15_000L
         const val QUIET_MS = 500L
+        // Short enough to keep the fail-closed timeout tests fast, long enough that a healthy answer
+        // would comfortably make it back.
+        const val GATE_TIMEOUT_MS = 250L
     }
 }

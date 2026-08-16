@@ -50,10 +50,11 @@
     <string name="upgrade_screen_restore_pending_hint">One of your purchases is still awaiting payment approval. It unlocks by itself once Google Play completes it.</string>
     <string name="upgrade_screen_restore_inconclusive_message">The check with Google Play didn\'t finish in time, so your purchase status is still unknown. Nothing has changed on your account.</string>
 
-    <!-- Pre-purchase subscription gate. -->
+    <!-- Pre-purchase gate, shared by both purchase paths. -->
     <string name="upgrade_screen_sub_still_renewing_title">Subscription still active</string>
     <string name="upgrade_screen_sub_still_renewing_message">Google Play reports that your subscription is still set to renew. To buy the one-time upgrade, cancel the subscription in Google Play first, then come back here.\n\nJust cancelled it? Give Google Play a moment and try again. Also make sure you are using the same Google account.</string>
-    <string name="upgrade_screen_sub_check_failed_message">Couldn\'t check your subscription status with Google Play. Please try again in a moment.</string>
+    <string name="upgrade_screen_purchase_check_failed_message">Couldn\'t check your purchases with Google Play. Please try again in a moment.</string>
+    <string name="upgrade_screen_pending_dialog_message">Google Play found a purchase with a pending payment and is still processing it. Your upgrade unlocks automatically once the payment goes through.</string>
 
     <!-- Grace: the upgrade is still active locally while Google Play can\'t re-confirm it. -->
     <string name="upgrade_screen_grace_title">Confirming your purchase</string>
