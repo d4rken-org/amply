@@ -22,9 +22,17 @@ class ChargeSessionManager @Inject constructor(
 ) {
     private val mutex = Mutex()
 
+    /**
+     * [restoreOverride] replaces the observed current policy as the session's restore target. Set by
+     * the charge-conditions layer when a rule currently owns the policy: what is configured right now
+     * is the *rule's* temporary override, so restoring to it at the end of the session would make the
+     * override permanent and lose the user's own baseline. The session record is durable and survives
+     * process death, so handing it the true baseline makes it the single owner of that restore.
+     */
     suspend fun begin(
         nowMillis: Long = System.currentTimeMillis(),
         pluggedAtStart: Boolean? = null,
+        restoreOverride: ChargePolicy? = null,
     ): ApplyResult = mutex.withLock {
         sessionStore.currentSession()?.let {
             return@withLock ApplyResult(
@@ -78,7 +86,7 @@ class ChargeSessionManager @Inject constructor(
                 message = "The current OEM charging mode is not recognized; refusing to overwrite it",
             )
         }
-        val restorePolicy = (decision as SessionStartDecision.Start).restorePolicy
+        val restorePolicy = restoreOverride ?: (decision as SessionStartDecision.Start).restorePolicy
 
         // Persist recovery state before removing the limit. Stamp this process's identity so a later
         // pickup can tell whether the session survived a process death (interruption detection), and a
