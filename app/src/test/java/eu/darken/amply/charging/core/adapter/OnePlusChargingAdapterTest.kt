@@ -139,6 +139,8 @@ class OnePlusChargingAdapterTest {
         adapter.verification shouldBe VerificationStrategy.SYNC_READBACK
         adapter.preferShizukuForWrites shouldBe true
         adapter.reconnectGestureSupported shouldBe false
+        // ColorOS exposes Smart charging (adaptive) too, but the default is the unconditional cap.
+        adapter.defaultProtectivePolicy.enforcementIsConditional shouldBe false
     }
 
     private class FakeBackend(

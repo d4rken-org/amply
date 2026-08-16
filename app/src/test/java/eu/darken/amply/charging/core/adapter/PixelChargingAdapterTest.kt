@@ -207,6 +207,10 @@ class PixelChargingAdapterTest {
         adapter.confirmationExpected(ChargePolicy.Adaptive, 1, plugged = true) shouldBe false
         adapter.confirmationExpected(ChargePolicy.Unrestricted, 1, plugged = true) shouldBe false
         adapter.confirmationExpected(ChargePolicy.FixedLimit(90), 1, plugged = true) shouldBe false
+        // Also at state 5, where the adaptive profile is actively engaged. Adaptive can never raise
+        // the "hardware never confirmed" warning, which keeps it disjoint from the hero's conditional
+        // wording — the two honesty cues must not double up on the same state.
+        adapter.confirmationExpected(ChargePolicy.Adaptive, 5, plugged = true) shouldBe false
     }
 
     private class FakeBackend(

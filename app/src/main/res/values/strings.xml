@@ -135,7 +135,8 @@
     <string name="adapter_detail_samsung_ready">Changes apply to the hardware immediately</string>
     <string name="adapter_detail_requires_xiaomi">Requires a verified Xiaomi device on HyperOS 2</string>
     <string name="adapter_detail_requires_xiaomi_hyperos3">Requires a qualified Xiaomi device on HyperOS 3</string>
-    <string name="adapter_detail_xiaomi_ready">Changes apply to the hardware immediately</string>
+    <string name="adapter_detail_xiaomi_ready">Setting changes apply immediately; no reconnect needed</string>
+    <string name="adapter_detail_xiaomi_hyperos3_ready">Changes apply to the hardware immediately</string>
     <string name="adapter_detail_requires_oplus">Requires a OnePlus, Oppo, or Realme device on ColorOS 15</string>
     <string name="adapter_detail_oplus_ready">Charging control requires Shizuku on this device</string>
     <string name="adapter_detail_requires_grapheneos">Requires GrapheneOS</string>
@@ -165,6 +166,7 @@
     <string name="dashboard_status_unknown">Policy not verified</string>
     <string name="dashboard_detail_hw_confirmed">Confirmed by Android\'s charging hardware</string>
     <string name="dashboard_detail_readback">Read back through %1$s</string>
+    <string name="dashboard_detail_readback_conditional">Mode set and read back through %1$s; the system chooses when it applies</string>
     <string name="dashboard_detail_last_requested">Last requested by Amply; connect Shizuku for exact readback</string>
     <string name="dashboard_policy_adaptive">Adaptive charging</string>
     <string name="dashboard_policy_full" formatted="false">100% charging</string>
@@ -381,7 +383,7 @@
     <string name="dashboard_session_once_title" formatted="false">Charging to 100% once</string>
     <string name="dashboard_session_returns">%1$s will return automatically at 100%% or when you unplug.</string>
     <string name="dashboard_policy_desc_fixed">This policy stops charging at %1$d%% to protect long-term battery health.</string>
-    <string name="dashboard_policy_desc_adaptive">This policy learns your routine and finishes charging just before you usually unplug.</string>
+    <string name="dashboard_policy_desc_adaptive">The system decides when to hold your charge, usually overnight, and finishes before you normally unplug. It may not hold at other times.</string>
     <string name="dashboard_policy_desc_full" formatted="false">This policy charges the battery fully to 100% without a limit.</string>
     <string name="dashboard_policy_desc_pause" formatted="false">This policy charges to 100%, then pauses and tops the battery up near full.</string>
     <string name="dashboard_fullcharge_active_title">Charging fully once</string>

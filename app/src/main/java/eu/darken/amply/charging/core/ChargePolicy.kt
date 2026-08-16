@@ -12,6 +12,23 @@ sealed interface ChargePolicy {
     val allowsFullCharge: Boolean
         get() = this == Unrestricted || this == PauseAtFull || (this is FixedLimit && percent >= 100)
 
+    /**
+     * Whether the OEM decides *when* this policy acts, rather than acting whenever it is configured.
+     * A conditional policy that is configured and read back proves the mode is selected — never that
+     * the battery is being protected right now. Every OEM "adaptive"/"smart"/"intelligent" mode
+     * engages only inside a learned window: a HyperOS overnight window on Xiaomi (a 13T with
+     * Intelligent charging configured and verified charged 59%→100% with no hold, 2026-08-16), and
+     * shortly before the usual unplug on Pixel/ColorOS.
+     *
+     * Consumed by [ChargeObservation.provesPolicyInEffect] for presentation only.
+     */
+    val enforcementIsConditional: Boolean
+        get() = when (this) {
+            Adaptive -> true
+            Unrestricted, PauseAtFull -> false
+            is FixedLimit -> false
+        }
+
     data object Unrestricted : ChargePolicy {
         override val stableId = "unrestricted"
         override val label = R.string.charging_policy_unrestricted_label.toCaString()

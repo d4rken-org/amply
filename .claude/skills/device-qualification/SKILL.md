@@ -48,7 +48,7 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
 |---|---|---|---|---|
 | Pixel | Pixel 8 `shiba` A17/API37; Pixel 9 Pro `caiman` A16/API36; Pixel 7a `lynx` A16/API36 | Full — sysfs `charging_policy` follows writes (~11–12s) | Access tiers, sessions, boot recovery, wireless hold, at-threshold, reconnect gesture, natural 100%, interrupted-session detection (7a) | 2026-07-15/-19/-20/-25 |
 | Samsung | Galaxy Tab A9+ SM-X210 One UI 8.0; Galaxy S20 FE SM-G781B One UI 4.1 | Full — sync readback + HAL enforcement | Modern multi-mode + legacy toggle, session E2E, native-change cancel, reboot recovery, R8 beta | 2026-07-21 |
-| Xiaomi | Xiaomi 13T `2306EPN60G` HyperOS 2.0 (`ro.mi.os.version.code=2`) | **Partial** — mapping/readback/session verified; the adaptive 80% hold could not be triggered, so daemon-level hardware enforcement is **not yet demonstrated** | Read matrix, both-direction writes, session at 100%, unknown-value refusal, R8 beta | 2026-07-21 |
+| Xiaomi | Xiaomi 13T `2306EPN60G` (`aristotle`) HyperOS 2.0 (`ro.mi.os.version.code=2`); 2026-08-16 re-run on `OS2.0.216.0.VMFEUXM` / Android 15 | **Partial, now characterized** — external shell-UID writes provably drive the daemon identically to native UI taps (`getProtectMode` → `checkUiModeProtect` → `setEnable`, ~80 ms, both directions, no hidden UI-only flag). The adaptive 80% hold is still **unobserved**: charged 59→100% with no plateau, `getNightChargingState` = 0 on all 140 evaluations. Cause identified — the gate is a *learned* charging-routine model (`key_ave_night_charge_start_minutes`, `…_sd`, `key_enter_night_charge_times`), not a clock window (forced clock to 02:30 did not open it). **BLOCKED on an unused test device, not FAILED.** No hardware hold signal (`Charging state`/`policy` = 0/0) | Read matrix, both-direction writes, session at 100%, unknown-value refusal, R8 beta (2026-07-21). Added 2026-08-16: external-vs-UI write-path equivalence, native UI reflects external key, learned-schedule root cause, clock-forcing negative | 2026-07-21 / 2026-08-16 |
 | OnePlus (Oplus) | OnePlus Nord CE4 Lite `CPH2621` ColorOS 15 (`ro.build.version.oplusrom=V15.0.0`) | Full — enforcement directly observable (device holds at 80%); external writes stick | Two mutually-exclusive `system` keys (Charging limit / Smart charging), WSS-only write rejected + Shizuku write succeeds for all three policies, WSS-only UX (controls disabled + Shizuku-required banner) | 2026-07-21 |
 | GrapheneOS | Pixel 9 Pro XL `komodo`, GrapheneOS 2026080501 / Android 17 — **REMOTE qualification via issue #49** (tester-run protocol, not maintainer hardware) | **Enforcement observed**: held at 80% with shield, `dumpsys battery` status=4/Charging state=4/policy=2 (limit on) vs 2/1/1 (off); shell-UID writes move the Settings UI live, **latch at plug-session start** — mid-session writes have no hardware effect until unplug→replug, replug reliably applies the current value | Key isolation (`settings list` diff → single `global battery_charge_limit` 0/1), write→UI both directions, mid-session no-op both directions, replug latch both directions, hardware signal both states. **NOT run**: app-context access tiers (WSS write from Amply, `app.grapheneos.*` package visibility), sessions/boot recovery, wireless, factory-absent key state, secondary user | 2026-08-12 |
 | Xiaomi (HyperOS 3) | Redmi Note 14 `24117RN76G` (`tanzanite`), HyperOS 3.0.302 / Android 16 (`ro.mi.os.version.code=3`) — **REMOTE qualification via issue #48** (contributor-run protocol, not maintainer hardware) | **Both-direction enforcement of EXTERNAL shell-UID writes observed** (the same write path as Amply's Shizuku service): `settings put … 2` below the cap → Battery protection active, Settings UI follows immediately, held at 80% for ~20 min under active use (voltage 4228 mV holding vs 4391 mV charging, charge counter 4283 vs 4341 corroborate; sysfs `current_now` permission-denied, so no current reading); `settings put … 0` mid-hold → charging resumes past 80 immediately. **No hardware hold signal**: `dumpsys battery` reports `status: 2` / `Charging state: 0` / `Charging policy: 0` in both states → read-back-only verification | Key mapping (three modes incl. `2` = Battery protection @80, cap fixed — no percent picker), external write → UI both directions, sustained hold, mid-hold release. Beta run 2026-08-14 added: app-context three-mode control (direct WSS), factory-absent key = Intelligent (confirmed). Session restore FAILED in that run (observer noise cancel — app bug, fixed; see Known gaps). **NOT run**: Shizuku tier, boot recovery, wireless, R8, session re-verify post-fix | 2026-08-14 |
@@ -149,8 +149,54 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
     (`ro.build.version.opporom`) is read, so pre-ColorOS-12 builds remain undetectable as Oplus by ROM version. A
     device with a *working* pre-15 ColorOS charge-protection feature would need a new gate signal, not a widened
     version constant — and the usual bar applies: physically observed charging cessation, not a settings mapping.
-- **Xiaomi** — adaptive hardware enforcement of external writes unconfirmed; treat the adapter as provisional until
-  the 80% hold is physically observed.
+- **Xiaomi** — **external-write handling RESOLVED (2026-08-16); the adaptive 80% hold remains unobserved and is
+  now believed UNQUALIFIABLE on an unused test device.** Split the old "adaptive enforcement unconfirmed" gap into
+  its two halves — one is now closed, the other is characterized rather than merely open.
+  - **Closed: external shell-UID writes are functionally identical to native UI taps** (Xiaomi 13T `aristotle`,
+    HyperOS 2 `OS2.0.216.0.VMFEUXM`, Android 15, maintainer hardware). Both paths produce the same daemon chain
+    with the same values, within ~80 ms of the write:
+    `ChargeProtectionUtils: getProtectMode mode:N` → `SmartChargeProtectManager: checkUiModeProtect:N` →
+    `BaseChargeProtect_: MODE_NIGHT,setEnable fromShouldWork:false,to:false,enable:{true|false}`.
+    Verified in both directions and both origins (UI tap to Charge fully / Intelligent, external
+    `settings put … 0` / `… 1`). **There is no hidden internal flag that only the Settings UI sets** — an
+    explicitly tested hypothesis, refuted. The native UI also reflects an externally-written key on next open.
+    So Amply's write mechanism is complete and correct on HyperOS 2; nothing in the adapter needs changing for
+    the write path.
+  - **Still unobserved: the hold itself.** With the key at `1` (Intelligent, written externally), the device
+    charged **59% → 100% continuously with no plateau at any level** — uniform ~4 min per point, voltage and
+    charge counter rising monotonically through 80 (4265→4293 mV, counter 3390000→3493000), `status: 2`
+    throughout. `getNightChargingState` was evaluated **140 times across the run and returned `0` every time**
+    (60 s cadence while charging). No hardware hold signal exists — `Charging state: 0` / `Charging policy: 0`
+    in all states, same as HyperOS 3.
+  - **Root cause of the non-engagement: the gate is a LEARNED schedule, not a clock window.** Strings in
+    `com.miui.securitycenter` (`com.miui.powercenter.nightcharge`) show the feature keeps a statistical model of
+    habitual overnight charging: `key_ave_night_charge_start_minutes`, `key_night_charge_start_minutes_sd`,
+    `key_night_charge_end_minutes_sd` (standard deviations), `key_enter_night_charge_times` (occurrence count),
+    `key_earliest_night_charge_end_minutes`, `key_night_charge_record`, plus four distinct
+    `isNeedNightChargeProtection return false case 1..4` rejection paths. Directly corroborated: forcing the
+    device clock to 02:30 (via `cmd time_detector set_time_state_for_tests`; shell UID lacks both `SET_TIME` and
+    `SUGGEST_MANUAL_TIME_AND_ZONE`) did **not** open the window — `isNightChargeProtectionOpen` stayed `false`.
+    Time of day alone is insufficient; the daemon wants a low-variance charging history the device does not have.
+  - **Consequence for qualification: this device cannot settle it.** The 13T is a maintainer *test* device with no
+    normal daily use, so it can never accumulate the routine the model requires. Qualifying Adaptive would need
+    either weeks of genuine (or convincingly simulated) nightly charging at a consistent time, or root to seed
+    SecurityCenter's private prefs. Record the July "could not be triggered" and this run as the **same** result
+    with a now-known cause, not as two independent failures. **Adaptive on Xiaomi is therefore BLOCKED, not
+    FAILED** — no evidence exists that it fails to hold, only that its precondition never became true.
+  - **Open consequence for the adapter** (see `XiaomiChargingAdapter.kt:47`, `defaultProtectivePolicy = Adaptive`):
+    Amply's protective policy on HyperOS 2 is a mode that, by the OEM's own design, only acts inside a learned
+    overnight window. Outside that window a device with Adaptive configured charges to 100%, as observed here.
+    Amply's read is not *wrong* (the mode genuinely is configured), but "protected" overstates what the user gets
+    in daytime or irregular charging. Decide whether to keep the default, or to distinguish "configured" from
+    "actively holding" on Xiaomi surfaces.
+  - **Dead end, do not re-investigate:** `global battery_charging_state_enforce_level` and
+    `battery_charging_state_update_delay` (both `-1` on this device) look like an enforcement lever from their
+    names — they are not. Resolved 2026-08-16 by disassembling the device's own `/system/framework/services.jar`
+    (`dexdump`): both are read by **`com.android.server.power.stats.BatteryStatsImpl$Constants`**, alongside
+    `KEY_BATTERY_CHARGED_DELAY_MS`, `KEY_MAX_HISTORY_FILES`, and `KEY_KERNEL_UID_READERS_THROTTLE_TIME`. This is
+    stock AOSP **battery-statistics bookkeeping** (when batterystats treats the device as charged, for history
+    reset), not Xiaomi charge control, and it cannot cap charging current. Never written to. Recorded here
+    specifically so the plausible-sounding name does not cost anyone a second investigation.
   - **HyperOS 3 candidate mapping (contribution report, 2026-08-07 — unqualified at the time; since landed,
     see the LANDED bullet below).** A
     Redmi Note 14 `24117RN76G` (`tanzanite`, Android 16 / SDK 36, `ro.mi.os.version.code=3`, ROM
