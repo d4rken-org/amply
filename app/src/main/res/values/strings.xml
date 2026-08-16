@@ -4,6 +4,7 @@
     <string name="tile_active">Restore limit</string>
     <string name="tile_override_active">Temporary override active</string>
     <string name="tile_replug_hint">Replug to apply</string>
+    <string name="tile_enforcement_testing">Charge limiting not verified yet</string>
     <string name="tile_applying">Applying…</string>
     <string name="widget_description">Amply charge controls</string>
     <string name="session_channel_name">Full charge and restore</string>
@@ -379,6 +380,16 @@
     <string name="dashboard_waiting_target">Waiting for the system to switch to %1$s. This can take about 15 seconds…</string>
     <string name="dashboard_waiting_replug">Takes effect the next time you unplug and replug the charger</string>
     <string name="dashboard_hw_unconfirmed">The charging hardware hasn\'t confirmed %1$s yet. It may not be applying</string>
+
+    <!-- Enforcement verification (adapters where a setting can read back while the hardware ignores it) -->
+    <string name="dashboard_enforcement_candidate_title">Charge limiting is unverified here</string>
+    <string name="dashboard_enforcement_candidate_body">Your build accepts a charge limit, but whether the charging hardware actually honours it differs from build to build, so Amply can\'t offer the controls yet. Run a check on this device: Amply watches one charge and switches the controls on only if the battery really stops at the limit.</string>
+    <string name="dashboard_enforcement_candidate_action">Verify on this device</string>
+    <string name="dashboard_enforcement_testing_title">Verifying charge limiting</string>
+    <string name="dashboard_enforcement_testing_body">The controls are available, but nothing here proves the limit yet. Set a limit, then charge from below it and leave the charger connected: Amply confirms once the battery is observed holding at the limit, and switches the controls back off if it charges past it.</string>
+    <string name="dashboard_enforcement_testing_note">Set, but hardware enforcement is not verified on this build yet</string>
+    <string name="dashboard_enforcement_refuted_title">Charge limiting does not work on this build</string>
+    <string name="dashboard_enforcement_refuted_body">Your build accepted the limit and then charged past it, so the charging hardware is ignoring it. Amply has switched its charging controls off here rather than show a protection that isn\'t real. A report helps get this build looked at.</string>
     <string name="dashboard_settling_fallback_target">the new policy</string>
     <string name="dashboard_session_once_title" formatted="false">Charging to 100% once</string>
     <string name="dashboard_session_returns">%1$s will return automatically at 100%% or when you unplug.</string>
@@ -541,6 +552,7 @@
     <string name="widget_status_charging_replug" formatted="false">1×100% · replug to start</string>
     <string name="widget_status_waiting_suffix">%1$s · waiting for system…</string>
     <string name="widget_status_replug_suffix">%1$s · replug to apply</string>
+    <string name="widget_status_testing_suffix">%1$s · not verified yet</string>
     <string name="widget_label_limited">Limited to %1$d%%</string>
     <string name="widget_label_unlimited" formatted="false">Unlimited (100%)</string>
     <string name="widget_label_adaptive">Adaptive charging</string>

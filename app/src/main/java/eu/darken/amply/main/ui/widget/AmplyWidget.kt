@@ -52,6 +52,7 @@ import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingPreferences
 import eu.darken.amply.charging.core.ChargingRepository
 import eu.darken.amply.charging.core.ChargingState
+import eu.darken.amply.charging.core.enforcement.EnforcementStatus
 import eu.darken.amply.charging.core.isAwaitingReplug
 import eu.darken.amply.charging.core.isSettling
 import eu.darken.amply.charging.core.settlingTarget
@@ -269,7 +270,7 @@ internal fun widgetDisplay(state: ChargingState, sessionActive: Boolean, now: Lo
  * which is unreliable given Glance's widget-session caching). Derived from the requested target because
  * observation alone degrades to Unknown on WSS-only.
  */
-private fun statusLine(
+internal fun statusLine(
     context: Context,
     sessionActive: Boolean,
     settling: Boolean,
@@ -300,7 +301,14 @@ private fun statusLine(
             widgetLabel(context, state.settlingTarget() ?: requestedTarget),
         )
     }
-    return widgetLabel(context, state.observation.policyOrNull() ?: requestedTarget)
+    val label = widgetLabel(context, state.observation.policyOrNull() ?: requestedTarget)
+    // While a build is under verification the setting is real but its effect is not established, so
+    // the widget must not put a bare "Limited to 80%" on the home screen.
+    return if (state.enforcement == EnforcementStatus.UNDER_TEST) {
+        context.getString(R.string.widget_status_testing_suffix, label)
+    } else {
+        label
+    }
 }
 
 /** "∞ <limit>" — the adapter's protective default, e.g. ∞80% on Pixel, ∞Auto on Xiaomi. */

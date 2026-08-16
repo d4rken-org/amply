@@ -395,6 +395,20 @@ class DashboardViewModel @Inject constructor(
     fun completeOnboarding() = viewModelScope.launch { onboardingSettings.complete() }
 
     /**
+     * Opt this build into enforcement verification. The controls become available immediately and are
+     * labelled as unproven until a charge is observed holding at the limit; the observation itself
+     * rides the monitor service, which the nudge below (re)starts now that a watcher wants it.
+     */
+    fun startEnforcementVerification() = viewModelScope.launch {
+        log(TAG, Logging.Priority.INFO) { "startEnforcementVerification()" }
+        repository.startEnforcementVerification()
+        ContextCompat.startForegroundService(
+            context,
+            Intent(context, ChargeSessionService::class.java).setAction(ChargeSessionService.ACTION_MONITOR),
+        )
+    }
+
+    /**
      * Routed through the service (same command the widget's ∞ buttons use) rather than writing the
      * policy here: the service serializes the write against session/recovery writes, refuses when no
      * backend can write, persists the recovery target before the risky write, suppresses its own

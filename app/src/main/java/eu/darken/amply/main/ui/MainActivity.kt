@@ -342,6 +342,7 @@ class MainActivity : ComponentActivity() {
                             onOpenBatteryHub = { destination = SettingsDestination.BATTERY },
                             // Re-dispatch the charge service after a failed start (charging card retry).
                             onRetryCapture = { viewModel.nudgeChargeService() },
+                            onStartVerification = { viewModel.startEnforcementVerification() },
                             onPinWidget = viewModel::requestPinWidget,
                             onAddTile = viewModel::requestAddTile,
                             onDismissQuickAccess = viewModel::dismissQuickAccess,

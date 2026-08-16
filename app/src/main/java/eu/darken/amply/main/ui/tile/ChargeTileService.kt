@@ -12,6 +12,7 @@ import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
 import eu.darken.amply.R
 import eu.darken.amply.charging.core.ChargingRepository
+import eu.darken.amply.charging.core.enforcement.EnforcementStatus
 import eu.darken.amply.charging.core.isAwaitingReplug
 import eu.darken.amply.charging.core.isSettling
 import eu.darken.amply.common.debug.logging.Logging
@@ -70,6 +71,10 @@ class ChargeTileService : TileService() {
                             state.isAwaitingReplug() -> getString(R.string.tile_replug_hint)
                             state.isSettling(System.currentTimeMillis()) ->
                                 getString(R.string.tile_applying)
+                            // The tile can act on this build, but nothing here has shown the limit
+                            // actually holding — say so rather than print the reassuring access label.
+                            state.enforcement == EnforcementStatus.UNDER_TEST ->
+                                getString(R.string.tile_enforcement_testing)
                             else -> (state.access?.label ?: state.adapterName)
                                 .get(this@ChargeTileService)
                         },
