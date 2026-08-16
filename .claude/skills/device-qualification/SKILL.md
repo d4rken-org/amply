@@ -335,18 +335,77 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
       the shell UID, then check whether HONOR's own battery screen and the charging hardware follow), the same
       test that settled `tanzanite`. The contributor completed the Shizuku-gated wizard, so they have a working
       Shizuku setup and are a strong candidate to run it.
+    - **Blocker 1, HALF resolved (support mail, 2026-08-16).** The contributor ran the external-write test from
+      Termux via Shizuku/rish. **Both keys accept the write and HONOR's own battery screen follows the value in
+      both directions**, for `UserSmartPeakCap`/Smart battery capacity and for `asw_ui_state`/Smart charge alike.
+      That **rules out the read-only-mirror class** the Oplus comparison pointed at — the ColorOS `_status` keys
+      are read-only (`95618cc`: "The OEM enforces exclusion and mirrors a read-only `_status`"), and these are
+      not. The `_ui_` name is no longer a reason to distrust `asw_ui_state` specifically.
+      **It does NOT satisfy step 2 of the protocol**, which passes only when writes move the *real charging
+      hardware*, "not just the Settings UI". The surviving failure mode is a key the Settings UI genuinely reads
+      *and* writes while a separate mechanism drives the charger — precisely the oriole/LineageOS 20 result
+      (write accepted, `ChargingControlController` picked it up and reported the new config back, battery charged
+      92→95% at ~1.2 A). Treat UI-follows-write as a **precondition met**, never as qualification.
+    - **Smart charge is adaptive, not a cap (same mail).** Overnight the device reaches 100% by morning, matching
+      HONOR's described hold-then-top-off behaviour. So the feature maps to `ChargePolicy.Adaptive`, not a
+      `FixedLimit`, and there is no plateau for the step-2 hardware test to observe — **only Smart battery
+      capacity is hardware-testable here**, and it is also the key carrying the level hazard below. Note the
+      Adaptive honesty gap recorded for Xiaomi above applies identically: `allowsFullCharge`
+      (`ChargePolicy.kt:12-13`) excludes Adaptive, so Amply would call this "protective" for a mode that reaches
+      full on its own.
     - **Blocker 2 — no gate signal identified.** The fingerprint is stock-shaped
       (`HONOR/BKQ-N49/HNBKQ:16/HONORBKQ-N49/10.0.0.193C636E4R106P1:user/release-keys`), so fingerprint sniffing
       is out for the same reason it was for LineageOS. Whether a MagicOS-exclusive property analogous to
       `ro.mi.os.version.code` exists **and is readable from an `untrusted_app` process** is unknown and cannot be
       settled by adb `getprop` (adb runs as shell — see the SELinux trap above). `Build.MANUFACTURER == "HONOR"`
       alone is a manufacturer gate with no ROM scoping, weaker than every existing OEM gate.
+      **Unchanged by the 2026-08-16 follow-up, and it outlives the mapping**: even a clean hardware result leaves
+      no safe way to switch an adapter on only where it applies. Asked the contributor for `pm list features` and
+      `pm list packages -s` filtered on honor/magic, i.e. the two mechanisms that *are* app-readable and already
+      carry LineageOS (`org.lineageos.android` system feature) and GrapheneOS (`app.grapheneos.*` core packages).
+      A property would not do, for the reason above. Also note the app itself cannot answer this: property names
+      are compile-time constants, the AIDL has no property op
+      (`IChargingControlService.aidl`), and `SystemPropertyReader` structurally cannot distinguish denial from
+      absence — so probing a candidate MagicOS property needs a code change, not a contributor run.
     - **Level-reporting hazard to test at qualification.** The reporter states Smart battery capacity "still
       displays 100% when fully charged" while capping. A ROM reporting a synthetic 100% at a real ~80% would
       trip `full = status == BATTERY_STATUS_FULL || percent >= 100` in `ChargeSessionService`, ending a session
       early via `RESTORE_FULL`, and would corrupt `StatsLimitHitDetector`. Verify before any adapter ships.
+      Three sharpenings (2026-08-16), because the phrasing above understates it:
+        - **The predicate is a disjunction, so `BATTERY_STATUS_FULL` alone trips it**
+          (`ChargeSessionService.kt:374`). Guarding only `percent >= 100` would close nothing: a ROM that fakes
+          the level almost certainly drives `EXTRA_STATUS` through the same platform path. `full` is also the
+          **first** branch of `SessionDecisionEngine.decide` (`SessionDecision.kt:122`), outranking the safety
+          timeout, the disconnect path and the replug grace window, and the resulting `RESTORE_FULL` is silent —
+          Amply re-applies the protective policy and believes it finished the job.
+        - **Nothing establishes that the *broadcast* carries the synthetic value.** The contributor reported what
+          HONOR *displays*. SystemUI reads the same broadcast so the two usually agree, but that is an inference.
+          The qualification measurement must read `dumpsys battery` (level/status/voltage/charge counter), not
+          the status bar.
+        - **No workaround exists to build on.** There is no level clamp, plausibility check, or level-vs-hardware
+          cross-check anywhere in the app; `BatteryReadoutFactory.kt:54-57` rejects only a malformed level/scale
+          pair. Tolerating a lying ROM would be new work with no existing seam, so do not describe it as a
+          compatibility tweak. Blast radius beyond sessions: `StatsLimitHitDetector.kt:44` returns `false`
+          unconditionally at ≥100 (the "limit reached" signal would never fire on exactly this device class), and
+          `ChargeAlarmEngine.kt:39` would fire at any configured target outside a session (inside one,
+          `sessionActive` suppresses it).
+      **Measurement asked for (2026-08-16):** charge to a displayed 100% with Smart battery capacity ON, record
+      `dumpsys battery`, then switch the feature OFF with the cable in and re-record. Voltage and charge counter
+      climbing afterwards proves the cap is real and the 100% cosmetic; unchanged means the cell was already full
+      and the mode caps nothing. Same evidence shape that settled `tanzanite`.
+    - **Third key, out of scope: `secure/charge_separation_all_scenarios_switch`** (bypass charging, `1`/`0`,
+      reported 2026-08-16). Contributor observation: bypass engages while the screen is on and normal charging
+      resumes with the screen off. Recorded as context only — Amply has **no bypass concept at all** (the sole
+      codebase mention is a KDoc line in `GrapheneOsChargingAdapter.kt:25` describing what GrapheneOS's key does
+      underneath), and `ChargePolicy` cannot express a bypass-only state. Not a candidate for the write allowlist.
     - `rom_version=magicos 10.0.0.193` in the report is **free text typed by the contributor**, not a detector
       output; `one_ui_version=none` / `hyperos_version=none` are the real detectors correctly returning null.
       Note also that contribution reports carry **no codename field** (unlike the direct device-support report),
-      so an allowlist entry can only come from the fingerprint or a follow-up.
+      so an allowlist entry can only come from the fingerprint or a follow-up. Asked the contributor to run the
+      "Just send device info" action on the unsupported-device card (`DeviceSupportReporter` emits `device=`
+      from `Build.DEVICE`, plus `brand`/`product` and the tri-state key probes; no Shizuku needed) rather than
+      another wizard pass, which would omit the codename again.
+    - **Status after the 2026-08-16 follow-up: still NOT qualified, and the gate is unchanged.** One of Blocker
+      1's two halves is closed (keys drive the OEM UI both ways, mirror class excluded); the hardware half and
+      all of Blocker 2 are open. Nothing here justifies an adapter, a lab adapter, or a manufacturer read.
     - Tracking: GitHub issue #66.
