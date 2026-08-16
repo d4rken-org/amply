@@ -13,7 +13,8 @@ import eu.darken.amply.charging.core.DeviceInfo
  * can fall back to manual navigation guidance instead of launching an intent that goes nowhere.
  */
 object OemChargingShortcuts {
-    // Samsung's exported battery-protection activity action (docs/SAMSUNG_SPIKE_RESULTS.md).
+    // Samsung's exported battery-protection activity action, from the Samsung qualification run
+    // (.claude/skills/device-qualification).
     private const val SAMSUNG_ACTION = "com.samsung.android.sm.ACTION_BATTERY_PROTECTION"
 
     fun resolve(context: Context, device: DeviceInfo): Intent? {
