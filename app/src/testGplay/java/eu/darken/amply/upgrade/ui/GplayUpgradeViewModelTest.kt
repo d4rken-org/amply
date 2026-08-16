@@ -321,6 +321,30 @@ class GplayUpgradeViewModelTest {
 
     // endregion
 
+    // region the pending explanation on screen
+
+    @Test fun `a pending payment keeps its hint when both price queries fail`(): Unit = runBlocking {
+        // Not the acquisition-style Unavailable card: the pending explanation must survive a price
+        // outage, exactly like the grace and ownership states do. Both offers are locked anyway.
+        val manager = object : FakeBillingManager(
+            MutableStateFlow(listOf(TestPurchases.purchase(iapId, pending = true)).toBillingData()),
+        ) {
+            override suspend fun querySkus(vararg skus: Sku): Collection<SkuDetails> =
+                throw GplayServiceUnavailableException(RuntimeException("play down"))
+        }
+        val vm = viewModel(manager)
+
+        val loaded = withTimeout(TIMEOUT_MS) {
+            vm.state.first { it is GplayUpgradeUiState.Loaded } as GplayUpgradeUiState.Loaded
+        }
+
+        loaded.iapPending shouldBe true
+        loaded.iapEnabled shouldBe false
+        loaded.subscriptionEnabled shouldBe false
+    }
+
+    // endregion
+
     // region restore outcomes
 
     @Test fun `a restore that finds the purchase reports success`(): Unit = runBlocking {
