@@ -143,6 +143,8 @@
     <string name="adapter_detail_requires_lineageos">Requires a qualified LineageOS device</string>
     <string name="adapter_detail_lineageos_no_provider">LineageOS charging control is not available on this build</string>
     <string name="adapter_detail_lineageos_ready">Charging control requires Shizuku on this device</string>
+    <string name="adapter_detail_enforcement_candidate">Charge limiting has not been verified on this build yet</string>
+    <string name="adapter_detail_enforcement_refuted">This build charged past the limit it accepted, so charging control is switched off</string>
     <string name="adapter_detail_none">No charging adapter is known for this device</string>
 
     <!-- Access backend detail + summary labels -->

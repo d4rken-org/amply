@@ -30,11 +30,23 @@ import javax.inject.Singleton
  * `WRITE_SECURE_SETTINGS` cannot write it — [preferShizukuForWrites]). Verified with read-back equality
  * ([VerificationStrategy.SYNC_READBACK]).
  *
- * The HAL is device-dependent (some devices flip the setting but never limit — the `mIsLimitSet:false`
- * class of bug), so control is gated to a **physically-qualified codename allowlist**
- * ([QUALIFIED_CODENAMES]) that ships **empty** until a device passes qualification; every LineageOS build
- * otherwise falls through to [LineageLabAdapter]. See the qualification ledger in
- * `.claude/skills/device-qualification/`.
+ * The gate is **two-layered**, because the two layers answer different questions:
+ *
+ *  - *Did the ROM accept the configuration?* — the write read-back ([VerificationStrategy.SYNC_READBACK]).
+ *  - *Did the hardware act on it?* — observed enforcement. The HAL is device- AND build-dependent (some
+ *    builds flip the setting but never limit — the `mIsLimitSet:false` class of bug; oriole exposed the
+ *    LIMIT mode bit on LineageOS 20 and dropped it on 23.2 on identical hardware), and no read can
+ *    answer it. So this adapter sets [enforcementEvidenceRequired]: it *matches* every LineageOS build
+ *    that ships the settings provider, but control stays off until either the maintainer qualified the
+ *    codename ([QUALIFIED_CODENAMES], the fast path, still empty) or the user ran a verification on
+ *    their own device and the cap was observed holding. See
+ *    `charging/core/enforcement/EnforcementVerdictEngine` and the ledger in
+ *    `.claude/skills/device-qualification/`.
+ *
+ * A LineageOS build **without** the provider no longer matches here at all and falls through to
+ * [LineageLabAdapter] (generic diagnostics text): keeping provider presence in [probe]'s `matched`
+ * preserves the registry's custom-ROM-before-OEM ordering for those devices, at the cost of the more
+ * specific "not available on this build" note this adapter used to show them.
  */
 @Singleton
 class LineageChargingAdapter @Inject constructor(
@@ -57,21 +69,27 @@ class LineageChargingAdapter @Inject constructor(
     override val sessionOverridePolicy = ChargePolicy.Unrestricted
     override val verification = VerificationStrategy.SYNC_READBACK
     override val preferShizukuForWrites = true
+    override val enforcementEvidenceRequired = true
+
+    override fun maintainerQualified(device: DeviceInfo) = device.codename in qualifiedCodenames
 
     override fun probe(device: DeviceInfo): AdapterSupport {
-        val matched = device.isLineageOs && device.codename in qualifiedCodenames
+        val matched = device.isLineageOs && device.hasLineageSettingsProvider
         return AdapterSupport(
             matched = matched,
-            controlEnabled = matched && device.hasLineageSettingsProvider && device.isSystemUser,
+            controlEnabled = matched && device.isSystemUser,
             detail = when {
                 !matched -> R.string.adapter_detail_requires_lineageos
-                !device.hasLineageSettingsProvider -> R.string.adapter_detail_lineageos_no_provider
                 !device.isSystemUser -> R.string.adapter_detail_secondary_user
                 else -> R.string.adapter_detail_lineageos_ready
             },
-            // Unqualified LineageOS builds are handled by LineageLabAdapter, so this live adapter never
-            // solicits a contribution itself.
+            // Whether this device is worth a report is decided by the enforcement gate (a refutation is),
+            // not by the adapter: its keys are fully mapped either way.
             contributionWanted = false,
+            // The three charging_control_* keys are already mapped and live in a provider the wizard does
+            // not capture, so a guided run always diffs to nothing and cannot be delivered — same reason
+            // LineageLabAdapter withholds it. A refuted device contributes through the direct report.
+            guidedCaptureUseful = false,
         )
     }
 
@@ -163,10 +181,12 @@ class LineageChargingAdapter @Inject constructor(
         private val CANONICAL_LIMIT_STRINGS = SUPPORTED_LIMITS.map { it.toString() }.toSet()
 
         /**
-         * Physically-qualified device codenames (`Build.DEVICE`) where the charge-control HAL is confirmed
-         * to enforce the limit. **Ships empty** — the adapter is diagnostics-only until a device passes the
-         * qualification protocol and gets a ledger row (see `.claude/skills/device-qualification/`). Widen
-         * ONLY with a qualified device.
+         * The **maintainer fast path**: device codenames (`Build.DEVICE`) whose charge-control HAL was
+         * physically confirmed to enforce the limit, which therefore need no local evidence. **Ships
+         * empty** — it is no longer what makes the adapter reachable (every provider-carrying LineageOS
+         * build matches now), only what lets a device skip verification. Widen ONLY with a qualified
+         * device plus a ledger row (see `.claude/skills/device-qualification/`), and remember that HAL
+         * capability is build-scoped: a bare codename here claims every build on that device.
          */
         val QUALIFIED_CODENAMES = emptySet<String>()
     }

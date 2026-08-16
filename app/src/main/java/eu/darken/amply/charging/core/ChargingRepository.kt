@@ -15,6 +15,10 @@ import eu.darken.amply.charging.core.adapter.AdapterSelection
 import eu.darken.amply.charging.core.adapter.ChargingAdapter
 import eu.darken.amply.charging.core.adapter.VerificationStrategy
 import eu.darken.amply.charging.core.ChargingPreferences
+import eu.darken.amply.charging.core.enforcement.BuildIdentitySource
+import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceState
+import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceStore
+import eu.darken.amply.charging.core.enforcement.EnforcementStatus
 import eu.darken.amply.common.ca.CaString
 import eu.darken.amply.common.ca.caString
 import eu.darken.amply.common.ca.toCaString
@@ -73,6 +77,13 @@ data class ChargingState(
     /** True when applying a policy needs Shizuku (system-namespace adapter WSS can't write). */
     val writeRequiresShizuku: Boolean = false,
     val controlEnabled: Boolean = false,
+    /**
+     * Where this device sits on the "does the hardware actually enforce the cap" question, or null
+     * where the question doesn't apply (every adapter but LineageOS today). Surfaces must not present
+     * a settings-level read-back as proof while this is
+     * [eu.darken.amply.charging.core.enforcement.EnforcementStatus.UNDER_TEST].
+     */
+    val enforcement: EnforcementStatus? = null,
     val contributionWanted: Boolean = false,
     /** See [eu.darken.amply.charging.core.adapter.AdapterSupport.guidedCaptureUseful]. */
     val guidedCaptureUseful: Boolean = true,
@@ -156,6 +167,8 @@ class ChargingRepository @Inject constructor(
     private val shizukuController: ShizukuController,
     private val settleScheduler: SettleScheduler,
     private val batteryReader: BatteryReader,
+    private val evidenceStore: EnforcementEvidenceStore,
+    private val buildIdentity: BuildIdentitySource,
 ) {
     private val operationMutex = Mutex()
 
@@ -258,13 +271,22 @@ class ChargingRepository @Inject constructor(
         }
     }
 
-    fun nativeSettingsIntent() = registry.select().adapter?.nativeSettingsIntent(context)
+    /**
+     * The selected adapter's *capabilities* only. The enforcement gate decides whether control is
+     * allowed, never which adapter matched, so these callers pass the fail-closed
+     * [EnforcementEvidenceState.Loading] rather than paying for a store read: the worst this can
+     * produce is `controlEnabled = false`, which none of them reads.
+     */
+    private fun capabilityAdapter(): ChargingAdapter? =
+        registry.select(evidenceState = EnforcementEvidenceState.Loading).adapter
 
-    fun currentAdapter(): ChargingAdapter? = registry.select().adapter
+    fun nativeSettingsIntent() = capabilityAdapter()?.nativeSettingsIntent(context)
+
+    fun currentAdapter(): ChargingAdapter? = capabilityAdapter()
 
     /** Configured-settings readback, only for adapters whose writes are synchronously verifiable. */
     suspend fun syncReadback(): ChargeObservation? {
-        val adapter = registry.select().adapter ?: return null
+        val adapter = capabilityAdapter() ?: return null
         if (adapter.verification != VerificationStrategy.SYNC_READBACK) return null
         return readSyncWithFallback(adapter)
     }
@@ -293,7 +315,7 @@ class ChargingRepository @Inject constructor(
         log(TAG, Logging.Priority.INFO) {
             "apply(policy=${policy.stableId}, persistent=$persistent, forceNotify=$forceNotify)"
         }
-        val selection = registry.select()
+        val selection = selectGated()
         val adapter = selection.adapter
         if (adapter == null || !selection.support.controlEnabled) {
             val detail = selection.support.detail.toCaString()
@@ -475,8 +497,29 @@ class ChargingRepository @Inject constructor(
         }
     }
 
+    /**
+     * Adapter selection with the real enforcement gate applied — the only form that may decide
+     * whether a policy write is allowed. Reads the durable evidence and the verification opt-in, so
+     * it is confined to the suspend apply/refresh paths.
+     */
+    private suspend fun selectGated(device: DeviceInfo = DeviceInfo.current(context)): AdapterSelection =
+        registry.select(
+            device = device,
+            evidenceState = evidenceStore.currentState(),
+            verificationStarted = preferences.verificationStartedForNow() == buildIdentity.current(),
+        )
+
+    /** The gated selection, for callers that must observe the real control decision (the support report). */
+    suspend fun currentSelection(): AdapterSelection = selectGated()
+
+    /** Record the user's explicit opt-in to verify charge limiting on this exact build. */
+    suspend fun startEnforcementVerification() {
+        preferences.startVerification(buildIdentity.current())
+        refresh()
+    }
+
     private suspend fun refreshLocked(message: CaString?): ChargingState {
-        val selection: AdapterSelection = registry.select()
+        val selection: AdapterSelection = selectGated()
         val access = accessResolver.snapshot()
         val adapter = selection.adapter
         // ONE sticky observation for everything hardware-derived this refresh — plug state, the
@@ -562,6 +605,7 @@ class ChargingRepository @Inject constructor(
             syncVerification = adapter?.verification == VerificationStrategy.SYNC_READBACK,
             writeRequiresShizuku = adapter?.preferShizukuForWrites == true,
             controlEnabled = selection.support.controlEnabled,
+            enforcement = selection.support.enforcement,
             contributionWanted = selection.support.contributionWanted,
             guidedCaptureUseful = selection.support.guidedCaptureUseful,
             // controlEnabled implies detail is the adapter's *_ready string (every probe's when-cascade

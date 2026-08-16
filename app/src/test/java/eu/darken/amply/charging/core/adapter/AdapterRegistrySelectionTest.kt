@@ -1,10 +1,16 @@
 package eu.darken.amply.charging.core.adapter
 
 import androidx.test.core.app.ApplicationProvider
+import eu.darken.amply.R
 import eu.darken.amply.charging.core.DeviceInfo
 import eu.darken.amply.charging.core.SettingProbe
 import eu.darken.amply.charging.core.access.LineageChargeReadout
 import eu.darken.amply.charging.core.access.LineageChargeReader
+import eu.darken.amply.charging.core.enforcement.EnforcementEvidence
+import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceState
+import eu.darken.amply.charging.core.enforcement.EnforcementStatus
+import eu.darken.amply.charging.core.enforcement.EnforcementVerdict
+import eu.darken.amply.charging.core.enforcement.EnforcementVerdictEngine
 import eu.darken.amply.common.ca.toCaString
 import io.kotest.matchers.shouldBe
 import org.junit.Test
@@ -42,6 +48,31 @@ class AdapterRegistrySelectionTest {
         onePlusLab = OnePlusLabAdapter(),
     )
 
+    /**
+     * Every case that isn't about the enforcement gate runs with no stored evidence and no started
+     * verification — the shipped default on a fresh install.
+     */
+    private fun select(
+        device: DeviceInfo,
+        evidence: EnforcementEvidenceState = EnforcementEvidenceState.Absent,
+        verificationStarted: Boolean = false,
+    ) = registry.select(device, evidence, verificationStarted)
+
+    private fun lineageEvidence(
+        verdict: EnforcementVerdict,
+        adapterId: String = "lineageos-chargingcontrol-v1",
+    ) = EnforcementEvidenceState.Present(
+        EnforcementEvidence(
+            adapterId = adapterId,
+            buildIdentity = "build-a",
+            algorithmVersion = EnforcementVerdictEngine.ALGORITHM_VERSION,
+            verdict = verdict,
+            capPercent = 80,
+            observedPercent = 80,
+            observedAtWallMillis = 1_000L,
+        ),
+    )
+
     private fun samsung(oneUi: Int?) = DeviceInfo(
         manufacturer = "samsung",
         model = "SM-TEST",
@@ -54,21 +85,21 @@ class AdapterRegistrySelectionTest {
 
     @Test
     fun `one ui 8 selects the modern adapter with control`() {
-        val selection = registry.select(samsung(80000))
+        val selection = select(samsung(80000))
         selection.adapter?.id shouldBe "samsung-oneui8-v1"
         selection.support.controlEnabled shouldBe true
     }
 
     @Test
     fun `one ui 4 and 5 select the legacy adapter`() {
-        registry.select(samsung(40100)).adapter?.id shouldBe "samsung-legacy-v1"
-        registry.select(samsung(50100)).adapter?.id shouldBe "samsung-legacy-v1"
+        select(samsung(40100)).adapter?.id shouldBe "samsung-legacy-v1"
+        select(samsung(50100)).adapter?.id shouldBe "samsung-legacy-v1"
     }
 
     @Test
     fun `unverified one ui versions fall through to the diagnostics lab adapter`() {
         listOf(30000, 60000, 61000, 70000, 90000, null).forEach { oneUi ->
-            val selection = registry.select(samsung(oneUi))
+            val selection = select(samsung(oneUi))
             selection.adapter?.id shouldBe "samsung-lab"
             selection.support.controlEnabled shouldBe false
         }
@@ -76,7 +107,7 @@ class AdapterRegistrySelectionTest {
 
     @Test
     fun `pixel still selects the pixel adapter`() {
-        val selection = registry.select(
+        val selection = select(
             DeviceInfo("Google", "Pixel 8", 36, "test", hasChargingOptimization = true),
         )
         selection.adapter?.id shouldBe "google-pixel-lab-v1"
@@ -102,7 +133,7 @@ class AdapterRegistrySelectionTest {
     fun `grapheneos selects its live adapter ahead of the pixel adapter`() {
         // Without the ordering, the Pixel probe (any Google/Pixel*) would swallow the device as a
         // matched-but-diagnostics-only stock Pixel.
-        val selection = registry.select(graphene())
+        val selection = select(graphene())
         selection.adapter?.id shouldBe "grapheneos-chargelimit-v1"
         selection.support.controlEnabled shouldBe true
     }
@@ -111,7 +142,7 @@ class AdapterRegistrySelectionTest {
     fun `grapheneos keeps control without the key probe`() {
         // The real-device shape: @Protected denies the unprivileged probe, so the key always reads
         // absent from app context (issue-#49 beta report) — control must not gate on it.
-        val selection = registry.select(graphene(key = false))
+        val selection = select(graphene(key = false))
         selection.adapter?.id shouldBe "grapheneos-chargelimit-v1"
         selection.support.controlEnabled shouldBe true
         selection.support.contributionWanted shouldBe false
@@ -120,7 +151,7 @@ class AdapterRegistrySelectionTest {
     @Test
     fun `a stock pixel with the key present is not treated as grapheneos`() {
         // Identity is packages-only: the key alone must fall through to the Pixel adapter.
-        val selection = registry.select(
+        val selection = select(
             graphene(packages = false).copy(hasChargingOptimization = true),
         )
         selection.adapter?.id shouldBe "google-pixel-lab-v1"
@@ -131,40 +162,40 @@ class AdapterRegistrySelectionTest {
         // Both are ROM-identity adapters; a LineageOS Pixel carries the Lineage feature and no
         // graphene packages, so ordering only matters for hypothetical both-signal devices — the
         // Lineage pair stays first.
-        registry.select(lineageWithDeniedProperty("komodo", "Google")).adapter?.id shouldBe "lineageos-lab"
+        select(lineageWithDeniedProperty("komodo", "Google")).adapter?.id shouldBe "lineageos-chargingcontrol-v1"
     }
 
     @Test
     fun `any HyperOS 2 xiaomi selects the live adapter`() {
-        val selection = registry.select(
+        val selection = select(
             DeviceInfo("Xiaomi", "2306EPN60G", 35, "test", hyperOsVersion = 2, isSystemUser = true),
         )
         selection.adapter?.id shouldBe "xiaomi-hyperos2-v1"
         selection.support.controlEnabled shouldBe true
 
         // A different HyperOS 2 model selects the live adapter too (ROM-version gate, not model).
-        registry.select(
+        select(
             DeviceInfo("Xiaomi", "23078PND5G", 35, "test", hyperOsVersion = 2, isSystemUser = true),
         ).adapter?.id shouldBe "xiaomi-hyperos2-v1"
     }
 
     @Test
     fun `non-HyperOS-2 xiaomi devices fall through to the xiaomi lab adapter`() {
-        registry.select(
+        select(
             DeviceInfo("Xiaomi", "2306EPN60G", 35, "test", hyperOsVersion = 1),
         ).adapter?.id shouldBe "xiaomi-lab"
         // HyperOS 3 without a qualified codename falls through via the hyperos3 allowlist.
-        registry.select(
+        select(
             DeviceInfo("Xiaomi", "2306EPN60G", 35, "test", hyperOsVersion = 3),
         ).adapter?.id shouldBe "xiaomi-lab"
-        registry.select(
+        select(
             DeviceInfo("Xiaomi", "M2101K6G", 33, "test"),
         ).adapter?.id shouldBe "xiaomi-lab"
     }
 
     @Test
     fun `a qualified HyperOS 3 codename selects the hyperos3 adapter with control`() {
-        val selection = registry.select(
+        val selection = select(
             DeviceInfo("Xiaomi", "24117RN76G", 36, "test", codename = "tanzanite", hyperOsVersion = 3, isSystemUser = true),
         )
         selection.adapter?.id shouldBe "xiaomi-hyperos3-v1"
@@ -175,11 +206,11 @@ class AdapterRegistrySelectionTest {
     fun `an unqualified HyperOS 3 codename falls through to the xiaomi lab adapter`() {
         // marblein (HyperOS 3.0.2) carries only the two HyperOS-2-style modes — the reason the
         // hyperos3 gate is a codename allowlist and not version-only.
-        registry.select(
+        select(
             DeviceInfo("Xiaomi", "23049PCD8I", 35, "test", codename = "marblein", hyperOsVersion = 3, isSystemUser = true),
         ).adapter?.id shouldBe "xiaomi-lab"
         // A future HyperOS major falls through too, even on a qualified codename.
-        registry.select(
+        select(
             DeviceInfo("Xiaomi", "24117RN76G", 37, "test", codename = "tanzanite", hyperOsVersion = 4, isSystemUser = true),
         ).adapter?.id shouldBe "xiaomi-lab"
     }
@@ -187,7 +218,7 @@ class AdapterRegistrySelectionTest {
     @Test
     fun `ColorOS 15 oplus devices select the live adapter across the family`() {
         listOf("OnePlus", "OPPO", "realme").forEach { manufacturer ->
-            val selection = registry.select(
+            val selection = select(
                 DeviceInfo(manufacturer, "CPH2621", 35, "test", oplusRomVersion = 15, isSystemUser = true),
             )
             selection.adapter?.id shouldBe "oplus-coloros15-v1"
@@ -197,14 +228,14 @@ class AdapterRegistrySelectionTest {
 
     @Test
     fun `unqualified oplus devices fall through to the oneplus lab adapter`() {
-        registry.select(
+        select(
             DeviceInfo("OnePlus", "CPH2621", 35, "test", oplusRomVersion = 14),
         ).adapter?.id shouldBe "oneplus-lab"
         // No oplus ROM property (older device / non-Oplus that still reports the brand) → lab.
-        registry.select(
+        select(
             DeviceInfo("OnePlus", "CPH2621", 34, "test"),
         ).adapter?.id shouldBe "oneplus-lab"
-        registry.select(
+        select(
             DeviceInfo("realme", "RMX3999", 34, "test"),
         ).adapter?.id shouldBe "oneplus-lab"
     }
@@ -240,84 +271,178 @@ class AdapterRegistrySelectionTest {
     ) = lineage(codename = codename, manufacturer = manufacturer, version = null, feature = true)
 
     @Test
-    fun `a qualified lineageos codename selects the live adapter with control`() {
-        val selection = registry.select(lineage(codename = "oriole"))
+    fun `a maintainer-qualified lineageos codename keeps control without local evidence`() {
+        val selection = select(lineage(codename = "oriole"))
         selection.adapter?.id shouldBe "lineageos-chargingcontrol-v1"
         selection.support.controlEnabled shouldBe true
+        selection.support.enforcement shouldBe EnforcementStatus.CONFIRMED
     }
 
     @Test
-    fun `a qualified lineageos device without the provider matches but disables control`() {
-        val selection = registry.select(lineage(codename = "oriole", provider = false))
-        selection.adapter?.id shouldBe "lineageos-chargingcontrol-v1"
+    fun `a lineageos device without the provider falls through to the lab adapter`() {
+        // There is nothing to write without the provider, so the live adapter no longer matches at all —
+        // those devices get the generic lab diagnostics text instead of the old provider-specific note.
+        val selection = select(lineage(codename = "oriole", provider = false))
+        selection.adapter?.id shouldBe "lineageos-lab"
         selection.support.controlEnabled shouldBe false
+        selection.support.enforcement shouldBe null
     }
 
     @Test
     fun `a secondary user on a qualified lineageos device disables control`() {
-        val selection = registry.select(lineage(codename = "oriole", systemUser = false))
+        val selection = select(lineage(codename = "oriole", systemUser = false))
         selection.adapter?.id shouldBe "lineageos-chargingcontrol-v1"
         selection.support.controlEnabled shouldBe false
     }
 
     @Test
-    fun `an unqualified lineageos codename falls through to the lineage lab adapter`() {
-        val selection = registry.select(lineage(codename = "raven")) // Pixel 6 Pro, not yet qualified
-        selection.adapter?.id shouldBe "lineageos-lab"
+    fun `an unqualified lineageos device is a candidate with control off`() {
+        // The device is now reachable by the live adapter (that is the point of the widening), but until
+        // enforcement is observed it must not be handed controls that present as protection.
+        val selection = select(lineage(codename = "raven")) // Pixel 6 Pro, never qualified
+        selection.adapter?.id shouldBe "lineageos-chargingcontrol-v1"
         selection.support.controlEnabled shouldBe false
+        selection.support.enforcement shouldBe EnforcementStatus.CANDIDATE
+        selection.support.detail shouldBe R.string.adapter_detail_enforcement_candidate
+    }
+
+    @Test
+    fun `a started verification enables control without claiming enforcement`() {
+        val selection = select(lineage(codename = "raven"), verificationStarted = true)
+        selection.support.controlEnabled shouldBe true
+        selection.support.enforcement shouldBe EnforcementStatus.UNDER_TEST
+    }
+
+    @Test
+    fun `a local confirmation enables control`() {
+        val selection = select(
+            lineage(codename = "raven"),
+            evidence = lineageEvidence(EnforcementVerdict.CONFIRMED),
+        )
+        selection.support.controlEnabled shouldBe true
+        selection.support.enforcement shouldBe EnforcementStatus.CONFIRMED
+    }
+
+    @Test
+    fun `a refutation disables control and beats everything else`() {
+        // Even with the verification opt-in still set, and even on a maintainer-qualified codename:
+        // this build was observed charging past the cap it accepted.
+        listOf("raven", "oriole").forEach { codename ->
+            val selection = select(
+                lineage(codename = codename),
+                evidence = lineageEvidence(EnforcementVerdict.REFUTED),
+                verificationStarted = true,
+            )
+            selection.adapter?.id shouldBe "lineageos-chargingcontrol-v1"
+            selection.support.controlEnabled shouldBe false
+            selection.support.enforcement shouldBe EnforcementStatus.REFUTED
+            selection.support.contributionWanted shouldBe true
+            selection.support.detail shouldBe R.string.adapter_detail_enforcement_refuted
+        }
+    }
+
+    @Test
+    fun `evidence recorded for a different adapter does not apply`() {
+        val selection = select(
+            lineage(codename = "raven"),
+            evidence = lineageEvidence(EnforcementVerdict.CONFIRMED, adapterId = "grapheneos-chargelimit-v1"),
+        )
+        selection.support.controlEnabled shouldBe false
+        selection.support.enforcement shouldBe EnforcementStatus.CANDIDATE
+    }
+
+    @Test
+    fun `loading and corrupt evidence both fail closed`() {
+        // Loading is "not read yet" and must never be mistaken for "nothing stored"…
+        select(lineage(codename = "raven"), evidence = EnforcementEvidenceState.Loading).support.let {
+            it.controlEnabled shouldBe false
+            it.enforcement shouldBe EnforcementStatus.CANDIDATE
+        }
+        // …and an undecodable record may be a refutation, so it is treated as one.
+        select(
+            lineage(codename = "raven"),
+            evidence = EnforcementEvidenceState.Corrupt,
+            verificationStarted = true,
+        ).support.let {
+            it.controlEnabled shouldBe false
+            it.enforcement shouldBe EnforcementStatus.REFUTED
+        }
+    }
+
+    @Test
+    fun `adapters that need no evidence are untouched by the gate`() {
+        listOf(
+            EnforcementEvidenceState.Loading,
+            EnforcementEvidenceState.Corrupt,
+            lineageEvidence(EnforcementVerdict.REFUTED, adapterId = "samsung-oneui8-v1"),
+        ).forEach { evidence ->
+            val selection = select(samsung(80000), evidence = evidence)
+            selection.adapter?.id shouldBe "samsung-oneui8-v1"
+            selection.support.controlEnabled shouldBe true
+            selection.support.enforcement shouldBe null
+        }
     }
 
     @Test
     fun `a lineageos build on OEM hardware is handled by lineage, never the OEM lab adapter`() {
         // The Lineage adapters precede all OEM adapters, so a custom-ROM build on Samsung/Xiaomi/OnePlus
         // hardware is never swallowed by a manufacturer-based lab adapter.
-        registry.select(lineage(codename = "gts9", manufacturer = "samsung")).adapter?.id shouldBe "lineageos-lab"
-        registry.select(lineage(codename = "munch", manufacturer = "Xiaomi")).adapter?.id shouldBe "lineageos-lab"
-        registry.select(lineage(codename = "salami", manufacturer = "OnePlus")).adapter?.id shouldBe "lineageos-lab"
+        select(lineage(codename = "gts9", manufacturer = "samsung")).adapter?.id shouldBe
+            "lineageos-chargingcontrol-v1"
+        select(lineage(codename = "munch", manufacturer = "Xiaomi")).adapter?.id shouldBe
+            "lineageos-chargingcontrol-v1"
+        select(lineage(codename = "salami", manufacturer = "OnePlus")).adapter?.id shouldBe
+            "lineageos-chargingcontrol-v1"
+        // A provider-less derivative still lands on the Lineage lab adapter, not the OEM one.
+        select(lineage(codename = "gts9", manufacturer = "samsung", provider = false)).adapter?.id shouldBe
+            "lineageos-lab"
     }
 
     @Test
     fun `a stock device is unaffected by the lineage adapters`() {
         // Neither signal set → both Lineage adapters skip, OEM matching proceeds as before.
-        registry.select(samsung(80000)).adapter?.id shouldBe "samsung-oneui8-v1"
+        select(samsung(80000)).adapter?.id shouldBe "samsung-oneui8-v1"
     }
 
     @Test
     fun `a qualified lineageos device is selected when only the system feature is readable`() {
-        val selection = registry.select(lineageWithDeniedProperty(codename = "oriole"))
+        val selection = select(lineageWithDeniedProperty(codename = "oriole"))
         selection.adapter?.id shouldBe "lineageos-chargingcontrol-v1"
         selection.support.controlEnabled shouldBe true
     }
 
     @Test
-    fun `an unqualified lineageos device falls to the lineage lab adapter without the version property`() {
+    fun `an unqualified lineageos device is still routed to lineage without the version property`() {
         // The Pixel 6 / LineageOS 23.2 case: previously selected google-pixel-lab-v1, which hid the
         // contribution wizard (contributionWanted defaults false on the Pixel adapter) and pointed
         // "open battery settings" at Battery Saver instead of Battery.
-        val selection = registry.select(lineageWithDeniedProperty(codename = "raven"))
-        selection.adapter?.id shouldBe "lineageos-lab"
-        selection.support.contributionWanted shouldBe true
+        val selection = select(lineageWithDeniedProperty(codename = "raven"))
+        selection.adapter?.id shouldBe "lineageos-chargingcontrol-v1"
+        selection.support.enforcement shouldBe EnforcementStatus.CANDIDATE
     }
 
     @Test
     fun `the guided capture wizard is withheld on lineageos but still offered to OEM lab devices`() {
         // On LineageOS the keys are already mapped and live outside the wizard's capture set, so a guided run
         // always diffs to empty and cannot be delivered — the contribution goes through the direct report.
-        val lineage = registry.select(lineageWithDeniedProperty(codename = "raven")).support
+        val lineage = select(
+            lineageWithDeniedProperty(codename = "raven"),
+            evidence = lineageEvidence(EnforcementVerdict.REFUTED),
+        ).support
         lineage.contributionWanted shouldBe true
         lineage.guidedCaptureUseful shouldBe false
 
         // An unmapped OEM is the case the wizard exists for; it must be unaffected.
-        val samsung = registry.select(samsung(oneUi = null)).support
+        val samsung = select(samsung(oneUi = null)).support
         samsung.contributionWanted shouldBe true
         samsung.guidedCaptureUseful shouldBe true
     }
 
     @Test
     fun `lineageos on OEM hardware is never swallowed by an OEM adapter without the version property`() {
-        registry.select(lineageWithDeniedProperty("gts9", "samsung")).adapter?.id shouldBe "lineageos-lab"
-        registry.select(lineageWithDeniedProperty("munch", "Xiaomi")).adapter?.id shouldBe "lineageos-lab"
-        registry.select(lineageWithDeniedProperty("salami", "OnePlus")).adapter?.id shouldBe "lineageos-lab"
-        registry.select(lineageWithDeniedProperty("bluejay", "Google")).adapter?.id shouldBe "lineageos-lab"
+        select(lineageWithDeniedProperty("gts9", "samsung")).adapter?.id shouldBe "lineageos-chargingcontrol-v1"
+        select(lineageWithDeniedProperty("munch", "Xiaomi")).adapter?.id shouldBe "lineageos-chargingcontrol-v1"
+        select(lineageWithDeniedProperty("salami", "OnePlus")).adapter?.id shouldBe "lineageos-chargingcontrol-v1"
+        select(lineageWithDeniedProperty("bluejay", "Google")).adapter?.id shouldBe "lineageos-chargingcontrol-v1"
     }
 }

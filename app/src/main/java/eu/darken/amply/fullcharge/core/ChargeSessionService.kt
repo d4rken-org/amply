@@ -20,6 +20,8 @@ import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingPreferences
 import eu.darken.amply.charging.core.ChargingRepository
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
+import eu.darken.amply.charging.core.adapter.ChargingAdapter
+import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceState
 import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
@@ -459,7 +461,7 @@ class ChargeSessionService : Service() {
         // check already resolved a selection at exactly this point, and the hardware decode below
         // reuses this one.
         val gestureEnabled = fullChargeStore.isQuickFullChargeEnabled()
-        val adapter = if (gestureEnabled) adapterRegistry.select().adapter else null
+        val adapter = if (gestureEnabled) capabilityAdapter() else null
         if (!gestureEnabled || adapter?.reconnectGestureSupported != true) {
             dispatchWatchers(plugged, percent, status, sessionOwned = false, battery, observedAtElapsed)
             // Gesture inactive: keep running only if a watcher still wants the service, showing the
@@ -695,7 +697,7 @@ class ChargeSessionService : Service() {
         }
 
         override fun hardwareObservation(snapshot: BatterySnapshot) =
-            adapterRegistry.select().adapter?.decodeHardware(snapshot.chargingState, snapshot.plugged)
+            capabilityAdapter()?.decodeHardware(snapshot.chargingState, snapshot.plugged)
 
         override suspend fun settingsObservation() = repository.syncReadback()
 
@@ -809,16 +811,26 @@ class ChargeSessionService : Service() {
         createdAtMillis = System.currentTimeMillis(),
     )
 
+    /**
+     * The matched adapter's *capabilities* (gesture support, hardware decode, observed URIs, plug
+     * latching) — never a control decision, so the enforcement gate is deliberately fed the
+     * fail-closed [EnforcementEvidenceState.Loading] instead of a durable store read on the service's
+     * dispatch path. Every write this service performs goes through the repository, which applies the
+     * real gate.
+     */
+    private fun capabilityAdapter(): ChargingAdapter? =
+        adapterRegistry.select(evidenceState = EnforcementEvidenceState.Loading).adapter
+
     // The gesture's arming preconditions (hardware charging-state 4) are Pixel-specific; on
     // adapters without that signal the monitor would never arm and must not run.
     private fun reconnectGestureAvailable() =
-        adapterRegistry.select().adapter?.reconnectGestureSupported == true
+        capabilityAdapter()?.reconnectGestureSupported == true
 
     // Resolved once per service lifetime: adapter selection is immutable device information, and
     // per-tick selection is deliberately avoided in the session branch (see the note in
     // evaluateBattery about DeviceInfo.current()'s cost under the dispatch lock).
     private val policyLatchesAtPlug by lazy {
-        adapterRegistry.select().adapter?.policyLatchesAtPlug == true
+        capabilityAdapter()?.policyLatchesAtPlug == true
     }
 
     private fun stopMonitoring() {
@@ -852,7 +864,7 @@ class ChargeSessionService : Service() {
 
     private fun registerSettingObserver() {
         if (settingObserverRegistered) return
-        val uris = adapterRegistry.select().adapter?.observedSettingUris.orEmpty()
+        val uris = capabilityAdapter()?.observedSettingUris.orEmpty()
         if (uris.isEmpty()) return
         uris.forEach { contentResolver.registerContentObserver(it, false, settingObserver) }
         settingObserverRegistered = true
