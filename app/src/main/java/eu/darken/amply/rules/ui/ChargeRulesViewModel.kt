@@ -73,6 +73,12 @@ enum class ConditionKind {
  */
 data class RuleEditorState(
     val ruleId: String? = null,
+    /**
+     * The edited rule's switch, carried through untouched: saving an edit must never turn a rule on
+     * or off behind the user's back. A new rule starts **off** and is switched on only once the
+     * entitlement gate and the notification prompt have both passed.
+     */
+    val enabled: Boolean = false,
     val label: String = "",
     val conditionKind: ConditionKind = ConditionKind.BLUETOOTH,
     val address: String? = null,
@@ -179,9 +185,19 @@ class ChargeRulesViewModel @Inject constructor(
         }
     }
 
-    /** Re-read after returning from the system permission prompt. */
+    /**
+     * Re-read after returning from the system permission prompt. An open editor is updated in place
+     * — a grant made *from* the editor's own "Allow" button must fill its device list right there,
+     * not only after backing out and re-entering.
+     */
     fun refreshBluetoothPermission() {
-        bluetoothPermissionMissing.value = !applier.hasBluetoothPermission()
+        viewModelScope.launch {
+            val missing = withContext(Dispatchers.Default) { !applier.hasBluetoothPermission() }
+            bluetoothPermissionMissing.value = missing
+            if (editorState.value == null) return@launch
+            val devices = withContext(Dispatchers.Default) { applier.bondedDevices() }
+            editorState.update { it.copy(bluetoothPermissionMissing = missing, bondedDevices = devices) }
+        }
     }
 
     /**
@@ -207,6 +223,7 @@ class ChargeRulesViewModel @Inject constructor(
             val condition = rule.condition
             editorState.value = editorDefaults().copy(
                 ruleId = rule.id,
+                enabled = rule.enabled,
                 label = rule.label,
                 conditionKind = when (condition) {
                     is RuleCondition.BluetoothDevice -> ConditionKind.BLUETOOTH
@@ -240,20 +257,21 @@ class ChargeRulesViewModel @Inject constructor(
     fun setEditorPolicy(policy: ChargePolicy) = editorState.update { it.copy(policy = policy) }
 
     /**
-     * Persist the working copy. A brand-new rule is switched on, which is an activation — so it
-     * passes the backend entitlement gate here (not just the navigation gate at [requestAddRule])
-     * and then routes through the notification prompt like any other enable.
+     * Persist the working copy.
+     *
+     * A brand-new rule is saved **switched off** and then routed through the normal enable flow
+     * (entitlement gate, then the notification prompt, then the write that turns it on). Saving it
+     * on and switching it off again if a gate refuses would mean a rule that briefly owns the
+     * charging policy before anything has agreed it may; saving it off costs one extra step and can
+     * only ever leave the user with a visible, inert rule they can switch on later.
+     *
+     * An edit carries the existing switch through untouched — saving must not turn a rule on or off.
      */
     fun saveEditor() {
         val draft = editorState.value ?: return
         val policy = draft.policy ?: return
         if (!draft.canSave) return
         viewModelScope.launch {
-            if (draft.isNew && !upgradeRepo.isProSettled()) {
-                log(TAG) { "Rule creation denied at the write, routing to the upgrade screen" }
-                upgradeRequiredEvents.tryEmit(Unit)
-                return@launch
-            }
             val condition = when (draft.conditionKind) {
                 ConditionKind.BLUETOOTH -> RuleCondition.BluetoothDevice(
                     address = normalizeBtAddress(draft.address.orEmpty()),
@@ -264,7 +282,7 @@ class ChargeRulesViewModel @Inject constructor(
             val id = draft.ruleId ?: UUID.randomUUID().toString()
             val rule = ChargeRule(
                 id = id,
-                enabled = true,
+                enabled = draft.enabled,
                 label = draft.label.trim(),
                 condition = condition,
                 policyId = policy.stableId,
@@ -272,8 +290,9 @@ class ChargeRulesViewModel @Inject constructor(
             if (draft.isNew) applier.addRule(rule) else applier.updateRule(rule)
             editorState.value = null
             nudgeService()
-            // A new rule is on from the moment it is saved, so it needs the monitor notification.
-            if (draft.isNew) proceedWithEnableEvents.tryEmit(id)
+            // Now ask for the rule to be switched on, through the same gate every other enable uses.
+            // A refusal leaves the rule saved and off rather than active-then-revoked.
+            if (draft.isNew) requestEnableRule(id)
         }
     }
 
