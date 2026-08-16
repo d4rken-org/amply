@@ -3,6 +3,7 @@ package eu.darken.amply.charging.core.adapter
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import eu.darken.amply.charging.core.DeviceInfo
+import eu.darken.amply.charging.core.SettingProbe
 import eu.darken.amply.charging.core.access.LineageChargeReadout
 import eu.darken.amply.charging.core.access.LineageChargeReader
 import eu.darken.amply.common.ca.toCaString
@@ -78,9 +79,14 @@ class ContributionEligibilityTest {
         // The unprivileged key probe is @Protected-denied on real GrapheneOS, so its result carries
         // no information; the keys are fully mapped and nothing is left to discover.
         val ready = device("Google", model = "Pixel 9 Pro XL", sdk = 37)
-            .copy(hasChargingOptimization = false, hasGrapheneOsPackages = true, hasBatteryChargeLimit = true)
+            .copy(
+                hasChargingOptimization = false,
+                hasGrapheneOsPackages = true,
+                batteryChargeLimitProbe = SettingProbe.PRESENT,
+            )
         registry.select(ready).support.contributionWanted shouldBe false
-        registry.select(ready.copy(hasBatteryChargeLimit = false)).support.contributionWanted shouldBe false
+        registry.select(ready.copy(batteryChargeLimitProbe = SettingProbe.ABSENT))
+            .support.contributionWanted shouldBe false
     }
 
     @Test

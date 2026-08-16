@@ -22,11 +22,19 @@ data class DeviceInfo(
     val lineageOsVersion: String? = null,
     val hasLineageFeature: Boolean = false,
     val hasGrapheneOsPackages: Boolean = false,
-    val hasProtectBattery: Boolean = false,
-    val hasBatteryChargeLimit: Boolean = false,
+    val protectBatteryProbe: SettingProbe = SettingProbe.ABSENT,
+    val batteryChargeLimitProbe: SettingProbe = SettingProbe.ABSENT,
     val hasLineageSettingsProvider: Boolean = false,
     val isSystemUser: Boolean = true,
 ) {
+    /**
+     * Whether Samsung's battery-protection key was read back. Gates device-wide Samsung writes, so it fails closed:
+     * a refused read counts as "no key", exactly as the previous Boolean field did.
+     */
+    val hasProtectBattery: Boolean get() = protectBatteryProbe.isPresent
+
+    /** Whether a `battery_charge_limit` key was read back. Diagnostic only — see the probe site below. */
+    val hasBatteryChargeLimit: Boolean get() = batteryChargeLimitProbe.isPresent
     /**
      * Whether this is a LineageOS build. [lineageOsVersion] alone must never gate this: every
      * `ro.lineage.*` property lives in the SELinux context `custom_version_prop`, which
@@ -83,21 +91,20 @@ data class DeviceInfo(
                     }.getOrDefault(false)
                 }
             } ?: false,
-            hasProtectBattery = context?.let {
-                runCatching {
-                    Settings.Global.getString(it.contentResolver, KEY_PROTECT_BATTERY) != null
-                }.getOrDefault(false)
-            } ?: false,
-            // GrapheneOS's charge-limit key. NOT a gate: GrapheneOS marks the key @Protected, so
-            // this unprivileged read throws SecurityException (→ false) on real GrapheneOS whether
-            // the key exists or not — verified via the issue-#49 beta report. Kept as a diagnostic
-            // signal only: true would indicate a ROM exposing a same-named key WITHOUT the
-            // GrapheneOS restriction, which is worth seeing in a device-support report.
-            hasBatteryChargeLimit = context?.let {
-                runCatching {
-                    Settings.Global.getString(it.contentResolver, KEY_BATTERY_CHARGE_LIMIT) != null
-                }.getOrDefault(false)
-            } ?: false,
+            protectBatteryProbe = context?.let {
+                probeSetting { Settings.Global.getString(it.contentResolver, KEY_PROTECT_BATTERY) }
+            } ?: SettingProbe.ABSENT,
+            // GrapheneOS's charge-limit key. NOT a gate: GrapheneOS marks the key @Protected, so this
+            // unprivileged read is refused on real GrapheneOS whether the key exists or not — verified via
+            // the issue-#49 beta report, which is exactly why the outcome is tri-state and not a Boolean.
+            // Kept as a diagnostic signal only: PRESENT would indicate a ROM exposing a same-named key
+            // WITHOUT the GrapheneOS restriction, which is worth seeing in a device-support report.
+            batteryChargeLimitProbe = context?.let {
+                probeSetting { Settings.Global.getString(it.contentResolver, KEY_BATTERY_CHARGE_LIMIT) }
+            } ?: SettingProbe.ABSENT,
+            // NOTE: the Oplus charge-protection keys are deliberately NOT probed here. They gate nothing, and
+            // this snapshot is rebuilt on every dashboard refresh — a diagnostics-only key belongs on the
+            // report's IO path (see OplusKeyProbes), not in two extra synchronous binder calls per refresh.
             // Whether LineageOS's private settings provider is installed (the charge-control settings
             // surface). Fail closed; requires the <queries> provider entry so package visibility on
             // API 30+ doesn't false-negative resolution. Provider presence is not HAL-enforcement proof.

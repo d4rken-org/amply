@@ -48,7 +48,7 @@ class DeviceInfoTest {
     fun `the charge-limit key alone is never grapheneos identity`() {
         // The adapter is registered ahead of the live Pixel adapter; a future stock Pixel shipping
         // a same-named key must not be swallowed as GrapheneOS.
-        device().copy(hasBatteryChargeLimit = true).isGrapheneOs shouldBe false
+        device().copy(batteryChargeLimitProbe = SettingProbe.PRESENT).isGrapheneOs shouldBe false
     }
 
     @Test
@@ -56,5 +56,29 @@ class DeviceInfoTest {
         val info = DeviceInfo.current(context = null)
         info.hasGrapheneOsPackages shouldBe false
         info.hasBatteryChargeLimit shouldBe false
+        info.batteryChargeLimitProbe shouldBe SettingProbe.ABSENT
+        info.protectBatteryProbe shouldBe SettingProbe.ABSENT
+    }
+
+    @Test
+    fun `a refused read is classified as denied, not as absence`() {
+        probeSetting { throw SecurityException("not @Readable") } shouldBe SettingProbe.READ_DENIED
+    }
+
+    @Test
+    fun `a read returning nothing is absence, and any other failure fails closed the same way`() {
+        probeSetting { null } shouldBe SettingProbe.ABSENT
+        probeSetting { "1" } shouldBe SettingProbe.PRESENT
+        // Matches the previous runCatching{…}.getOrDefault(false) behaviour for non-security failures.
+        probeSetting { throw IllegalStateException("provider died") } shouldBe SettingProbe.ABSENT
+    }
+
+    @Test
+    fun `a denied probe never opens a gate`() {
+        // The whole point of the tri-state is that it stays visible in reports WITHOUT relaxing any gate:
+        // hasProtectBattery gates device-wide Samsung writes and must read false unless the key was read back.
+        device().copy(protectBatteryProbe = SettingProbe.READ_DENIED).hasProtectBattery shouldBe false
+        device().copy(protectBatteryProbe = SettingProbe.ABSENT).hasProtectBattery shouldBe false
+        device().copy(protectBatteryProbe = SettingProbe.PRESENT).hasProtectBattery shouldBe true
     }
 }

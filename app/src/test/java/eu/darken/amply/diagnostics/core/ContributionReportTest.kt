@@ -13,6 +13,7 @@ class ContributionReportTest {
 
     private fun secure(key: String) = SettingId(SettingNamespace.SECURE, key)
     private fun global(key: String) = SettingId(SettingNamespace.GLOBAL, key)
+    private fun system(key: String) = SettingId(SettingNamespace.SYSTEM, key)
     private fun obs(label: String, vararg pairs: Pair<SettingId, String>) =
         ModeObservation(label, 0L, pairs.toMap())
 
@@ -57,6 +58,24 @@ class ContributionReportTest {
     fun `known key with an unexpected value stays redacted`() {
         deriveMatrix(
             listOf(obs("a", global("protect_battery") to "0"), obs("b", global("protect_battery") to "9")),
+        ).single().disclosure shouldBe Disclosure.REDACTED
+    }
+
+    @Test
+    fun `both oplus charge keys auto-disclose, so a wizard run never reports half the pair`() {
+        // The two ColorOS keys are mutually exclusive: regular = fixed 80% cap, smart = adaptive. Listing only
+        // one of them redacted the other's whole row, which reads as a device that has just the fixed cap.
+        val regular = system("regular_charge_protection_switch_state")
+        val smart = system("smart_charge_protection_switch_state")
+        deriveMatrix(
+            listOf(obs("off", regular to "0", smart to "0"), obs("limit", regular to "1", smart to "0")),
+        ).single().disclosure shouldBe Disclosure.AUTO
+        deriveMatrix(
+            listOf(obs("off", smart to "0"), obs("smart", smart to "1")),
+        ).single().disclosure shouldBe Disclosure.AUTO
+        // An out-of-domain value under a known key still keeps the row opt-in.
+        deriveMatrix(
+            listOf(obs("off", smart to "0"), obs("odd", smart to "7")),
         ).single().disclosure shouldBe Disclosure.REDACTED
     }
 

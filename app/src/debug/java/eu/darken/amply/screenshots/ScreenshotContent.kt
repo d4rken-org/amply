@@ -12,6 +12,7 @@ import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingState
 import eu.darken.amply.charging.core.DeviceInfo
+import eu.darken.amply.charging.core.SettingProbe
 import eu.darken.amply.charging.core.access.AccessSnapshot
 import eu.darken.amply.charging.core.access.BackendStatus
 import eu.darken.amply.common.ca.toCaString
@@ -244,7 +245,14 @@ private fun samsungState() = DashboardUiState(
     batteryReadout = holdingAtLimit(),
     stats = liveStats(),
     charging = ChargingState(
-        device = DeviceInfo("samsung", "SM-X210", 36, "preview", oneUiVersion = 80000, hasProtectBattery = true),
+        device = DeviceInfo(
+            "samsung",
+            "SM-X210",
+            36,
+            "preview",
+            oneUiVersion = 80000,
+            protectBatteryProbe = SettingProbe.PRESENT,
+        ),
         adapterName = "Samsung battery protection".toCaString(),
         adapterId = "samsung-oneui8-v1",
         supportedPolicies = listOf(

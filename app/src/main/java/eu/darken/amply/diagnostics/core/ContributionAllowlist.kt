@@ -27,8 +27,11 @@ object ContributionAllowlist {
         // Samsung battery protection
         SettingId(SettingNamespace.GLOBAL, "protect_battery") to setOf("0", "1", "3"),
         SettingId(SettingNamespace.GLOBAL, "battery_protection_threshold") to setOf("80", "85", "90", "95"),
-        // OnePlus/Oppo candidate
+        // OnePlus/Oppo candidates. Mutually exclusive on ColorOS: regular = FixedLimit(80), smart = Adaptive.
+        // Both are listed, or a wizard run discloses one half of the pair and redacts the other, which reads as
+        // a device that only has the fixed cap.
         SettingId(SettingNamespace.SYSTEM, "regular_charge_protection_switch_state") to setOf("0", "1"),
+        SettingId(SettingNamespace.SYSTEM, "smart_charge_protection_switch_state") to setOf("0", "1"),
     )
 
     /** Public value domain for a known charging key, or null if the key is not a known charge-protection setting. */

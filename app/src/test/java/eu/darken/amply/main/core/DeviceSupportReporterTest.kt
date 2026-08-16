@@ -1,5 +1,6 @@
 package eu.darken.amply.main.core
 
+import eu.darken.amply.charging.core.SettingProbe
 import eu.darken.amply.charging.core.access.LineageChargingProvider
 import eu.darken.amply.charging.core.access.LineageHealthSummary
 import io.kotest.matchers.shouldBe
@@ -17,7 +18,8 @@ class DeviceSupportReporterTest {
         adapterId: String? = "samsung-lab",
         isLineageOs: Boolean = false,
         isGrapheneOs: Boolean = false,
-        hasBatteryChargeLimit: Boolean = false,
+        batteryChargeLimitProbe: SettingProbe = SettingProbe.ABSENT,
+        oplusKeys: OplusKeyProbes = OplusKeyProbes.UNPROBED,
         lineageHealth: LineageHealthSummary? = null,
     ) = DeviceSupportReport(
         manufacturer = manufacturer,
@@ -37,8 +39,9 @@ class DeviceSupportReporterTest {
         isLineageOs = isLineageOs,
         isGrapheneOs = isGrapheneOs,
         lineageHealth = lineageHealth,
-        hasProtectBattery = true,
-        hasBatteryChargeLimit = hasBatteryChargeLimit,
+        protectBatteryProbe = SettingProbe.PRESENT,
+        batteryChargeLimitProbe = batteryChargeLimitProbe,
+        oplusKeys = oplusKeys,
         hasLineageSettingsProvider = false,
         adapterId = adapterId,
         adapterMatched = adapterId != null,
@@ -56,7 +59,11 @@ class DeviceSupportReporterTest {
     fun `format is deterministic and schema-tagged`() {
         val text = formatReport(report())
         text shouldStartWith "Amply device-support request"
-        text shouldContain "report_schema=9"
+        // Whole line, trailing newline included: a bare "report_schema=10" also passes for "report_schema=100".
+        text shouldContain "report_schema=10\n"
+        // The schema-9 names must be gone, not merely joined by the new ones.
+        text shouldNotContain "has_protect_battery"
+        text shouldNotContain "has_battery_charge_limit"
         text shouldContain "manufacturer=Samsung"
         text shouldContain "model=SM-S911B"
         text shouldContain "one_ui_version=61000"
@@ -65,8 +72,10 @@ class DeviceSupportReporterTest {
         text shouldContain "is_lineageos=false"
         text shouldContain "lineageos_version=none"
         text shouldContain "is_grapheneos=false"
-        text shouldContain "has_battery_charge_limit=false"
-        text shouldContain "has_protect_battery=true"
+        text shouldContain "probe_battery_charge_limit=absent"
+        text shouldContain "probe_protect_battery=present"
+        text shouldContain "probe_regular_charge_protection=absent"
+        text shouldContain "probe_smart_charge_protection=absent"
         text shouldContain "has_lineage_settings_provider=false"
         text shouldContain "adapter=samsung-lab"
         text shouldContain "contribution_wanted=true"
@@ -121,11 +130,35 @@ class DeviceSupportReporterTest {
 
     @Test
     fun `a grapheneos report carries identity and the key probe result`() {
-        // The probe is @Protected-denied on real GrapheneOS, so false is the expected value there;
-        // true would flag a ROM exposing a same-named key WITHOUT the GrapheneOS restriction.
-        val text = formatReport(report(isGrapheneOs = true, hasBatteryChargeLimit = true))
+        // "present" would flag a ROM exposing a same-named key WITHOUT the GrapheneOS restriction.
+        val text = formatReport(report(isGrapheneOs = true, batteryChargeLimitProbe = SettingProbe.PRESENT))
         text shouldContain "is_grapheneos=true"
-        text shouldContain "has_battery_charge_limit=true"
+        text shouldContain "probe_battery_charge_limit=present"
+    }
+
+    @Test
+    fun `a refused probe is reported as denied, not as absence`() {
+        // The shape @Protected produces on real GrapheneOS, and the one API 31+ produces for any non-@Readable
+        // key. It previously rendered identically to "no such key", which is how issue #49 arrived claiming the
+        // charge limit was missing while the device was actively enforcing it.
+        val text = formatReport(report(isGrapheneOs = true, batteryChargeLimitProbe = SettingProbe.READ_DENIED))
+        text shouldContain "probe_battery_charge_limit=read_denied"
+        text shouldNotContain "probe_battery_charge_limit=absent"
+    }
+
+    @Test
+    fun `an oplus report distinguishes a mapped key from an unmapped rom`() {
+        // Without these two lines a non-ColorOS-15 Oplus report carries no Oplus signal at all: the ROM property
+        // is the only other one, and it reads "none" on every pre-rebrand build (observed on an Oppo F11 Pro).
+        val fixedCap = formatReport(
+            report(
+                manufacturer = "OPPO",
+                adapterId = "oneplus-lab",
+                oplusKeys = OplusKeyProbes(regular = SettingProbe.PRESENT, smart = SettingProbe.ABSENT),
+            ),
+        )
+        fixedCap shouldContain "probe_regular_charge_protection=present"
+        fixedCap shouldContain "probe_smart_charge_protection=absent"
     }
 
     @Test

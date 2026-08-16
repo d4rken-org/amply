@@ -51,10 +51,6 @@ class SamsungLabAdapter @Inject constructor() : DisabledLabAdapter() {
     override val id = "samsung-lab"
     override val displayName = R.string.adapter_name_samsung.toCaString()
     override fun matches(device: DeviceInfo) = device.manufacturer.equals("Samsung", ignoreCase = true)
-
-    companion object {
-        val CANDIDATE_KEYS = setOf("protect_battery", "battery_protection_threshold")
-    }
 }
 
 @Singleton
@@ -62,10 +58,6 @@ class XiaomiLabAdapter @Inject constructor() : DisabledLabAdapter() {
     override val id = "xiaomi-lab"
     override val displayName = R.string.adapter_name_xiaomi.toCaString()
     override fun matches(device: DeviceInfo) = device.manufacturer.equals("Xiaomi", ignoreCase = true)
-
-    companion object {
-        val CANDIDATE_KEYS = setOf("security_pc_secure_protect_mode_key")
-    }
 }
 
 @Singleton
@@ -82,14 +74,6 @@ class LineageLabAdapter @Inject constructor() : DisabledLabAdapter() {
     // observation of which provider LineageOS bound — useful triage context, but it decides nothing: no value
     // qualifies or disqualifies a device, only physical charging observation does.
     override val guidedCaptureUseful = false
-
-    companion object {
-        val CANDIDATE_KEYS = setOf(
-            "charging_control_enabled",
-            "charging_control_mode",
-            "charging_control_charging_limit",
-        )
-    }
 }
 
 @Singleton
@@ -104,11 +88,4 @@ class OnePlusLabAdapter @Inject constructor() : DisabledLabAdapter() {
         device.manufacturer.equals("OnePlus", ignoreCase = true) ||
             device.manufacturer.equals("Oppo", ignoreCase = true) ||
             device.manufacturer.equals("realme", ignoreCase = true)
-
-    companion object {
-        val CANDIDATE_KEYS = setOf(
-            "regular_charge_protection_switch_state",
-            "smart_charge_protection_switch_state",
-        )
-    }
 }

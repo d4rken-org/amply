@@ -135,6 +135,20 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
     session/recovery closed, pending-until-replug hint shown — and the exposure is one charge cycle,
     bounded by the plug session the user is already in. Deliberately NOT treated as a defect.
   - **Wireless charging and secondary users**: NOT RUN (gated to system user).
+- **Oplus (OnePlus/Oppo/Realme)** — the live gate reads `ro.build.version.oplusrom`, which **does not exist on
+  pre-rebrand ColorOS**, so every ColorOS 11-era build is invisible to it and lands on `OnePlusLabAdapter`. This is
+  correct behaviour (those builds are unqualified either way), but it made reports from them uninformative.
+  - **Oppo F11 Pro `CPH1969` (`OP4863`), Android 11 / ColorOS 11 — device-support report only, 2026-08-15. NOT a
+    qualification run: no physical test, no Shizuku, no settings capture.** The report carried
+    `oplus_rom_version=none` and nothing else about the family, because the report probed only the Samsung,
+    GrapheneOS, and LineageOS keys — the two ColorOS keys Amply already knows were never read. Absence of the
+    property could not be distinguished from an SELinux-denied read either (`SystemPropertyReader` returns `""` on
+    denial). Prompted two report changes: an unprivileged presence probe of the two `system` keys, and tri-state
+    probe results (`present|absent|read_denied`) so a refused read stops rendering as a proven negative. **Still
+    open:** whether pre-rebrand ColorOS carries those keys under any name is unknown, and no legacy property
+    (`ro.build.version.opporom`) is read, so pre-ColorOS-12 builds remain undetectable as Oplus by ROM version. A
+    device with a *working* pre-15 ColorOS charge-protection feature would need a new gate signal, not a widened
+    version constant — and the usual bar applies: physically observed charging cessation, not a settings mapping.
 - **Xiaomi** — adaptive hardware enforcement of external writes unconfirmed; treat the adapter as provisional until
   the 80% hold is physically observed.
   - **HyperOS 3 candidate mapping (contribution report, 2026-08-07 — unqualified at the time; since landed,
