@@ -183,12 +183,18 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
     SecurityCenter's private prefs. Record the July "could not be triggered" and this run as the **same** result
     with a now-known cause, not as two independent failures. **Adaptive on Xiaomi is therefore BLOCKED, not
     FAILED** — no evidence exists that it fails to hold, only that its precondition never became true.
-  - **Open consequence for the adapter** (see `XiaomiChargingAdapter.kt:47`, `defaultProtectivePolicy = Adaptive`):
-    Amply's protective policy on HyperOS 2 is a mode that, by the OEM's own design, only acts inside a learned
-    overnight window. Outside that window a device with Adaptive configured charges to 100%, as observed here.
-    Amply's read is not *wrong* (the mode genuinely is configured), but "protected" overstates what the user gets
-    in daytime or irregular charging. Decide whether to keep the default, or to distinguish "configured" from
-    "actively holding" on Xiaomi surfaces.
+  - **Consequence for the adapter, RESOLVED in the same change** (see `XiaomiChargingAdapter.kt`,
+    `defaultProtectivePolicy = Adaptive`): Amply's protective policy on HyperOS 2 is a mode that, by the OEM's own
+    design, only acts inside a learned overnight window, so a device with Adaptive configured charges to 100%
+    outside it. The read was never *wrong* (the mode genuinely is configured) but "protected" overstated it. The
+    default stays — HyperOS 2 offers no unconditional protective mode — and the honesty moved to presentation:
+    `ChargePolicy.enforcementIsConditional` + `ChargeObservation.provesPolicyInEffect()` withhold the confirmed
+    checkmark from a conditional policy that only settings can vouch for. **Verified on `aristotle` itself**
+    (2026-08-16, foss debug + direct WSS): Adaptive renders with the neutral shield and "the system chooses when
+    it applies", 100% still renders with the green check and the plain readback line, and both apply without a
+    settling spinner — the last point being the visible symptom if the predicate ever leaks into pending logic.
+    Note HyperOS blocks adb installs behind an on-device "Install via USB" dialog with a 5s auto-deny, so an
+    install must be confirmed on screen while it is awake.
   - **Dead end, do not re-investigate:** `global battery_charging_state_enforce_level` and
     `battery_charging_state_update_delay` (both `-1` on this device) look like an enforcement lever from their
     names — they are not. Resolved 2026-08-16 by disassembling the device's own `/system/framework/services.jar`
