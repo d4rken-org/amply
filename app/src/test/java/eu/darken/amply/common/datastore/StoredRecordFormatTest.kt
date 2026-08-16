@@ -2,6 +2,8 @@ package eu.darken.amply.common.datastore
 
 import eu.darken.amply.alarm.core.ChargeAlarmConfig
 import eu.darken.amply.charging.core.ChargePolicy
+import eu.darken.amply.charging.core.enforcement.EnforcementEvidence
+import eu.darken.amply.charging.core.enforcement.EnforcementVerdict
 import eu.darken.amply.common.serialization.SerializationModule
 import eu.darken.amply.common.theming.ThemeColor
 import eu.darken.amply.common.theming.ThemeMode
@@ -161,6 +163,34 @@ class StoredRecordFormatTest {
 
         json.encodeToString(InterruptionEvent.serializer(), event) shouldBe
             """{"occurredAtMillis":10,"reason":"USER_STOPPED","outcome":"RESTORED_LATE","workId":"wid-1"}"""
+    }
+
+    @Test
+    fun `enforcement evidence encodes to the pinned shape`() {
+        val evidence = EnforcementEvidence(
+            adapterId = "lineageos-chargingcontrol-v1",
+            buildIdentity = "0123456789abcdef",
+            algorithmVersion = 1,
+            verdict = EnforcementVerdict.CONFIRMED,
+            capPercent = 80,
+            observedPercent = 79,
+            observedAtWallMillis = 1_700_000_000_000L,
+        )
+
+        json.encodeToString(EnforcementEvidence.serializer(), evidence) shouldBe
+            """{"adapterId":"lineageos-chargingcontrol-v1","buildIdentity":"0123456789abcdef",""" +
+            """"algorithmVersion":1,"verdict":"CONFIRMED","capPercent":80,"observedPercent":79,""" +
+            """"observedAtWallMillis":1700000000000}"""
+    }
+
+    /**
+     * A record that lost fields must never read as a claim of enforcement, so the verdict default is
+     * the refutation — the only direction that can't hand control to an unproven device.
+     */
+    @Test
+    fun `enforcement evidence defaults to the refuting verdict`() {
+        json.decodeFromString(EnforcementEvidence.serializer(), "{}") shouldBe EnforcementEvidence()
+        EnforcementEvidence().verdict shouldBe EnforcementVerdict.REFUTED
     }
 
     @Test
