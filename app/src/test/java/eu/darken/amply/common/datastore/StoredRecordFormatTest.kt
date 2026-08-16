@@ -14,6 +14,14 @@ import eu.darken.amply.fullcharge.core.InterruptionReason
 import eu.darken.amply.fullcharge.core.RecoveryRecord
 import eu.darken.amply.fullcharge.core.WorkProvenance
 import eu.darken.amply.main.core.QuickAccessState
+import eu.darken.amply.rules.core.BtConnectionSnapshot
+import eu.darken.amply.rules.core.ChargeRule
+import eu.darken.amply.rules.core.ChargeRuleSet
+import eu.darken.amply.rules.core.PlugKind
+import eu.darken.amply.rules.core.RuleCondition
+import eu.darken.amply.rules.core.RulePhase
+import eu.darken.amply.rules.core.RuleRuntimeState
+import eu.darken.amply.rules.core.decodeRuleRuntimeState
 import io.kotest.matchers.shouldBe
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Test
@@ -180,6 +188,97 @@ class StoredRecordFormatTest {
         json.decodeFromString(ThemeState.serializer(), "{}") shouldBe ThemeState()
         json.decodeFromString(QuickAccessState.serializer(), "{}") shouldBe QuickAccessState()
         json.decodeFromString(ChargeAlarmConfig.serializer(), "{}") shouldBe ChargeAlarmConfig()
+    }
+
+    @Test
+    fun `charge rules encode to the pinned shape, with an explicit condition discriminator`() {
+        val set = ChargeRuleSet(
+            rules = listOf(
+                ChargeRule(
+                    id = "car",
+                    label = "Car dock",
+                    condition = RuleCondition.BluetoothDevice("AA:BB:CC:DD:EE:FF", "Car"),
+                    policyId = ChargePolicy.Unrestricted.stableId,
+                ),
+                ChargeRule(
+                    id = "desk",
+                    enabled = false,
+                    condition = RuleCondition.ChargerType(setOf(PlugKind.AC, PlugKind.DOCK)),
+                    policyId = ChargePolicy.FixedLimit(80).stableId,
+                ),
+            ),
+        )
+
+        json.encodeToString(ChargeRuleSet.serializer(), set) shouldBe
+            """{"rules":[""" +
+            """{"id":"car","enabled":true,"label":"Car dock",""" +
+            """"condition":{"type":"bluetooth","address":"AA:BB:CC:DD:EE:FF","name":"Car"},""" +
+            """"policyId":"unrestricted"},""" +
+            """{"id":"desk","enabled":false,"label":"",""" +
+            """"condition":{"type":"charger","types":["AC","DOCK"]},""" +
+            """"policyId":"fixed:80"}]}"""
+    }
+
+    @Test
+    fun `the rules runtime encodes to the pinned shape`() {
+        val runtime = RuleRuntimeState(
+            phase = RulePhase.ACTIVE,
+            targetPolicyId = "unrestricted",
+            activeRuleId = "car",
+            baselinePolicyId = "fixed:80",
+            suspendedRuleIds = setOf("desk"),
+        )
+
+        json.encodeToString(RuleRuntimeState.serializer(), runtime) shouldBe
+            """{"phase":"ACTIVE","targetPolicyId":"unrestricted","activeRuleId":"car",""" +
+            """"baselinePolicyId":"fixed:80","suspendedRuleIds":["desk"],"lastApplyFailed":false}"""
+
+        json.encodeToString(RuleRuntimeState.serializer(), RuleRuntimeState()) shouldBe
+            """{"phase":"IDLE","suspendedRuleIds":[],"lastApplyFailed":false}"""
+    }
+
+    @Test
+    fun `the bluetooth snapshot encodes to the pinned shape`() {
+        json.encodeToString(
+            BtConnectionSnapshot.serializer(),
+            BtConnectionSnapshot(addresses = setOf("AA:BB:CC:DD:EE:FF"), bootCount = 7),
+        ) shouldBe """{"addresses":["AA:BB:CC:DD:EE:FF"],"bootCount":7}"""
+
+        json.encodeToString(BtConnectionSnapshot.serializer(), BtConnectionSnapshot()) shouldBe
+            """{"addresses":[]}"""
+    }
+
+    /**
+     * The runtime carries **owed restore work** — the user's own policy a rule replaced. One
+     * unreadable field must never take the baseline with it, or the battery stays on the rule's
+     * policy with nothing left that knows to put it back.
+     */
+    @Test
+    fun `the rules runtime decodes field by field`() {
+        // A phase name from a future build, alongside a perfectly good baseline.
+        decodeRuleRuntimeState("""{"phase":"SOMETHING_NEW","activeRuleId":"car","baselinePolicyId":"fixed:90"}""")
+            .let {
+                // Conservative: still owning the policy is the only reading that cannot lose work.
+                it.phase shouldBe RulePhase.ACTIVE
+                it.baselinePolicyId shouldBe "fixed:90"
+            }
+
+        // Wrong types for the auxiliary fields; the transition itself survives intact.
+        decodeRuleRuntimeState(
+            """{"phase":"RESTORE_PENDING","targetPolicyId":"adaptive",""" +
+                """"suspendedRuleIds":"nope","lastApplyFailed":"yes"}""",
+        ).let {
+            it.phase shouldBe RulePhase.RESTORE_PENDING
+            it.targetPolicyId shouldBe "adaptive"
+            it.suspendedRuleIds shouldBe emptySet()
+            it.lastApplyFailed shouldBe false
+        }
+
+        // Only unparseable JSON loses the whole record.
+        decodeRuleRuntimeState("not json at all") shouldBe RuleRuntimeState()
+        decodeRuleRuntimeState(null) shouldBe RuleRuntimeState()
+        // Nothing recorded at all reads as idle, not as a phantom activation.
+        decodeRuleRuntimeState("{}") shouldBe RuleRuntimeState()
     }
 
     @Test
