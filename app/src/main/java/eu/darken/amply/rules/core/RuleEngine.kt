@@ -74,8 +74,10 @@ object RuleEngine {
         lastPersistent: ChargePolicy?,
         defaultProtective: ChargePolicy,
         /**
-         * Stable ids the selected adapter can actually apply. Empty means "not resolved yet", which
-         * is permissive — an unresolved adapter must not silently disable every rule.
+         * Stable ids the selected adapter can actually apply. **Empty means the device can apply
+         * nothing** — the diagnostics-only lab adapters declare exactly that — so it is read
+         * strictly, never as "not resolved yet". A rule naming a policy outside this set can only
+         * ever produce a refused write.
          */
         supportedPolicyIds: Set<String>,
         /** The last policy ANY Amply component wrote, and when, from the shared write journal. */
@@ -83,20 +85,20 @@ object RuleEngine {
         lastRequestedAt: Long,
     ): RuleDecision {
         val byId = rules.associateBy { it.id }
-        val matching = rules.filter {
-            it.enabled &&
-                it.policy != null &&
-                // A policy this adapter does not offer would be refused by the write path anyway;
-                // matching on it would park the layer in a permanently failing pending phase.
-                (supportedPolicyIds.isEmpty() || it.policyId in supportedPolicyIds) &&
-                it.matches(snapshot)
-        }
-        // A suspended rule that no longer exists, is disabled, or no longer matches has served its
-        // purpose: the user has moved on from the situation their manual override belonged to.
-        val suspended = runtime.suspendedRuleIds.filter { id ->
-            val rule = byId[id]
-            rule != null && rule.enabled && rule.matches(snapshot)
-        }.toSet()
+        // One definition of "this rule is in play right now", used for both the winner selection and
+        // the suspension cohort: a rule that cannot act must neither activate NOR keep the cohort
+        // closed against the rules that can.
+        fun ChargeRule.isEffective() = enabled &&
+            policy != null &&
+            // A policy this adapter does not offer would be refused by the write path anyway;
+            // matching on it would park the layer in a permanently failing pending phase.
+            policyId in supportedPolicyIds &&
+            matches(snapshot)
+
+        val matching = rules.filter { it.isEffective() }
+        // A suspended rule that no longer exists, can no longer act, or no longer matches has served
+        // its purpose: the user has moved on from the situation their manual override belonged to.
+        val suspended = runtime.suspendedRuleIds.filter { id -> byId[id]?.isEffective() == true }.toSet()
         val blocked = suspended.isNotEmpty()
 
         // A live session outranks everything: it owns the policy and — via the baseline handed to

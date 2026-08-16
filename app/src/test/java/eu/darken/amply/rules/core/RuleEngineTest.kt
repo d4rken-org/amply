@@ -57,6 +57,9 @@ class RuleEngineTest {
         chargerTypeSupported = chargerTypeSupported,
     )
 
+    /** What a control-capable adapter offers; the fixtures below all draw their policies from it. */
+    private val adapterPolicies = setOf(limit80, limit90, adaptive, full).map { it.stableId }.toSet()
+
     private fun evaluate(
         rules: List<ChargeRule>,
         snapshot: ConditionSnapshot = ConditionSnapshot(),
@@ -66,7 +69,7 @@ class RuleEngineTest {
         proSettled: Boolean = true,
         lastPersistent: ChargePolicy? = null,
         defaultProtective: ChargePolicy = limit80,
-        supportedPolicyIds: Set<String> = emptySet(),
+        supportedPolicyIds: Set<String> = adapterPolicies,
         lastRequestedPolicy: ChargePolicy? = null,
         lastRequestedAt: Long = 0L,
     ) = RuleEngine.evaluate(
@@ -348,10 +351,34 @@ class RuleEngineTest {
 
         evaluate(listOf(unsupported, usable), connected(carAddress), supportedPolicyIds = supported)
             .action.shouldBeInstanceOf<RuleAction.Activate>().rule.id shouldBe "usable"
+    }
 
-        // An empty set means adapter selection has not resolved yet, which must not disable rules.
-        evaluate(listOf(unsupported), connected(carAddress), supportedPolicyIds = emptySet())
-            .action.shouldBeInstanceOf<RuleAction.Activate>()
+    @Test
+    fun `an adapter that can apply nothing matches nothing`() {
+        // An empty set is a real answer, not a missing one: the diagnostics-only lab adapters declare
+        // exactly that. Reading it permissively would let every rule activate on a device where no
+        // write can ever land.
+        evaluate(listOf(btRule("a")), connected(carAddress), supportedPolicyIds = emptySet())
+            .action shouldBe RuleAction.Noop
+    }
+
+    @Test
+    fun `a suspended rule that can no longer act stops holding the cohort closed`() {
+        // `blocker` is suspended and still connected, but its policy is not one this adapter offers,
+        // so it can never re-apply — keeping the cohort closed on it would strand `usable` forever.
+        val blocker = btRule("blocker", policy = ChargePolicy.PauseAtFull)
+        val usable = btRule("usable", policy = adaptive)
+        val runtime = RuleRuntimeState(suspendedRuleIds = setOf("blocker"))
+
+        val decision = evaluate(
+            rules = listOf(blocker, usable),
+            snapshot = connected(carAddress),
+            runtime = runtime,
+            supportedPolicyIds = setOf(adaptive.stableId),
+        )
+
+        decision.suspendedRuleIds.shouldBeEmpty()
+        decision.action.shouldBeInstanceOf<RuleAction.Activate>().rule.id shouldBe "usable"
     }
 
     @Test
