@@ -1,8 +1,10 @@
 package eu.darken.amply.main.ui.dashboard
 
 import android.app.Application
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -62,6 +64,11 @@ class DashboardEnforcementCardTest {
         compose.onNode(hasScrollAction()).performScrollToNode(hasTestTag(ENFORCEMENT_CARD_TEST_TAG))
     }
 
+    /** Scoped to the hero, so a string that also appears on a card further down can't satisfy it. */
+    private fun heroText(res: Int) = compose.onNode(
+        hasText(string(res)) and hasAnyAncestor(hasTestTag(HERO_CARD_TEST_TAG)),
+    )
+
     @Test
     fun `a candidate device explains itself and offers the opt-in`() {
         var started = false
@@ -71,6 +78,38 @@ class DashboardEnforcementCardTest {
         compose.onNodeWithText(string(R.string.dashboard_enforcement_candidate_title)).assertExists()
         compose.onNodeWithText(string(R.string.dashboard_enforcement_candidate_action)).performClick()
         started shouldBe true
+    }
+
+    @Test
+    fun `a candidate device is not announced as unsupported`() {
+        // The adapter matched — control is merely switched off until the user accepts it unconfirmed.
+        // The generic unsupported copy here would contradict the card directly below the hero.
+        render(state(EnforcementStatus.CANDIDATE, controlEnabled = false))
+
+        compose.onNode(hasScrollAction()).performScrollToNode(hasTestTag(HERO_CARD_TEST_TAG))
+        heroText(R.string.dashboard_status_unsupported).assertDoesNotExist()
+        heroText(R.string.dashboard_enforcement_candidate_hero_title).assertExists()
+        heroText(R.string.dashboard_enforcement_candidate_hero_body).assertExists()
+    }
+
+    @Test
+    fun `a refuted device names the refutation instead of calling itself unsupported`() {
+        render(state(EnforcementStatus.REFUTED, controlEnabled = false))
+
+        compose.onNode(hasScrollAction()).performScrollToNode(hasTestTag(HERO_CARD_TEST_TAG))
+        heroText(R.string.dashboard_status_unsupported).assertDoesNotExist()
+        heroText(R.string.dashboard_enforcement_refuted_hero_title).assertExists()
+        // The card below owns the explanation; the hero must not repeat its paragraph.
+        heroText(R.string.dashboard_enforcement_refuted_body).assertDoesNotExist()
+    }
+
+    @Test
+    fun `a probe refusal keeps the generic unsupported wording`() {
+        // No tier at all (secondary user): nothing licenses the tier-specific copy here.
+        render(state(status = null, controlEnabled = false))
+
+        compose.onNode(hasScrollAction()).performScrollToNode(hasTestTag(HERO_CARD_TEST_TAG))
+        heroText(R.string.dashboard_status_unsupported).assertExists()
     }
 
     @Test
