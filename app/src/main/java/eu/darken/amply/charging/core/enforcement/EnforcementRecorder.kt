@@ -3,7 +3,6 @@ package eu.darken.amply.charging.core.enforcement
 import android.content.Context
 import android.content.Intent
 import dagger.hilt.android.qualifiers.ApplicationContext
-import eu.darken.amply.battery.core.BatteryReadout
 import eu.darken.amply.battery.core.BatteryReader
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingPreferences
@@ -31,10 +30,9 @@ import javax.inject.Singleton
 data class RawEnforcementTick(
     val plugged: Boolean,
     val percent: Int,
-    val batteryStatus: Int,
     val sessionActive: Boolean,
+    /** Only read for the level fallback below; the verdict needs nothing else from the broadcast. */
     val batteryIntent: Intent?,
-    val observedElapsedRealtimeMillis: Long,
     val wallMillis: Long,
 )
 
@@ -125,7 +123,6 @@ class EnforcementRecorder @Inject constructor(
         if (!adapter.enforcementEvidenceRequired || !device.isSystemUser) return
         if (preferences.verificationStartedForNow() != buildIdentity.current()) return
 
-        val readout = tick.batteryIntent?.let { batteryReader.read(it) } ?: BatteryReadout.UNKNOWN
         val sample = EnforcementSample(
             adapterId = adapter.id,
             buildIdentity = buildIdentity.current(),
@@ -134,13 +131,13 @@ class EnforcementRecorder @Inject constructor(
             configured = repository.syncReadback(),
             sessionActive = tick.sessionActive,
             plugged = tick.plugged,
-            percent = tick.percent.takeIf { it >= 0 } ?: readout.levelPercent ?: -1,
-            batteryStatus = tick.batteryStatus,
-            chargingStatus = readout.chargingStatus,
-            currentNowMicroamps = readout.currentNowMicroamps,
+            // The level is the whole observation, so a tick without one falls back to the broadcast
+            // this tick was taken from rather than dropping the sample.
+            percent = tick.percent.takeIf { it >= 0 }
+                ?: tick.batteryIntent?.let { batteryReader.read(it).levelPercent }
+                ?: -1,
             policyGeneration = preferences.lastRequestedAtNow(),
             plugSessionId = plugSessionId,
-            elapsedRealtimeMillis = tick.observedElapsedRealtimeMillis,
             wallMillis = tick.wallMillis,
         )
         val outcome = EnforcementVerdictEngine.evaluate(progress, sample)

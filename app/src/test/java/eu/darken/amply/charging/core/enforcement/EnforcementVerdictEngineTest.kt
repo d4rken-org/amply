@@ -1,6 +1,5 @@
 package eu.darken.amply.charging.core.enforcement
 
-import android.os.BatteryManager
 import eu.darken.amply.charging.core.BackendKind
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
@@ -21,9 +20,6 @@ class EnforcementVerdictEngineTest {
         configured: ChargeObservation? = ChargeObservation.Verified(ChargePolicy.FixedLimit(cap), BackendKind.SHIZUKU),
         policyGeneration: Long = 1L,
         plugSessionId: Long = 1L,
-        batteryStatus: Int? = BatteryManager.BATTERY_STATUS_CHARGING,
-        chargingStatus: Int? = null,
-        currentNowMicroamps: Int? = null,
     ) = EnforcementSample(
         adapterId = "lineageos-chargingcontrol-v1",
         buildIdentity = "build-a",
@@ -31,12 +27,8 @@ class EnforcementVerdictEngineTest {
         sessionActive = sessionActive,
         plugged = plugged,
         percent = percent,
-        batteryStatus = batteryStatus,
-        chargingStatus = chargingStatus,
-        currentNowMicroamps = currentNowMicroamps,
         policyGeneration = policyGeneration,
         plugSessionId = plugSessionId,
-        elapsedRealtimeMillis = elapsed,
         wallMillis = 1_000L + elapsed,
     )
 
@@ -63,11 +55,7 @@ class EnforcementVerdictEngineTest {
         }
         val holdStart = rise.size * 30_000L
         val hold = (0 until holdMinutes * 2).map { tick ->
-            sample(
-                percent = holdPercent,
-                elapsed = holdStart + tick * 30_000L,
-                batteryStatus = BatteryManager.BATTERY_STATUS_NOT_CHARGING,
-            )
+            sample(percent = holdPercent, elapsed = holdStart + tick * 30_000L)
         }
         return rise + hold
     }
@@ -75,41 +63,21 @@ class EnforcementVerdictEngineTest {
     @Test
     fun `a rise followed by a sustained plateau at the cap decides nothing`() {
         // The plateau is the shape a working cap produces, and also the shape a thermal pause or a
-        // weak charger produces. Nothing observable separates them, so it stays undecided forever.
+        // weak charger produces. Nothing observable separates them, so it stays undecided forever —
+        // including the hardware charging state, which the sample deliberately no longer carries:
+        // measured on a Pixel 6 / LineageOS 23.2, `Charging state: 4` was reported while the device
+        // was actively charging at level 70 under an 80% cap.
         run(riseThenHold(holdMinutes = 6)) shouldBe null
         run(riseThenHold(holdMinutes = 120)) shouldBe null
     }
 
     @Test
-    fun `the session-scoped hardware state cannot decide anything either`() {
-        // Measured on a Pixel 6 / LineageOS 23.2: `Charging state: 4` was reported while the device
-        // was actively charging at level 70 under an 80% cap. It says "limit mode enabled for this
-        // plug session", not "charging stopped", so the engine must not read it at all.
-        val holdState = 4
-        run(riseThenHold(holdMinutes = 60).map { it.copy(chargingStatus = holdState) }) shouldBe null
-        // And it does not suppress a refutation either.
-        val climb = (70..(cap + EnforcementVerdictEngine.OVERSHOOT_ALLOWANCE)).mapIndexed { index, percent ->
-            sample(percent, index * 30_000L, chargingStatus = holdState)
-        }
-        run(climb) shouldBe EnforcementVerdict.REFUTED
-    }
-
-    @Test
     fun `no input sequence can produce a confirmation`() {
         // The engine has exactly one verdict, and nothing may reach a second one. Sweeps the whole
-        // input space that moves state: levels, plug state, both status fields, sessions, epochs.
+        // input space that moves state: levels, plug state, sessions, epochs.
         EnforcementVerdict.entries.toList() shouldBe listOf(EnforcementVerdict.REFUTED)
 
         val random = Random(20260816)
-        val statuses = listOf(
-            null,
-            BatteryManager.BATTERY_STATUS_CHARGING,
-            BatteryManager.BATTERY_STATUS_NOT_CHARGING,
-            BatteryManager.BATTERY_STATUS_FULL,
-            BatteryManager.BATTERY_STATUS_DISCHARGING,
-            BatteryManager.BATTERY_STATUS_UNKNOWN,
-        )
-        val chargingStatuses = listOf(null, 1, 4, 5)
         repeat(2_000) {
             var progress: EnforcementProgress? = null
             repeat(40) { tick ->
@@ -120,9 +88,6 @@ class EnforcementVerdictEngineTest {
                     sessionActive = random.nextInt(10) == 0,
                     policyGeneration = random.nextLong(1, 3),
                     plugSessionId = random.nextLong(1, 3),
-                    batteryStatus = statuses.random(random),
-                    chargingStatus = chargingStatuses.random(random),
-                    currentNowMicroamps = random.nextInt(-2_000_000, 2_000_000),
                 )
                 val outcome = EnforcementVerdictEngine.evaluate(progress, candidate)
                 progress = outcome.progress
@@ -150,23 +115,6 @@ class EnforcementVerdictEngineTest {
             sample(percent, index * 30_000L)
         }
         run(samples) shouldBe null
-    }
-
-    @Test
-    fun `refutation ignores the reported battery status`() {
-        // A ROM can carry the level past the cap while reporting NOT_CHARGING / FULL / UNKNOWN;
-        // gating on BATTERY_STATUS_CHARGING would leave such a build trusted indefinitely.
-        listOf(
-            BatteryManager.BATTERY_STATUS_NOT_CHARGING,
-            BatteryManager.BATTERY_STATUS_FULL,
-            BatteryManager.BATTERY_STATUS_UNKNOWN,
-            BatteryManager.BATTERY_STATUS_DISCHARGING,
-        ).forEach { status ->
-            val samples = (70..(cap + EnforcementVerdictEngine.OVERSHOOT_ALLOWANCE)).mapIndexed { index, percent ->
-                sample(percent, index * 30_000L, batteryStatus = status)
-            }
-            run(samples) shouldBe EnforcementVerdict.REFUTED
-        }
     }
 
     @Test

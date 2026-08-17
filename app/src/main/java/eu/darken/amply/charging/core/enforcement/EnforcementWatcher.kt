@@ -9,7 +9,7 @@ import javax.inject.Singleton
  * Contributes enforcement observation to the charge-session monitor.
  *
  * [onBatteryTick] does no blocking work: it copies the tick — including the exact battery intent, so
- * the recorder can read charge current off the *same* observation — and hands it to
+ * the recorder can fall back to the level off the *same* observation — and hands it to
  * [EnforcementRecorder], which does every DataStore, provider and Binder read on its own IO thread.
  * This runs under the service's dispatch lock, so a slow read here could delay the safety-critical
  * charge-policy restore.
@@ -28,10 +28,8 @@ class EnforcementWatcher @Inject constructor(
             RawEnforcementTick(
                 plugged = tick.plugged,
                 percent = tick.percent,
-                batteryStatus = tick.batteryStatus,
                 sessionActive = tick.sessionActive,
                 batteryIntent = tick.batteryIntent,
-                observedElapsedRealtimeMillis = tick.observedElapsedRealtimeMillis,
                 wallMillis = tick.wallClockMillis,
             ),
         )

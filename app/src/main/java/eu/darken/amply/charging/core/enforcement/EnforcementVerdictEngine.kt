@@ -21,7 +21,14 @@ data class EnforcementEpoch(
     val plugSessionId: Long,
 )
 
-/** One evaluation tick, everything the verdict depends on, and nothing Android-specific. */
+/**
+ * One evaluation tick, everything the verdict depends on, and nothing Android-specific.
+ *
+ * It carries **no battery-status or charge-current field on purpose**. The refutation keys on the
+ * level trend alone (see below), so a status field could only ever suppress a real refutation, and
+ * the hardware charging state is session-scoped and decides nothing. [wallMillis] is not read by the
+ * engine either; it is what the reached verdict is stamped with when it is persisted.
+ */
 data class EnforcementSample(
     val adapterId: String,
     val buildIdentity: String,
@@ -32,12 +39,8 @@ data class EnforcementSample(
     val plugged: Boolean,
     /** Battery level, or -1 when unknown. An unknown level moves no state at all. */
     val percent: Int,
-    val batteryStatus: Int?,
-    val chargingStatus: Int?,
-    val currentNowMicroamps: Int?,
     val policyGeneration: Long,
     val plugSessionId: Long,
-    val elapsedRealtimeMillis: Long,
     val wallMillis: Long,
 )
 
@@ -45,17 +48,14 @@ data class EnforcementSample(
 data class EnforcementProgress(
     val epoch: EnforcementEpoch,
     /**
-     * The level the still-unbroken climb started from, or null before the epoch's first valid sample.
-     * Set from ANY level, above the cap included: an epoch legitimately opens above the cap (a
-     * full-charge session restored early at 84%, a process death at 82%), and refusing to track a
-     * climb there is what let such a device charge on to 100% without ever being refuted. Reset to
-     * the new level whenever the level drops (the climb is no longer monotonic).
-     */
-    val climbBase: Int?,
-    /**
-     * True once the level was observed increasing since [climbBase], i.e. within the CURRENT climb.
-     * Phase-local on purpose: a global "rose at some point in this epoch" flag would let a rise from
-     * hours ago justify refuting a level the battery has merely been sitting at since.
+     * True once the level was observed increasing within the CURRENT climb, i.e. since the epoch's
+     * first valid sample or the last drop. Phase-local on purpose: a global "rose at some point in
+     * this epoch" flag would let a rise from hours ago justify refuting a level the battery has
+     * merely been sitting at since.
+     *
+     * The climb is tracked from ANY level, above the cap included: an epoch legitimately opens above
+     * the cap (a full-charge session restored early at 84%, a process death at 82%), and refusing to
+     * track a climb there is what let such a device charge on to 100% without ever being refuted.
      *
      * It is what keeps an above-cap epoch from refuting on its own: a device sitting still at 95%
      * under a 70% cap is a device that stopped charging, and only an observed climb from there says
@@ -126,11 +126,10 @@ object EnforcementVerdictEngine {
         if (sample.percent !in 0..100) return EnforcementOutcome(prior, null)
 
         val cap = epoch.capPercent
-        // Phase-local climb tracking: a drop resets the base AND clears the rise, so the rise a
-        // refutation rests on is always the one that led into the current level. Equal samples
-        // continue the climb without ever establishing a rise on their own.
+        // Phase-local climb tracking: a drop clears the rise, so the rise a refutation rests on is
+        // always the one that led into the current level. Equal samples continue the climb without
+        // ever establishing a rise on their own.
         val dropped = prior != null && sample.percent < prior.lastPercent
-        val climbBase = if (prior == null || dropped) sample.percent else prior.climbBase
         val climbRose = when {
             prior == null || dropped -> false
             sample.percent > prior.lastPercent -> true
@@ -138,7 +137,6 @@ object EnforcementVerdictEngine {
         }
         val progress = EnforcementProgress(
             epoch = epoch,
-            climbBase = climbBase,
             climbRose = climbRose,
             lastPercent = sample.percent,
         )
