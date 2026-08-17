@@ -390,6 +390,11 @@
     <string name="dashboard_enforcement_unverified_note">Set, but not confirmed to work on this build</string>
     <string name="dashboard_enforcement_refuted_title">Charge limiting does not work on this build</string>
     <string name="dashboard_enforcement_refuted_body">Your build accepted the limit and then charged past it, so the charging hardware is ignoring it. Amply has switched its charging controls off here rather than show a protection that isn\'t real. A report helps get this build looked at.</string>
+    <!-- Hero wording for the tiers that keep the controls off: the device is matched, so the generic
+         "unsupported device" line would contradict the card right below it. -->
+    <string name="dashboard_enforcement_candidate_hero_title">Charging control is not switched on</string>
+    <string name="dashboard_enforcement_candidate_hero_body">Amply can control charging on this build, it just can\'t confirm the limit holds. The card below switches it on anyway.</string>
+    <string name="dashboard_enforcement_refuted_hero_title">Charge limiting doesn\'t work here</string>
     <string name="dashboard_settling_fallback_target">the new policy</string>
     <string name="dashboard_session_once_title" formatted="false">Charging to 100% once</string>
     <string name="dashboard_session_returns">%1$s will return automatically at 100%% or when you unplug.</string>
