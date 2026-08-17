@@ -644,6 +644,8 @@
     <string name="rules_empty_body">Let a charge policy follow your situation: while a Bluetooth device is connected, or while you\'re on a certain charger.</string>
     <string name="rules_add_action">Add condition</string>
     <string name="rules_active_marker">Active now</string>
+    <!-- Condition and effect on one card summary line, e.g. "While charging via USB · Limit to 80%" -->
+    <string name="rules_row_summary">%1$s · %2$s</string>
     <string name="rules_kind_protection">Protects the battery</string>
     <string name="rules_kind_charge">Charges fully</string>
     <string name="rules_condition_bluetooth">While %1$s is connected</string>

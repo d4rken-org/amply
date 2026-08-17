@@ -74,10 +74,3 @@ val ChargeRule.conditionIcon: ImageVector
         is RuleCondition.BluetoothDevice -> Icons.Default.Bluetooth
         is RuleCondition.ChargerType -> Icons.Default.Bolt
     }
-
-@Composable
-fun ChargeRule.kindLabel(): String? = when (kind) {
-    RuleKind.CHARGE -> stringResource(R.string.rules_kind_charge)
-    RuleKind.PROTECTION -> stringResource(R.string.rules_kind_protection)
-    null -> null
-}

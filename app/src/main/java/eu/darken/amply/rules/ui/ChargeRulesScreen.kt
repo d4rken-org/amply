@@ -15,9 +15,13 @@ import androidx.compose.material.icons.automirrored.twotone.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
@@ -29,8 +33,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import eu.darken.amply.R
@@ -88,7 +97,7 @@ fun ChargeRulesScreen(
                 .padding(padding)
                 .fillMaxSize(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (state.applyFailed) {
                 item(key = "rules.failure") {
@@ -133,10 +142,9 @@ fun ChargeRulesScreen(
             } else {
                 if (state.rows.size > 1) {
                     item(key = "rules.priority") {
-                        Text(
-                            stringResource(R.string.rules_priority_note),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        InfoNote(
+                            icon = Icons.Default.SwapVert,
+                            text = stringResource(R.string.rules_priority_note),
                         )
                     }
                 }
@@ -152,10 +160,9 @@ fun ChargeRulesScreen(
                     }
                 }
                 item(key = "rules.footnote") {
-                    Text(
-                        stringResource(R.string.rules_notification_footnote),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    InfoNote(
+                        icon = Icons.Outlined.Info,
+                        text = stringResource(R.string.rules_notification_footnote),
                     )
                 }
             }
@@ -172,11 +179,34 @@ private fun ChargeRuleCard(
     onMove: (Boolean) -> Unit,
 ) {
     val rule = row.rule
+    // Transient dialog visibility only, like the editor's overflow: deletion from the list is just
+    // as destructive as from the editor and gets the same confirmation.
+    var deleteConfirmOpen by remember { mutableStateOf(false) }
     AmplyCard(
         // The winner is the one rule actually doing something; everything below it is standing by.
         tone = if (row.active) AmplyCardTone.SecondaryContainer else AmplyCardTone.Default,
-        verticalArrangement = Arrangement.spacedBy(AmplyCardDefaults.ItemSpacing),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
+        // Status reads as an eyebrow above the title — the M3 overline slot — not as a loose line
+        // in the card body. Only the active card pays the extra height.
+        if (row.active) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Default.Bolt,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    stringResource(R.string.rules_active_marker),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -188,27 +218,21 @@ private fun ChargeRuleCard(
             )
             Column(Modifier.weight(1f)) {
                 Text(rule.displayTitle(), style = MaterialTheme.typography.titleMedium)
+                // One summary line: condition and effect together. When the title already IS the
+                // condition (unnamed rule), repeating it would say nothing — show just the effect.
+                val policyLabel = row.policy?.label?.asComposable()
+                val summary = when {
+                    policyLabel == null -> rule.conditionSummary()
+                    rule.label.isBlank() -> policyLabel
+                    else -> stringResource(R.string.rules_row_summary, rule.conditionSummary(), policyLabel)
+                }
                 Text(
-                    rule.conditionSummary(),
+                    summary,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Switch(checked = rule.enabled, onCheckedChange = onEnabledChange)
-        }
-        Text(
-            listOfNotNull(
-                row.policy?.label?.asComposable(),
-                rule.kindLabel(),
-            ).joinToString(stringResource(R.string.rules_condition_separator)),
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        if (row.active) {
-            Text(
-                stringResource(R.string.rules_active_marker),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
         }
         // Stated on the row rather than hidden: a condition that cannot act here would otherwise
         // look switched on and simply never do anything.
@@ -232,15 +256,70 @@ private fun ChargeRuleCard(
                 )
             }
             Spacer(Modifier.weight(1f))
-            TextButton(onClick = onEdit) {
-                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text(stringResource(R.string.rules_action_edit), Modifier.padding(start = 4.dp))
+            IconButton(onClick = onEdit) {
+                Icon(
+                    Icons.Default.Edit,
+                    contentDescription = stringResource(R.string.rules_action_edit),
+                )
             }
-            TextButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text(stringResource(R.string.rules_action_delete), Modifier.padding(start = 4.dp))
+            IconButton(onClick = { deleteConfirmOpen = true }) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = stringResource(R.string.rules_action_delete),
+                )
             }
         }
+    }
+    if (deleteConfirmOpen) {
+        AlertDialog(
+            onDismissRequest = { deleteConfirmOpen = false },
+            title = { Text(stringResource(R.string.rules_editor_delete_title)) },
+            text = { Text(stringResource(R.string.rules_editor_delete_body)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        deleteConfirmOpen = false
+                        onDelete()
+                    },
+                ) {
+                    Text(stringResource(R.string.rules_action_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteConfirmOpen = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
+}
+
+/**
+ * A quiet contextual note between cards. The icon and the card-content alignment are what keep it
+ * from reading as a stray string: it sits indented to the same left edge as the card interiors, so
+ * it belongs to the list instead of floating beside it.
+ */
+@Composable
+private fun InfoNote(
+    icon: ImageVector,
+    text: String,
+) {
+    Row(
+        modifier = Modifier.padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
