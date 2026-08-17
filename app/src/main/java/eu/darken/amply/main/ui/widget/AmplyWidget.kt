@@ -198,7 +198,8 @@ class AmplyWidget : GlanceAppWidget() {
                 val quickActions = widgetQuickActions(state, appWidgetId?.let { quickActionConfig?.get(it) })
                 Row(modifier = GlanceModifier.fillMaxWidth().padding(top = 10.dp)) {
                     if (quickActions == null) {
-                        // No resolved adapter yet: keep the pre-configuration rendering, whose
+                        // No resolved adapter yet, or a device with nothing to render from (a
+                        // diagnostics-only lab adapter): keep the pre-configuration rendering, whose
                         // actions resolve their policy at tap time instead of at render time.
                         Button(
                             text = policyButtonLabel(context, state.defaultProtectivePolicy),
@@ -357,15 +358,23 @@ private fun statusLine(
 }
 
 /**
- * Which persistent-policy buttons this widget instance shows, or null while no adapter has been
- * resolved — the pre-configuration rendering, whose actions resolve their policy at tap time.
+ * Which persistent-policy buttons this widget instance shows, or null for the pre-configuration
+ * rendering, whose actions resolve their policy at tap time.
  *
- * Branching on [ChargingState.adapterResolved] and NOT on the policy list: the capability defaults
- * are permissive, so an unresolved state would briefly render buttons the resolved adapter forbids.
+ * Branching on [ChargingState.adapterResolved] and NOT on the policy list alone: the capability
+ * defaults are permissive, so an unresolved state would briefly render buttons the resolved adapter
+ * forbids.
+ *
+ * Fewer than two supported policies is the **diagnostics-only device** — every lab adapter resolves
+ * with an empty supported list, which is every non-gated device — and rendering from that list would
+ * silently drop both persistent-policy buttons the widget shows today. Those devices keep the legacy
+ * rendering, which is safe because its buttons carry no pre-resolved target: `setPersistentOrOpen`
+ * resolves the policy at tap time and opens the app instead of dispatching when `canApply` is false,
+ * and the service refuses a target that isn't in the adapter's supported list.
  */
 internal fun widgetQuickActions(state: ChargingState, storedIds: List<String>?): List<ChargePolicy>? {
     val defaultProtective = state.defaultProtectivePolicy
-    if (!state.adapterResolved || defaultProtective == null) return null
+    if (!state.adapterResolved || defaultProtective == null || state.supportedPolicies.size < 2) return null
     return resolveQuickActionPolicies(storedIds, state.supportedPolicies, defaultProtective)
 }
 

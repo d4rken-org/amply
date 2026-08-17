@@ -84,6 +84,21 @@ class WidgetDisplayTest {
     }
 
     @Test
+    fun `a diagnostics-only device keeps the legacy buttons instead of losing them`() {
+        // Lab adapters resolve with an empty supported list — rendering from it would drop both
+        // persistent-policy buttons the widget shows today.
+        widgetQuickActions(
+            richState.copy(supportedPolicies = emptyList()),
+            storedIds = listOf("adaptive", "unrestricted"),
+        ) shouldBe null
+        // Same for an adapter that supports exactly one policy: there is no pair to render.
+        widgetQuickActions(
+            richState.copy(supportedPolicies = listOf(target)),
+            storedIds = null,
+        ) shouldBe null
+    }
+
+    @Test
     fun `a resolved adapter renders the resolver's answer, regardless of how many policies it has`() {
         widgetQuickActions(richState, storedIds = null) shouldBe listOf(target, ChargePolicy.Unrestricted)
         widgetQuickActions(richState, storedIds = listOf("adaptive", "unrestricted")) shouldBe
