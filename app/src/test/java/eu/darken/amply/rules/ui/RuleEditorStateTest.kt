@@ -116,6 +116,32 @@ class RuleEditorStateTest {
     }
 
     @Test
+    fun `only a newer snapshot revision may replace the displayed set`() {
+        // The sweep's point read and the store's flow deliver snapshots by different routes and are
+        // not ordered against each other, so without this an older read arriving second would
+        // overwrite a newer set — permanently, until the next Bluetooth event.
+        val applied = base.withSnapshot(revision = 5, addresses = setOf("AA:BB:CC:DD:EE:FF"))
+
+        applied.connectedAddresses shouldBe setOf("AA:BB:CC:DD:EE:FF")
+        applied.appliedSnapshotRevision shouldBe 5L
+
+        // Older loses.
+        applied.withSnapshot(revision = 4, addresses = emptySet()) shouldBe applied
+        // Equal loses too: it is the same write, arriving twice by two routes.
+        applied.withSnapshot(revision = 5, addresses = emptySet()) shouldBe applied
+
+        val newer = applied.withSnapshot(revision = 6, addresses = setOf("11:22:33:44:55:66"))
+        newer.connectedAddresses shouldBe setOf("11:22:33:44:55:66")
+        newer.appliedSnapshotRevision shouldBe 6L
+    }
+
+    @Test
+    fun `adopting a snapshot is not an edit`() {
+        // Otherwise a device connecting while the editor is open would demand a discard confirmation.
+        base.withSnapshot(revision = 3, addresses = setOf("AA:BB:CC:DD:EE:FF")).draft() shouldBe base.draft()
+    }
+
+    @Test
     fun `connected markers need a fresh reading, not just a set`() {
         val connected = base.copy(connectedAddresses = setOf("AA:BB:CC:DD:EE:FF"))
 

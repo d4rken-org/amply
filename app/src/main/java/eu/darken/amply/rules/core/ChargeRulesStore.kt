@@ -124,8 +124,25 @@ class ChargeRulesStore @Inject constructor(
         runtimeValue.update(block)
     }
 
+    /**
+     * The revision is stamped **here**, not by the callers, so no write site can forget it and break
+     * the ordering that readers depend on. It is a read-modify-write inside the store's own
+     * transaction, so two concurrent writers cannot mint the same number.
+     *
+     * A write that changes nothing keeps its revision, which matters more than it looks: the
+     * evaluation path resolves this snapshot on every ~30s tick, and an unconditional bump would
+     * turn each of those into a disk write that re-emits the shared store to every collector in the
+     * app. It also keeps the ordering honest — the same set arriving twice is one write, not two.
+     */
     internal suspend fun updateBtSnapshot(block: (BtConnectionSnapshot) -> BtConnectionSnapshot) {
-        btValue.update(block)
+        btValue.update { current ->
+            val next = block(current)
+            if (next.addresses == current.addresses && next.bootCount == current.bootCount) {
+                current
+            } else {
+                next.copy(revision = current.revision + 1)
+            }
+        }
     }
 }
 

@@ -177,4 +177,12 @@ data class RuleRuntimeState(
 data class BtConnectionSnapshot(
     @SerialName("addresses") val addresses: Set<String> = emptySet(),
     @SerialName("bootCount") val bootCount: Int? = null,
+    /**
+     * Monotonic write counter, stamped by the store on every update (see
+     * `ChargeRulesStore.updateBtSnapshot`). It exists so a *reader* can order two snapshots that
+     * reached it by different routes — the store's flow and a point read — and never replace a newer
+     * set with an older one it happened to fetch first. Timestamps could not do this job: two writes
+     * in the same millisecond are indistinguishable, and a wall clock can move backwards.
+     */
+    @SerialName("revision") val revision: Long = 0,
 )

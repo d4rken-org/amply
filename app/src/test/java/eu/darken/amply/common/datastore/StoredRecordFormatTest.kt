@@ -243,11 +243,18 @@ class StoredRecordFormatTest {
     fun `the bluetooth snapshot encodes to the pinned shape`() {
         json.encodeToString(
             BtConnectionSnapshot.serializer(),
-            BtConnectionSnapshot(addresses = setOf("AA:BB:CC:DD:EE:FF"), bootCount = 7),
-        ) shouldBe """{"addresses":["AA:BB:CC:DD:EE:FF"],"bootCount":7}"""
+            BtConnectionSnapshot(addresses = setOf("AA:BB:CC:DD:EE:FF"), bootCount = 7, revision = 12),
+        ) shouldBe """{"addresses":["AA:BB:CC:DD:EE:FF"],"bootCount":7,"revision":12}"""
 
         json.encodeToString(BtConnectionSnapshot.serializer(), BtConnectionSnapshot()) shouldBe
-            """{"addresses":[]}"""
+            """{"addresses":[],"revision":0}"""
+
+        // A snapshot written before revisions existed reads as revision 0, which is older than every
+        // subsequent write — so the first write after an update wins, as it should.
+        json.decodeFromString(
+            BtConnectionSnapshot.serializer(),
+            """{"addresses":["AA:BB:CC:DD:EE:FF"],"bootCount":7}""",
+        ).revision shouldBe 0L
     }
 
     /**

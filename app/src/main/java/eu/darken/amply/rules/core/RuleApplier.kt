@@ -388,25 +388,28 @@ class RuleApplier @Inject constructor(
     private suspend fun resolveBtAddresses(rules: List<ChargeRule>, reconcile: Boolean): Set<String> {
         // No rule rides on Bluetooth: skip the whole thing rather than pay for a sweep nothing reads.
         if (rules.none { it.enabled && it.condition is RuleCondition.BluetoothDevice }) return emptySet()
-        return resolveConnected(reconcile).snapshot.addresses
+        return resolveConnected(reconcile).addresses
     }
 
     /**
      * [swept] answers "is this a fresh reading", which only a surface displaying the set cares
-     * about. The evaluation path acts on [snapshot] either way: a sweep that could not answer leaves
-     * the receiver-built snapshot in place, which is the best available evidence.
+     * about. The evaluation path acts on [addresses] either way: a sweep that could not answer
+     * leaves the receiver-built snapshot in place, which is the best available evidence.
+     *
+     * Addresses rather than the whole snapshot on purpose: a snapshot handed back from here would
+     * carry no revision (the store stamps that on write), and a reader comparing it against one from
+     * the store would order the two wrongly.
      */
-    private data class BtResolution(val snapshot: BtConnectionSnapshot, val swept: Boolean)
+    private data class BtResolution(val addresses: Set<String>, val swept: Boolean)
 
     private suspend fun resolveConnected(reconcile: Boolean): BtResolution {
         val bootCount = bootCountProvider.current()
         if (!bluetooth.hasPermission()) {
             log(TAG, Logging.Priority.WARN) { "Bluetooth permission missing; treating nothing as connected" }
-            val empty = BtConnectionSnapshot(bootCount = bootCount)
-            store.updateBtSnapshot { empty }
+            store.updateBtSnapshot { BtConnectionSnapshot(bootCount = bootCount) }
             // Not a failed reading: "nothing observable" IS the answer, and it is the same one the
             // evaluation path acts on.
-            return BtResolution(empty, swept = true)
+            return BtResolution(emptySet(), swept = true)
         }
         if (reconcile) {
             val live = try {
@@ -418,18 +421,16 @@ class RuleApplier @Inject constructor(
                 null
             }
             if (live != null) {
-                val swept = BtConnectionSnapshot(addresses = live, bootCount = bootCount)
-                store.updateBtSnapshot { swept }
-                return BtResolution(swept, swept = true)
+                store.updateBtSnapshot { BtConnectionSnapshot(addresses = live, bootCount = bootCount) }
+                return BtResolution(live, swept = true)
             }
         }
         val snapshot = store.btSnapshotNow()
         if (snapshot.bootCount != bootCount) {
-            val reset = BtConnectionSnapshot(bootCount = bootCount)
-            store.updateBtSnapshot { reset }
-            return BtResolution(reset, swept = false)
+            store.updateBtSnapshot { BtConnectionSnapshot(bootCount = bootCount) }
+            return BtResolution(emptySet(), swept = false)
         }
-        return BtResolution(snapshot, swept = false)
+        return BtResolution(snapshot.addresses, swept = false)
     }
 
     private companion object {

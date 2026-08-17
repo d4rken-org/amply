@@ -202,6 +202,41 @@ class RuleApplierTest {
     }
 
     @Test
+    fun `every snapshot write gets a strictly newer revision`() = fixture {
+        // The revision is the only total order over these writes, and a reader that receives two of
+        // them by different routes relies on it to tell which one is newer.
+        val revisions = mutableListOf<Long>()
+
+        connect()
+        revisions += store.btSnapshotNow().revision
+
+        applier.onBluetoothConnectionChanged(carAddress, connected = false)
+        revisions += store.btSnapshotNow().revision
+
+        bluetooth.live = setOf(carAddress)
+        applier.reconcileBluetoothForUi()
+        revisions += store.btSnapshotNow().revision
+
+        // The permission-missing invalidation writes too, and must not look like a repeat of the
+        // reading before it.
+        bluetooth.permission = false
+        applier.reconcileBluetoothForUi()
+        revisions += store.btSnapshotNow().revision
+
+        revisions shouldBe revisions.sorted()
+        revisions.toSet().size shouldBe revisions.size
+
+        // A write that changes nothing is not a new reading: re-sweeping the same set keeps the
+        // revision, so the ~30s evaluation tick cannot turn into a disk write per tick.
+        bluetooth.permission = true
+        bluetooth.live = emptySet()
+        applier.reconcileBluetoothForUi()
+        val settled = store.btSnapshotNow().revision
+        applier.reconcileBluetoothForUi()
+        store.btSnapshotNow().revision shouldBe settled
+    }
+
+    @Test
     fun `a UI reconcile that cannot sweep reports unavailable and keeps the snapshot`() = fixture {
         connect()
         // All-or-nothing: the source answers null when any profile fails to report.

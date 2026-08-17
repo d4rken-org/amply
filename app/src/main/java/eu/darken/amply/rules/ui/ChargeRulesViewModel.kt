@@ -117,6 +117,12 @@ data class RuleEditorState(
     val bluetoothPermissionMissing: Boolean = false,
     /** Addresses reported connected; only ever presented as such under [ConnectionFreshness.FRESH]. */
     val connectedAddresses: Set<String> = emptySet(),
+    /**
+     * Which stored snapshot [connectedAddresses] came from. Carried in the state rather than beside
+     * it so the "is this newer?" test and the write that follows it are one indivisible step — see
+     * [withSnapshot].
+     */
+    val appliedSnapshotRevision: Long = 0,
     val freshness: ConnectionFreshness = ConnectionFreshness.UNKNOWN,
     /** The user asked to leave with unsaved edits; the screen renders the discard confirmation. */
     val showDiscardConfirm: Boolean = false,
@@ -189,6 +195,25 @@ internal data class RuleDraft(
     val plugKinds: Set<PlugKind>,
     val policyId: String?,
 )
+
+/**
+ * Adopt a stored connection snapshot, but only if it is newer than whatever is already displayed.
+ *
+ * Two routes deliver these — the store's flow and the point read a sweep does when it finishes — and
+ * they are not ordered against each other: a sweep can read revision 7, an ACL broadcast can publish
+ * revision 8 to the flow while the sweep's coroutine is still suspended, and the sweep would then
+ * resume and overwrite the newer set with its older one, permanently, until the next Bluetooth
+ * event. The store's revision gives the two a total order, and this comparison decides it.
+ *
+ * The check and the write are one expression on purpose: split across a read and a later `copy`,
+ * a second writer could land in between and be silently undone.
+ */
+internal fun RuleEditorState.withSnapshot(revision: Long, addresses: Set<String>): RuleEditorState =
+    if (revision > appliedSnapshotRevision) {
+        copy(connectedAddresses = addresses, appliedSnapshotRevision = revision)
+    } else {
+        this
+    }
 
 /**
  * Deliberately excludes the device NAME: it travels with the address when the user picks a device,
@@ -281,12 +306,12 @@ class ChargeRulesViewModel @Inject constructor(
         // a connection change for good — the store emits each write once — and there is nothing to
         // protect against by dropping them: the markers only render under FRESH, and freshness is
         // UNKNOWN for the whole time a sweep is in flight, so a mid-sweep set is invisible until the
-        // sweep's own update declares one. Emissions arrive in store-write order, so the set only
-        // moves forward.
+        // sweep's own update declares one. The revision gate is what keeps this and the sweep's own
+        // apply from undoing each other.
         viewModelScope.launch {
             applier.btSnapshot.collect { snapshot ->
                 val addresses = withContext(Dispatchers.Default) { snapshot.addressesForThisBoot() }
-                editorState.update { it.copy(connectedAddresses = addresses) }
+                editorState.update { it.withSnapshot(snapshot.revision, addresses) }
             }
         }
     }
@@ -389,9 +414,11 @@ class ChargeRulesViewModel @Inject constructor(
      * The set and the freshness are applied together — never freshness first and the addresses from
      * some later emission, which would briefly present the *previous* set as "connected now".
      *
-     * The set comes from the store after the sweep, not from the sweep itself: a connection change
-     * can land between the sweep's write and this read, and the store's value is then the newer of
-     * the two. Reading it here means FRESH is always paired with the newest committed set.
+     * The set comes from the store after the sweep, not from the sweep itself, so a connection
+     * change that landed during the sweep is included rather than overwritten. That read still races
+     * the store's own flow, which is what the revision gate settles: if a newer emission already
+     * arrived, this older read loses and FRESH is declared over the newer set — which is the right
+     * answer, since the reading it describes is at least as current.
      */
     private suspend fun runReconcile(generation: Long) {
         val swept = withContext(Dispatchers.Default) { applier.reconcileBluetoothForUi() }
@@ -400,10 +427,12 @@ class ChargeRulesViewModel @Inject constructor(
             editorState.update { it.copy(freshness = ConnectionFreshness.UNAVAILABLE) }
             return
         }
-        val addresses = withContext(Dispatchers.Default) { applier.btSnapshotNow().addressesForThisBoot() }
+        val snapshot = withContext(Dispatchers.Default) {
+            applier.btSnapshotNow().let { it.revision to it.addressesForThisBoot() }
+        }
         if (generation != refreshGeneration) return
         editorState.update {
-            it.copy(connectedAddresses = addresses, freshness = ConnectionFreshness.FRESH)
+            it.withSnapshot(snapshot.first, snapshot.second).copy(freshness = ConnectionFreshness.FRESH)
         }
     }
 
@@ -660,6 +689,12 @@ class ChargeRulesViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Read-modify-write on the editor state, and deliberately not a compare-and-set loop: every
+     * writer here runs on the main dispatcher — the entry points are UI callbacks, and every
+     * continuation resumes there — so the mutations are already serialized. That is what lets a
+     * check-then-write inside [block] (the revision gate) be atomic.
+     */
     private fun MutableStateFlow<RuleEditorState?>.update(block: (RuleEditorState) -> RuleEditorState) {
         value = value?.let(block)
     }
