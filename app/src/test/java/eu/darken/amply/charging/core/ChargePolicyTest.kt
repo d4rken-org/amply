@@ -27,6 +27,15 @@ class ChargePolicyTest {
     }
 
     @Test
+    fun `only adaptive defers its timing to the OEM`() {
+        ChargePolicy.Adaptive.enforcementIsConditional shouldBe true
+        ChargePolicy.Unrestricted.enforcementIsConditional shouldBe false
+        ChargePolicy.PauseAtFull.enforcementIsConditional shouldBe false
+        ChargePolicy.FixedLimit(80).enforcementIsConditional shouldBe false
+        ChargePolicy.FixedLimit(100).enforcementIsConditional shouldBe false
+    }
+
+    @Test
     fun `unknown stable id is rejected`() {
         ChargePolicy.fromStableId("fixed:nope") shouldBe null
         ChargePolicy.fromStableId("vendor-mode") shouldBe null

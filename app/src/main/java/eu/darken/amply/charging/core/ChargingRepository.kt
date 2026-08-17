@@ -1,6 +1,7 @@
 package eu.darken.amply.charging.core
 
 import android.content.Context
+import android.content.Intent
 import dagger.hilt.android.qualifiers.ApplicationContext
 import android.os.BatteryManager
 import eu.darken.amply.R
@@ -14,6 +15,7 @@ import eu.darken.amply.charging.core.adapter.AdapterRegistry
 import eu.darken.amply.charging.core.adapter.AdapterSelection
 import eu.darken.amply.charging.core.adapter.AdapterSupport
 import eu.darken.amply.charging.core.adapter.ChargingAdapter
+import eu.darken.amply.charging.core.adapter.OemChargingShortcuts
 import eu.darken.amply.charging.core.adapter.VerificationStrategy
 import eu.darken.amply.charging.core.ChargingPreferences
 import eu.darken.amply.charging.core.enforcement.BuildIdentitySource
@@ -301,7 +303,13 @@ class ChargingRepository @Inject constructor(
     private fun capabilityAdapter(): ChargingAdapter? =
         registry.select(evidenceState = EnforcementEvidenceState.Loading).adapter
 
-    fun nativeSettingsIntent() = capabilityAdapter()?.nativeSettingsIntent(context)
+    /**
+     * Never null: a device with no adapter still gets the generic battery-settings chain. Returning null here made
+     * every unmapped device (any brand Amply carries no adapter for) land on Battery Saver, because the only caller
+     * substituted that directly — while every lab adapter deliberately prefers the battery-usage screen.
+     */
+    fun nativeSettingsIntent(): Intent = capabilityAdapter()?.nativeSettingsIntent(context)
+        ?: OemChargingShortcuts.genericBatterySettings(context)
 
     fun currentAdapter(): ChargingAdapter? = capabilityAdapter()
 

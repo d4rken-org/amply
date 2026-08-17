@@ -173,6 +173,22 @@ class ChargingSyncReadTest {
         sync(generic(), now = t0 + SETTLING_WINDOW_MILLIS) shouldBe null
     }
 
+    @Test
+    fun `sync verified adaptive clears pending like any other policy`() {
+        // Anti-leak guard. Adaptive's enforcement is conditional, so the UI refuses to claim active
+        // protection for it — but pending asks "did the write land", which the readback answers.
+        // Adopting the presentation predicate here would spin every Xiaomi adaptive apply for the
+        // full settling window, on that adapter's own protective default.
+        computeRefreshPending(
+            reqPolicy = ChargePolicy.Adaptive,
+            reqAt = t0,
+            now = t0 + 5_000,
+            observation = verified(ChargePolicy.Adaptive, BackendKind.SHIZUKU),
+            hardware = null,
+            verification = VerificationStrategy.SYNC_READBACK,
+        ) shouldBe null
+    }
+
     // --- computeRefreshPending: ASYNC_HARDWARE behavior is unchanged ---
 
     private fun async(observation: ChargeObservation, hardware: ChargeObservation?) = computeRefreshPending(
@@ -351,6 +367,7 @@ class ChargingSyncReadTest {
     fun `an expected but missing confirmation surfaces the target after the threshold`() {
         unconfirmed() shouldBe target
     }
+
 
     @Test
     fun `inside the grace threshold nothing surfaces`() {

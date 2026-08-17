@@ -24,6 +24,28 @@ fun ChargingState.isSettling(now: Long): Boolean {
         obs.policy == p.target)
 }
 
+/**
+ * Whether the observed policy is what the charger is actually *doing*, as opposed to what has merely
+ * been *selected*. Note this is a statement about knowledge, not about safety: `Unrestricted` is in
+ * effect exactly as verifiably as a fixed limit, it just protects nothing.
+ *
+ * For an unconditional policy the two coincide — a fixed limit caps, and no limit charges to full,
+ * whenever configured. For a policy whose engagement the OEM decides
+ * ([ChargePolicy.enforcementIsConditional]) they come apart: a readback proves the mode is selected
+ * and nothing more, so only a [BackendKind.BATTERY_HARDWARE] reading can show it is engaged.
+ *
+ * [isSettling] asks whether the write landed; this asks whether the configuration describes reality.
+ * Those are different questions, which is why this is **presentation only**. It must never be adopted
+ * by pending, settling, recovery, session, or gesture logic: those all ask "is the configuration what
+ * we asked for?", which a conditional policy answers fully. In particular `ChargingRepository`'s
+ * `settled` computation and `computeRefreshPending`'s sync-readback arm must keep clearing on any
+ * matching readback — adopting this there would spin a Xiaomi adaptive write for the full settling
+ * window on every apply, on that adapter's own protective default.
+ */
+fun ChargeObservation.provesPolicyInEffect(): Boolean =
+    this is ChargeObservation.Verified &&
+        (backend == BackendKind.BATTERY_HARDWARE || !policy.enforcementIsConditional)
+
 /** The policy a settling request is converging on, or null when nothing is pending. Surfaces choose their own copy. */
 fun ChargingState.settlingTarget(): ChargePolicy? = pending?.target
 

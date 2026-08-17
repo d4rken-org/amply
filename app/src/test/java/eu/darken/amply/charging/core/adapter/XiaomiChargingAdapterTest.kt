@@ -129,6 +129,9 @@ class XiaomiChargingAdapterTest {
         adapter.defaultProtectivePolicy shouldBe ChargePolicy.Adaptive
         adapter.verification shouldBe VerificationStrategy.SYNC_READBACK
         adapter.reconnectGestureSupported shouldBe false
+        // The only adapter whose protective default is conditional, and unavoidably so: HyperOS 2's
+        // {0,1} domain offers no unconditional protective mode. Presentation carries the honesty.
+        adapter.defaultProtectivePolicy.enforcementIsConditional shouldBe true
     }
 
     private class FakeBackend(

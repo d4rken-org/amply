@@ -640,14 +640,22 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun openNativeSettings() {
-        val intent = repository.nativeSettingsIntent() ?: Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS)
-        runCatching { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-            .onFailure {
-                context.startActivity(
-                    Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                )
-            }
+        // Resolution (including the unmapped-device fallback) lives in the repository; this only handles a
+        // launch that throws despite having resolved — resolveActivity is advisory, so an activity can be
+        // disabled or reject the launch between the check and the start.
+        val intent = repository.nativeSettingsIntent()
+        val failure = runCatching { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            .exceptionOrNull() ?: return
+        log(TAG, Logging.Priority.WARN) { "Native settings ${intent.action} failed: ${failure.asLog()}" }
+        // Battery Saver is the repository's own last resort, so retrying it here would just throw again —
+        // and unguarded, that second throw escaped and took the action down with it.
+        if (intent.action == Settings.ACTION_BATTERY_SAVER_SETTINGS) return
+        runCatching {
+            context.startActivity(
+                Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }.onFailure { log(TAG, Logging.Priority.WARN) { "Battery-saver fallback failed: ${it.asLog()}" } }
     }
 
     fun openShizuku() = viewModelScope.launch {
