@@ -82,6 +82,8 @@ import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.AmplyToggleCard
 import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.common.compose.asComposable
+import eu.darken.amply.common.compose.description
+import eu.darken.amply.common.compose.shortLabel
 import eu.darken.amply.fullcharge.core.ChargeSessionRecord
 import eu.darken.amply.fullcharge.core.InterruptionEvent
 import eu.darken.amply.fullcharge.core.InterruptionOutcome
@@ -947,25 +949,6 @@ private fun ChargePolicy.choiceLabel(): String = when (this) {
     ChargePolicy.Adaptive -> stringResource(R.string.dashboard_policy_choice_adaptive)
     ChargePolicy.Unrestricted -> stringResource(R.string.dashboard_policy_choice_100)
     ChargePolicy.PauseAtFull -> stringResource(R.string.dashboard_policy_choice_pause)
-}
-
-private fun ChargePolicy.shortLabel(): CaString = when (this) {
-    ChargePolicy.Adaptive -> R.string.dashboard_policy_adaptive.toCaString()
-    ChargePolicy.Unrestricted -> R.string.dashboard_policy_full.toCaString()
-    ChargePolicy.PauseAtFull -> R.string.dashboard_policy_pause_at_full.toCaString()
-    is ChargePolicy.FixedLimit -> R.string.dashboard_policy_fixed.toCaString(percent)
-}
-
-private fun ChargePolicy.description(): CaString = when (this) {
-    ChargePolicy.Adaptive -> R.string.dashboard_policy_desc_adaptive.toCaString()
-    ChargePolicy.Unrestricted -> R.string.dashboard_policy_desc_full.toCaString()
-    ChargePolicy.PauseAtFull -> R.string.dashboard_policy_desc_pause.toCaString()
-    is ChargePolicy.FixedLimit -> if (percent >= 100) {
-        // A 100% "limit" is a full charge; the battery-health claim would be wrong.
-        R.string.dashboard_policy_desc_full.toCaString()
-    } else {
-        R.string.dashboard_policy_desc_fixed.toCaString(percent)
-    }
 }
 
 @AmplyPreview
