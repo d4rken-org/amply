@@ -1,8 +1,15 @@
+<!--
+    minResizeWidth/minResizeHeight are the launcher's resize floors; without them minWidth/minHeight
+    act as the floor, which pinned the widget at 2 grid rows. minHeight and the target cells stay as
+    they are, so default placement is unchanged and only manual resizing gains the smaller sizes.
+-->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/widget_description"
     android:initialLayout="@layout/widget_loading"
     android:minWidth="250dp"
     android:minHeight="110dp"
+    android:minResizeWidth="110dp"
+    android:minResizeHeight="40dp"
     android:previewImage="@drawable/widget_preview"
     android:resizeMode="horizontal|vertical"
     android:targetCellWidth="4"

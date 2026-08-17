@@ -75,6 +75,12 @@ private val TAG = logTag("Widget")
 /** Below this width the brand mark + name is dropped so the status line stays readable. */
 private val BRAND_MIN_WIDTH = 200.dp
 
+/**
+ * Below this height the 2-cell paddings would clip a 1-cell widget, so they shrink. 80dp sits between
+ * the classic 1-cell (40dp) and 2-cell (110dp) heights.
+ */
+private val COMPACT_MIN_HEIGHT = 80.dp
+
 private val TITLE_COLOR = ColorProvider(Color(0xFF123832), Color(0xFFE0F5F0))
 
 @Keep
@@ -162,6 +168,9 @@ class AmplyWidget : GlanceAppWidget() {
                 requestedTarget,
             )
             val showBrand = display.steady && LocalSize.current.width >= BRAND_MIN_WIDTH
+            // A 1-cell widget keeps the status line: information beats a perfectly padded layout on
+            // an unusually tight grid.
+            val compact = LocalSize.current.height < COMPACT_MIN_HEIGHT
             val titleStyle = TextStyle(color = TITLE_COLOR, fontWeight = FontWeight.Bold)
             Column(
                 modifier = GlanceModifier
@@ -173,7 +182,7 @@ class AmplyWidget : GlanceAppWidget() {
                                 .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
                         ),
                     )
-                    .padding(12.dp),
+                    .padding(if (compact) 6.dp else 12.dp),
                 verticalAlignment = Alignment.Vertical.CenterVertically,
             ) {
                 Row(verticalAlignment = Alignment.Vertical.CenterVertically) {
@@ -196,7 +205,7 @@ class AmplyWidget : GlanceAppWidget() {
                 // ellipsizes on one line instead of wrapping/clipping inside the button.
                 val buttonText = TextStyle(fontSize = 12.sp)
                 val quickActions = widgetQuickActions(state, appWidgetId?.let { quickActionConfig?.get(it) })
-                Row(modifier = GlanceModifier.fillMaxWidth().padding(top = 10.dp)) {
+                Row(modifier = GlanceModifier.fillMaxWidth().padding(top = if (compact) 4.dp else 10.dp)) {
                     if (quickActions == null) {
                         // No resolved adapter yet, or a device with nothing to render from (a
                         // diagnostics-only lab adapter): keep the pre-configuration rendering, whose
