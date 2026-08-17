@@ -120,9 +120,11 @@ data class RuleEditorState(
     /**
      * Which stored snapshot [connectedAddresses] came from. Carried in the state rather than beside
      * it so the "is this newer?" test and the write that follows it are one indivisible step — see
-     * [withSnapshot].
+     * [withSnapshot]. Starts BELOW every valid stored revision: a snapshot persisted before the
+     * revision field existed decodes as 0 and keeps that revision while its content is unchanged,
+     * so a 0-start plus the strict greater-than gate would reject it forever.
      */
-    val appliedSnapshotRevision: Long = 0,
+    val appliedSnapshotRevision: Long = -1,
     val freshness: ConnectionFreshness = ConnectionFreshness.UNKNOWN,
     /** The user asked to leave with unsaved edits; the screen renders the discard confirmation. */
     val showDiscardConfirm: Boolean = false,

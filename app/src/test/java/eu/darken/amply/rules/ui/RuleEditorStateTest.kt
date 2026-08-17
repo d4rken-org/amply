@@ -136,6 +136,18 @@ class RuleEditorStateTest {
     }
 
     @Test
+    fun `a legacy revision-0 snapshot is still adoptable`() {
+        // A snapshot persisted before the revision field existed decodes as 0 and KEEPS that
+        // revision while its content is unchanged (an unchanged sweep does not bump it). The
+        // tracker therefore starts below 0, or connected devices on an upgraded install would
+        // never show their marker despite a successful sweep.
+        val applied = base.withSnapshot(revision = 0, addresses = setOf("AA:BB:CC:DD:EE:FF"))
+
+        applied.connectedAddresses shouldBe setOf("AA:BB:CC:DD:EE:FF")
+        applied.appliedSnapshotRevision shouldBe 0L
+    }
+
+    @Test
     fun `adopting a snapshot is not an edit`() {
         // Otherwise a device connecting while the editor is open would demand a discard confirmation.
         base.withSnapshot(revision = 3, addresses = setOf("AA:BB:CC:DD:EE:FF")).draft() shouldBe base.draft()
