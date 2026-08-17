@@ -12,6 +12,7 @@ import eu.darken.amply.charging.core.access.AccessSnapshot
 import eu.darken.amply.charging.core.access.shizuku.ShizukuController
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
 import eu.darken.amply.charging.core.adapter.AdapterSelection
+import eu.darken.amply.charging.core.adapter.AdapterSupport
 import eu.darken.amply.charging.core.adapter.ChargingAdapter
 import eu.darken.amply.charging.core.adapter.VerificationStrategy
 import eu.darken.amply.charging.core.ChargingPreferences
@@ -219,6 +220,26 @@ class ChargingRepository @Inject constructor(
         applyLocked(policy, persistent = true, forceNotify = true)
     }
 
+    /**
+     * Repay a protective policy the user ALREADY had: the session restore, its rollback, and boot
+     * recovery. Identical to [applyPersistent]/[reapplyPersistent] except that it does not apply the
+     * enforcement evidence tier.
+     *
+     * The gate exists to withhold NEW control on a build whose hardware was never observed honouring
+     * a cap; withholding a restore instead strands the device in the temporary session's Unrestricted
+     * state, which is the opposite of what the gate is for. The composite build identity changes on
+     * every nightly/OTA, so a confirmed device with a session open across an update comes back as a
+     * candidate with a restore still owed. Every other precondition still applies — the adapter must
+     * match, the probe's own `controlEnabled` must hold (system user, provider present), the policy
+     * must be supported, and a write backend must exist.
+     *
+     * Ordinary persistent and temporary user writes stay on the gated path.
+     */
+    internal suspend fun restorePersistent(policy: ChargePolicy, forceNotify: Boolean = false): ApplyResult =
+        operationMutex.withLock {
+            applyLocked(policy, persistent = true, forceNotify = forceNotify, evidenceGated = false)
+        }
+
     suspend fun requestShizukuPermission(): Boolean {
         val result = runCatching { shizukuController.requestPermission() }.getOrDefault(false)
         refresh(
@@ -311,11 +332,13 @@ class ChargingRepository @Inject constructor(
         policy: ChargePolicy,
         persistent: Boolean,
         forceNotify: Boolean = false,
+        evidenceGated: Boolean = true,
     ): ApplyResult {
         log(TAG, Logging.Priority.INFO) {
-            "apply(policy=${policy.stableId}, persistent=$persistent, forceNotify=$forceNotify)"
+            "apply(policy=${policy.stableId}, persistent=$persistent, forceNotify=$forceNotify, " +
+                "evidenceGated=$evidenceGated)"
         }
-        val selection = selectGated()
+        val selection = if (evidenceGated) selectGated() else selectForRestore()
         val adapter = selection.adapter
         if (adapter == null || !selection.support.controlEnabled) {
             val detail = selection.support.detail.toCaString()
@@ -508,6 +531,26 @@ class ChargingRepository @Inject constructor(
             evidenceState = evidenceStore.currentState(),
             verificationStarted = preferences.verificationStartedForNow() == buildIdentity.current(),
         )
+
+    /**
+     * Adapter selection for [restorePersistent]: the matched adapter with its OWN probe result, i.e.
+     * every capability gate the adapter enforces (system user, provider/key presence, ROM version)
+     * but not the enforcement evidence tier. Not usable for a fresh user write — that is exactly what
+     * the tier decides.
+     */
+    private fun selectForRestore(device: DeviceInfo = DeviceInfo.current(context)): AdapterSelection {
+        val adapter = registry.select(device, EnforcementEvidenceState.Loading).adapter
+            ?: return AdapterSelection(
+                adapter = null,
+                support = AdapterSupport(
+                    matched = false,
+                    controlEnabled = false,
+                    detail = R.string.adapter_detail_none,
+                    contributionWanted = true,
+                ),
+            )
+        return AdapterSelection(adapter = adapter, support = adapter.probe(device))
+    }
 
     /** The gated selection, for callers that must observe the real control decision (the support report). */
     suspend fun currentSelection(): AdapterSelection = selectGated()

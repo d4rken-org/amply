@@ -679,8 +679,11 @@ class ChargeSessionService : Service() {
         override suspend fun clearPendingTarget() = fullChargeStore.clearPendingRecoveryTarget()
         override suspend fun restoreSession() = manager.restore().success
         override suspend fun dropStaleSession() = manager.cancelWithoutRestore()
+        // Boot recovery repays an obligation the user already had, so it takes the ungated restore
+        // path: an OTA between the session start and this boot changes the build identity, which
+        // would otherwise leave the owed protective write refused by the enforcement gate.
         override suspend fun rewrite(policy: ChargePolicy) =
-            repository.reapplyPersistent(policy).success
+            repository.restorePersistent(policy, forceNotify = true).success
 
         override suspend fun intendedTarget() = preferences.lastRequestedNow()
 
