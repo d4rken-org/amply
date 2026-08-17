@@ -56,10 +56,45 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
 
 ## Known gaps
 
-- **LineageOS** — landed **diagnostics-only**: `QUALIFIED_CODENAMES` ships **empty**, so the live adapter never
-  matches and every LineageOS build falls to `LineageLabAdapter`. A codename is added only after that device passes
-  qualification (real charging cessation at the limit, wired + wireless, below/at/above threshold) and gets a
-  "Verified devices" row.
+- **LineageOS** — the live adapter now **matches every LineageOS build that ships the `lineagesettings` provider**;
+  `QUALIFIED_CODENAMES` still ships **empty** but is only a maintainer fast path, no longer what makes the adapter
+  reachable. Control is gated on **per-build enforcement evidence** instead: a device is a candidate with controls
+  off until the user explicitly enables control on an unconfirmed build, and loses control permanently for that
+  build if the battery is observed charging past the cap. A codename still goes into `QUALIFIED_CODENAMES` only
+  after full qualification (real charging cessation at the limit, wired + wireless, below/at/above threshold) plus
+  a "Verified devices" row — that list now buys skipping the opt-in, not access itself.
+  - **Observation can only refute, never confirm** (established 2026-08-17, see the oriole re-observation below):
+    no passively observable signal distinguishes a cap hold from a thermal or weak-supply pause. Both present as
+    plugged + `BATTERY_STATUS_NOT_CHARGING` + a static level. `EXTRA_CHARGING_STATUS` does **not** break the tie —
+    it is session-scoped, measured still reading `4` while the device charged ten points *below* its cap. A guided
+    two-cap cut/resume/cut challenge (raise the cap, verify charging resumes and re-stops at the new threshold) is
+    the known way to earn real confirmation and is deliberately not implemented.
+  - **Pixel 6 (oriole) on LineageOS 23.2 / Android build `BP4A.251205.006` — re-observed 2026-08-17. The
+    2026-07-22 LOS 23.2 NO-GO below does NOT hold on this build.** `dumpsys lineagehealth` binds
+    `ccprovider.Limit` (so the HAL *does* advertise the LIMIT mode bit again), `charging_control_mode` reads back
+    as `3` and is **not** coerced to `1`, and with `enabled=1 / mode=3 / limit=70` the device sat at exactly 70 %
+    on AC for ~4 h: `status: 4` (NOT_CHARGING), `Charging state: 4`, `Charging policy: 1`, voltage 4072 mV.
+    **Causal check**: raising `charging_control_charging_limit` to `80` resumed charging within 20 s —
+    `status: 2`, voltage 4072 → 4183 mV, temperature 294 → 311, charge counter 2908000 → 2910000 — i.e. the
+    setting demonstrably drives the charging hardware, which is stronger evidence than an observed plateau.
+    The limit was restored to `70` and re-verified by read-back; `enabled`/`mode` were never written.
+    **This is NOT a GO and oriole is NOT in `QUALIFIED_CODENAMES`**: only part of step 2 was run — wired only, no
+    wireless, no below/at/above sweep, no hold observed at the raised cap, and none of steps 3-5 (access tiers,
+    sessions, boot recovery, R8). It supersedes the "HAL dropped LIMIT" claim for *this build only*.
+    **Unexplained later observation, recorded so this row does not overclaim**: a few hours after the run above,
+    the device was found at **78 %** with `charging_control_charging_limit` still reading `70` — i.e. a level
+    above the cap. It is **not attributable** and must not be read either as enforcement failing or as anything
+    else: by then the phone had left this run's control entirely — physically unplugged and moved, and its
+    system clock force-set to `Tue Jul 21 02:01 CEST` (a month in the past, at 02:00) by another workflow, which
+    is a scheduled/night-charge experiment signature. Any of that could produce the rise. The controlled
+    observations above stand as recorded; this one is logged only so a later reader does not find it and
+    conclude the row was written selectively. Re-check under controlled conditions before treating either as
+    settled.
+    **Why it matters beyond oriole**: same device, same Lineage major version, different build, opposite HAL
+    capability. That is the concrete case for HAL capability being **build-scoped, not codename-scoped**, and it
+    is why enforcement evidence is keyed on a composite build identity (fingerprint + incremental + build time +
+    provider package version) rather than a codename — LineageOS spoofs `Build.FINGERPRINT` to stock, so the
+    fingerprint alone cannot carry it.
   - **Pixel 6 (oriole) on LineageOS 20.0 / Android 13 — tested 2026-07-22, result NO-GO (no hardware enforcement).**
     The *software chain is fully validated* — both raw (shell-UID `content query`/`content insert`) **and through the
     app's real Shizuku backend end-to-end** (R8 debug build + Shizuku granted): tapping 80 % wrote the trio via

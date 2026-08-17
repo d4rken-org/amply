@@ -8,6 +8,7 @@ import eu.darken.amply.charging.core.access.AccessBackend
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.DeviceInfo
+import eu.darken.amply.charging.core.enforcement.EnforcementStatus
 import eu.darken.amply.common.ca.CaString
 
 data class AdapterSupport(
@@ -29,6 +30,17 @@ data class AdapterSupport(
      * this instrument.
      */
     val guidedCaptureUseful: Boolean = true,
+    /**
+     * Where this device sits on the "does the hardware actually enforce the cap" question, or **null**
+     * when the question does not apply to this adapter (every adapter but the ones setting
+     * [ChargingAdapter.enforcementEvidenceRequired]). Deliberately nullable rather than a blanket
+     * "qualified" default: labelling the lab and unsupported adapters CONFIRMED would claim exactly
+     * what they cannot.
+     *
+     * Filled in by [AdapterRegistry], not by the probes — the probes see immutable device information,
+     * while this depends on stored evidence and an opt-in.
+     */
+    val enforcement: EnforcementStatus? = null,
 )
 
 /** How an adapter's applied configuration can be confirmed. */
@@ -88,6 +100,23 @@ interface ChargingAdapter {
      */
     fun confirmationExpected(policy: ChargePolicy, chargingStatus: Int?, plugged: Boolean): Boolean =
         false
+
+    /**
+     * Whether control on this adapter must be justified by more than the settings read-back. Set
+     * where the setting can be written and read back perfectly while the charging HAL never limits
+     * (LineageOS): such a device is a CANDIDATE with control OFF until either a maintainer qualified
+     * it ([maintainerQualified]) or the user accepted the unconfirmed build. Nothing observable can
+     * *confirm* the cap — see `EnforcementVerdictEngine` — so control there stays a claim Amply never
+     * makes, and an observed climb past the cap withdraws it. Defaulted, so no other adapter changes.
+     */
+    val enforcementEvidenceRequired: Boolean get() = false
+
+    /**
+     * The maintainer fast path for [enforcementEvidenceRequired] adapters: a device physically
+     * qualified against the protocol in the `device-qualification` skill, which needs no local
+     * evidence. False everywhere else, including on adapters that require no evidence at all.
+     */
+    fun maintainerQualified(device: DeviceInfo): Boolean = false
 
     fun probe(device: DeviceInfo): AdapterSupport
     fun readHardware(context: Context): ChargeObservation? = null

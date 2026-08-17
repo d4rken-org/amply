@@ -1,7 +1,9 @@
 package eu.darken.amply.fullcharge.core
 
+import eu.darken.amply.charging.core.ApplyResult
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
+import eu.darken.amply.charging.core.ChargingRepository
 import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
@@ -18,19 +20,36 @@ data class BatterySnapshot(
  * [BootRecoveryEngine] until the charging hardware confirms it, a nudge re-write was sent,
  * or the budget runs out. The pending target persists across process death so a killed
  * service resumes the check instead of losing it.
+ *
+ * A resumed target carries its [RecoveryOrigin], which travels with every re-write: not everything
+ * that ends up pending is a restore the user is already owed, and only those may bypass the
+ * enforcement evidence gate (see [writeRecoveryTarget]).
  */
 class BootRecoveryFlow(private val hooks: Hooks) {
 
+    /** A persisted recovery target plus WHY it is owed — see [RecoveryOrigin]. */
+    data class PendingRecovery(
+        val target: ChargePolicy,
+        val origin: RecoveryOrigin,
+    )
+
     interface Hooks {
         suspend fun currentSessionTarget(): ChargePolicy?
-        suspend fun pendingTarget(): ChargePolicy?
+        suspend fun pendingTarget(): PendingRecovery?
+
+        /** Persists a target seeded from the session being recovered, i.e. [RecoveryOrigin.SESSION_RESTORE]. */
         suspend fun setPendingTarget(policy: ChargePolicy)
         suspend fun clearPendingTarget()
         suspend fun restoreSession(): Boolean
 
         /** Drops a session record that a newer pending target has made stale, without restoring it. */
         suspend fun dropStaleSession()
-        suspend fun rewrite(policy: ChargePolicy): Boolean
+
+        /**
+         * Re-write [policy]. [origin] decides the write path: an owed restore bypasses the
+         * enforcement evidence tier, a user-requested policy must not.
+         */
+        suspend fun rewrite(policy: ChargePolicy, origin: RecoveryOrigin): Boolean
 
         /** The policy Amply itself was most recently asked to configure, if any. */
         suspend fun intendedTarget(): ChargePolicy?
@@ -72,12 +91,15 @@ class BootRecoveryFlow(private val hooks: Hooks) {
         var rewrites = 0
         val sessionTarget = hooks.currentSessionTarget()
         val pendingTarget = hooks.pendingTarget()
-        val target = pendingTarget ?: sessionTarget ?: return Result(
+        val target = pendingTarget?.target ?: sessionTarget ?: return Result(
             outcome = Outcome.NOTHING_TO_DO,
             restoreAttempted = false,
             rewrites = 0,
             retryRemaining = false,
         )
+        // A target seeded from the session below is by definition an owed restore; a persisted one
+        // carries the origin of whoever created it.
+        val origin = pendingTarget?.origin ?: RecoveryOrigin.SESSION_RESTORE
         var staleIntended: ChargePolicy? = null
         if (pendingTarget != null) {
             // The pending target is always the newest intent: setPersistentPolicy persists it
@@ -145,8 +167,8 @@ class BootRecoveryFlow(private val hooks: Hooks) {
                 RecoveryDecision.WAIT -> Unit
                 RecoveryDecision.REWRITE -> {
                     rewrites++
-                    log(TAG) { "Boot recovery: re-writing ${target.stableId} (attempt $rewrites)" }
-                    if (!hooks.rewrite(target)) {
+                    log(TAG) { "Boot recovery: re-writing ${target.stableId} as $origin (attempt $rewrites)" }
+                    if (!hooks.rewrite(target, origin)) {
                         // Keep the pending target: a re-write failure (lost access, partial
                         // write) should be retried by the next service start.
                         log(TAG, Logging.Priority.ERROR) { "Boot recovery re-write failed" }
@@ -190,4 +212,23 @@ class BootRecoveryFlow(private val hooks: Hooks) {
     companion object {
         val TAG = logTag("BootRecoveryFlow")
     }
+}
+
+/**
+ * Write a recovery target the way its [RecoveryOrigin] demands.
+ *
+ * A [RecoveryOrigin.SESSION_RESTORE] repays a protective policy the user already had, so it takes
+ * the ungated [ChargingRepository.restorePersistent] — an OTA mid-session changes the build identity
+ * and would otherwise leave the owed write refused, stranding the device Unrestricted. A
+ * [RecoveryOrigin.USER_REQUEST] is a *fresh* choice that merely happens to be pending (the widget's
+ * persistent-policy write persists its target before the risky write), so it stays on the gated
+ * [ChargingRepository.reapplyPersistent]: a build that became a candidate or was refuted in the
+ * meantime must not receive a new user write, least of all `Unrestricted`.
+ */
+internal suspend fun ChargingRepository.writeRecoveryTarget(
+    policy: ChargePolicy,
+    origin: RecoveryOrigin,
+): ApplyResult = when (origin) {
+    RecoveryOrigin.SESSION_RESTORE -> restorePersistent(policy, forceNotify = true)
+    RecoveryOrigin.USER_REQUEST -> reapplyPersistent(policy)
 }

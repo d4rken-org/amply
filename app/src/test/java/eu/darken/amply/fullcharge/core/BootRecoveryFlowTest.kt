@@ -6,6 +6,7 @@ import eu.darken.amply.charging.core.ChargePolicy
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.collections.shouldHaveSize
+import io.kotest.matchers.collections.shouldNotBeEmpty
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
@@ -204,9 +205,51 @@ class BootRecoveryFlowTest {
         hooks.pending shouldBe null
     }
 
+    @Test
+    fun `a session-seeded target is rewritten as an owed restore`() = runTest {
+        val hooks = FakeHooks()
+
+        BootRecoveryFlow(hooks).run()
+
+        hooks.rewrites.shouldNotBeEmpty()
+        hooks.rewriteOrigins.toSet() shouldBe setOf(RecoveryOrigin.SESSION_RESTORE)
+    }
+
+    @Test
+    fun `a pending user request is rewritten as a user request, not as a restore`() = runTest {
+        // setPersistentPolicy persists its target BEFORE the write, so a process death (or a failed
+        // write) leaves a fresh user choice — Unrestricted here — as pending recovery work. Sending it
+        // down the ungated restore path would land it on a build the enforcement gate refuses.
+        val hooks = FakeHooks(
+            sessionTarget = null,
+            pending = ChargePolicy.Unrestricted,
+            pendingOrigin = RecoveryOrigin.USER_REQUEST,
+        )
+
+        BootRecoveryFlow(hooks).run()
+
+        hooks.rewrites shouldBe listOf(ChargePolicy.Unrestricted)
+        hooks.rewriteOrigins shouldBe listOf(RecoveryOrigin.USER_REQUEST)
+    }
+
+    @Test
+    fun `a pending session restore keeps the restore origin`() = runTest {
+        val hooks = FakeHooks(
+            sessionTarget = null,
+            pending = fixedLimit,
+            pendingOrigin = RecoveryOrigin.SESSION_RESTORE,
+        )
+
+        BootRecoveryFlow(hooks).run()
+
+        hooks.rewrites.shouldNotBeEmpty()
+        hooks.rewriteOrigins.toSet() shouldBe setOf(RecoveryOrigin.SESSION_RESTORE)
+    }
+
     private inner class FakeHooks(
         var sessionTarget: ChargePolicy? = fixedLimit,
         var pending: ChargePolicy? = null,
+        var pendingOrigin: RecoveryOrigin = RecoveryOrigin.USER_REQUEST,
         val restoreResult: Boolean = true,
         val rewriteResult: Boolean = true,
         var snapshot: BatterySnapshot? = BatterySnapshot(plugged = true, percent = 80, chargingState = 1),
@@ -217,12 +260,17 @@ class BootRecoveryFlowTest {
         var restoreCalls = 0
         var staleSessionDrops = 0
         val rewrites = mutableListOf<ChargePolicy>()
+        val rewriteOrigins = mutableListOf<RecoveryOrigin>()
         val failures = mutableListOf<Boolean>()
 
         override suspend fun currentSessionTarget() = sessionTarget
-        override suspend fun pendingTarget() = pending
+        override suspend fun pendingTarget() =
+            pending?.let { BootRecoveryFlow.PendingRecovery(target = it, origin = pendingOrigin) }
+
         override suspend fun setPendingTarget(policy: ChargePolicy) {
             pending = policy
+            // Mirrors the service: a target seeded from the session is an owed restore.
+            pendingOrigin = RecoveryOrigin.SESSION_RESTORE
         }
 
         override suspend fun clearPendingTarget() {
@@ -240,8 +288,9 @@ class BootRecoveryFlowTest {
             sessionTarget = null
         }
 
-        override suspend fun rewrite(policy: ChargePolicy): Boolean {
+        override suspend fun rewrite(policy: ChargePolicy, origin: RecoveryOrigin): Boolean {
             rewrites += policy
+            rewriteOrigins += origin
             return rewriteResult
         }
 

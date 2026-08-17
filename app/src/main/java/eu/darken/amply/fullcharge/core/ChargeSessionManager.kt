@@ -126,8 +126,9 @@ class ChargeSessionManager @Inject constructor(
             result
         } else {
             // A two-key OEM transition can partially succeed. Keep recovery state unless the
-            // original protective policy is successfully written back immediately.
-            val rollback = repository.applyPersistent(restorePolicy)
+            // original protective policy is successfully written back immediately. Repaying a policy
+            // the user already had is not new control, so it goes through the ungated restore path.
+            val rollback = repository.restorePersistent(restorePolicy)
             if (rollback.success) sessionStore.clearSession()
             result.copy(
                 message = if (rollback.success) {
@@ -145,7 +146,11 @@ class ChargeSessionManager @Inject constructor(
             observation = repository.state.value.observation,
             message = "No temporary session is active",
         )
-        val result = repository.applyPersistent(session.restorePolicy)
+        // The session's restore obligation predates any evidence tier change (a nightly/OTA moves the
+        // build identity, so a confirmed device can come back a candidate with a restore still owed).
+        // The gate withholds NEW control; it must never keep Amply from repaying protection the user
+        // already had, which would strand the device in the session's Unrestricted state.
+        val result = repository.restorePersistent(session.restorePolicy)
         if (result.success) sessionStore.clearSession()
         result
     }

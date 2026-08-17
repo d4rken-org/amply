@@ -28,6 +28,8 @@ import eu.darken.amply.charging.core.adapter.SamsungModernChargingAdapter
 import eu.darken.amply.charging.core.adapter.XiaomiChargingAdapter
 import eu.darken.amply.charging.core.adapter.XiaomiHyperOs3ChargingAdapter
 import eu.darken.amply.charging.core.adapter.XiaomiLabAdapter
+import eu.darken.amply.charging.core.enforcement.BuildIdentitySource
+import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceStore
 import eu.darken.amply.common.AppDataStore
 import eu.darken.amply.common.serialization.SerializationModule
 import io.kotest.matchers.shouldBe
@@ -61,6 +63,12 @@ class UnmappedDeviceSettingsIntentTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val storeScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
     private lateinit var repository: ChargingRepository
+
+    // The enforcement gate is irrelevant to this test — an unmapped device has no adapter at all, so no
+    // tier is ever resolved. These exist only to satisfy the repository's constructor.
+    private val buildIdentity = object : BuildIdentitySource {
+        override fun current() = "test-build"
+    }
 
     @Before
     fun setup() {
@@ -102,6 +110,8 @@ class UnmappedDeviceSettingsIntentTest {
                 override fun schedule(requestedAtMillis: Long) = Unit
             },
             batteryReader = BatteryReader(context),
+            evidenceStore = EnforcementEvidenceStore(appDataStore, buildIdentity, SerializationModule.json()),
+            buildIdentity = buildIdentity,
         )
     }
 

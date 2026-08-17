@@ -380,6 +380,7 @@ private fun DashboardScreenForTest(state: DashboardUiState) {
         onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
+        onStartVerification = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},

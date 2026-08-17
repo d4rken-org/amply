@@ -66,6 +66,7 @@ import eu.darken.amply.charging.core.PendingRequest
 import eu.darken.amply.charging.core.SETTLING_WINDOW_MILLIS
 import eu.darken.amply.charging.core.access.AccessSnapshot
 import eu.darken.amply.charging.core.access.BackendStatus
+import eu.darken.amply.charging.core.enforcement.EnforcementStatus
 import eu.darken.amply.charging.core.isAwaitingReplug
 import eu.darken.amply.charging.core.isSettling
 import eu.darken.amply.charging.core.provesPolicyInEffect
@@ -122,6 +123,7 @@ fun DashboardScreen(
     onOpenConditions: () -> Unit,
     onOpenBatteryHub: () -> Unit,
     onRetryCapture: () -> Unit,
+    onStartVerification: () -> Unit,
     onPinWidget: () -> Unit,
     onAddTile: () -> Unit,
     onDismissQuickAccess: () -> Unit,
@@ -214,6 +216,17 @@ fun DashboardScreen(
 
                 item(key = "dashboard.hero") { StatusCard(state, sessionPresentation) }
 
+                // Directly under the hero on BOTH branches: on a candidate or refuted device the
+                // hero's "unsupported" line is exactly what this card has to explain, and on an
+                // unconfirmed one it qualifies the policy the hero states.
+                // CONFIRMED renders nothing, so it must not claim a list slot either — an empty item
+                // would still cost the list's 12.dp inter-item spacing.
+                state.charging.enforcement?.takeIf { it != EnforcementStatus.CONFIRMED }?.let { enforcement ->
+                    item(key = "dashboard.enforcement") {
+                        EnforcementCard(status = enforcement, onStartVerification = onStartVerification)
+                    }
+                }
+
                 if (unsupported) {
                     // No interruption card or setup guide exists on this branch, so the charging card
                     // follows the hero directly.
@@ -221,6 +234,10 @@ fun DashboardScreen(
                     // Unsupported devices cannot use the Pixel policy/charge controls; showing them
                     // greyed-out (and a "Pixel settings" action) only confuses non-Pixel users. Offer
                     // a contribution path instead, and keep only the restore card if a session lingers.
+                    // The same holds for a CANDIDATE build, where the controls *would* work once the
+                    // user opts in: leaving them out is deliberate, not an oversight. The enforcement
+                    // card is the call to action, and a disabled-but-visible row of percentages beside
+                    // it reads as a broken control rather than an offer.
                     if (state.session != null) {
                         item(key = "dashboard.fullcharge") {
                             FullChargeCard(
@@ -442,9 +459,21 @@ private fun StatusCard(
         }
     }
     val settling = state.charging.isSettling(now)
-    // Not "is it Verified" — a readback of a conditional policy (adaptive) proves the mode is set,
-    // not that the charger is acting on it, so it must not earn the confirmed checkmark.
-    val policyInEffect = observation.provesPolicyInEffect()
+    val enforcementUnverified = state.charging.enforcement == EnforcementStatus.UNVERIFIED
+    // The two tiers that keep control off publish ChargeObservation.Unsupported, and its generic
+    // "Unsupported device" wording contradicts the enforcement card directly below: the adapter did
+    // match, and on a candidate build the controls are one tap away. Presentation only — the tier is
+    // read here, never decided here.
+    val gatedTier = state.charging.enforcement
+        ?.takeIf { observation is ChargeObservation.Unsupported }
+        ?.takeIf { it == EnforcementStatus.CANDIDATE || it == EnforcementStatus.REFUTED }
+    // Two independent reasons to withhold the green check, both about the same gap between "the ROM
+    // stored the policy" and "the charger is acting on it". Either one alone is disqualifying:
+    //  - the policy itself may be conditional — a readback of adaptive proves the mode is set, not
+    //    that it is doing anything right now;
+    //  - the build's enforcement may never have been confirmed, and on these adapters no readback can
+    //    confirm it (see EnforcementVerdictEngine — observation can only ever refute).
+    val policyInEffect = observation.provesPolicyInEffect() && !enforcementUnverified
 
     // Not clickable. The card states the policy; the measurements (and the way through to them) live
     // in the charging card below. A whole-card tap here used to land on voltage and cycle counts,
@@ -474,7 +503,7 @@ private fun StatusCard(
                     settling -> stringResource(R.string.dashboard_applying)
                     presentation == SessionPresentation.ACTIVE ->
                         stringResource(R.string.dashboard_session_once_title)
-                    else -> observation.title().asComposable()
+                    else -> observation.title(gatedTier).asComposable()
                 },
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.weight(1f),
@@ -489,6 +518,11 @@ private fun StatusCard(
                 state.session?.let {
                     stringResource(R.string.dashboard_session_returns, it.restorePolicy.shortLabel().asComposable())
                 }
+            } else if (gatedTier == EnforcementStatus.CANDIDATE) {
+                // There is no policy to describe yet, so this slot points at the opt-in card instead.
+                // REFUTED gets no line here: its title already carries the sense, and the provenance
+                // line below states the refutation — repeating the card's paragraph would be noise.
+                stringResource(R.string.dashboard_enforcement_candidate_hero_body)
             } else {
                 observation.policyOrNull()?.description()?.asComposable()
             }
@@ -523,6 +557,16 @@ private fun StatusCard(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        // The provenance line above says where the value was read; on an unconfirmed build it must
+        // not be left to imply the hardware agreed.
+        if (enforcementUnverified) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                stringResource(R.string.dashboard_enforcement_unverified_note),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.tertiary,
+            )
+        }
         // Standing adapter fact (write latency, Shizuku requirement, replug semantics) — only set
         // while control is enabled, so it never repeats a gate-failure reason shown above. Hidden
         // while a replug is pending: the transient hint below states the same fact as an instruction,
@@ -920,7 +964,17 @@ private fun InterruptionCard(
     }
 }
 
-private fun ChargeObservation.title(): CaString = when (this) {
+/**
+ * [gatedTier] is the enforcement tier *when it is the reason control is off* (see StatusCard) — the
+ * device is matched and mapped, so the tier speaks for itself instead of the generic unsupported copy.
+ */
+private fun ChargeObservation.title(gatedTier: EnforcementStatus?): CaString = when (gatedTier) {
+    EnforcementStatus.CANDIDATE -> R.string.dashboard_enforcement_candidate_hero_title.toCaString()
+    EnforcementStatus.REFUTED -> R.string.dashboard_enforcement_refuted_hero_title.toCaString()
+    else -> untieredTitle()
+}
+
+private fun ChargeObservation.untieredTitle(): CaString = when (this) {
     is ChargeObservation.Verified -> if (backend == BackendKind.BATTERY_HARDWARE) {
         caString { it.getString(R.string.dashboard_status_verified_active, policy.shortLabel().get(it)) }
     } else {
@@ -1042,6 +1096,7 @@ private fun DashboardScreenPreview() = PreviewWrapper {
         onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
+        onStartVerification = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -1137,6 +1192,7 @@ private fun DashboardScreenLiveChargePreview() = PreviewWrapper {
         onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
+        onStartVerification = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -1212,6 +1268,7 @@ private fun DashboardScreenHwUnconfirmedPreview() = PreviewWrapper {
         onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
+        onStartVerification = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -1286,6 +1343,7 @@ private fun DashboardScreenConditionalPolicyPreview() = PreviewWrapper {
         onFixNotifications = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
+        onStartVerification = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -1360,6 +1418,7 @@ private fun DashboardScreenApplyingPreview() = PreviewWrapper {
         onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
+        onStartVerification = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -1444,6 +1503,7 @@ private fun DashboardScreenAwaitingReplugPreview() = PreviewWrapper {
         onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
+        onStartVerification = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -1514,6 +1574,7 @@ private fun DashboardScreenSessionActivePreview() = PreviewWrapper {
         onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
+        onStartVerification = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -1586,6 +1647,7 @@ private fun DashboardScreenSessionRecordedPreview() = PreviewWrapper {
         onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
+        onStartVerification = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -1646,6 +1708,7 @@ private fun DashboardScreenWssOnlyPreview() = PreviewWrapper {
         onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
+        onStartVerification = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -1720,6 +1783,7 @@ private fun DashboardScreenSamsungPreview() = PreviewWrapper {
         onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
+        onStartVerification = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -1788,6 +1852,7 @@ private fun DashboardScreenOnePlusNeedsShizukuPreview() = PreviewWrapper {
         onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
+        onStartVerification = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},
@@ -1844,6 +1909,207 @@ private fun DashboardScreenUnsupportedPreview() = PreviewWrapper {
         onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
+        onStartVerification = {},
+        onPinWidget = {},
+        onAddTile = {},
+        onDismissQuickAccess = {},
+        onDismissInterruption = {},
+        onNativeSettings = {},
+        onOpenShizuku = {},
+        onAllowShizuku = {},
+        onGrantWss = {},
+        onCopyAdb = {},
+        onCopyWebUsbLink = {},
+        onPrepareSupportReport = {},
+        onCopySupportReport = {},
+        onOpenContribution = {},
+        onOpenSupportIssue = {},
+        onEmailSupport = {},
+        onHelp = {},
+    )
+}
+
+// A LineageOS build nobody has qualified: the adapter matched and the keys are writable, but the
+// controls stay off until the user enables them anyway, so the card under the hero is the whole offer.
+// The hero says exactly that — an "unsupported device" line here would contradict the card below it.
+@AmplyPreview
+@Composable
+private fun DashboardScreenEnforcementCandidatePreview() = PreviewWrapper {
+    DashboardScreen(
+        state = DashboardUiState(
+            onboardingComplete = true,
+            batteryReadout = BatteryReadout(
+                levelPercent = 71,
+                status = android.os.BatteryManager.BATTERY_STATUS_CHARGING,
+                plugged = android.os.BatteryManager.BATTERY_PLUGGED_USB,
+                temperatureTenthsC = 301,
+            ),
+            charging = ChargingState(
+                device = DeviceInfo("Google", "Pixel 6", 36, "preview", hasLineageFeature = true),
+                adapterName = "LineageOS charging control".toCaString(),
+                adapterId = "lineageos-chargingcontrol-v1",
+                controlEnabled = false,
+                enforcement = EnforcementStatus.CANDIDATE,
+                syncVerification = true,
+                writeRequiresShizuku = true,
+                access = AccessSnapshot(
+                    direct = BackendStatus(true, true, "Charge-control access granted".toCaString()),
+                    shizuku = BackendStatus(true, true, "Shizuku connected".toCaString()),
+                ),
+                observation = ChargeObservation.Unsupported(
+                    // The reason the registry actually publishes for this tier.
+                    R.string.adapter_detail_enforcement_candidate.toCaString(),
+                ),
+            ),
+        ),
+        adbCommand = "adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS",
+        onRefresh = {},
+        onSettings = {},
+        onStartFull = {},
+        onRestore = {},
+        onApply = {},
+        onQuickFullChargeChange = {},
+        onAlarmEnabledChange = {},
+        onAlarmTargetChange = {},
+        onFixNotifications = {},
+        onOpenConditions = {},
+        onOpenBatteryHub = {},
+        onRetryCapture = {},
+        onStartVerification = {},
+        onPinWidget = {},
+        onAddTile = {},
+        onDismissQuickAccess = {},
+        onDismissInterruption = {},
+        onNativeSettings = {},
+        onOpenShizuku = {},
+        onAllowShizuku = {},
+        onGrantWss = {},
+        onCopyAdb = {},
+        onCopyWebUsbLink = {},
+        onPrepareSupportReport = {},
+        onCopySupportReport = {},
+        onOpenContribution = {},
+        onOpenSupportIssue = {},
+        onEmailSupport = {},
+        onHelp = {},
+    )
+}
+
+// The same build after it charged past the limit it accepted: control is withdrawn and the report
+// affordance appears. The hero names the refutation rather than calling the device unsupported, and
+// leaves the paragraph to the card below it.
+@AmplyPreview
+@Composable
+private fun DashboardScreenEnforcementRefutedPreview() = PreviewWrapper {
+    DashboardScreen(
+        state = DashboardUiState(
+            onboardingComplete = true,
+            batteryReadout = BatteryReadout(
+                levelPercent = 88,
+                status = android.os.BatteryManager.BATTERY_STATUS_CHARGING,
+                plugged = android.os.BatteryManager.BATTERY_PLUGGED_USB,
+                temperatureTenthsC = 304,
+            ),
+            charging = ChargingState(
+                device = DeviceInfo("Google", "Pixel 6", 36, "preview", hasLineageFeature = true),
+                adapterName = "LineageOS charging control".toCaString(),
+                adapterId = "lineageos-chargingcontrol-v1",
+                controlEnabled = false,
+                enforcement = EnforcementStatus.REFUTED,
+                contributionWanted = true,
+                syncVerification = true,
+                writeRequiresShizuku = true,
+                access = AccessSnapshot(
+                    direct = BackendStatus(true, true, "Charge-control access granted".toCaString()),
+                    shizuku = BackendStatus(true, true, "Shizuku connected".toCaString()),
+                ),
+                observation = ChargeObservation.Unsupported(
+                    R.string.adapter_detail_enforcement_refuted.toCaString(),
+                ),
+            ),
+        ),
+        adbCommand = "adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS",
+        onRefresh = {},
+        onSettings = {},
+        onStartFull = {},
+        onRestore = {},
+        onApply = {},
+        onQuickFullChargeChange = {},
+        onAlarmEnabledChange = {},
+        onAlarmTargetChange = {},
+        onFixNotifications = {},
+        onOpenConditions = {},
+        onOpenBatteryHub = {},
+        onRetryCapture = {},
+        onStartVerification = {},
+        onPinWidget = {},
+        onAddTile = {},
+        onDismissQuickAccess = {},
+        onDismissInterruption = {},
+        onNativeSettings = {},
+        onOpenShizuku = {},
+        onAllowShizuku = {},
+        onGrantWss = {},
+        onCopyAdb = {},
+        onCopyWebUsbLink = {},
+        onPrepareSupportReport = {},
+        onCopySupportReport = {},
+        onOpenContribution = {},
+        onOpenSupportIssue = {},
+        onEmailSupport = {},
+        onHelp = {},
+    )
+}
+
+// Accepted unconfirmed: the controls are live and the limit reads back verified, but nothing here
+// shows the cap holding, so the hero shows the shield instead of the green check and says so on its
+// own line.
+@AmplyPreview
+@Composable
+private fun DashboardScreenEnforcementUnverifiedPreview() = PreviewWrapper {
+    DashboardScreen(
+        state = DashboardUiState(
+            onboardingComplete = true,
+            batteryReadout = BatteryReadout(
+                levelPercent = 79,
+                status = android.os.BatteryManager.BATTERY_STATUS_CHARGING,
+                plugged = android.os.BatteryManager.BATTERY_PLUGGED_USB,
+                temperatureTenthsC = 299,
+            ),
+            charging = ChargingState(
+                device = DeviceInfo("Google", "Pixel 6", 36, "preview", hasLineageFeature = true),
+                adapterName = "LineageOS charging control".toCaString(),
+                adapterId = "lineageos-chargingcontrol-v1",
+                adapterDetail = "Charging control requires Shizuku on this device".toCaString(),
+                supportedPolicies = listOf(
+                    ChargePolicy.FixedLimit(80),
+                    ChargePolicy.Unrestricted,
+                ),
+                controlEnabled = true,
+                enforcement = EnforcementStatus.UNVERIFIED,
+                syncVerification = true,
+                writeRequiresShizuku = true,
+                access = AccessSnapshot(
+                    direct = BackendStatus(true, true, "Charge-control access granted".toCaString()),
+                    shizuku = BackendStatus(true, true, "Shizuku connected".toCaString()),
+                ),
+                observation = ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.SHIZUKU),
+            ),
+        ),
+        adbCommand = "adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS",
+        onRefresh = {},
+        onSettings = {},
+        onStartFull = {},
+        onRestore = {},
+        onApply = {},
+        onQuickFullChargeChange = {},
+        onAlarmEnabledChange = {},
+        onAlarmTargetChange = {},
+        onFixNotifications = {},
+        onOpenConditions = {},
+        onOpenBatteryHub = {},
+        onRetryCapture = {},
+        onStartVerification = {},
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},

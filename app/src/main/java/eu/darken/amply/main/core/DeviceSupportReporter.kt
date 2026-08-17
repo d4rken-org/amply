@@ -14,7 +14,7 @@ import eu.darken.amply.charging.core.SettingProbe
 import eu.darken.amply.charging.core.probeSetting
 import eu.darken.amply.charging.core.access.LineageHealthSummary
 import eu.darken.amply.charging.core.access.SettingsSnapshotSource
-import eu.darken.amply.charging.core.adapter.AdapterRegistry
+import eu.darken.amply.charging.core.ChargingRepository
 import eu.darken.amply.charging.core.adapter.OnePlusChargingAdapter
 import eu.darken.amply.common.AmplyLinks
 import kotlinx.coroutines.Dispatchers
@@ -105,12 +105,15 @@ data class DeviceSupportReport(
 @Singleton
 class DeviceSupportReporter @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val registry: AdapterRegistry,
+    // The gated selection, not a raw registry probe: the report's adapterControlEnabled /
+    // contributionWanted must say what the user actually has, which on an evidence-gated adapter
+    // depends on the stored enforcement verdict.
+    private val chargingRepository: ChargingRepository,
     private val snapshotSource: SettingsSnapshotSource,
 ) {
     suspend fun collect(): DeviceSupportReport = withContext(Dispatchers.IO) {
         val device = DeviceInfo.current(context)
-        val selection = registry.select(device)
+        val selection = chargingRepository.currentSelection()
         // Only meaningful on LineageOS, and only reachable with Shizuku (dumpsys needs the shell UID). Without it
         // the field stays null and the report is exactly as informative as before — never blocks a contribution.
         val lineageHealth = if (device.isLineageOs) snapshotSource.lineageHealth() else null

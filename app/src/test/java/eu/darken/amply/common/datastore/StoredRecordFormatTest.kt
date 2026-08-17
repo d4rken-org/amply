@@ -2,6 +2,8 @@ package eu.darken.amply.common.datastore
 
 import eu.darken.amply.alarm.core.ChargeAlarmConfig
 import eu.darken.amply.charging.core.ChargePolicy
+import eu.darken.amply.charging.core.enforcement.EnforcementEvidence
+import eu.darken.amply.charging.core.enforcement.EnforcementVerdict
 import eu.darken.amply.common.serialization.SerializationModule
 import eu.darken.amply.common.theming.ThemeColor
 import eu.darken.amply.common.theming.ThemeMode
@@ -11,6 +13,7 @@ import eu.darken.amply.fullcharge.core.ChargeSessionRecord
 import eu.darken.amply.fullcharge.core.InterruptionEvent
 import eu.darken.amply.fullcharge.core.InterruptionOutcome
 import eu.darken.amply.fullcharge.core.InterruptionReason
+import eu.darken.amply.fullcharge.core.RecoveryOrigin
 import eu.darken.amply.fullcharge.core.RecoveryRecord
 import eu.darken.amply.fullcharge.core.WorkProvenance
 import eu.darken.amply.main.core.QuickAccessState
@@ -104,7 +107,8 @@ class StoredRecordFormatTest {
         // green through a @SerialName rename that would orphan every already-stored record.
         json.encodeToString(RecoveryRecord.serializer(), record) shouldBe
             """{"target":"unrestricted","workId":"wid-r",""" +
-            """"provenance":{"token":"tok-a","pid":42,"createdAtMillis":1000}}"""
+            """"provenance":{"token":"tok-a","pid":42,"createdAtMillis":1000},""" +
+            """"origin":"USER_REQUEST"}"""
     }
 
     @Test
@@ -115,7 +119,20 @@ class StoredRecordFormatTest {
             target = ChargePolicy.FixedLimit(90),
             workId = "wid-r",
             provenance = null,
+            origin = RecoveryOrigin.USER_REQUEST,
         )
+    }
+
+    /**
+     * A record written before the origin field existed must decode to the GATED path. The other
+     * default would let a fresh user write — persisted by an older build and resumed by this one —
+     * reach the ungated restore path on a build the enforcement gate refuses.
+     */
+    @Test
+    fun `a recovery record without an origin decodes as a gated user request`() {
+        json.decodeFromString(RecoveryRecord.serializer(), """{"target":"unrestricted"}""")
+            .origin shouldBe RecoveryOrigin.USER_REQUEST
+        RecoveryRecord(target = ChargePolicy.Unrestricted).origin shouldBe RecoveryOrigin.USER_REQUEST
     }
 
     @Test
@@ -131,7 +148,7 @@ class StoredRecordFormatTest {
 
         expected.forEach { (policy, wire) ->
             json.encodeToString(RecoveryRecord.serializer(), RecoveryRecord(target = policy)) shouldBe
-                """{"target":"$wire"}"""
+                """{"target":"$wire","origin":"USER_REQUEST"}"""
             json.decodeFromString(RecoveryRecord.serializer(), """{"target":"$wire"}""").target shouldBe policy
         }
     }
@@ -169,6 +186,34 @@ class StoredRecordFormatTest {
 
         json.encodeToString(InterruptionEvent.serializer(), event) shouldBe
             """{"occurredAtMillis":10,"reason":"USER_STOPPED","outcome":"RESTORED_LATE","workId":"wid-1"}"""
+    }
+
+    @Test
+    fun `enforcement evidence encodes to the pinned shape`() {
+        val evidence = EnforcementEvidence(
+            adapterId = "lineageos-chargingcontrol-v1",
+            buildIdentity = "0123456789abcdef",
+            algorithmVersion = 1,
+            verdict = EnforcementVerdict.REFUTED,
+            capPercent = 80,
+            observedPercent = 79,
+            observedAtWallMillis = 1_700_000_000_000L,
+        )
+
+        json.encodeToString(EnforcementEvidence.serializer(), evidence) shouldBe
+            """{"adapterId":"lineageos-chargingcontrol-v1","buildIdentity":"0123456789abcdef",""" +
+            """"algorithmVersion":1,"verdict":"REFUTED","capPercent":80,"observedPercent":79,""" +
+            """"observedAtWallMillis":1700000000000}"""
+    }
+
+    /**
+     * A record that lost fields must never read as a claim of enforcement, so the verdict default is
+     * the refutation — the only direction that can't hand control to an unproven device.
+     */
+    @Test
+    fun `enforcement evidence defaults to the refuting verdict`() {
+        json.decodeFromString(EnforcementEvidence.serializer(), "{}") shouldBe EnforcementEvidence()
+        EnforcementEvidence().verdict shouldBe EnforcementVerdict.REFUTED
     }
 
     @Test

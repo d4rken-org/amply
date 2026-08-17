@@ -52,6 +52,7 @@ import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingPreferences
 import eu.darken.amply.charging.core.ChargingRepository
 import eu.darken.amply.charging.core.ChargingState
+import eu.darken.amply.charging.core.enforcement.EnforcementStatus
 import eu.darken.amply.charging.core.isAwaitingReplug
 import eu.darken.amply.charging.core.isSettling
 import eu.darken.amply.charging.core.settlingTarget
@@ -269,7 +270,7 @@ internal fun widgetDisplay(state: ChargingState, sessionActive: Boolean, now: Lo
  * which is unreliable given Glance's widget-session caching). Derived from the requested target because
  * observation alone degrades to Unknown on WSS-only.
  */
-private fun statusLine(
+internal fun statusLine(
     context: Context,
     sessionActive: Boolean,
     settling: Boolean,
@@ -300,7 +301,19 @@ private fun statusLine(
             widgetLabel(context, state.settlingTarget() ?: requestedTarget),
         )
     }
-    return widgetLabel(context, state.observation.policyOrNull() ?: requestedTarget)
+    val label = widgetLabel(context, state.observation.policyOrNull() ?: requestedTarget)
+    // The enforcement tier is resolved BEFORE the steady label, not as a special case after it: the
+    // label falls back to the last requested target, which survives a refutation and an OTA that
+    // resets a confirmed build to candidate. Only a confirmed build — or an adapter the question
+    // doesn't apply to — may put a bare "Limited to 80%" on the home screen.
+    return when (state.enforcement) {
+        // Controls are withheld on both of these, so whatever was once requested is not in force.
+        EnforcementStatus.CANDIDATE -> context.getString(R.string.widget_status_enforcement_candidate)
+        EnforcementStatus.REFUTED -> context.getString(R.string.widget_status_enforcement_refuted)
+        // The setting is real, but nothing observable can show the hardware acting on it.
+        EnforcementStatus.UNVERIFIED -> context.getString(R.string.widget_status_unverified_suffix, label)
+        EnforcementStatus.CONFIRMED, null -> label
+    }
 }
 
 /** "∞ <limit>" — the adapter's protective default, e.g. ∞80% on Pixel, ∞Auto on Xiaomi. */

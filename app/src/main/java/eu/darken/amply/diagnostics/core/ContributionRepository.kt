@@ -9,6 +9,7 @@ import eu.darken.amply.charging.core.access.NamespaceSnapshot
 import eu.darken.amply.charging.core.access.STANDARD_SETTINGS_NAMESPACES
 import eu.darken.amply.charging.core.access.SettingsSnapshotSource
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
+import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceState
 import eu.darken.amply.common.ca.CaString
 import eu.darken.amply.common.ca.toCaString
 import javax.inject.Inject
@@ -61,7 +62,8 @@ class DefaultContributionRepository @Inject constructor(
 
     override fun deviceContext(): DeviceContext {
         val device = DeviceInfo.current(context)
-        return DeviceContext(device, registry.select(device).adapter?.id)
+        // Adapter identity only — the enforcement gate decides control, never which adapter matched.
+        return DeviceContext(device, registry.select(device, EnforcementEvidenceState.Loading).adapter?.id)
     }
 }
 

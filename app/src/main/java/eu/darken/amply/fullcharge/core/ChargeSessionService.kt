@@ -20,6 +20,8 @@ import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingPreferences
 import eu.darken.amply.charging.core.ChargingRepository
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
+import eu.darken.amply.charging.core.adapter.ChargingAdapter
+import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceState
 import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
@@ -539,7 +541,7 @@ class ChargeSessionService : Service() {
         // check already resolved a selection at exactly this point, and the hardware decode below
         // reuses this one.
         val gestureEnabled = fullChargeStore.isQuickFullChargeEnabled()
-        val adapter = if (gestureEnabled) adapterRegistry.select().adapter else null
+        val adapter = if (gestureEnabled) capabilityAdapter() else null
         if (!gestureEnabled || adapter?.reconnectGestureSupported != true) {
             evaluateRules(plugged, plugKind, sessionActive = false)
             dispatchWatchers(plugged, percent, status, sessionOwned = false, battery, observedAtElapsed)
@@ -775,19 +777,33 @@ class ChargeSessionService : Service() {
 
     private val recoveryHooks = object : BootRecoveryFlow.Hooks {
         override suspend fun currentSessionTarget() = fullChargeStore.currentSession()?.restorePolicy
-        override suspend fun pendingTarget() = fullChargeStore.pendingRecoveryTarget()
+
+        // One record read, not target-then-origin: the two must never be paired across a concurrent
+        // write (see FullChargeStore.currentRecovery).
+        override suspend fun pendingTarget() = fullChargeStore.currentRecovery()?.let {
+            BootRecoveryFlow.PendingRecovery(target = it.target, origin = it.origin)
+        }
+
         override suspend fun setPendingTarget(policy: ChargePolicy) {
             // A session-only recovery seeds the pending target from the session it is recovering, so it
             // continues the SAME owed work — inherit the session's work id; otherwise mint a fresh one.
             val workId = fullChargeStore.currentSession()?.workId ?: UUID.randomUUID().toString()
-            fullChargeStore.setPendingRecoveryTarget(policy, workId, currentWorkProvenance())
+            fullChargeStore.setPendingRecoveryTarget(
+                policy = policy,
+                workId = workId,
+                provenance = currentWorkProvenance(),
+                origin = RecoveryOrigin.SESSION_RESTORE,
+            )
         }
 
         override suspend fun clearPendingTarget() = fullChargeStore.clearPendingRecoveryTarget()
         override suspend fun restoreSession() = manager.restore().success
         override suspend fun dropStaleSession() = manager.cancelWithoutRestore()
-        override suspend fun rewrite(policy: ChargePolicy) =
-            repository.reapplyPersistent(policy).success
+
+        // The origin decides the write path: an owed restore bypasses the enforcement evidence tier,
+        // a pending user request does not. See writeRecoveryTarget.
+        override suspend fun rewrite(policy: ChargePolicy, origin: RecoveryOrigin) =
+            repository.writeRecoveryTarget(policy, origin).success
 
         override suspend fun intendedTarget() = preferences.lastRequestedNow()
 
@@ -804,7 +820,7 @@ class ChargeSessionService : Service() {
         }
 
         override fun hardwareObservation(snapshot: BatterySnapshot) =
-            adapterRegistry.select().adapter?.decodeHardware(snapshot.chargingState, snapshot.plugged)
+            capabilityAdapter()?.decodeHardware(snapshot.chargingState, snapshot.plugged)
 
         override suspend fun settingsObservation() = repository.syncReadback()
 
@@ -879,8 +895,15 @@ class ChargeSessionService : Service() {
         // Persist the intended end state as the recovery target BEFORE the risky write and before dropping
         // the session, so a failed write or a mid-write process death still converges here on next boot
         // instead of leaving charging in whatever transient state the session had. An explicit persistent
-        // choice is new owed work, so it gets a fresh work id.
-        fullChargeStore.setPendingRecoveryTarget(policy, UUID.randomUUID().toString(), currentWorkProvenance())
+        // choice is new owed work, so it gets a fresh work id — and USER_REQUEST, so that a boot recovery
+        // resuming it writes it through the enforcement gate exactly like this call does, rather than
+        // through the ungated restore path (the build can be a candidate or refuted by then).
+        fullChargeStore.setPendingRecoveryTarget(
+            policy = policy,
+            workId = UUID.randomUUID().toString(),
+            provenance = currentWorkProvenance(),
+            origin = RecoveryOrigin.USER_REQUEST,
+        )
         // Suspend the rules layer here, in the same persisted-intent step and BEFORE the write: a
         // process death between the write and a post-success suspension would leave the explicit
         // policy configured with every rule still armed to overwrite it on the next tick.
@@ -929,16 +952,26 @@ class ChargeSessionService : Service() {
         createdAtMillis = System.currentTimeMillis(),
     )
 
+    /**
+     * The matched adapter's *capabilities* (gesture support, hardware decode, observed URIs, plug
+     * latching) — never a control decision, so the enforcement gate is deliberately fed the
+     * fail-closed [EnforcementEvidenceState.Loading] instead of a durable store read on the service's
+     * dispatch path. Every write this service performs goes through the repository, which applies the
+     * real gate.
+     */
+    private fun capabilityAdapter(): ChargingAdapter? =
+        adapterRegistry.select(evidenceState = EnforcementEvidenceState.Loading).adapter
+
     // The gesture's arming preconditions (hardware charging-state 4) are Pixel-specific; on
     // adapters without that signal the monitor would never arm and must not run.
     private fun reconnectGestureAvailable() =
-        adapterRegistry.select().adapter?.reconnectGestureSupported == true
+        capabilityAdapter()?.reconnectGestureSupported == true
 
     // Resolved once per service lifetime: adapter selection is immutable device information, and
     // per-tick selection is deliberately avoided in the session branch (see the note in
     // evaluateBattery about DeviceInfo.current()'s cost under the dispatch lock).
     private val policyLatchesAtPlug by lazy {
-        adapterRegistry.select().adapter?.policyLatchesAtPlug == true
+        capabilityAdapter()?.policyLatchesAtPlug == true
     }
 
     private fun stopMonitoring() {
@@ -972,7 +1005,7 @@ class ChargeSessionService : Service() {
 
     private fun registerSettingObserver() {
         if (settingObserverRegistered) return
-        val uris = adapterRegistry.select().adapter?.observedSettingUris.orEmpty()
+        val uris = capabilityAdapter()?.observedSettingUris.orEmpty()
         if (uris.isEmpty()) return
         uris.forEach { contentResolver.registerContentObserver(it, false, settingObserver) }
         settingObserverRegistered = true
