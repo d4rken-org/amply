@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import eu.darken.amply.battery.core.BatteryReader
+import eu.darken.amply.battery.core.BatteryUnitCalibration
 import eu.darken.amply.common.AppDataStore
 import eu.darken.amply.common.datastore.value
 import eu.darken.amply.stats.core.BootIdSource
@@ -94,7 +95,7 @@ class StatsViewModelUpgradeGateTest {
             database = database,
             preferences = preferences,
             bootIdSource = bootIdSource,
-            batteryReader = BatteryReader(context),
+            batteryReader = BatteryReader(context, BatteryUnitCalibration(context)),
             dispatcher = Dispatchers.IO,
         )
         val vm = StatsViewModel(

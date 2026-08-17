@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import eu.darken.amply.battery.core.BatteryReader
+import eu.darken.amply.battery.core.BatteryUnitCalibration
 import eu.darken.amply.common.AppDataStore
 import eu.darken.amply.stats.core.db.ChargeSessionEntity
 import eu.darken.amply.stats.core.db.StatsDatabase
@@ -103,7 +104,7 @@ class ChargeStatsRecorderTest {
         database = { databaseAccessCount++; database },
         preferences = preferences,
         bootIdSource = BootIdSource(context),
-        batteryReader = BatteryReader(context),
+        batteryReader = BatteryReader(context, BatteryUnitCalibration(context)),
         dispatcher = Dispatchers.Unconfined,
     )
 
