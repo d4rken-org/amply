@@ -199,19 +199,30 @@ class EnforcementVerdictEngineTest {
     }
 
     @Test
-    fun `a device already above the cap does not refute`() {
-        // Plugged in at 95% with an 80% cap: the level was never observed climbing from inside the cap.
-        val samples = (95..99).mapIndexed { index, percent -> sample(percent, index * 30_000L) }
-        run(samples) shouldBe null
+    fun `a resting level above the cap does not refute`() {
+        // Plugged in at 95% with an 80% cap and staying there: the device stopped charging, which is
+        // no evidence against it. Only a climb from that level is.
+        run((0 until 20).map { sample(95, it * 30_000L) }) shouldBe null
+    }
+
+    @Test
+    fun `an epoch that opens above the cap still refutes once the level climbs`() {
+        // The gap this closes: an 80% cap restored early from a full-charge session at 84% (or a
+        // process death at 82%). The old in-cap-only climb base stayed null forever, so a build that
+        // ignores the cap charged all the way to 100% without ever being refuted.
+        run(listOf(sample(84, 0L), sample(85, 30_000L))) shouldBe EnforcementVerdict.REFUTED
+        run(listOf(sample(82, 0L), sample(83, 30_000L), sample(84, 60_000L))) shouldBe
+            EnforcementVerdict.REFUTED
     }
 
     @Test
     fun `a cap change mid-epoch resets instead of refuting`() {
         // Sitting at 78% under an 80% cap, the user switches to 70%: a bare watermark would read the
-        // very next sample as "charging past 70" and refute a good device.
+        // very next sample as "charging past 70" and refute a good device. The new epoch opens above
+        // its cap, and a device that honours it simply stops charging there.
         val below = (70..78).mapIndexed { index, percent -> sample(percent, index * 30_000L) }
-        val afterSwitch = (78..85).mapIndexed { index, percent ->
-            sample(percent, 300_000L + index * 30_000L, policyGeneration = 2L)
+        val afterSwitch = (0 until 10).map { tick ->
+            sample(78, 300_000L + tick * 30_000L, policyGeneration = 2L)
                 .copy(configured = ChargeObservation.Verified(ChargePolicy.FixedLimit(70), BackendKind.SHIZUKU))
         }
         run(below + afterSwitch) shouldBe null
@@ -219,10 +230,11 @@ class EnforcementVerdictEngineTest {
 
     @Test
     fun `a new plug session restarts the window`() {
+        // A climb of 78 → 84 inside ONE epoch refutes; split across a replug it must not, because the
+        // fresh epoch has seen no climb of its own yet.
         val first = (70..78).mapIndexed { index, percent -> sample(percent, index * 30_000L) }
-        // Replugged already above the cap: the fresh epoch has no in-cap climb base.
-        val second = (84..90).mapIndexed { index, percent ->
-            sample(percent, 600_000L + index * 30_000L, plugSessionId = 2L)
+        val second = (0 until 10).map { tick ->
+            sample(84, 600_000L + tick * 30_000L, plugSessionId = 2L)
         }
         run(first + second) shouldBe null
     }

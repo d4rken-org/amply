@@ -54,15 +54,20 @@ data class EnforcementProgress(
     val epoch: EnforcementEpoch,
     /**
      * The level the still-unbroken climb started from, or null before the epoch's first valid sample.
-     * Only set from a sample at or below the cap: a device that was already above the cap when the
-     * epoch opened proves nothing by staying there. Reset to the new level whenever the level drops
-     * (the climb is no longer monotonic).
+     * Set from ANY level, above the cap included: an epoch legitimately opens above the cap (a
+     * full-charge session restored early at 84%, a process death at 82%), and refusing to track a
+     * climb there is what let such a device charge on to 100% without ever being refuted. Reset to
+     * the new level whenever the level drops (the climb is no longer monotonic).
      */
     val climbBase: Int?,
     /**
      * True once the level was observed increasing since [climbBase], i.e. within the CURRENT climb.
      * Phase-local on purpose: a global "rose at some point in this epoch" flag would let a rise from
      * hours ago keep vouching for a plateau that the battery has since been *losing* charge into.
+     *
+     * It is also what keeps an above-cap epoch from refuting on its own: a device sitting still at
+     * 95% under a 70% cap is a device that stopped charging, and only an observed climb from there
+     * says the cap is being ignored.
      */
     val climbRose: Boolean,
     /**
@@ -104,7 +109,10 @@ data class EnforcementOutcome(
  * climbing past the cap is self-evident, whatever the hardware reports. Requiring
  * `BATTERY_STATUS_CHARGING` or a hardware signal would be a false-negative source — a ROM can carry
  * the level past the cap while reporting UNKNOWN, NOT_CHARGING or FULL, and a build with no hold
- * signal must still be refutable, or an unenforced cap would go on looking harmless.
+ * signal must still be refutable, or an unenforced cap would go on looking harmless. The climb is
+ * tracked from ANY level, above the cap included: epochs routinely open above it (a full-charge
+ * session restored early at 84%, a process death at 82%), and those are exactly the runs where an
+ * unenforced cap keeps climbing to 100%.
  */
 object EnforcementVerdictEngine {
 
@@ -162,7 +170,7 @@ object EnforcementVerdictEngine {
         // (they are what a hold looks like) without ever establishing a rise on their own.
         val dropped = last != null && sample.percent < last
         val climbBase = when {
-            last == null || dropped -> sample.percent.takeIf { it <= cap }
+            last == null || dropped -> sample.percent
             else -> prior?.climbBase
         }
         val climbRose = when {
@@ -203,7 +211,10 @@ object EnforcementVerdictEngine {
             lastPercent = sample.percent,
         )
         val verdict = when {
-            climbBase != null && sample.percent >= cap + OVERSHOOT_ALLOWANCE -> EnforcementVerdict.REFUTED
+            // The refutation keys on the CLIMB, not on the level alone: a lone or flat above-cap
+            // sample proves nothing (the epoch may simply have opened there), while an observed rise
+            // to beyond the cap does — wherever inside or above the cap that rise started.
+            climbRose && sample.percent >= cap + OVERSHOOT_ALLOWANCE -> EnforcementVerdict.REFUTED
             // hardwareHold, the rise and the band are already folded into `holding`.
             holdSamples >= MIN_HOLD_SAMPLES &&
                 sample.elapsedRealtimeMillis - holdSince >= MIN_HOLD_MILLIS -> EnforcementVerdict.CONFIRMED
