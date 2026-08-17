@@ -135,16 +135,17 @@ fun ChargeRuleEditorScreen(
                             style = MaterialTheme.typography.titleMedium,
                         )
                         when {
-                            state.bluetoothPermissionMissing -> Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
+                            // Stacked, not side-by-side: sharing a row would squeeze the explanation
+                            // against the action at larger font scales.
+                            state.bluetoothPermissionMissing -> Column(Modifier.fillMaxWidth()) {
                                 Text(
                                     stringResource(R.string.rules_editor_bluetooth_permission),
-                                    modifier = Modifier.weight(1f),
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
-                                TextButton(onClick = onRequestBluetoothPermission) {
+                                TextButton(
+                                    onClick = onRequestBluetoothPermission,
+                                    modifier = Modifier.align(Alignment.End),
+                                ) {
                                     Text(stringResource(R.string.rules_editor_bluetooth_permission_action))
                                 }
                             }
@@ -288,7 +289,9 @@ private fun PolicyGroup(
  * radio button itself is inert, so the tap target is the whole line and accessibility announces one
  * control, not two. Because the inert radio brings no interactive minimum of its own, the row must
  * enforce the dimensions itself: 56dp minimum height (M3 single-line selection row; also keeps the
- * two-line paired-device rows above the 48dp touch-target floor) and the 16dp control-to-label gap.
+ * two-line paired-device rows above the 48dp touch-target floor). The control-to-label gap is the
+ * card idiom's 8dp (AmplyCard headers/rows), not the M3 doc sample's 16dp — the radio glyph carries
+ * its own inherent padding, and 16dp on top of it read visibly oversized on device.
  */
 @Composable
 private fun ConditionChoice(
@@ -302,7 +305,7 @@ private fun ConditionChoice(
             .fillMaxWidth()
             .heightIn(min = 56.dp)
             .selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         RadioButton(selected = selected, onClick = null)
