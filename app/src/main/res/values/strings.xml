@@ -538,6 +538,7 @@
     <string name="widget_button_protect_fixed">∞%1$d%%</string>
     <string name="widget_button_protect_adaptive">∞Auto</string>
     <string name="widget_button_always_full" formatted="false">∞100%</string>
+    <string name="widget_button_pause_at_full">∞Pause</string>
     <string name="widget_button_full_once" formatted="false">1×100%</string>
     <string name="widget_status_charging_waiting" formatted="false">Charging to 100% · waiting…</string>
     <string name="widget_status_charging_once" formatted="false">Charging to 100% once</string>
@@ -641,4 +642,18 @@
     <!-- Tile + widget locked states -->
     <string name="tile_upgrade_required">Tap to unlock with %1$s</string>
     <string name="widget_locked_body">Tap to unlock the widget</string>
+
+    <!-- Widget configuration -->
+    <string name="widget_config_title">Widget buttons</string>
+    <string name="widget_config_picker_hint" formatted="false">Pick up to three charge modes for this widget. They switch your charging permanently; the 1×100% button is always there.</string>
+    <string name="widget_config_confirm_action">Save</string>
+    <string name="widget_config_done_action">Add widget</string>
+    <string name="widget_config_loading">Checking this device…</string>
+    <string name="widget_config_error">Amply couldn\'t read the charging setup right now.</string>
+    <string name="widget_config_retry_action">Try again</string>
+    <string name="widget_config_locked">The widget is part of the upgrade. You can still place it, and it will unlock once you upgrade.</string>
+    <string name="widget_config_upgrade_action">Upgrade</string>
+    <string name="widget_config_unavailable">Amply can\'t control charging on this device, so the buttons stay at their defaults.</string>
+    <string name="widget_config_not_configurable">This device offers only two charge modes, so the widget already shows both.</string>
+    <string name="widget_config_save_failed">Saving didn\'t work. Try again.</string>
 </resources>

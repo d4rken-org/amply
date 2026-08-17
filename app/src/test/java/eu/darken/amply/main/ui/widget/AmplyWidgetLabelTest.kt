@@ -17,10 +17,21 @@ class AmplyWidgetLabelTest {
 
     @Test
     fun `protect button reflects the adapter's protective default`() {
-        protectButtonLabel(context, ChargePolicy.FixedLimit(80)) shouldBe "∞80%"
-        protectButtonLabel(context, ChargePolicy.FixedLimit(85)) shouldBe "∞85%"
+        policyButtonLabel(context, ChargePolicy.FixedLimit(80)) shouldBe "∞80%"
+        policyButtonLabel(context, ChargePolicy.FixedLimit(85)) shouldBe "∞85%"
         // Xiaomi: the protective default is heuristic adaptive, not a fixed cap — the label
         // must not claim a permanent 80% limit.
-        protectButtonLabel(context, ChargePolicy.Adaptive) shouldBe "∞Auto"
+        policyButtonLabel(context, ChargePolicy.Adaptive) shouldBe "∞Auto"
+    }
+
+    @Test
+    fun `the configurable buttons label the remaining policies`() {
+        policyButtonLabel(context, ChargePolicy.Unrestricted) shouldBe "∞100%"
+        policyButtonLabel(context, ChargePolicy.PauseAtFull) shouldBe "∞Pause"
+    }
+
+    @Test
+    fun `an unresolved policy keeps the generic label`() {
+        policyButtonLabel(context, null) shouldBe "∞80%"
     }
 }

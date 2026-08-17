@@ -70,6 +70,17 @@
             </intent-filter>
         </activity>
 
+        <!-- The AppWidget host launches a configuration activity by component name, so this one
+             cannot live inside MainActivity. It hosts a single Compose screen, no navigation. -->
+        <activity
+            android:name=".main.ui.widget.WidgetConfigActivity"
+            android:excludeFromRecents="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
         <service
             android:name=".fullcharge.core.ChargeSessionService"
             android:exported="false"
