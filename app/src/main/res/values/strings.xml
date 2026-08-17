@@ -659,4 +659,79 @@
     <!-- Tile + widget locked states -->
     <string name="tile_upgrade_required">Tap to unlock with %1$s</string>
     <string name="widget_locked_body">Tap to unlock the widget</string>
+
+    <!-- Charge conditions — the rules list, its editor, and the dashboard card -->
+    <string name="rules_title">Charge conditions</string>
+    <string name="rules_priority_note">The topmost matching condition wins.</string>
+    <string name="rules_empty_title">No conditions yet</string>
+    <string name="rules_empty_body">Let a charge policy follow your situation: while a Bluetooth device is connected, or while you\'re on a certain charger.</string>
+    <string name="rules_add_action">Add condition</string>
+    <string name="rules_active_marker">Active now</string>
+    <!-- Condition and effect on one card summary line, e.g. "While charging via USB · Limit to 80%" -->
+    <string name="rules_row_summary">%1$s · %2$s</string>
+    <string name="rules_kind_protection">Protects the battery</string>
+    <string name="rules_kind_charge">Charges fully</string>
+    <string name="rules_condition_bluetooth">While %1$s is connected</string>
+    <string name="rules_condition_bluetooth_unnamed">While a paired device is connected</string>
+    <string name="rules_condition_charger">While charging via %1$s</string>
+    <string name="rules_condition_charger_none">No charger type selected</string>
+    <string name="rules_condition_separator">, </string>
+    <string name="rules_condition_unsupported">This device can\'t act on charger conditions.</string>
+    <string name="rules_policy_unavailable">This charge mode isn\'t available on this device.</string>
+    <string name="rules_failure_warning">The last change couldn\'t be applied. Amply keeps retrying.</string>
+    <string name="rules_bluetooth_permission_warning">Bluetooth access is off, so device conditions can\'t be detected.</string>
+    <string name="rules_notification_footnote">While a condition is on, Amply keeps a quiet notification so it can watch for it.</string>
+    <string name="rules_action_edit">Edit</string>
+    <string name="rules_action_delete">Delete</string>
+    <string name="rules_action_move_up">Move up</string>
+    <string name="rules_action_move_down">Move down</string>
+
+    <string name="rules_editor_title_new">New condition</string>
+    <string name="rules_editor_title_edit">Edit condition</string>
+    <string name="rules_editor_when_header">When</string>
+    <string name="rules_editor_kind_bluetooth">A Bluetooth device is connected</string>
+    <string name="rules_editor_kind_bluetooth_desc">Applies while the device is connected, whether or not you\'re plugged in.</string>
+    <string name="rules_editor_kind_charger">Charging on a certain charger</string>
+    <string name="rules_editor_kind_charger_desc">Uses the charger type Android reports while you\'re plugged in.</string>
+    <string name="rules_editor_device_header">Paired device</string>
+    <string name="rules_editor_device_empty">No paired Bluetooth devices found.</string>
+    <string name="rules_editor_device_unnamed">Unnamed device</string>
+    <string name="rules_editor_device_unpaired">No longer paired</string>
+    <string name="rules_editor_device_connected">Connected now</string>
+    <string name="rules_editor_connection_unavailable">Connection status unavailable</string>
+    <string name="rules_editor_charger_header">Charger types</string>
+    <string name="rules_editor_charger_hint">Pick at least one.</string>
+    <string name="rules_editor_charger_detected">Detected now: %1$s</string>
+    <string name="rules_editor_charger_detected_unknown">Charger connected, type not recognized</string>
+    <string name="rules_editor_policy_header">Then charge like this</string>
+    <string name="rules_editor_label_header">Name (optional)</string>
+    <string name="rules_editor_label_hint">Car</string>
+    <string name="rules_editor_label_helper">The name only labels the condition. It doesn\'t affect when the condition applies.</string>
+    <string name="rules_editor_bluetooth_permission">Allow Bluetooth access to pick a paired device.</string>
+    <string name="rules_editor_bluetooth_permission_action">Allow</string>
+    <string name="rules_editor_save">Save</string>
+    <string name="rules_editor_more_actions">More options</string>
+    <string name="rules_editor_delete_title">Delete this condition?</string>
+    <string name="rules_editor_delete_body">It stops applying right away and disappears from the list.</string>
+    <string name="rules_editor_discard_title">Discard changes?</string>
+    <string name="rules_editor_discard_body">Your edits to this condition haven\'t been saved.</string>
+    <string name="rules_editor_discard_confirm">Discard</string>
+    <string name="rules_editor_discard_keep">Keep editing</string>
+
+    <string name="rules_plug_ac">AC charger</string>
+    <string name="rules_plug_usb">USB</string>
+    <string name="rules_plug_wireless">Wireless</string>
+    <string name="rules_plug_dock">Dock</string>
+
+    <string name="dashboard_conditions_title">Charge conditions</string>
+    <string name="dashboard_conditions_open">Open charge conditions</string>
+    <string name="dashboard_conditions_empty_body">Let a charge policy follow your situation, like connecting to your car.</string>
+    <string name="dashboard_conditions_empty_action">Set one up</string>
+    <string name="dashboard_conditions_waiting">Waiting for a match</string>
+    <string name="dashboard_conditions_active">Active</string>
+    <string name="dashboard_hero_condition">Set by condition: %1$s</string>
+
+    <string name="settings_rules_title">Charge conditions</string>
+    <string name="settings_rules_subtitle_on">%1$d switched on</string>
+    <string name="settings_rules_subtitle_off">Let a policy follow your situation</string>
 </resources>

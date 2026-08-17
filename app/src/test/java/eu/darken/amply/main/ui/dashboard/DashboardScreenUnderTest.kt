@@ -26,6 +26,7 @@ internal fun DashboardScreenUnderTest(
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
+        onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
         onStartVerification = onStartVerification,
