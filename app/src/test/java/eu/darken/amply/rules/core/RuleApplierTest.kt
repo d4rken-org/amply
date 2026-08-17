@@ -8,7 +8,6 @@ import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.longs.shouldBeGreaterThan
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.shouldNotBe
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -194,11 +193,12 @@ class RuleApplierTest {
         connect("11:22:33:44:55:66")
         bluetooth.live = setOf(carAddress)
 
-        // The swept set comes back with the answer, so a caller can adopt it and declare it fresh in
-        // one step instead of waiting for the store's flow to catch up.
-        applier.reconcileBluetoothForUi()?.addresses shouldBe setOf(carAddress)
+        applier.reconcileBluetoothForUi() shouldBe true
 
+        // The set is published through the store, which is what the caller then reads: doing it that
+        // way means a connection change landing during the sweep is included rather than lost.
         store.btSnapshotNow().addresses shouldBe setOf(carAddress)
+        applier.btSnapshotNow().addresses shouldBe setOf(carAddress)
     }
 
     @Test
@@ -207,7 +207,7 @@ class RuleApplierTest {
         // All-or-nothing: the source answers null when any profile fails to report.
         bluetooth.live = null
 
-        applier.reconcileBluetoothForUi() shouldBe null
+        applier.reconcileBluetoothForUi() shouldBe false
 
         // Untouched, so the receiver-built set stays on screen rather than a fabricated empty one.
         store.btSnapshotNow().addresses shouldBe setOf(carAddress)
@@ -220,10 +220,8 @@ class RuleApplierTest {
 
         // Not a failure: with no permission "nothing is observable" is the same answer the
         // evaluation path acts on, so the editor may state it rather than showing it as unknown.
-        val resolved = applier.reconcileBluetoothForUi()
+        applier.reconcileBluetoothForUi() shouldBe true
 
-        resolved shouldNotBe null
-        resolved!!.addresses.shouldBeEmpty()
         store.btSnapshotNow().addresses.shouldBeEmpty()
     }
 

@@ -16,6 +16,7 @@ import eu.darken.amply.common.flow.SingleEventFlow
 import eu.darken.amply.fullcharge.core.BootCountProvider
 import eu.darken.amply.fullcharge.core.ChargeSessionService
 import eu.darken.amply.rules.core.BondedDevice
+import eu.darken.amply.rules.core.BtConnectionSnapshot
 import eu.darken.amply.rules.core.ChargeRule
 import eu.darken.amply.rules.core.PlugKind
 import eu.darken.amply.rules.core.RuleApplier
@@ -260,14 +261,6 @@ class ChargeRulesViewModel @Inject constructor(
     private var refreshGeneration = 0L
 
     /**
-     * The generation whose reconciliation is still in flight, or null when none is. While it is set,
-     * the connected set on screen is deliberately frozen: the sweep is about to deliver a complete,
-     * fresher answer, and letting store emissions through in the meantime would show fragments of
-     * the old reading against a freshness the new one has not established yet.
-     */
-    private var pendingReconcile: Long? = null
-
-    /**
      * Resolved once, off the main thread: the answer comes from adapter selection, which reads
      * providers, activities and system settings. Permissive until it lands — the rows only *add* a
      * warning when it turns out false, so an optimistic first frame understates nothing.
@@ -283,14 +276,16 @@ class ChargeRulesViewModel @Inject constructor(
         // The connected set stays live while the editor is open: the manifest ACL receiver keeps the
         // store current, so a device connecting or dropping shows up without another sweep. A
         // snapshot from a previous boot describes connections that cannot still exist.
+        //
+        // Every emission is applied, including ones that arrive mid-sweep. Dropping those would lose
+        // a connection change for good — the store emits each write once — and there is nothing to
+        // protect against by dropping them: the markers only render under FRESH, and freshness is
+        // UNKNOWN for the whole time a sweep is in flight, so a mid-sweep set is invisible until the
+        // sweep's own update declares one. Emissions arrive in store-write order, so the set only
+        // moves forward.
         viewModelScope.launch {
             applier.btSnapshot.collect { snapshot ->
-                // A reconciliation in flight owns the next set; see [pendingReconcile].
-                if (pendingReconcile != null) return@collect
-                val boot = withContext(Dispatchers.Default) { bootCountProvider.current() }
-                // Re-checked after the suspension: a refresh may have started while we were away.
-                if (pendingReconcile != null) return@collect
-                val addresses = if (snapshot.bootCount == boot) snapshot.addresses else emptySet()
+                val addresses = withContext(Dispatchers.Default) { snapshot.addressesForThisBoot() }
                 editorState.update { it.copy(connectedAddresses = addresses) }
             }
         }
@@ -358,10 +353,8 @@ class ChargeRulesViewModel @Inject constructor(
             val missing = withContext(Dispatchers.Default) { !applier.hasBluetoothPermission() }
             if (generation != refreshGeneration) return@launch
             bluetoothPermissionMissing.value = missing
-            if (editorState.value == null) {
-                clearPending(generation)
-                return@launch
-            }
+            // No editor open: the permission flag above is all the list screen needs.
+            if (editorState.value == null) return@launch
             val devices = withContext(Dispatchers.Default) { applier.bondedDevices() }
             if (generation != refreshGeneration) return@launch
             editorState.update { it.copy(bluetoothPermissionMissing = missing, bondedDevices = devices) }
@@ -376,7 +369,6 @@ class ChargeRulesViewModel @Inject constructor(
      */
     private fun beginRefresh(): Long {
         refreshGeneration += 1
-        pendingReconcile = refreshGeneration
         bluetoothRefreshJob?.cancel()
         reconcileJob?.cancel()
         editorState.update { it.copy(freshness = ConnectionFreshness.UNKNOWN) }
@@ -394,27 +386,34 @@ class ChargeRulesViewModel @Inject constructor(
     }
 
     /**
-     * The set and the freshness are applied together, from the one snapshot the sweep resolved —
-     * never freshness first and addresses from a later flow emission, which would briefly present
-     * the *previous* set as "connected now".
+     * The set and the freshness are applied together — never freshness first and the addresses from
+     * some later emission, which would briefly present the *previous* set as "connected now".
+     *
+     * The set comes from the store after the sweep, not from the sweep itself: a connection change
+     * can land between the sweep's write and this read, and the store's value is then the newer of
+     * the two. Reading it here means FRESH is always paired with the newest committed set.
      */
     private suspend fun runReconcile(generation: Long) {
-        val snapshot = withContext(Dispatchers.Default) { applier.reconcileBluetoothForUi() }
+        val swept = withContext(Dispatchers.Default) { applier.reconcileBluetoothForUi() }
         if (generation != refreshGeneration) return
-        clearPending(generation)
+        if (!swept) {
+            editorState.update { it.copy(freshness = ConnectionFreshness.UNAVAILABLE) }
+            return
+        }
+        val addresses = withContext(Dispatchers.Default) { applier.btSnapshotNow().addressesForThisBoot() }
+        if (generation != refreshGeneration) return
         editorState.update {
-            if (snapshot != null) {
-                it.copy(connectedAddresses = snapshot.addresses, freshness = ConnectionFreshness.FRESH)
-            } else {
-                it.copy(freshness = ConnectionFreshness.UNAVAILABLE)
-            }
+            it.copy(connectedAddresses = addresses, freshness = ConnectionFreshness.FRESH)
         }
     }
 
-    /** Release the snapshot-flow freeze, but only if this generation is still the one holding it. */
-    private fun clearPending(generation: Long) {
-        if (pendingReconcile == generation) pendingReconcile = null
-    }
+    /**
+     * Connections do not survive a reboot, so a snapshot stamped with a different boot count
+     * describes devices that cannot still be connected. Applied identically wherever a stored
+     * snapshot reaches the UI, so the two paths can never disagree about what it means.
+     */
+    private fun BtConnectionSnapshot.addressesForThisBoot(): Set<String> =
+        if (bootCount == bootCountProvider.current()) addresses else emptySet()
 
     /**
      * The one entry point for adding: gated *before* the editor opens, so nobody fills in a condition
@@ -497,7 +496,6 @@ class ChargeRulesViewModel @Inject constructor(
         editorSession += 1
         editorState.value = null
         pristineDraft = null
-        pendingReconcile = null
         closeEditorEvents.tryEmit(Unit)
     }
 

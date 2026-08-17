@@ -145,21 +145,27 @@ class RuleApplier @Inject constructor(
      * instead of two answers that can disagree. Under the same mutex, so it cannot interleave with
      * an evaluation's own snapshot write.
      *
-     * Returns null when the sweep could not produce an answer — the snapshot is then left exactly as
+     * Returns false when the sweep could not produce an answer — the snapshot is then left exactly as
      * the ACL receiver built it, and the caller must say "unavailable" rather than present a
      * possibly-stale list as current.
      *
-     * It returns the resolved snapshot rather than a bare success flag so the caller can adopt the
-     * addresses and mark them fresh in ONE step. With a flag it would have to source the set from
-     * the store's flow instead, whose next emission is not ordered against this return — leaving a
-     * window where the reading is declared fresh while the previous set is still on screen.
+     * Only a success signal: the set itself is read from the store afterwards, so that a connection
+     * change landing between this sweep's write and that read is included rather than overwritten by
+     * this sweep's slightly older answer.
      */
-    suspend fun reconcileBluetoothForUi(): BtConnectionSnapshot? = mutex.withLock {
+    suspend fun reconcileBluetoothForUi(): Boolean = mutex.withLock {
         // Deliberately not routed through the rule-shaped short-circuit below: an editor filling in
         // its FIRST Bluetooth condition has no enabled Bluetooth rule yet, and would otherwise be
         // told nothing is connected.
-        resolveConnected(reconcile = true).let { if (it.swept) it.snapshot else null }
+        resolveConnected(reconcile = true).swept
     }
+
+    /**
+     * Point read of the connected set, for a surface adopting it right after [reconcileBluetoothForUi].
+     * Lock-free like [rulesNow]: it is a read of an already-committed value, and taking the mutex
+     * would queue it behind whatever evaluation happens to be running.
+     */
+    suspend fun btSnapshotNow(): BtConnectionSnapshot = store.btSnapshotNow()
 
     /** Receiver hook. Returns whether any enabled rule actually cares about Bluetooth. */
     suspend fun onBluetoothConnectionChanged(address: String, connected: Boolean): Boolean = mutex.withLock {
