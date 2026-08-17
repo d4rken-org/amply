@@ -277,7 +277,7 @@ class DashboardViewModel @Inject constructor(
                     resolveQuickActionPolicies(
                         gesture.notificationPolicyIds,
                         charging.supportedPolicies,
-                        defaultProtective!!,
+                        defaultProtective,
                     ).map { it.stableId }
                 } else {
                     emptyList()
