@@ -37,36 +37,49 @@ class LineageChargingAdapterTest {
         isSystemUser = systemUser,
     )
 
-    // Gate logic is exercised through the test seam; production ships an empty allowlist (asserted below).
+    // The maintainer fast path is exercised through the test seam; production ships an empty allowlist
+    // (asserted below).
     private fun gated(vararg codenames: String) = LineageChargingAdapter(FakeLineage(), codenames.toSet())
 
     @Test
-    fun `production adapter ships lab-only with an empty qualified allowlist`() {
+    fun `the maintainer allowlist ships empty and no longer decides whether the adapter matches`() {
         LineageChargingAdapter.QUALIFIED_CODENAMES shouldBe emptySet()
-        // Even a fully-provisioned oriole is not live until a codename is qualified.
-        LineageChargingAdapter(FakeLineage()).probe(device()).matched shouldBe false
+        val production = LineageChargingAdapter(FakeLineage())
+        // Every provider-carrying LineageOS build is now handled here; enforcement evidence — not the
+        // allowlist — is what decides whether control is actually offered (see AdapterRegistry).
+        production.probe(device()).matched shouldBe true
+        production.enforcementEvidenceRequired shouldBe true
+        production.maintainerQualified(device()) shouldBe false
+        gated("oriole").maintainerQualified(device(codename = "oriole")) shouldBe true
+        gated("oriole").maintainerQualified(device(codename = "raven")) shouldBe false
     }
 
     @Test
-    fun `probe gates on qualified codename, provider, and system user`() {
-        gated("oriole").probe(device()).let {
+    fun `probe gates on lineageos identity, the provider, and the system user`() {
+        val adapter = LineageChargingAdapter(FakeLineage())
+        adapter.probe(device()).let {
             it.controlEnabled shouldBe true
             it.detail shouldBe R.string.adapter_detail_lineageos_ready
         }
-        gated("oriole").probe(device(version = null)).matched shouldBe false // not LineageOS
-        gated("oriole").probe(device(codename = "raven")).let {
-            it.matched shouldBe false // codename not in the qualified allowlist
+        // An unqualified codename is no longer a match condition.
+        adapter.probe(device(codename = "raven")).controlEnabled shouldBe true
+        adapter.probe(device(version = null)).matched shouldBe false // not LineageOS
+        adapter.probe(device(provider = false)).let {
+            // No provider means nothing to write, so this falls through to LineageLabAdapter entirely.
+            it.matched shouldBe false
             it.detail shouldBe R.string.adapter_detail_requires_lineageos
         }
-        gated("oriole").probe(device(provider = false)).let {
-            it.matched shouldBe true
-            it.controlEnabled shouldBe false
-            it.detail shouldBe R.string.adapter_detail_lineageos_no_provider
-        }
-        gated("oriole").probe(device(systemUser = false)).let {
+        adapter.probe(device(systemUser = false)).let {
             it.controlEnabled shouldBe false
             it.detail shouldBe R.string.adapter_detail_secondary_user
         }
+    }
+
+    @Test
+    fun `the guided capture wizard is never offered here`() {
+        // The three keys are already mapped and live in a provider the wizard doesn't capture, so a
+        // guided run always diffs to empty; a refuted device contributes via the direct report.
+        LineageChargingAdapter(FakeLineage()).probe(device()).guidedCaptureUseful shouldBe false
     }
 
     private suspend fun observed(enabled: String?, mode: String? = null, limit: String? = null): ChargeObservation {

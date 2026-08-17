@@ -20,8 +20,10 @@ import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.LocalSize
 import androidx.glance.action.ActionParameters
+import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.ActionCallback
@@ -52,19 +54,33 @@ import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingPreferences
 import eu.darken.amply.charging.core.ChargingRepository
 import eu.darken.amply.charging.core.ChargingState
+import eu.darken.amply.charging.core.enforcement.EnforcementStatus
 import eu.darken.amply.charging.core.isAwaitingReplug
 import eu.darken.amply.charging.core.isSettling
 import eu.darken.amply.charging.core.settlingTarget
+import eu.darken.amply.common.datastore.value
+import eu.darken.amply.common.debug.logging.Logging
+import eu.darken.amply.common.debug.logging.log
+import eu.darken.amply.common.debug.logging.logTag
 import eu.darken.amply.fullcharge.core.FullChargeStore
 import eu.darken.amply.fullcharge.core.ChargeSessionService
 import eu.darken.amply.fullcharge.core.policyOrNull
+import eu.darken.amply.fullcharge.core.resolveQuickActionPolicies
 import eu.darken.amply.main.ui.MainActivity
 import eu.darken.amply.upgrade.core.UpgradeRepo
 import eu.darken.amply.upgrade.core.isProForUi
 import kotlinx.coroutines.CancellationException
 
+private val TAG = logTag("Widget")
+
 /** Below this width the brand mark + name is dropped so the status line stays readable. */
 private val BRAND_MIN_WIDTH = 200.dp
+
+/**
+ * Below this height the 2-cell paddings would clip a 1-cell widget, so they shrink. 80dp sits between
+ * the classic 1-cell (40dp) and 2-cell (110dp) heights.
+ */
+private val COMPACT_MIN_HEIGHT = 80.dp
 
 private val TITLE_COLOR = ColorProvider(Color(0xFF123832), Color(0xFFE0F5F0))
 
@@ -72,6 +88,27 @@ private val TITLE_COLOR = ColorProvider(Color(0xFF123832), Color(0xFFE0F5F0))
 class AmplyWidget : GlanceAppWidget() {
     // Exact so LocalSize reports the actual widget size and we can show the brand only when it fits.
     override val sizeMode: SizeMode = SizeMode.Exact
+
+    /**
+     * Drop this instance's button selection when the launcher removes it, so a recycled AppWidget id
+     * cannot inherit a stranger's configuration. Best-effort by design: there is no retry queue, and
+     * a stale entry is harmless (it is only ever read for a widget that exists) — but a failure here
+     * must not take the deletion down with it.
+     */
+    override suspend fun onDelete(context: Context, glanceId: GlanceId) {
+        val entryPoint = EntryPointAccessors.fromApplication(
+            context.applicationContext,
+            AmplyWidgetEntryPoint::class.java,
+        )
+        try {
+            val appWidgetId = GlanceAppWidgetManager(context).getAppWidgetId(glanceId)
+            entryPoint.sessionStore().removeWidgetQuickActions(listOf(appWidgetId))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log(TAG, Logging.Priority.WARN) { "Widget config cleanup failed: ${e.message}" }
+        }
+    }
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val entryPoint = EntryPointAccessors.fromApplication(
@@ -81,6 +118,8 @@ class AmplyWidget : GlanceAppWidget() {
         val repo = entryPoint.chargingRepository()
         val sessionStore = entryPoint.sessionStore()
         val preferences = entryPoint.chargingPreferences()
+        // Per-instance: two Amply widgets on the same home screen can carry different buttons.
+        val appWidgetId = runCatching { GlanceAppWidgetManager(context).getAppWidgetId(id) }.getOrNull()
 
         // Resolved before anything else: a free user's widget renders locked, so none of the state
         // below is worth fetching. Placement itself is never blocked — a widget the launcher refuses
@@ -106,6 +145,7 @@ class AmplyWidget : GlanceAppWidget() {
         }
         val initialSession = runCatching { sessionStore.currentSession() }.getOrNull()
         val initialRequested = runCatching { preferences.lastRequestedNow() }.getOrNull()
+        val initialQuickActions = runCatching { sessionStore.widgetQuickActions.value() }.getOrNull()
 
         provideContent {
             // Reactive composition: Glance never re-runs an already-active provideGlance, so a one-shot
@@ -116,6 +156,8 @@ class AmplyWidget : GlanceAppWidget() {
             val state by repo.state.collectAsState()
             val session by sessionStore.session.collectAsState(initial = initialSession)
             val requestedTarget by preferences.lastRequested.collectAsState(initial = initialRequested)
+            val quickActionConfig by sessionStore.widgetQuickActions.flow
+                .collectAsState(initial = initialQuickActions)
 
             val display = widgetDisplay(state, sessionActive = session != null, now = System.currentTimeMillis())
             val status = statusLine(
@@ -127,6 +169,9 @@ class AmplyWidget : GlanceAppWidget() {
                 requestedTarget,
             )
             val showBrand = display.steady && LocalSize.current.width >= BRAND_MIN_WIDTH
+            // A 1-cell widget keeps the status line: information beats a perfectly padded layout on
+            // an unusually tight grid.
+            val compact = LocalSize.current.height < COMPACT_MIN_HEIGHT
             val titleStyle = TextStyle(color = TITLE_COLOR, fontWeight = FontWeight.Bold)
             Column(
                 modifier = GlanceModifier
@@ -138,7 +183,7 @@ class AmplyWidget : GlanceAppWidget() {
                                 .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
                         ),
                     )
-                    .padding(12.dp),
+                    .padding(if (compact) 6.dp else 12.dp),
                 verticalAlignment = Alignment.Vertical.CenterVertically,
             ) {
                 Row(verticalAlignment = Alignment.Vertical.CenterVertically) {
@@ -160,23 +205,42 @@ class AmplyWidget : GlanceAppWidget() {
                 // Compact single-line labels: slightly smaller text, and maxLines=1 so the worst case
                 // ellipsizes on one line instead of wrapping/clipping inside the button.
                 val buttonText = TextStyle(fontSize = 12.sp)
-                Row(modifier = GlanceModifier.fillMaxWidth().padding(top = 10.dp)) {
-                    Button(
-                        text = protectButtonLabel(context, state.defaultProtectivePolicy),
-                        onClick = actionRunCallback<ProtectAction>(),
-                        modifier = GlanceModifier.defaultWeight(),
-                        style = buttonText,
-                        maxLines = 1,
-                    )
-                    Spacer(GlanceModifier.width(6.dp))
-                    Button(
-                        text = context.getString(R.string.widget_button_always_full),
-                        onClick = actionRunCallback<AlwaysFullAction>(),
-                        modifier = GlanceModifier.defaultWeight(),
-                        style = buttonText,
-                        maxLines = 1,
-                    )
-                    Spacer(GlanceModifier.width(6.dp))
+                val quickActions = widgetQuickActions(state, appWidgetId?.let { quickActionConfig?.get(it) })
+                Row(modifier = GlanceModifier.fillMaxWidth().padding(top = if (compact) 4.dp else 10.dp)) {
+                    if (quickActions == null) {
+                        // No resolved adapter yet, or a device with nothing to render from (a
+                        // diagnostics-only lab adapter): keep the pre-configuration rendering, whose
+                        // actions resolve their policy at tap time instead of at render time.
+                        Button(
+                            text = policyButtonLabel(context, state.defaultProtectivePolicy),
+                            onClick = actionRunCallback<ProtectAction>(),
+                            modifier = GlanceModifier.defaultWeight(),
+                            style = buttonText,
+                            maxLines = 1,
+                        )
+                        Spacer(GlanceModifier.width(6.dp))
+                        Button(
+                            text = context.getString(R.string.widget_button_always_full),
+                            onClick = actionRunCallback<AlwaysFullAction>(),
+                            modifier = GlanceModifier.defaultWeight(),
+                            style = buttonText,
+                            maxLines = 1,
+                        )
+                        Spacer(GlanceModifier.width(6.dp))
+                    } else {
+                        quickActions.forEach { policy ->
+                            Button(
+                                text = policyButtonLabel(context, policy),
+                                onClick = actionRunCallback<SetPolicyAction>(
+                                    actionParametersOf(SetPolicyAction.POLICY_KEY to policy.stableId),
+                                ),
+                                modifier = GlanceModifier.defaultWeight(),
+                                style = buttonText,
+                                maxLines = 1,
+                            )
+                            Spacer(GlanceModifier.width(6.dp))
+                        }
+                    }
                     Button(
                         text = context.getString(R.string.widget_button_full_once),
                         onClick = actionRunCallback<FullChargeAction>(),
@@ -269,7 +333,7 @@ internal fun widgetDisplay(state: ChargingState, sessionActive: Boolean, now: Lo
  * which is unreliable given Glance's widget-session caching). Derived from the requested target because
  * observation alone degrades to Unknown on WSS-only.
  */
-private fun statusLine(
+internal fun statusLine(
     context: Context,
     sessionActive: Boolean,
     settling: Boolean,
@@ -300,13 +364,48 @@ private fun statusLine(
             widgetLabel(context, state.settlingTarget() ?: requestedTarget),
         )
     }
-    return widgetLabel(context, state.observation.policyOrNull() ?: requestedTarget)
+    val label = widgetLabel(context, state.observation.policyOrNull() ?: requestedTarget)
+    // The enforcement tier is resolved BEFORE the steady label, not as a special case after it: the
+    // label falls back to the last requested target, which survives a refutation and an OTA that
+    // resets a confirmed build to candidate. Only a confirmed build — or an adapter the question
+    // doesn't apply to — may put a bare "Limited to 80%" on the home screen.
+    return when (state.enforcement) {
+        // Controls are withheld on both of these, so whatever was once requested is not in force.
+        EnforcementStatus.CANDIDATE -> context.getString(R.string.widget_status_enforcement_candidate)
+        EnforcementStatus.REFUTED -> context.getString(R.string.widget_status_enforcement_refuted)
+        // The setting is real, but nothing observable can show the hardware acting on it.
+        EnforcementStatus.UNVERIFIED -> context.getString(R.string.widget_status_unverified_suffix, label)
+        EnforcementStatus.CONFIRMED, null -> label
+    }
 }
 
-/** "∞ <limit>" — the adapter's protective default, e.g. ∞80% on Pixel, ∞Auto on Xiaomi. */
-internal fun protectButtonLabel(context: Context, policy: ChargePolicy?): String = when (policy) {
+/**
+ * Which persistent-policy buttons this widget instance shows, or null for the pre-configuration
+ * rendering, whose actions resolve their policy at tap time.
+ *
+ * Branching on [ChargingState.adapterResolved] and NOT on the policy list alone: the capability
+ * defaults are permissive, so an unresolved state would briefly render buttons the resolved adapter
+ * forbids.
+ *
+ * Fewer than two supported policies is the **diagnostics-only device** — every lab adapter resolves
+ * with an empty supported list, which is every non-gated device — and rendering from that list would
+ * silently drop both persistent-policy buttons the widget shows today. Those devices keep the legacy
+ * rendering, which is safe because its buttons carry no pre-resolved target: `setPersistentOrOpen`
+ * resolves the policy at tap time and opens the app instead of dispatching when `canApply` is false,
+ * and the service refuses a target that isn't in the adapter's supported list.
+ */
+internal fun widgetQuickActions(state: ChargingState, storedIds: List<String>?): List<ChargePolicy>? {
+    val defaultProtective = state.defaultProtectivePolicy
+    if (!state.adapterResolved || defaultProtective == null || state.supportedPolicies.size < 2) return null
+    return resolveQuickActionPolicies(storedIds, state.supportedPolicies, defaultProtective)
+}
+
+/** "∞ <mode>", e.g. ∞80% on Pixel, ∞Auto on Xiaomi; null is the unresolved adapter's generic label. */
+internal fun policyButtonLabel(context: Context, policy: ChargePolicy?): String = when (policy) {
     is ChargePolicy.FixedLimit -> context.getString(R.string.widget_button_protect_fixed, policy.percent)
     ChargePolicy.Adaptive -> context.getString(R.string.widget_button_protect_adaptive)
+    ChargePolicy.Unrestricted -> context.getString(R.string.widget_button_always_full)
+    ChargePolicy.PauseAtFull -> context.getString(R.string.widget_button_pause_at_full)
     else -> context.getString(R.string.widget_button_protect)
 }
 
@@ -370,6 +469,31 @@ class AlwaysFullAction : ActionCallback {
         setPersistentOrOpen(context, ChargePolicy.Unrestricted)
     }
 }
+
+/**
+ * A configured button: the policy rides along as a stable id, since the composition that rendered
+ * the button can be minutes old and the widget's configuration may have changed since.
+ */
+@Keep
+class SetPolicyAction : ActionCallback {
+    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
+        if (!requireProOrOpenUpgrade(context)) return
+        val policy = resolveSetPolicyTarget(parameters[POLICY_KEY])
+        if (policy == null) {
+            // A button whose target this build cannot read is not guessed at — open the app instead.
+            openApp(context, false)
+            return
+        }
+        setPersistentOrOpen(context, policy)
+    }
+
+    companion object {
+        val POLICY_KEY = ActionParameters.Key<String>("policy")
+    }
+}
+
+/** Missing or unreadable ids yield null, which the action turns into "open the app". */
+internal fun resolveSetPolicyTarget(raw: String?): ChargePolicy? = ChargePolicy.fromStableId(raw)
 
 /** "1× 100%" — charge fully once, then restore the protective policy. */
 @Keep

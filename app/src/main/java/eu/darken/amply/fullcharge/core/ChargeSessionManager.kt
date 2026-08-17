@@ -22,9 +22,25 @@ class ChargeSessionManager @Inject constructor(
 ) {
     private val mutex = Mutex()
 
+    /**
+     * [restoreOverride] replaces the observed current policy as the session's restore target. Set by
+     * the charge-conditions layer when a rule currently owns the policy: what is configured right now
+     * is the *rule's* temporary override, so restoring to it at the end of the session would make the
+     * override permanent and lose the user's own baseline. The session record is durable and survives
+     * process death, so handing it the true baseline makes it the single owner of that restore.
+     */
+    /**
+     * [afterPersisted] runs in the window between the session record being persisted and the override
+     * write. That is the only correct place for the charge-conditions handoff: the session durably
+     * owes the restore from the moment its record exists, and clearing rule ownership any later
+     * leaves both layers claiming the baseline across a write that can fail, be cancelled, or die
+     * with the process. It must not throw — it runs inside the session mutex.
+     */
     suspend fun begin(
         nowMillis: Long = System.currentTimeMillis(),
         pluggedAtStart: Boolean? = null,
+        restoreOverride: ChargePolicy? = null,
+        afterPersisted: (suspend () -> Unit)? = null,
     ): ApplyResult = mutex.withLock {
         sessionStore.currentSession()?.let {
             return@withLock ApplyResult(
@@ -78,7 +94,7 @@ class ChargeSessionManager @Inject constructor(
                 message = "The current OEM charging mode is not recognized; refusing to overwrite it",
             )
         }
-        val restorePolicy = (decision as SessionStartDecision.Start).restorePolicy
+        val restorePolicy = restoreOverride ?: (decision as SessionStartDecision.Start).restorePolicy
 
         // Persist recovery state before removing the limit. Stamp this process's identity so a later
         // pickup can tell whether the session survived a process death (interruption detection), and a
@@ -98,6 +114,7 @@ class ChargeSessionManager @Inject constructor(
             // that instruction until the replug is observed.
             overrideAwaitingReplug = adapter?.policyLatchesAtPlug == true && pluggedAtStart != false,
         )
+        afterPersisted?.invoke()
         val result = repository.applyTemporary(overridePolicy)
         if (result.success) {
             // Reconcile the persist-first conservative flag with the repository's authoritative
@@ -109,8 +126,9 @@ class ChargeSessionManager @Inject constructor(
             result
         } else {
             // A two-key OEM transition can partially succeed. Keep recovery state unless the
-            // original protective policy is successfully written back immediately.
-            val rollback = repository.applyPersistent(restorePolicy)
+            // original protective policy is successfully written back immediately. Repaying a policy
+            // the user already had is not new control, so it goes through the ungated restore path.
+            val rollback = repository.restorePersistent(restorePolicy)
             if (rollback.success) sessionStore.clearSession()
             result.copy(
                 message = if (rollback.success) {
@@ -128,7 +146,11 @@ class ChargeSessionManager @Inject constructor(
             observation = repository.state.value.observation,
             message = "No temporary session is active",
         )
-        val result = repository.applyPersistent(session.restorePolicy)
+        // The session's restore obligation predates any evidence tier change (a nightly/OTA moves the
+        // build identity, so a confirmed device can come back a candidate with a restore still owed).
+        // The gate withholds NEW control; it must never keep Amply from repaying protection the user
+        // already had, which would strand the device in the session's Unrestricted state.
+        val result = repository.restorePersistent(session.restorePolicy)
         if (result.success) sessionStore.clearSession()
         result
     }

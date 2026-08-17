@@ -55,8 +55,11 @@ class LineageLabAdapter @Inject constructor() : DisabledLabAdapter() {
     override val id = "lineageos-lab"
     override val displayName = R.string.adapter_name_lineageos.toCaString()
 
-    // Any LineageOS build whose device codename is not in the live adapter's qualified allowlist.
-    // Charging control is HAL-dependent and unverified here, so it stays diagnostics/contribution only.
+    // Reached by a LineageOS build (or a derivative reporting the platform feature) that does NOT ship
+    // the `lineagesettings` provider — there is nothing to write, so it stays diagnostics/contribution
+    // only. Builds WITH the provider are handled by LineageChargingAdapter, which matches first and
+    // holds control back on its own enforcement evidence. Those devices used to see a more specific
+    // "not available on this build" note and now get the generic lab text.
     override fun matches(device: DeviceInfo) = device.isLineageOs
 
     // The three charging_control_* keys are already mapped and live in a provider the wizard does not capture,

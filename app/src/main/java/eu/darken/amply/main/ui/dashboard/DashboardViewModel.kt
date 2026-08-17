@@ -41,6 +41,7 @@ import eu.darken.amply.fullcharge.core.FullChargeStore
 import eu.darken.amply.fullcharge.core.InterruptionEvent
 import eu.darken.amply.fullcharge.core.InterruptionStore
 import eu.darken.amply.fullcharge.core.ServiceDispatch
+import eu.darken.amply.fullcharge.core.resolveQuickActionPolicies
 import eu.darken.amply.main.core.DeviceSupportReport
 import eu.darken.amply.main.core.DeviceSupportReporter
 import eu.darken.amply.main.core.OnboardingSettings
@@ -57,6 +58,10 @@ import eu.darken.amply.alarm.core.ChargeAlarmStore
 import eu.darken.amply.battery.core.BatteryReadout
 import eu.darken.amply.battery.core.BatteryReadoutSource
 import eu.darken.amply.monitor.core.ChargeMonitorWatcher
+import eu.darken.amply.rules.core.ChargeRule
+import eu.darken.amply.rules.core.RuleApplier
+import eu.darken.amply.rules.core.RulePhase
+import eu.darken.amply.rules.core.RuleRuntimeState
 import eu.darken.amply.stats.core.CaptureServiceHealth
 import eu.darken.amply.stats.core.ChargeSessionSummary
 import eu.darken.amply.stats.core.ChargeStatsRepository
@@ -94,6 +99,13 @@ data class DashboardUiState(
     val onboardingComplete: Boolean? = null,
     val quickFullChargeEnabled: Boolean = false,
     val quickFullChargeAnyLevel: Boolean = false,
+    /**
+     * The charge modes the reconnect notification's buttons can be picked from, and the resolved
+     * current pick. Empty until an adapter is resolved — the picker withholds until then, since the
+     * capability defaults would briefly offer choices the resolved adapter forbids.
+     */
+    val notificationActionPolicies: List<ChargePolicy> = emptyList(),
+    val notificationActionSelection: List<String> = emptyList(),
     val deviceReport: DeviceSupportReport? = null,
     val quickAccess: QuickAccessState = QuickAccessState(),
     /** True once the initial widget-presence check has completed; the promo card hides until then. */
@@ -107,6 +119,8 @@ data class DashboardUiState(
     val stats: StatsDashboardState = StatsDashboardState(),
     /** A pending "Amply was interrupted while owing a restore" warning, or null when there is none. */
     val interruption: InterruptionEvent? = null,
+    /** The conditional charge rules and which one, if any, currently owns the policy. */
+    val conditions: ConditionsState = ConditionsState(),
     /**
      * The Pro entitlement, or null until it has been read at all. Nullable rather than defaulted:
      * "not upgraded" and "not yet known" have to stay distinguishable, or the promo card would flash
@@ -120,6 +134,25 @@ data class UpgradeSnapshot(
     val isPro: Boolean,
     val isSettled: Boolean,
 )
+
+/**
+ * The dashboard's slice of the charge-conditions layer. Order is meaning — the topmost matching rule
+ * wins — so the list is kept exactly as stored and the active rule is resolved by id rather than by
+ * re-deriving which one "should" be winning.
+ */
+data class ConditionsState(
+    val rules: List<ChargeRule> = emptyList(),
+    val runtime: RuleRuntimeState = RuleRuntimeState(),
+) {
+    val enabledRules: List<ChargeRule> get() = rules.filter { it.enabled }
+
+    val activeRule: ChargeRule?
+        get() = runtime.activeRuleId
+            ?.takeIf { runtime.phase != RulePhase.IDLE }
+            ?.let { id -> rules.firstOrNull { it.id == id } }
+
+    val applyFailed: Boolean get() = runtime.lastApplyFailed
+}
 
 /**
  * The upgrade ask — currently the Pro badges, and the promo card once it returns — has no business
@@ -143,6 +176,7 @@ class DashboardViewModel @Inject constructor(
     private val captureServiceHealth: CaptureServiceHealth,
     private val interruptionStore: InterruptionStore,
     private val upgradeRepo: UpgradeRepo,
+    private val ruleApplier: RuleApplier,
     private val watchers: Set<@JvmSuppressWildcards ChargeMonitorWatcher>,
 ) : ViewModel() {
     private val deviceReport = MutableStateFlow<DeviceSupportReport?>(null)
@@ -154,32 +188,50 @@ class DashboardViewModel @Inject constructor(
     /** Emitted when a gated affordance was tapped without the entitlement; the root navigates. */
     val upgradeRequiredEvents = SingleEventFlow<Unit>()
 
-    // The typed combine overloads stop at five flows; the two gesture booleans are pre-combined.
+    // The typed combine overloads stop at five flows; the gesture settings are pre-combined.
     private val gestureFlags = combine(
         fullChargeStore.quickFullChargeEnabled.flow,
         fullChargeStore.quickFullChargeAnyLevel.flow,
-    ) { enabled, anyLevel -> enabled to anyLevel }
+        fullChargeStore.gestureNotificationPolicies.flow,
+    ) { enabled, anyLevel, notificationPolicies ->
+        GestureFlags(enabled, anyLevel, notificationPolicies)
+    }
+
+    private data class GestureFlags(
+        val enabled: Boolean,
+        val anyLevel: Boolean,
+        val notificationPolicyIds: List<String>?,
+    )
+
+    // Seeded null so the dashboard renders immediately: waiting for the first billing answer would
+    // hold up the whole screen, and the promo card is the only thing that needs it.
+    private val upgradeSnapshots = upgradeRepo.upgradeInfo
+        .map<UpgradeRepo.Info, UpgradeSnapshot?> { UpgradeSnapshot(isPro = it.isPro, isSettled = it.isSettled) }
+        .catch { e ->
+            if (e is CancellationException) throw e
+            log(TAG, Logging.Priority.WARN) { "Upgrade info read failed: ${e.message}" }
+            emit(null)
+        }
+        .onStart { emit(null) }
+        .distinctUntilChanged()
+
+    // Paired with the entitlement rather than taking its own slot: the typed combine overloads stop
+    // at five, and these two are the ones the same cards read together anyway.
+    private val upgradeAndConditions = combine(
+        upgradeSnapshots,
+        combine(ruleApplier.rules, ruleApplier.runtime) { rules, runtime -> ConditionsState(rules, runtime) },
+    ) { upgrade, conditions -> upgrade to conditions }
 
     // Grouped so the outer combine keeps one slot each: the live battery readout, the alarm config,
-    // the notifications-blocked flag, the interrupted-session warning, and the entitlement.
+    // the notifications-blocked flag, the interrupted-session warning, and the entitlement + rules.
     private val unprivilegedExtras = combine(
         batteryReadoutSource.readouts(),
         chargeAlarmStore.config,
         notificationsBlocked,
         interruptionStore.event,
-        // Seeded null so the dashboard renders immediately: waiting for the first billing answer
-        // would hold up the whole screen, and the promo card is the only thing that needs it.
-        upgradeRepo.upgradeInfo
-            .map<UpgradeRepo.Info, UpgradeSnapshot?> { UpgradeSnapshot(isPro = it.isPro, isSettled = it.isSettled) }
-            .catch { e ->
-                if (e is CancellationException) throw e
-                log(TAG, Logging.Priority.WARN) { "Upgrade info read failed: ${e.message}" }
-                emit(null)
-            }
-            .onStart { emit(null) }
-            .distinctUntilChanged(),
-    ) { readout, alarm, blocked, interruption, upgrade ->
-        UnprivilegedExtras(readout, alarm, blocked, interruption, upgrade)
+        upgradeAndConditions,
+    ) { readout, alarm, blocked, interruption, (upgrade, conditions) ->
+        UnprivilegedExtras(readout, alarm, blocked, interruption, upgrade, conditions)
     }
 
     private data class UnprivilegedExtras(
@@ -188,6 +240,7 @@ class DashboardViewModel @Inject constructor(
         val notificationsBlocked: Boolean,
         val interruption: InterruptionEvent?,
         val upgrade: UpgradeSnapshot?,
+        val conditions: ConditionsState,
     )
 
     // Battery-statistics dashboard teaser. The session/count reads (which open the stats Room DB)
@@ -208,13 +261,27 @@ class DashboardViewModel @Inject constructor(
             onboardingSettings.isComplete.flow,
             gestureFlags,
             deviceReport,
-        ) { charging, session, onboardingComplete, (quickFullChargeEnabled, quickFullChargeAnyLevel), report ->
+        ) { charging, session, onboardingComplete, gesture, report ->
+            // Only a resolved adapter states what this device can do; before that the permissive
+            // capability defaults would offer a pick the resolved adapter may forbid.
+            val defaultProtective = charging.defaultProtectivePolicy
+            val actionsResolvable = charging.adapterResolved && defaultProtective != null
             DashboardUiState(
                 charging = charging,
                 session = session,
                 onboardingComplete = onboardingComplete,
-                quickFullChargeEnabled = quickFullChargeEnabled,
-                quickFullChargeAnyLevel = quickFullChargeAnyLevel,
+                quickFullChargeEnabled = gesture.enabled,
+                quickFullChargeAnyLevel = gesture.anyLevel,
+                notificationActionPolicies = if (actionsResolvable) charging.supportedPolicies else emptyList(),
+                notificationActionSelection = if (actionsResolvable) {
+                    resolveQuickActionPolicies(
+                        gesture.notificationPolicyIds,
+                        charging.supportedPolicies,
+                        defaultProtective,
+                    ).map { it.stableId }
+                } else {
+                    emptyList()
+                },
                 deviceReport = report,
             )
         },
@@ -233,6 +300,7 @@ class DashboardViewModel @Inject constructor(
             notificationsBlocked = extras.notificationsBlocked,
             interruption = extras.interruption,
             upgrade = extras.upgrade,
+            conditions = extras.conditions,
             stats = stats,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
@@ -395,6 +463,21 @@ class DashboardViewModel @Inject constructor(
     fun completeOnboarding() = viewModelScope.launch { onboardingSettings.complete() }
 
     /**
+     * Accept charging control on a build whose cap was never confirmed. The controls become available
+     * immediately and stay labelled as unconfirmed — nothing observable can confirm them (see
+     * `EnforcementVerdictEngine`) — while the refutation watch rides the monitor service, which the
+     * nudge below (re)starts now that a watcher wants it.
+     */
+    fun startEnforcementVerification() = viewModelScope.launch {
+        log(TAG, Logging.Priority.INFO) { "startEnforcementVerification()" }
+        repository.startEnforcementVerification()
+        ContextCompat.startForegroundService(
+            context,
+            Intent(context, ChargeSessionService::class.java).setAction(ChargeSessionService.ACTION_MONITOR),
+        )
+    }
+
+    /**
      * Routed through the service (same command the widget's ∞ buttons use) rather than writing the
      * policy here: the service serializes the write against session/recovery writes, refuses when no
      * backend can write, persists the recovery target before the risky write, suppresses its own
@@ -485,6 +568,28 @@ class DashboardViewModel @Inject constructor(
             log(TAG, Logging.Priority.WARN) { "Watcher ${watcher.id} isEnabled failed: ${it.message}" }
             false
         }
+    }
+
+    /**
+     * The store applies the change transactionally against the adapter passed here, so a rapid
+     * second tap cannot write a selection derived from the pre-tap state.
+     */
+    fun toggleGestureNotificationPolicy(policy: ChargePolicy, selected: Boolean) = viewModelScope.launch {
+        log(TAG, Logging.Priority.INFO) { "toggleGestureNotificationPolicy(${policy.stableId}, $selected)" }
+        val charging = repository.state.value
+        val defaultProtective = charging.defaultProtectivePolicy ?: return@launch
+        fullChargeStore.toggleGestureNotificationPolicy(
+            policy = policy,
+            selected = selected,
+            supported = charging.supportedPolicies,
+            defaultProtective = defaultProtective,
+        )
+        // Same nudge as the other gesture options: a running monitor re-renders its notification
+        // with the new buttons now instead of on the next broadcast.
+        ContextCompat.startForegroundService(
+            context,
+            Intent(context, ChargeSessionService::class.java).setAction(ChargeSessionService.ACTION_MONITOR),
+        )
     }
 
     fun setQuickFullChargeAnyLevel(enabled: Boolean) = viewModelScope.launch {

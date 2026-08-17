@@ -87,6 +87,30 @@ class ChargingPreferences @Inject constructor(
         writer = { state -> json.encodeToString(PolicyState.serializer(), state) },
     )
 
+    /**
+     * The build identity (see `charging/core/enforcement/BuildIdentity`) the user explicitly started
+     * enforcement verification for, or null. Its own key rather than a [PolicyState] field: it is
+     * written once by a deliberate user action and read on every adapter selection, so it must not
+     * wake the policy record's collectors — and it degrades independently of the protective baseline.
+     *
+     * Scoped to a build because that is what the evidence is scoped to: a ROM update re-opens the
+     * question, and the opt-in for the old build must not silently carry over to the new one.
+     */
+    private val verificationStarted = dataStore.createValue(
+        key = stringPreferencesKey("enforcement.verification_started_for"),
+        reader = { raw -> raw as? String },
+        writer = { value -> value },
+    )
+
+    val verificationStartedFor: Flow<String?> = verificationStarted.flow
+
+    suspend fun verificationStartedForNow(): String? = verificationStarted.value()
+
+    /** Record the explicit "enable charge limiting anyway" opt-in for [buildIdentity]. */
+    suspend fun startVerification(buildIdentity: String) {
+        verificationStarted.value(buildIdentity)
+    }
+
     // Each projection dedupes on its own: they all ride one record now, so without this a
     // lastRequestedAt-only write would re-emit every one of them.
     val lastRequested: Flow<ChargePolicy?> = policyState.flow

@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.twotone.ArrowBack
 import androidx.compose.material.icons.automirrored.twotone.OpenInNew
+import androidx.compose.material.icons.automirrored.twotone.Rule
 import androidx.compose.material.icons.automirrored.twotone.ShowChart
 import androidx.compose.material.icons.twotone.Bolt
 import androidx.compose.material.icons.twotone.Book
@@ -45,6 +46,8 @@ fun SettingsScreen(
     onGeneral: () -> Unit,
     gestureEnabled: Boolean,
     onCharging: () -> Unit,
+    activeRuleCount: Int,
+    onChargeRules: () -> Unit,
     captureEnabled: Boolean,
     onChargingHistory: () -> Unit,
     showDiagnostics: Boolean,
@@ -99,6 +102,22 @@ fun SettingsScreen(
                     },
                     icon = Icons.TwoTone.Bolt,
                     onClick = onCharging,
+                )
+            }
+            item { SettingsDivider() }
+            item {
+                SettingsBaseItem(
+                    title = stringResource(R.string.settings_rules_title),
+                    subtitle = if (activeRuleCount > 0) {
+                        stringResource(R.string.settings_rules_subtitle_on, activeRuleCount)
+                    } else {
+                        stringResource(R.string.settings_rules_subtitle_off)
+                    },
+                    icon = Icons.AutoMirrored.TwoTone.Rule,
+                    onClick = onChargeRules,
+                    // The row stays open to everyone: switching a rule off, or deleting it, must
+                    // never sit behind the gate.
+                    trailingContent = { if (showProBadge) ProBadge() },
                 )
             }
             item { SettingsDivider() }
@@ -214,6 +233,8 @@ private fun SettingsScreenPreview() = PreviewWrapper {
         onGeneral = {},
         gestureEnabled = true,
         onCharging = {},
+        activeRuleCount = 2,
+        onChargeRules = {},
         captureEnabled = true,
         onChargingHistory = {},
         showDiagnostics = true,
@@ -238,6 +259,8 @@ private fun SettingsScreenUpgradedPreview() = PreviewWrapper {
         onGeneral = {},
         gestureEnabled = true,
         onCharging = {},
+        activeRuleCount = 2,
+        onChargeRules = {},
         captureEnabled = true,
         onChargingHistory = {},
         showDiagnostics = false,

@@ -60,4 +60,63 @@ class WidgetDisplayTest {
         display.sessionActive shouldBe true
         display.steady shouldBe false
     }
+
+    private val richState = ChargingState(
+        adapterResolved = true,
+        defaultProtectivePolicy = target,
+        supportedPolicies = listOf(
+            target,
+            ChargePolicy.FixedLimit(90),
+            ChargePolicy.Adaptive,
+            ChargePolicy.Unrestricted,
+        ),
+    )
+
+    @Test
+    fun `an unresolved adapter keeps the legacy buttons`() {
+        widgetQuickActions(ChargingState(), storedIds = null) shouldBe null
+        // Even a state that already carries policies stays legacy until selection has actually run.
+        widgetQuickActions(
+            richState.copy(adapterResolved = false),
+            storedIds = listOf("adaptive"),
+        ) shouldBe null
+        widgetQuickActions(richState.copy(defaultProtectivePolicy = null), storedIds = null) shouldBe null
+    }
+
+    @Test
+    fun `a diagnostics-only device keeps the legacy buttons instead of losing them`() {
+        // Lab adapters resolve with an empty supported list — rendering from it would drop both
+        // persistent-policy buttons the widget shows today.
+        widgetQuickActions(
+            richState.copy(supportedPolicies = emptyList()),
+            storedIds = listOf("adaptive", "unrestricted"),
+        ) shouldBe null
+        // Same for an adapter that supports exactly one policy: there is no pair to render.
+        widgetQuickActions(
+            richState.copy(supportedPolicies = listOf(target)),
+            storedIds = null,
+        ) shouldBe null
+    }
+
+    @Test
+    fun `a resolved adapter renders the resolver's answer, regardless of how many policies it has`() {
+        widgetQuickActions(richState, storedIds = null) shouldBe listOf(target, ChargePolicy.Unrestricted)
+        widgetQuickActions(richState, storedIds = listOf("adaptive", "unrestricted")) shouldBe
+            listOf(ChargePolicy.Adaptive, ChargePolicy.Unrestricted)
+
+        // Two-policy adapter: the resolver ignores the stored pick, and the widget still leaves
+        // the legacy branch (the buttons now carry their target explicitly).
+        val binary = richState.copy(supportedPolicies = listOf(target, ChargePolicy.Unrestricted))
+        widgetQuickActions(binary, storedIds = listOf("adaptive")) shouldBe
+            listOf(target, ChargePolicy.Unrestricted)
+    }
+
+    @Test
+    fun `a button's target is decoded from its id, and refused when unreadable`() {
+        resolveSetPolicyTarget("fixed:80") shouldBe target
+        resolveSetPolicyTarget("unrestricted") shouldBe ChargePolicy.Unrestricted
+        resolveSetPolicyTarget(null) shouldBe null
+        resolveSetPolicyTarget("") shouldBe null
+        resolveSetPolicyTarget("fixed:not-a-number") shouldBe null
+    }
 }

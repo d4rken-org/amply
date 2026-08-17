@@ -12,6 +12,7 @@ internal fun DashboardScreenUnderTest(
     onOpenShizuku: () -> Unit = {},
     onAllowShizuku: () -> Unit = {},
     onUpgrade: () -> Unit = {},
+    onStartVerification: () -> Unit = {},
 ) {
     DashboardScreen(
         state = state,
@@ -25,8 +26,10 @@ internal fun DashboardScreenUnderTest(
         onAlarmEnabledChange = {},
         onAlarmTargetChange = {},
         onFixNotifications = {},
+        onOpenConditions = {},
         onOpenBatteryHub = {},
         onRetryCapture = {},
+        onStartVerification = onStartVerification,
         onPinWidget = {},
         onAddTile = {},
         onDismissQuickAccess = {},

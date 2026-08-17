@@ -9,6 +9,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
+    <!-- Charge conditions: a Bluetooth-device rule needs the connect/disconnect broadcasts and the
+         bonded-device list. Runtime-requested on API 31+, install-time below that. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+
     <queries>
         <package android:name="moe.shizuku.privileged.api" />
         <package android:name="com.google.android.settings.intelligence" />
@@ -70,6 +77,17 @@
             </intent-filter>
         </activity>
 
+        <!-- The AppWidget host launches a configuration activity by component name, so this one
+             cannot live inside MainActivity. It hosts a single Compose screen, no navigation. -->
+        <activity
+            android:name=".main.ui.widget.WidgetConfigActivity"
+            android:excludeFromRecents="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
         <service
             android:name=".fullcharge.core.ChargeSessionService"
             android:exported="false"
@@ -102,6 +120,15 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/amply_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".rules.core.BluetoothRuleReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+                <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED" />
+            </intent-filter>
         </receiver>
 
         <receiver
