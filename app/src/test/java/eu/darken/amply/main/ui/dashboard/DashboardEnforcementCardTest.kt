@@ -63,7 +63,7 @@ class DashboardEnforcementCardTest {
     }
 
     @Test
-    fun `an unverified device explains itself and offers the check`() {
+    fun `a candidate device explains itself and offers the opt-in`() {
         var started = false
         render(state(EnforcementStatus.CANDIDATE, controlEnabled = false)) { started = true }
 
@@ -74,15 +74,15 @@ class DashboardEnforcementCardTest {
     }
 
     @Test
-    fun `a device under verification is not shown as confirmed`() {
-        render(state(EnforcementStatus.UNDER_TEST, controlEnabled = true))
+    fun `an unconfirmed device is not shown as confirmed`() {
+        render(state(EnforcementStatus.UNVERIFIED, controlEnabled = true))
 
         // The card is present…
         scrollToCard()
-        compose.onNodeWithText(string(R.string.dashboard_enforcement_testing_title)).assertExists()
+        compose.onNodeWithText(string(R.string.dashboard_enforcement_unverified_title)).assertExists()
         // …and the hero qualifies the verified read-back instead of leaving it to stand alone.
         compose.onNode(hasScrollAction()).performScrollToNode(hasTestTag(HERO_CARD_TEST_TAG))
-        compose.onNodeWithText(string(R.string.dashboard_enforcement_testing_note)).assertExists()
+        compose.onNodeWithText(string(R.string.dashboard_enforcement_unverified_note)).assertExists()
     }
 
     @Test
@@ -98,14 +98,14 @@ class DashboardEnforcementCardTest {
         render(state(EnforcementStatus.CONFIRMED, controlEnabled = true))
 
         compose.onNodeWithTag(ENFORCEMENT_CARD_TEST_TAG).assertDoesNotExist()
-        compose.onNodeWithText(string(R.string.dashboard_enforcement_testing_note)).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.dashboard_enforcement_unverified_note)).assertDoesNotExist()
     }
 
     @Test
-    fun `a secondary user is offered no verification`() {
+    fun `a secondary user is offered no opt-in`() {
         // The registry leaves enforcement unset when the probe itself refused control (here: the
-        // Lineage keys are device-wide, so control is main-user only). Offering the check would start
-        // a verification the recorder never observes and that can therefore never complete.
+        // Lineage keys are device-wide, so control is main-user only). Offering the opt-in there
+        // would enable controls that cannot write anything.
         var started = false
         render(state(status = null, controlEnabled = false)) { started = true }
 
@@ -119,6 +119,6 @@ class DashboardEnforcementCardTest {
         render(state(status = null, controlEnabled = true))
 
         compose.onNodeWithTag(ENFORCEMENT_CARD_TEST_TAG).assertDoesNotExist()
-        compose.onNodeWithText(string(R.string.dashboard_enforcement_testing_note)).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.dashboard_enforcement_unverified_note)).assertDoesNotExist()
     }
 }

@@ -43,16 +43,16 @@ class AmplyWidgetLabelTest {
     )
 
     @Test
-    fun `the widget does not claim a limit while enforcement is unverified`() {
+    fun `the widget does not claim a limit on an unconfirmed build`() {
         // The setting reads back verified, which on these builds proves only that the ROM stored it.
         statusLine(
             context = context,
             sessionActive = false,
             settling = false,
             awaitingReplug = false,
-            state = state(EnforcementStatus.UNDER_TEST),
+            state = state(EnforcementStatus.UNVERIFIED),
             requestedTarget = null,
-        ) shouldBe "Limited to 80% · not verified yet"
+        ) shouldBe "Limited to 80% · not confirmed"
 
         // Confirmed, or an adapter the question doesn't apply to: the plain claim, as before.
         listOf(EnforcementStatus.CONFIRMED, null).forEach { enforcement ->
@@ -68,7 +68,7 @@ class AmplyWidgetLabelTest {
     }
 
     @Test
-    fun `the widget claims no limit on an unverified or refuted build`() {
+    fun `the widget claims no limit on a candidate or refuted build`() {
         // …and the last requested target outlives the tier change: a build refuted after the user
         // asked for 80%, or a confirmed build reset to candidate by an OTA, still carries
         // FixedLimit(80) as the last request. Rendering that would claim a protection that is off.
@@ -79,7 +79,7 @@ class AmplyWidgetLabelTest {
             awaitingReplug = false,
             state = gatedState(EnforcementStatus.CANDIDATE),
             requestedTarget = ChargePolicy.FixedLimit(80),
-        ) shouldBe "Charge limiting not verified"
+        ) shouldBe "Charge limiting off (unconfirmed)"
 
         statusLine(
             context = context,

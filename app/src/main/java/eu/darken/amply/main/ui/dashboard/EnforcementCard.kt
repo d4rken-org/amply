@@ -34,6 +34,11 @@ const val ENFORCEMENT_CARD_TEST_TAG = "dashboard.enforcement.card"
  * that is the ordinary case, and a card stating the ordinary case is noise. The three cases it does
  * render are the ones where the dashboard would otherwise lie by omission: controls withheld without
  * a reason, controls offered that prove nothing, and controls withdrawn after a refutation.
+ *
+ * [onStartVerification] is an opt-in to control on an unconfirmed build, NOT the start of a check:
+ * nothing Amply can observe confirms a cap (see `EnforcementVerdictEngine`), so the copy must not
+ * promise a verdict that never arrives. The callback keeps its name alongside the stored
+ * `enforcement.verification_started_for` opt-in it drives.
  */
 @Composable
 fun EnforcementCard(
@@ -61,18 +66,18 @@ fun EnforcementCard(
                 Text(stringResource(R.string.dashboard_enforcement_candidate_action))
             }
         }
-        EnforcementStatus.UNDER_TEST -> AmplyCard(
+        EnforcementStatus.UNVERIFIED -> AmplyCard(
             modifier = modifier.testTag(ENFORCEMENT_CARD_TEST_TAG),
             tone = AmplyCardTone.TertiaryContainer,
             verticalArrangement = Arrangement.spacedBy(AmplyCardDefaults.ItemSpacing),
         ) {
             AmplyCardHeader(
-                title = stringResource(R.string.dashboard_enforcement_testing_title),
+                title = stringResource(R.string.dashboard_enforcement_unverified_title),
                 icon = Icons.Default.Science,
                 iconTint = MaterialTheme.colorScheme.onTertiaryContainer,
             )
             Text(
-                stringResource(R.string.dashboard_enforcement_testing_body),
+                stringResource(R.string.dashboard_enforcement_unverified_body),
                 style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -102,7 +107,7 @@ fun EnforcementCard(
 private fun EnforcementCardPreview() = PreviewWrapper {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         EnforcementCard(status = EnforcementStatus.CANDIDATE, onStartVerification = {})
-        EnforcementCard(status = EnforcementStatus.UNDER_TEST, onStartVerification = {})
+        EnforcementCard(status = EnforcementStatus.UNVERIFIED, onStartVerification = {})
         EnforcementCard(status = EnforcementStatus.REFUTED, onStartVerification = {})
     }
 }

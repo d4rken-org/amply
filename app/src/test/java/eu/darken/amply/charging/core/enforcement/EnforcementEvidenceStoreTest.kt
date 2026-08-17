@@ -39,17 +39,18 @@ class EnforcementEvidenceStoreTest {
     }
 
     private fun evidence(
-        verdict: EnforcementVerdict = EnforcementVerdict.CONFIRMED,
+        verdict: EnforcementVerdict = EnforcementVerdict.REFUTED,
         buildIdentity: String = "build-a",
         algorithmVersion: Int = EnforcementVerdictEngine.ALGORITHM_VERSION,
         adapterId: String = "lineageos-chargingcontrol-v1",
+        observedPercent: Int = 80,
     ) = EnforcementEvidence(
         adapterId = adapterId,
         buildIdentity = buildIdentity,
         algorithmVersion = algorithmVersion,
         verdict = verdict,
         capPercent = 80,
-        observedPercent = 80,
+        observedPercent = observedPercent,
         observedAtWallMillis = 1_000L,
     )
 
@@ -90,43 +91,28 @@ class EnforcementEvidenceStoreTest {
     }
 
     @Test
-    fun `a confirmation never replaces a corrupt record`() = runTest {
-        // The unreadable record could be a refutation; overwriting it would reopen control.
-        writeRaw("{not json")
-        store.record(evidence(verdict = EnforcementVerdict.CONFIRMED)) shouldBe false
-        store.currentState() shouldBe EnforcementEvidenceState.Corrupt
-    }
-
-    @Test
     fun `a refutation replaces a corrupt record`() = runTest {
+        // Both fail closed, and the refutation is the more informative of the two.
         writeRaw("{not json")
-        store.record(evidence(verdict = EnforcementVerdict.REFUTED)) shouldBe true
-        store.currentState() shouldBe
-            EnforcementEvidenceState.Present(evidence(verdict = EnforcementVerdict.REFUTED))
+        store.record(evidence()) shouldBe true
+        store.currentState() shouldBe EnforcementEvidenceState.Present(evidence())
     }
 
     @Test
-    fun `a refutation overwrites a confirmation`() = runTest {
-        store.record(evidence(verdict = EnforcementVerdict.CONFIRMED)) shouldBe true
-        store.record(evidence(verdict = EnforcementVerdict.REFUTED)) shouldBe true
+    fun `a refutation is terminal and is never overwritten for the same scope`() = runTest {
+        store.record(evidence(observedPercent = 84)) shouldBe true
+        // Nothing observable can redeem the build, so a later record for the same scope is not news.
+        store.record(evidence(observedPercent = 91)) shouldBe false
         val state = store.currentState().shouldBeInstanceOf<EnforcementEvidenceState.Present>()
-        state.evidence.verdict shouldBe EnforcementVerdict.REFUTED
+        state.evidence.observedPercent shouldBe 84
     }
 
     @Test
-    fun `a confirmation does not overwrite a refutation for the same scope`() = runTest {
-        store.record(evidence(verdict = EnforcementVerdict.REFUTED)) shouldBe true
-        store.record(evidence(verdict = EnforcementVerdict.CONFIRMED)) shouldBe false
-        val state = store.currentState().shouldBeInstanceOf<EnforcementEvidenceState.Present>()
-        state.evidence.verdict shouldBe EnforcementVerdict.REFUTED
-    }
-
-    @Test
-    fun `a confirmation replaces a refutation from a different build`() = runTest {
+    fun `a refutation from a different build does not block this one`() = runTest {
         // A new ROM build is a new question; the old build's refutation says nothing about it.
-        store.record(evidence(verdict = EnforcementVerdict.REFUTED, buildIdentity = "build-b")) shouldBe true
-        store.record(evidence(verdict = EnforcementVerdict.CONFIRMED)) shouldBe true
+        store.record(evidence(buildIdentity = "build-b")) shouldBe true
+        store.record(evidence(observedPercent = 91)) shouldBe true
         val state = store.currentState().shouldBeInstanceOf<EnforcementEvidenceState.Present>()
-        state.evidence.verdict shouldBe EnforcementVerdict.CONFIRMED
+        state.evidence.observedPercent shouldBe 91
     }
 }

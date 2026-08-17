@@ -137,9 +137,6 @@ class EnforcementRecorder @Inject constructor(
             percent = tick.percent.takeIf { it >= 0 } ?: readout.levelPercent ?: -1,
             batteryStatus = tick.batteryStatus,
             chargingStatus = readout.chargingStatus,
-            // The adapter's own reading of the hardware hold signal — null where it has none, which
-            // makes CONFIRMED unreachable (the engine's asymmetry, not a defect here).
-            hardwareHold = adapter.hardwareHoldSignal(readout.chargingStatus, tick.plugged),
             currentNowMicroamps = readout.currentNowMicroamps,
             policyGeneration = preferences.lastRequestedAtNow(),
             plugSessionId = plugSessionId,

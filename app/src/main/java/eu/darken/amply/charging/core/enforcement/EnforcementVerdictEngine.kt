@@ -2,7 +2,6 @@ package eu.darken.amply.charging.core.enforcement
 
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
-import eu.darken.amply.stats.core.StatsLimitHitDetector
 
 /**
  * The window a verdict is made inside. Any change to the adapter, the ROM build, the configured cap,
@@ -35,13 +34,6 @@ data class EnforcementSample(
     val percent: Int,
     val batteryStatus: Int?,
     val chargingStatus: Int?,
-    /**
-     * The selected adapter's hardware hold signal for this tick — see
-     * [eu.darken.amply.charging.core.adapter.ChargingAdapter.hardwareHoldSignal]. True is the ONLY
-     * value a CONFIRMED verdict is reachable from; false and null both leave the device under test.
-     * REFUTED never consults it.
-     */
-    val hardwareHold: Boolean?,
     val currentNowMicroamps: Int?,
     val policyGeneration: Long,
     val plugSessionId: Long,
@@ -63,20 +55,13 @@ data class EnforcementProgress(
     /**
      * True once the level was observed increasing since [climbBase], i.e. within the CURRENT climb.
      * Phase-local on purpose: a global "rose at some point in this epoch" flag would let a rise from
-     * hours ago keep vouching for a plateau that the battery has since been *losing* charge into.
+     * hours ago justify refuting a level the battery has merely been sitting at since.
      *
-     * It is also what keeps an above-cap epoch from refuting on its own: a device sitting still at
-     * 95% under a 70% cap is a device that stopped charging, and only an observed climb from there
-     * says the cap is being ignored.
+     * It is what keeps an above-cap epoch from refuting on its own: a device sitting still at 95%
+     * under a 70% cap is a device that stopped charging, and only an observed climb from there says
+     * the cap is being ignored.
      */
     val climbRose: Boolean,
-    /**
-     * The level the running hold is pinned to, or null when no hold is running. A hold sustains only
-     * while the level stays EXACTLY here; any change (up or down) starts a new hold instead.
-     */
-    val holdPercent: Int?,
-    val holdSamples: Int,
-    val holdSinceElapsedMillis: Long,
     val lastPercent: Int,
 )
 
@@ -86,76 +71,48 @@ data class EnforcementOutcome(
 )
 
 /**
- * Decides whether the charging hardware actually enforces a configured cap, from the public battery
- * broadcast alone. Pure and JVM-testable: the caller threads [EnforcementProgress] through.
+ * Decides whether the charging hardware **fails** to enforce a configured cap, from the public
+ * battery broadcast alone. Pure and JVM-testable: the caller threads [EnforcementProgress] through.
  *
- * The asymmetry between the two verdicts is deliberate.
+ * **There is only one verdict, [EnforcementVerdict.REFUTED]. Nothing observable can confirm a cap.**
+ * That is a measured conclusion, not caution: `BatteryManager.EXTRA_CHARGING_STATUS` == 4 looked like
+ * a hardware hold signal — a Pixel 6 (`oriole`, LineageOS 23.2) holding at a 70% cap reports it — but
+ * it is *session-scoped*. On the same device, raising the cap to 80 left the extra reading 4 while
+ * the battery was actively charging at level 70, ten points below the cap. It means "limit mode is
+ * enabled for this plug session", not "charging is stopped right now", which is exactly what
+ * `StatsLimitHitDetector`'s KDoc documents for Pixel. Nothing else in the broadcast discriminates
+ * either: between a cap hold and a thermal or weak-supply pause the only field that differs is
+ * `BatteryManager.EXTRA_STATUS`, which a thermal pause produces too. So a passive observer cannot
+ * tell "the cap is working" from "charging happens to be paused", and Amply never claims a cap is
+ * verified from observation.
  *
- * **CONFIRM is hardware-corroborated only.** A passive plateau cannot distinguish a cap hold from a
- * thermal pause, a charger renegotiation or a weak supply: all of them park a plugged battery below
- * full while [StatsLimitHitDetector.heldNow] reads true, and five minutes of it is well within what
- * a hot phone on a weak charger produces. So a confirmation requires the adapter's
- * [eu.darken.amply.charging.core.adapter.ChargingAdapter.hardwareHoldSignal] to report a hold
- * ([EnforcementSample.hardwareHold] == true) *and* the behavioural evidence: a rise inside the
- * current climb, [StatsLimitHitDetector.heldNow], the level parked in the band just below the cap,
- * and that exact level sustained across [MIN_HOLD_SAMPLES] samples spanning [MIN_HOLD_MILLIS]. On an
- * adapter with no hardware signal (`hardwareHold == null`) CONFIRMED is unreachable and the device
- * simply stays under test forever — a stalled verification is a far cheaper error than claiming
- * protection that isn't there. The known alternative for such adapters is a *behavioural* challenge
- * (write a lower cap, watch charging cut, raise it, watch it resume, cut again), which no passive
- * observer can fake; it is deliberately NOT implemented here.
+ * The known way to earn a real confirmation is a **guided two-cap challenge**: write a cap below the
+ * current level and watch charging cut, raise it and watch charging resume, cut again — a sequence
+ * no thermal pause can imitate. It needs the user to keep the device plugged through a scripted
+ * write sequence, and it is deliberately NOT implemented here.
  *
- * **REFUTE deliberately needs no hardware corroboration at all.** It keys on a *trend*: the level
- * climbing past the cap is self-evident, whatever the hardware reports. Requiring
- * `BATTERY_STATUS_CHARGING` or a hardware signal would be a false-negative source — a ROM can carry
- * the level past the cap while reporting UNKNOWN, NOT_CHARGING or FULL, and a build with no hold
- * signal must still be refutable, or an unenforced cap would go on looking harmless. The climb is
- * tracked from ANY level, above the cap included: epochs routinely open above it (a full-charge
- * session restored early at 84%, a process death at 82%), and those are exactly the runs where an
- * unenforced cap keeps climbing to 100%.
+ * **REFUTE needs no hardware corroboration at all.** It keys on a *trend*: the level climbing past
+ * the cap is self-evident, whatever the hardware reports. Requiring `BATTERY_STATUS_CHARGING` or a
+ * hardware signal would be a false-negative source — a ROM can carry the level past the cap while
+ * reporting UNKNOWN, NOT_CHARGING or FULL. The climb is tracked from ANY level, above the cap
+ * included: epochs routinely open above it (a full-charge session restored early at 84%, a process
+ * death at 82%), and those are exactly the runs where an unenforced cap keeps climbing to 100%.
  */
 object EnforcementVerdictEngine {
 
     /**
-     * Bumped whenever this heuristic is tightened. Stored on every [EnforcementEvidence], so a
-     * confirmation produced by a weaker version stops counting instead of being trusted forever.
+     * Bumped whenever this heuristic materially changes. Stored on every [EnforcementEvidence], so a
+     * verdict produced by a different version stops counting instead of being trusted forever.
      */
     const val ALGORITHM_VERSION = 1
 
     /**
-     * How far BELOW the cap a hold still counts. Upstream's `Limit.java` sets the HAL floor to
-     * `targetPct - margin` and `Toggle` resumes only after falling that far, so a device that really
-     * enforces legitimately rests a few points under the number Amply wrote. Covers that margin plus
-     * level-reporting rounding.
-     *
-     * Only reachable on the hardware path: like [MIN_HOLD_SAMPLES] and [MIN_HOLD_MILLIS] it shapes a
-     * confirmation, and no confirmation happens without [EnforcementSample.hardwareHold] == true.
-     */
-    const val HOLD_BAND = 5
-
-    /**
-     * How far ABOVE the cap the level must climb before enforcement is refuted. Small and INDEPENDENT
-     * of [HOLD_BAND]: upstream's margin is hysteresis *below* the target and justifies no allowance
-     * above it, and every extra point here only delays detecting a device that never limits. Three
-     * points absorb a one-off level-reporting overshoot without hiding a real climb. Keeping this ≥ 1
-     * is also what makes the confirm band and the refute band disjoint.
+     * How far ABOVE the cap the level must climb before enforcement is refuted. Upstream's
+     * `Limit.java` margin is hysteresis *below* the target and justifies no allowance above it, and
+     * every extra point here only delays detecting a device that never limits. Three points absorb a
+     * one-off level-reporting overshoot without hiding a real climb.
      */
     const val OVERSHOOT_ALLOWANCE = 3
-
-    /**
-     * The charge monitor evaluates roughly every 30s, so this is a plateau, not a single reading.
-     * Reachable only on the hardware path (see [HOLD_BAND]).
-     */
-    const val MIN_HOLD_SAMPLES = 3
-
-    /**
-     * How long the hardware-corroborated hold must persist. Measured on `elapsedRealtime`, so a
-     * wall-clock change cannot shorten it. This duration is NOT what separates a cap hold from a
-     * thermal pause — nothing about a plateau's length can, which is why the hardware signal gates
-     * the verdict; it only rejects a momentary coincidence. Reachable only on the hardware path
-     * (see [HOLD_BAND]).
-     */
-    const val MIN_HOLD_MILLIS = 5 * 60 * 1000L
 
     fun evaluate(previous: EnforcementProgress?, sample: EnforcementSample): EnforcementOutcome {
         val epoch = epochOf(sample) ?: return EnforcementOutcome(null, null)
@@ -164,62 +121,27 @@ object EnforcementVerdictEngine {
         if (sample.percent !in 0..100) return EnforcementOutcome(prior, null)
 
         val cap = epoch.capPercent
-        val last = prior?.lastPercent
-        // Phase-local climb tracking: a drop resets the base AND clears the rise, so the rise that
-        // vouches for a hold is always the one that led into it. Equal samples continue the climb
-        // (they are what a hold looks like) without ever establishing a rise on their own.
-        val dropped = last != null && sample.percent < last
-        val climbBase = when {
-            last == null || dropped -> sample.percent
-            else -> prior?.climbBase
-        }
+        // Phase-local climb tracking: a drop resets the base AND clears the rise, so the rise a
+        // refutation rests on is always the one that led into the current level. Equal samples
+        // continue the climb without ever establishing a rise on their own.
+        val dropped = prior != null && sample.percent < prior.lastPercent
+        val climbBase = if (prior == null || dropped) sample.percent else prior.climbBase
         val climbRose = when {
-            last == null || dropped -> false
-            sample.percent > last -> true
-            else -> prior?.climbRose == true
-        }
-        // A hold pins to ONE level: "not increasing" would count a battery losing charge on a weak
-        // charger as held. Any change restarts the hold; the hardware signal gates it entirely.
-        val holding = sample.hardwareHold == true &&
-            climbRose &&
-            sample.percent in (cap - HOLD_BAND)..cap &&
-            StatsLimitHitDetector.heldNow(
-                plugged = sample.plugged,
-                chargingStatus = sample.chargingStatus,
-                batteryStatus = sample.batteryStatus,
-                percent = sample.percent,
-                currentNowMicroamps = sample.currentNowMicroamps,
-            )
-        val sustains = holding && prior?.holdPercent == sample.percent
-        val holdSamples = when {
-            !holding -> 0
-            sustains -> (prior?.holdSamples ?: 0) + 1
-            else -> 1
-        }
-        val holdSince = when {
-            !holding -> 0L
-            sustains -> prior?.holdSinceElapsedMillis ?: sample.elapsedRealtimeMillis
-            else -> sample.elapsedRealtimeMillis
+            prior == null || dropped -> false
+            sample.percent > prior.lastPercent -> true
+            else -> prior.climbRose
         }
         val progress = EnforcementProgress(
             epoch = epoch,
             climbBase = climbBase,
             climbRose = climbRose,
-            holdPercent = sample.percent.takeIf { holding },
-            holdSamples = holdSamples,
-            holdSinceElapsedMillis = holdSince,
             lastPercent = sample.percent,
         )
-        val verdict = when {
-            // The refutation keys on the CLIMB, not on the level alone: a lone or flat above-cap
-            // sample proves nothing (the epoch may simply have opened there), while an observed rise
-            // to beyond the cap does — wherever inside or above the cap that rise started.
-            climbRose && sample.percent >= cap + OVERSHOOT_ALLOWANCE -> EnforcementVerdict.REFUTED
-            // hardwareHold, the rise and the band are already folded into `holding`.
-            holdSamples >= MIN_HOLD_SAMPLES &&
-                sample.elapsedRealtimeMillis - holdSince >= MIN_HOLD_MILLIS -> EnforcementVerdict.CONFIRMED
-            else -> null
-        }
+        // The refutation keys on the CLIMB, not on the level alone: a lone or flat above-cap sample
+        // proves nothing (the epoch may simply have opened there), while an observed rise to beyond
+        // the cap does — wherever inside or above the cap that rise started.
+        val verdict = EnforcementVerdict.REFUTED
+            .takeIf { climbRose && sample.percent >= cap + OVERSHOOT_ALLOWANCE }
         return EnforcementOutcome(progress, verdict)
     }
 

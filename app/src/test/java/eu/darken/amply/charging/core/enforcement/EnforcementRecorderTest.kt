@@ -37,10 +37,9 @@ class EnforcementRecorderTest {
     )
 
     @Test
-    fun `a started verification with a configured cap observes`() {
+    fun `an accepted build with a configured cap observes`() {
+        // Nothing stored yet: the refutation watch is exactly what there is left to observe.
         observe() shouldBe true
-        // A confirmed device keeps observing: a build that held the cap once can still be refuted later.
-        observe(evidence = evidence(EnforcementVerdict.CONFIRMED)) shouldBe true
     }
 
     @Test
@@ -66,7 +65,7 @@ class EnforcementRecorderTest {
     }
 
     @Test
-    fun `nothing is observed before the user starts verification`() {
+    fun `nothing is observed before the user accepts the build`() {
         observe(verificationStarted = false) shouldBe false
     }
 

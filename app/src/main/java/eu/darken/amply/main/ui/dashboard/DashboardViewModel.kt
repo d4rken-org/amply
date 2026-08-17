@@ -395,9 +395,10 @@ class DashboardViewModel @Inject constructor(
     fun completeOnboarding() = viewModelScope.launch { onboardingSettings.complete() }
 
     /**
-     * Opt this build into enforcement verification. The controls become available immediately and are
-     * labelled as unproven until a charge is observed holding at the limit; the observation itself
-     * rides the monitor service, which the nudge below (re)starts now that a watcher wants it.
+     * Accept charging control on a build whose cap was never confirmed. The controls become available
+     * immediately and stay labelled as unconfirmed — nothing observable can confirm them (see
+     * `EnforcementVerdictEngine`) — while the refutation watch rides the monitor service, which the
+     * nudge below (re)starts now that a watcher wants it.
      */
     fun startEnforcementVerification() = viewModelScope.launch {
         log(TAG, Logging.Priority.INFO) { "startEnforcementVerification()" }

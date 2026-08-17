@@ -71,10 +71,10 @@ class ChargeTileService : TileService() {
                             state.isAwaitingReplug() -> getString(R.string.tile_replug_hint)
                             state.isSettling(System.currentTimeMillis()) ->
                                 getString(R.string.tile_applying)
-                            // The tile can act on this build, but nothing here has shown the limit
-                            // actually holding — say so rather than print the reassuring access label.
-                            state.enforcement == EnforcementStatus.UNDER_TEST ->
-                                getString(R.string.tile_enforcement_testing)
+                            // The tile can act on this build, but nothing observable can show the
+                            // limit holding — say so rather than print the reassuring access label.
+                            state.enforcement == EnforcementStatus.UNVERIFIED ->
+                                getString(R.string.tile_enforcement_unverified)
                             else -> (state.access?.label ?: state.adapterName)
                                 .get(this@ChargeTileService)
                         },

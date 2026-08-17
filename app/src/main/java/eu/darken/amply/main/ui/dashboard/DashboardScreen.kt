@@ -207,9 +207,9 @@ fun DashboardScreen(
 
                 item(key = "dashboard.hero") { StatusCard(state, sessionPresentation) }
 
-                // Directly under the hero on BOTH branches: on an unverified or refuted device the
-                // hero's "unsupported" line is exactly what this card has to explain, and while a
-                // verification is running it qualifies the policy the hero states.
+                // Directly under the hero on BOTH branches: on a candidate or refuted device the
+                // hero's "unsupported" line is exactly what this card has to explain, and on an
+                // unconfirmed one it qualifies the policy the hero states.
                 // CONFIRMED renders nothing, so it must not claim a list slot either — an empty item
                 // would still cost the list's 12.dp inter-item spacing.
                 state.charging.enforcement?.takeIf { it != EnforcementStatus.CONFIRMED }?.let { enforcement ->
@@ -437,11 +437,12 @@ private fun StatusCard(
         }
     }
     val settling = state.charging.isSettling(now)
-    val underTest = state.charging.enforcement == EnforcementStatus.UNDER_TEST
+    val enforcementUnverified = state.charging.enforcement == EnforcementStatus.UNVERIFIED
     // A settings-level readback proves the ROM stored the limit, never that the hardware honours it.
-    // While a verification is running that difference is the whole point, so the green check — which
-    // reads as "your battery is protected" — is withheld until enforcement is actually confirmed.
-    val verified = observation is ChargeObservation.Verified && !underTest
+    // On an unconfirmed build that difference is the whole point, so the green check — which reads as
+    // "your battery is protected" — is withheld until enforcement is confirmed (which, on these
+    // adapters, only physical qualification can do — see EnforcementVerdictEngine).
+    val verified = observation is ChargeObservation.Verified && !enforcementUnverified
 
     // Not clickable. The card states the policy; the measurements (and the way through to them) live
     // in the charging card below. A whole-card tap here used to land on voltage and cycle counts,
@@ -520,12 +521,12 @@ private fun StatusCard(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        // The provenance line above says where the value was read; on a build under verification it
-        // must not be left to imply the hardware agreed.
-        if (underTest) {
+        // The provenance line above says where the value was read; on an unconfirmed build it must
+        // not be left to imply the hardware agreed.
+        if (enforcementUnverified) {
             Spacer(Modifier.height(4.dp))
             Text(
-                stringResource(R.string.dashboard_enforcement_testing_note),
+                stringResource(R.string.dashboard_enforcement_unverified_note),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.tertiary,
             )
@@ -1864,7 +1865,7 @@ private fun DashboardScreenEnforcementUnderTestPreview() = PreviewWrapper {
                     ChargePolicy.Unrestricted,
                 ),
                 controlEnabled = true,
-                enforcement = EnforcementStatus.UNDER_TEST,
+                enforcement = EnforcementStatus.UNVERIFIED,
                 syncVerification = true,
                 writeRequiresShizuku = true,
                 access = AccessSnapshot(

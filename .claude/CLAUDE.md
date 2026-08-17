@@ -20,9 +20,11 @@ allowlist** (mode `2` is not HyperOS-3-wide and cannot be probed at runtime).
 (OnePlus/Oppo/Realme) — **writes require Shizuku** (system namespace). **LineageOS charging control** (the private
 `lineagesettings` provider, keys `charging_control_enabled`/`_mode`/`_charging_limit`) is manufacturer-agnostic —
 it matches every LineageOS build that ships the provider (plus the system user), but control is gated on
-**enforcement observed on the device itself** (HAL enforcement is per-build, and a read-back proves only that the
-ROM stored the value): a device stays a candidate with controls off until the user runs a verification and the cap
-is seen holding, and loses them for good if the battery is seen charging past it. **Reads are unprivileged
+**enforcement evidence for that build** (HAL enforcement is per-build, and a read-back proves only that the ROM
+stored the value): a device stays a candidate with controls off until a maintainer qualified its codename or the
+user explicitly enables control on an unconfirmed build, and loses them for good if the battery is seen charging
+past the cap. Observation can only ever **refute** a cap, never confirm one — no passively observable signal tells
+a cap hold from a thermal or weak-supply pause. **Reads are unprivileged
 (ContentResolver), writes require Shizuku** (the shell UID holds `lineageos.permission.WRITE_SETTINGS`, which
 `WRITE_SECURE_SETTINGS` does not cover). **GrapheneOS charge limit**
 (`global battery_charge_limit`, binary FixedLimit(80)/Unrestricted) is gated to GrapheneOS identity (its

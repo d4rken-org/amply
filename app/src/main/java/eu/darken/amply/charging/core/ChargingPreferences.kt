@@ -106,7 +106,7 @@ class ChargingPreferences @Inject constructor(
 
     suspend fun verificationStartedForNow(): String? = verificationStarted.value()
 
-    /** Record the explicit "verify charge limiting on this device" opt-in for [buildIdentity]. */
+    /** Record the explicit "enable charge limiting anyway" opt-in for [buildIdentity]. */
     suspend fun startVerification(buildIdentity: String) {
         verificationStarted.value(buildIdentity)
     }

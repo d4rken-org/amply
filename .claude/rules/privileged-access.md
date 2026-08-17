@@ -143,9 +143,10 @@ the qualification ledger (`device-qualification` skill).
 ### LineageOS
 
 LineageOS control requires **all** of: LineageOS (`DeviceInfo.isLineageOs`), the `lineagesettings` provider
-present, the system user, and **observed enforcement evidence** for this exact build (see "Enforcement evidence
-gate" below). The adapter *matches* every provider-carrying LineageOS build; what it may *do* there is decided by
-the evidence, not by a codename.
+present, the system user, and clearing the **enforcement evidence gate** for this exact build (a maintainer
+codename, or the user's explicit opt-in on an unconfirmed build, and no refutation — see "Enforcement evidence gate"
+below). The adapter *matches* every provider-carrying LineageOS build; what it may *do* there is decided by the
+gate, not by a codename.
 
 **Detect LineageOS with the `org.lineageos.android` system feature, never `ro.lineage.build.version`.** All five
 `ro.lineage.*` properties are labelled `u:object_r:custom_version_prop:s0`, which SELinux denies to
@@ -155,8 +156,9 @@ adapter (verified on oriole / LineageOS 23.2 / Android 16). `hasSystemFeature` n
 permission. `lineageOsVersion` remains a **secondary identity signal** — `isLineageOs` ORs it in so derivatives that
 relabel the property still match — and is normally null on real hardware; it is not "diagnostics only".
 
-`QUALIFIED_CODENAMES` survives as the **maintainer fast path** only (still empty): a codename there skips
-verification entirely. It is deliberately no longer what makes the adapter reachable, because HAL capability is
+`QUALIFIED_CODENAMES` survives as the **maintainer fast path** only (still empty): a codename there is the ONLY
+route to the confirmed tier, since nothing Amply can observe confirms a cap (see below). It is deliberately no
+longer what makes the adapter reachable, because HAL capability is
 *build*-scoped — oriole exposed the LIMIT mode bit on LineageOS 20 and dropped it on 23.2 on identical hardware —
 so a bare codename entry claims more than any single qualification run proves. Add one only with a qualified device
 plus a ledger row, and only when you mean every build on that device.
@@ -177,8 +179,8 @@ Writable keys/domains (`LineageSettingWritePolicy`, independent of the adapter):
 
 **Crucial gate rationale:** the setting can be written while the `vendor.lineage.health.IChargingControl` HAL never
 actually limits (the `mIsLimitSet:false` class of bug) — setting readback does **not** prove hardware enforcement.
-That is why control is never granted on "any LineageOS device": the hardware must be proven, either by the
-maintainer (a ledger row) or by the user's own device under the enforcement evidence gate. The adapter also
+That is why control is never granted on "any LineageOS device": either the maintainer proved the hardware (a ledger
+row), or the user accepted an explicitly unconfirmed build that Amply keeps watching for a refutation. The adapter also
 **refuses** (reads
 `Unknown(unrecognizedValue=true)`) any native state it cannot restore exactly — AUTO/CUSTOM schedule modes, off-tick
 limits, or an absent/malformed `enabled` — so a temporary session never clobbers the user's own choice.
@@ -190,11 +192,11 @@ For adapters that set `ChargingAdapter.enforcementEvidenceRequired` (LineageOS t
 `AdapterRegistry.select()` therefore takes an explicit `EnforcementEvidenceState` — **no default**, so "the caller
 forgot", "not read yet" and "genuinely nothing stored" cannot collapse into control-enabled — and resolves a tier in
 this order: **REFUTED** (or a corrupt record, which may be one) → control off, contribution wanted; **CONFIRMED**
-(maintainer codename or a local confirmation) → control as probed; **UNDER_TEST** (the user started verification) →
-control as probed, but no surface may claim the cap is proven; otherwise **CANDIDATE** → control off. Callers that
-only need adapter *capabilities* pass `EnforcementEvidenceState.Loading`, which can never enable control. A probe
-that **already** refused control (secondary user, missing provider) short-circuits the whole resolution: enforcement
-stays null and no surface offers a verification the recorder could never observe.
+(a maintainer codename, and nothing else) → control as probed; **UNVERIFIED** (the user accepted the unconfirmed
+build) → control as probed, but no surface may claim the cap is proven; otherwise **CANDIDATE** → control off.
+Callers that only need adapter *capabilities* pass `EnforcementEvidenceState.Loading`, which can never enable
+control. A probe that **already** refused control (secondary user, missing provider) short-circuits the whole
+resolution: enforcement stays null and no surface offers an opt-in that could not change anything.
 
 The gate governs **new control only**. A restore the user is already owed — the session restore, its rollback, boot
 recovery — goes through `ChargingRepository.restorePersistent()`, which applies every adapter precondition but not
@@ -204,12 +206,17 @@ strand the device in the session's Unrestricted state.
 Evidence is produced by `charging/core/enforcement/`: a pure `EnforcementVerdictEngine` over the monitor's battery
 ticks, persisted by `EnforcementEvidenceStore`. Three properties are load-bearing and must not be relaxed:
 
-- **CONFIRM requires a hardware hold signal** (`ChargingAdapter.hardwareHoldSignal`, on LineageOS the AOSP
-  charge-policy state 4) on top of a sustained, level-pinned plateau. A plateau alone cannot distinguish a cap hold
-  from a thermal pause or a weak charger — `StatsLimitHitDetector.heldNow` fires on all of them — so an adapter
-  without the signal can never be confirmed, only refuted. **REFUTE keys on an upward level trend** through the cap
-  from any starting level, needs no hardware signal, and deliberately ignores the reported battery status, which a
-  ROM can misreport while charging past the limit.
+- **Observation can only refute, never confirm — `EnforcementVerdict` has exactly one value.** No passively
+  observable signal distinguishes a cap hold from a thermal or weak-supply pause. `EXTRA_CHARGING_STATUS` == 4
+  looked like one, but it is *session-scoped*: measured on a Pixel 6 / LineageOS 23.2, the extra read 4 while the
+  device was actively charging at level 70 under an 80% cap — it means "limit mode is enabled for this plug
+  session", exactly as `StatsLimitHitDetector`'s KDoc documents for Pixel. The only field that differs between a
+  cap hold and a thermal pause is `EXTRA_STATUS`, which both produce. So Amply never claims a cap is verified from
+  observation; the confirmed tier comes solely from physical qualification. Earning a real confirmation would take
+  a **guided two-cap challenge** (write a cap below the current level and watch charging cut, raise it and watch it
+  resume, cut again) — known, and deliberately not implemented. **REFUTE keys on an upward level trend** through
+  the cap from any starting level, needs no hardware signal, and deliberately ignores the reported battery status,
+  which a ROM can misreport while charging past the limit.
 - Evidence is scoped to a **composite build identity** (fingerprint + incremental + build time + provider version
   code, hashed). `Build.FINGERPRINT` alone is useless here: LineageOS spoofs it to stock.
 - A refutation is **terminal** for its scope, and a corrupt record is treated as a refutation. Both are fail-closed

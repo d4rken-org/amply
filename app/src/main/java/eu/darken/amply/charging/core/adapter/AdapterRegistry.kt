@@ -54,7 +54,8 @@ class AdapterRegistry @Inject constructor(
      * intent, the reconnect-gesture flag) pass [EnforcementEvidenceState.Loading], which resolves
      * fail-closed and can never enable control.
      *
-     * [verificationStarted] is whether the user opted this build into verification; it only ever
+     * [verificationStarted] is whether the user accepted control on this unconfirmed build (the
+     * `enforcement.verification_started_for` opt-in, kept under its original key); it only ever
      * *withholds* less, so it defaults to the conservative false.
      */
     fun select(
@@ -86,20 +87,21 @@ class AdapterRegistry @Inject constructor(
  *
  *  1. a refutation — or an undecodable record, which may be one — disables control and asks for a
  *     contribution, whatever else is true;
- *  2. a maintainer-qualified device or a local confirmation leaves control exactly as the probe
- *     decided. This step MUST precede step 4, or "no stored evidence" would override the
- *     maintainer fast path and turn every qualified device into a candidate;
- *  3. a user-started verification leaves control as probed, but the surfaces must not claim the cap
- *     is proven;
- *  4. otherwise the device is a candidate: control off until the user starts verification.
+ *  2. a maintainer-qualified device leaves control exactly as the probe decided. That is the only
+ *     route to CONFIRMED: physical qualification, never observation (see [EnforcementVerdictEngine]).
+ *     This step MUST precede step 4, or "no stored evidence" would override the maintainer fast path
+ *     and turn every qualified device into a candidate;
+ *  3. a user who accepted the unconfirmed build gets control as probed, but the surfaces must not
+ *     claim the cap holds;
+ *  4. otherwise the device is a candidate: control off until the user accepts it unconfirmed.
  *
  * [EnforcementEvidenceState.Loading] falls through to step 4 — fail-closed.
  *
  * A probe that already refused control (secondary user, missing provider) short-circuits before any
- * of it: enforcement stays **null**, so the surfaces show the specific probe reason and no
- * verification action. Verification is unobservable there anyway — the recorder refuses to observe
- * off the system user and `canApply` never becomes true — so offering it would start a check that
- * can never finish, on a card claiming controls are available.
+ * of it: enforcement stays **null**, so the surfaces show the specific probe reason and no opt-in
+ * action. Control is unreachable there anyway — the recorder refuses to observe off the system user
+ * and `canApply` never becomes true — so offering the opt-in would be an offer that changes nothing,
+ * on a card claiming controls are available.
  */
 internal fun resolveEnforcement(
     adapter: ChargingAdapter,
@@ -109,8 +111,8 @@ internal fun resolveEnforcement(
     verificationStarted: Boolean,
 ): AdapterSupport {
     if (!adapter.enforcementEvidenceRequired) return support
-    // The probe already said no for a reason the user cannot verify their way out of; keep that
-    // reason and leave enforcement unset rather than routing them into a check that cannot complete.
+    // The probe already said no for a reason the user cannot opt their way out of; keep that reason
+    // and leave enforcement unset rather than offering an opt-in that cannot change anything.
     if (!support.controlEnabled) return support
     val evidence = (evidenceState as? EnforcementEvidenceState.Present)
         ?.evidence
@@ -125,9 +127,8 @@ internal fun resolveEnforcement(
                 contributionWanted = true,
                 enforcement = EnforcementStatus.REFUTED,
             )
-        adapter.maintainerQualified(device) || evidence?.verdict == EnforcementVerdict.CONFIRMED ->
-            support.copy(enforcement = EnforcementStatus.CONFIRMED)
-        verificationStarted -> support.copy(enforcement = EnforcementStatus.UNDER_TEST)
+        adapter.maintainerQualified(device) -> support.copy(enforcement = EnforcementStatus.CONFIRMED)
+        verificationStarted -> support.copy(enforcement = EnforcementStatus.UNVERIFIED)
         else -> support.copy(
             controlEnabled = false,
             detail = R.string.adapter_detail_enforcement_candidate,

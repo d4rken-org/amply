@@ -3,13 +3,16 @@ package eu.darken.amply.charging.core.enforcement
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-/** What was observed about the charging hardware, never about the configured setting. */
+/**
+ * What was observed about the charging hardware, never about the configured setting.
+ *
+ * **One value on purpose.** Passive observation can only ever *refute* a cap — see
+ * [EnforcementVerdictEngine] for the measurement that removed the confirmation path. It stays an
+ * enum rather than collapsing into a boolean or disappearing so the stored wire format and its
+ * [SerialName] keep decoding unchanged.
+ */
 @Serializable
 enum class EnforcementVerdict {
-    /** The battery was observed held at the configured cap: the hardware acts on the setting. */
-    @SerialName("CONFIRMED")
-    CONFIRMED,
-
     /** The battery was observed charging past the configured cap: the setting is cosmetic here. */
     @SerialName("REFUTED")
     REFUTED,
@@ -20,8 +23,10 @@ enum class EnforcementVerdict {
  *
  * A stored wire format (see `code-style.md`): every property carries an explicit [SerialName] and a
  * default so a record written by an older build still decodes. [verdict] defaults to
- * [EnforcementVerdict.REFUTED] on purpose — a record that lost its verdict field must never read as
- * a claim of enforcement.
+ * [EnforcementVerdict.REFUTED] — a record that lost its verdict field must never read as a claim of
+ * enforcement. A record naming a verdict this build no longer knows does not decode at all and reads
+ * as [EnforcementEvidenceState.Corrupt], i.e. control off — the safe direction, and unreachable in
+ * practice since the confirmation path never shipped.
  *
  * @param buildIdentity see [composeBuildIdentity]; scopes the verdict to the exact ROM build it was
  *   observed on, because charge-control HAL capability is build-scoped, not device-scoped.
@@ -44,13 +49,20 @@ data class EnforcementEvidence(
 
 /** Where a device sits on the "does the hardware actually enforce the cap" question. */
 enum class EnforcementStatus {
-    /** No evidence yet and the user has not started verification: control stays off. */
+    /** No evidence and the user has not accepted the unconfirmed build: control stays off. */
     CANDIDATE,
 
-    /** The user started verification on this build: control is available but claims nothing. */
-    UNDER_TEST,
+    /**
+     * The user accepted control on an unconfirmed build: it is available, but nothing here shows the
+     * cap holding and nothing ever will — only a refutation can still arrive.
+     */
+    UNVERIFIED,
 
-    /** Maintainer-qualified, or locally observed holding at the cap. */
+    /**
+     * Maintainer-qualified: a device physically qualified against the protocol in the
+     * `device-qualification` skill. This is the ONLY route to a confirmed cap — local observation
+     * cannot produce one (see [EnforcementVerdictEngine]).
+     */
     CONFIRMED,
 
     /** Observed charging past the cap on this build: control is off and stays off. */

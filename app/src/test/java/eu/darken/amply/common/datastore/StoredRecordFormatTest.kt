@@ -171,7 +171,7 @@ class StoredRecordFormatTest {
             adapterId = "lineageos-chargingcontrol-v1",
             buildIdentity = "0123456789abcdef",
             algorithmVersion = 1,
-            verdict = EnforcementVerdict.CONFIRMED,
+            verdict = EnforcementVerdict.REFUTED,
             capPercent = 80,
             observedPercent = 79,
             observedAtWallMillis = 1_700_000_000_000L,
@@ -179,7 +179,7 @@ class StoredRecordFormatTest {
 
         json.encodeToString(EnforcementEvidence.serializer(), evidence) shouldBe
             """{"adapterId":"lineageos-chargingcontrol-v1","buildIdentity":"0123456789abcdef",""" +
-            """"algorithmVersion":1,"verdict":"CONFIRMED","capPercent":80,"observedPercent":79,""" +
+            """"algorithmVersion":1,"verdict":"REFUTED","capPercent":80,"observedPercent":79,""" +
             """"observedAtWallMillis":1700000000000}"""
     }
 

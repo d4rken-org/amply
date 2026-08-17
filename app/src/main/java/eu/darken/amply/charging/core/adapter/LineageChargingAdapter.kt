@@ -15,7 +15,6 @@ import eu.darken.amply.charging.core.access.LineageChargeReader
 import eu.darken.amply.charging.core.access.SettingMutation
 import eu.darken.amply.charging.core.access.SettingNamespace
 import eu.darken.amply.common.ca.toCaString
-import eu.darken.amply.stats.core.StatsLimitHitDetector
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -34,15 +33,25 @@ import javax.inject.Singleton
  * The gate is **two-layered**, because the two layers answer different questions:
  *
  *  - *Did the ROM accept the configuration?* — the write read-back ([VerificationStrategy.SYNC_READBACK]).
- *  - *Did the hardware act on it?* — observed enforcement. The HAL is device- AND build-dependent (some
- *    builds flip the setting but never limit — the `mIsLimitSet:false` class of bug; oriole exposed the
- *    LIMIT mode bit on LineageOS 20 and dropped it on 23.2 on identical hardware), and no read can
- *    answer it. So this adapter sets [enforcementEvidenceRequired]: it *matches* every LineageOS build
- *    that ships the settings provider, but control stays off until either the maintainer qualified the
- *    codename ([QUALIFIED_CODENAMES], the fast path, still empty) or the user ran a verification on
- *    their own device and the cap was observed holding. See
- *    `charging/core/enforcement/EnforcementVerdictEngine` and the ledger in
- *    `.claude/skills/device-qualification/`.
+ *  - *Did the hardware act on it?* — the HAL is device- AND build-dependent (some builds flip the
+ *    setting but never limit — the `mIsLimitSet:false` class of bug; oriole exposed the LIMIT mode bit
+ *    on LineageOS 20 and dropped it on 23.2 on identical hardware), and no read can answer it. So this
+ *    adapter sets [enforcementEvidenceRequired]: it *matches* every LineageOS build that ships the
+ *    settings provider, but control stays off until either the maintainer qualified the codename
+ *    ([QUALIFIED_CODENAMES], the fast path, still empty) or the user explicitly accepted the
+ *    unconfirmed build.
+ *
+ * **Amply never claims the cap is confirmed from observation here, and this adapter deliberately
+ * exposes no hardware hold signal.** `BatteryManager.EXTRA_CHARGING_STATUS` looked like one — a Pixel 6
+ * (`oriole`, LineageOS 23.2) holding at a 70% cap reports `Charging state: 4` — but the value is
+ * *session-scoped*: after raising the cap to 80 the same device was actively charging at level 70,
+ * ten points below the cap, and still reported 4. It means "limit mode is enabled for this plug
+ * session", not "charging is stopped right now", exactly as `StatsLimitHitDetector`'s KDoc documents
+ * for Pixel. Nothing else in the public broadcast separates a cap hold from a thermal or weak-supply
+ * pause either (only `status` differs, which a thermal pause produces too), so the only remaining
+ * evidence is **refutation**: a level observed climbing past the cap. See
+ * `charging/core/enforcement/EnforcementVerdictEngine` and the ledger in
+ * `.claude/skills/device-qualification/`.
  *
  * A LineageOS build **without** the provider no longer matches here at all and falls through to
  * [LineageLabAdapter] (generic diagnostics text): keeping provider presence in [probe]'s `matched`
@@ -73,19 +82,6 @@ class LineageChargingAdapter @Inject constructor(
     override val enforcementEvidenceRequired = true
 
     override fun maintainerQualified(device: DeviceInfo) = device.codename in qualifiedCodenames
-
-    /**
-     * LineageOS drives AOSP's charge-policy plumbing, so while its Charging Control HAL holds the
-     * battery at the limit the public battery broadcast reports
-     * [StatsLimitHitDetector.HARDWARE_HOLD_STATE] — `Charging state: 4`, observed on a Pixel 6
-     * (`oriole`, LineageOS 23.2) sitting at its cap. That is the corroboration a CONFIRMED verdict
-     * needs, because a passive plateau cannot tell a cap hold from a thermal or supply-induced pause.
-     *
-     * Unplugged the extra is a stale sticky value from the last plug session, so it is not evidence
-     * in either direction: null, which the verdict engine reads as "cannot confirm".
-     */
-    override fun hardwareHoldSignal(chargingStatus: Int?, plugged: Boolean): Boolean? =
-        if (plugged) chargingStatus == StatsLimitHitDetector.HARDWARE_HOLD_STATE else null
 
     override fun probe(device: DeviceInfo): AdapterSupport {
         val matched = device.isLineageOs && device.hasLineageSettingsProvider

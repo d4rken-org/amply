@@ -310,8 +310,8 @@ internal fun statusLine(
         // Controls are withheld on both of these, so whatever was once requested is not in force.
         EnforcementStatus.CANDIDATE -> context.getString(R.string.widget_status_enforcement_candidate)
         EnforcementStatus.REFUTED -> context.getString(R.string.widget_status_enforcement_refuted)
-        // Under test the setting is real but its effect is not established yet.
-        EnforcementStatus.UNDER_TEST -> context.getString(R.string.widget_status_testing_suffix, label)
+        // The setting is real, but nothing observable can show the hardware acting on it.
+        EnforcementStatus.UNVERIFIED -> context.getString(R.string.widget_status_unverified_suffix, label)
         EnforcementStatus.CONFIRMED, null -> label
     }
 }

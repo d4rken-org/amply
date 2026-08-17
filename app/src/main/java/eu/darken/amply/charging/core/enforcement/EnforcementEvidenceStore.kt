@@ -43,8 +43,7 @@ sealed interface EnforcementEvidenceState {
  *
  * Reads are **scoped**: a record from another ROM build or from an older
  * [EnforcementVerdictEngine.ALGORITHM_VERSION] reads as [EnforcementEvidenceState.Absent], since
- * charge-control HAL capability is build-scoped and an older heuristic's confirmation is not this
- * one's.
+ * charge-control HAL capability is build-scoped and an older heuristic's verdict is not this one's.
  */
 @Singleton
 class EnforcementEvidenceStore @Inject constructor(
@@ -66,24 +65,17 @@ class EnforcementEvidenceStore @Inject constructor(
     suspend fun currentState(): EnforcementEvidenceState = scope(decode(stored.value()))
 
     /**
-     * Persist [evidence], honouring the one asymmetry that matters: a REFUTED record for the same
-     * scope is terminal, so a later CONFIRMED must not overwrite it — a device that charged past its
-     * cap is not redeemed by a later plateau. A REFUTED verdict overwrites anything, including a
-     * corrupt record. A CONFIRMED verdict declines to overwrite a corrupt record: what it would
-     * replace is unknown, and unknown fails closed.
+     * Persist [evidence]. A refutation is **terminal**: an existing one for the same scope is kept as
+     * first observed rather than restamped, since nothing that can be observed later changes it (only
+     * a refutation is observable at all — see [EnforcementVerdictEngine]). It does overwrite a corrupt
+     * record: both fail closed, and the refutation is the more informative of the two.
      *
      * @return true when the store now holds exactly [evidence].
      */
     suspend fun record(evidence: EnforcementEvidence): Boolean {
         val encoded = encode(evidence)
         val updated = stored.update { raw ->
-            val current = decode(raw)
-            when {
-                evidence.verdict == EnforcementVerdict.REFUTED -> encoded
-                current is EnforcementEvidenceState.Corrupt -> raw
-                current.terminalFor(evidence) -> raw
-                else -> encoded
-            }
+            if (decode(raw).terminalFor(evidence)) raw else encoded
         }
         val accepted = updated.new == encoded
         log(TAG, Logging.Priority.INFO) {
@@ -124,7 +116,7 @@ class EnforcementEvidenceStore @Inject constructor(
     }
 }
 
-/** Whether the stored state blocks [candidate]: a refutation for the very same scope. */
+/** Whether the stored state is already terminal for [candidate]: a refutation for the very same scope. */
 private fun EnforcementEvidenceState.terminalFor(candidate: EnforcementEvidence): Boolean {
     val existing = (this as? EnforcementEvidenceState.Present)?.evidence ?: return false
     return existing.verdict == EnforcementVerdict.REFUTED &&

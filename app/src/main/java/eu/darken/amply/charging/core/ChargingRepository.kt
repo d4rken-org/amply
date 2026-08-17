@@ -82,7 +82,7 @@ data class ChargingState(
      * Where this device sits on the "does the hardware actually enforce the cap" question, or null
      * where the question doesn't apply (every adapter but LineageOS today). Surfaces must not present
      * a settings-level read-back as proof while this is
-     * [eu.darken.amply.charging.core.enforcement.EnforcementStatus.UNDER_TEST].
+     * [eu.darken.amply.charging.core.enforcement.EnforcementStatus.UNVERIFIED].
      */
     val enforcement: EnforcementStatus? = null,
     val contributionWanted: Boolean = false,
@@ -555,7 +555,7 @@ class ChargingRepository @Inject constructor(
     /** The gated selection, for callers that must observe the real control decision (the support report). */
     suspend fun currentSelection(): AdapterSelection = selectGated()
 
-    /** Record the user's explicit opt-in to verify charge limiting on this exact build. */
+    /** Record the user's explicit opt-in to charging control on this exact unconfirmed build. */
     suspend fun startEnforcementVerification() {
         preferences.startVerification(buildIdentity.current())
         refresh()

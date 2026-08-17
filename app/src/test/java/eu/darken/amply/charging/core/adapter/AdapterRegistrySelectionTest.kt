@@ -296,10 +296,10 @@ class AdapterRegistrySelectionTest {
     }
 
     @Test
-    fun `a secondary user is never offered a verification it cannot complete`() {
-        // The probe's own gate (the keys are device-wide, sessions are per-user) is not something a
-        // verification can answer: the recorder refuses to observe off the system user and canApply
-        // stays false, so an offered check would never finish. Enforcement stays unset, and the
+    fun `a secondary user is never offered an opt-in that changes nothing`() {
+        // The probe's own gate (the keys are device-wide, sessions are per-user) is not something the
+        // opt-in can answer: the recorder refuses to observe off the system user and canApply stays
+        // false, so accepting the build would enable nothing. Enforcement stays unset, and the
         // specific probe reason survives instead of being replaced by the gate's text.
         listOf(
             EnforcementEvidenceState.Absent,
@@ -332,20 +332,20 @@ class AdapterRegistrySelectionTest {
     }
 
     @Test
-    fun `a started verification enables control without claiming enforcement`() {
+    fun `accepting an unconfirmed build enables control without claiming enforcement`() {
         val selection = select(lineage(codename = "raven"), verificationStarted = true)
         selection.support.controlEnabled shouldBe true
-        selection.support.enforcement shouldBe EnforcementStatus.UNDER_TEST
+        selection.support.enforcement shouldBe EnforcementStatus.UNVERIFIED
     }
 
     @Test
-    fun `a local confirmation enables control`() {
-        val selection = select(
-            lineage(codename = "raven"),
-            evidence = lineageEvidence(EnforcementVerdict.CONFIRMED),
-        )
-        selection.support.controlEnabled shouldBe true
-        selection.support.enforcement shouldBe EnforcementStatus.CONFIRMED
+    fun `only a maintainer qualification can reach the confirmed tier`() {
+        // Local observation cannot confirm a cap at all (see EnforcementVerdictEngine), so an
+        // unqualified codename never leaves the candidate/unverified tiers however much it is observed.
+        select(lineage(codename = "raven")).support.enforcement shouldBe EnforcementStatus.CANDIDATE
+        select(lineage(codename = "raven"), verificationStarted = true).support.enforcement shouldBe
+            EnforcementStatus.UNVERIFIED
+        select(lineage(codename = "oriole")).support.enforcement shouldBe EnforcementStatus.CONFIRMED
     }
 
     @Test
@@ -368,9 +368,11 @@ class AdapterRegistrySelectionTest {
 
     @Test
     fun `evidence recorded for a different adapter does not apply`() {
+        // A refutation of the GrapheneOS adapter says nothing about the Lineage one, so the device
+        // stays an ordinary candidate instead of being locked out by someone else's verdict.
         val selection = select(
             lineage(codename = "raven"),
-            evidence = lineageEvidence(EnforcementVerdict.CONFIRMED, adapterId = "grapheneos-chargelimit-v1"),
+            evidence = lineageEvidence(EnforcementVerdict.REFUTED, adapterId = "grapheneos-chargelimit-v1"),
         )
         selection.support.controlEnabled shouldBe false
         selection.support.enforcement shouldBe EnforcementStatus.CANDIDATE
