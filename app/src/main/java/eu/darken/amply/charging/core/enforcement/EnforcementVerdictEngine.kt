@@ -103,8 +103,12 @@ object EnforcementVerdictEngine {
     /**
      * Bumped whenever this heuristic materially changes. Stored on every [EnforcementEvidence], so a
      * verdict produced by a different version stops counting instead of being trusted forever.
+     *
+     * Version 2 dropped the confirmation arm entirely (see above); a version-1 record was produced by
+     * a heuristic that also weighed a hardware signal now known to be session-scoped, so it reads as
+     * no evidence at all.
      */
-    const val ALGORITHM_VERSION = 1
+    const val ALGORITHM_VERSION = 2
 
     /**
      * How far ABOVE the cap the level must climb before enforcement is refuted. Upstream's

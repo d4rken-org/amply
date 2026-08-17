@@ -85,6 +85,17 @@ class EnforcementEvidenceStoreTest {
     }
 
     @Test
+    fun `a version 1 record does not count under version 2`() = runTest {
+        // Version 1's heuristic also weighed a hardware signal that turned out to be session-scoped,
+        // so its verdicts are not this version's. Pinned to the literal 1 rather than
+        // ALGORITHM_VERSION - 1: the point is the specific superseded heuristic, not "one behind".
+        EnforcementVerdictEngine.ALGORITHM_VERSION shouldBe 2
+        writeRaw(json.encodeToString(EnforcementEvidence.serializer(), evidence(algorithmVersion = 1)))
+
+        store.currentState() shouldBe EnforcementEvidenceState.Absent
+    }
+
+    @Test
     fun `a corrupt record reads corrupt, never absent`() = runTest {
         writeRaw("{not json")
         store.currentState() shouldBe EnforcementEvidenceState.Corrupt
