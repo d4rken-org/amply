@@ -19,6 +19,7 @@ import javax.inject.Inject
  */
 class BatteryReader @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val unitCalibration: BatteryUnitCalibration,
 ) {
     /** Reads its own sticky [Intent.ACTION_BATTERY_CHANGED] broadcast (for callers without one). */
     fun read(): BatteryReadout {
@@ -53,6 +54,7 @@ class BatteryReader @Inject constructor(
             cycleCount = cycleCount(battery),
             maxChargingCurrentMicroamps = battery.getIntExtra(EXTRA_MAX_CHARGING_CURRENT, ABSENT),
             maxChargingVoltageMicrovolts = battery.getIntExtra(EXTRA_MAX_CHARGING_VOLTAGE, ABSENT),
+            romMisreportsUnits = unitCalibration.romMisreportsUnits,
         )
     }
 

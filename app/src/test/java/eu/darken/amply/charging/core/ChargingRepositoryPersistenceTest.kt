@@ -11,6 +11,7 @@ import android.os.Build
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.test.core.app.ApplicationProvider
 import eu.darken.amply.battery.core.BatteryReader
+import eu.darken.amply.battery.core.BatteryUnitCalibration
 import eu.darken.amply.charging.core.access.AccessResolver
 import eu.darken.amply.charging.core.access.DirectSettingsBackend
 import eu.darken.amply.charging.core.access.LineageSettingsClient
@@ -134,7 +135,7 @@ class ChargingRepositoryPersistenceTest {
             settleScheduler = object : SettleScheduler {
                 override fun schedule(requestedAtMillis: Long) = Unit
             },
-            batteryReader = BatteryReader(context),
+            batteryReader = BatteryReader(context, BatteryUnitCalibration(context)),
             evidenceStore = EnforcementEvidenceStore(appDataStore, buildIdentity, SerializationModule.json()),
             buildIdentity = buildIdentity,
         )
