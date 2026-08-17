@@ -1778,8 +1778,8 @@ private fun DashboardScreenUnsupportedPreview() = PreviewWrapper {
     )
 }
 
-// A LineageOS build nobody has verified: the adapter matched and the keys are writable, but the
-// controls stay off until the user runs the check, so the card under the hero is the whole offer.
+// A LineageOS build nobody has qualified: the adapter matched and the keys are writable, but the
+// controls stay off until the user enables them anyway, so the card under the hero is the whole offer.
 @AmplyPreview
 @Composable
 private fun DashboardScreenEnforcementCandidatePreview() = PreviewWrapper {
@@ -1841,11 +1841,12 @@ private fun DashboardScreenEnforcementCandidatePreview() = PreviewWrapper {
     )
 }
 
-// Verification running: the controls are live and the limit reads back verified, but the hero shows
-// the shield instead of the green check and says so on its own line.
+// Accepted unconfirmed: the controls are live and the limit reads back verified, but nothing here
+// shows the cap holding, so the hero shows the shield instead of the green check and says so on its
+// own line.
 @AmplyPreview
 @Composable
-private fun DashboardScreenEnforcementUnderTestPreview() = PreviewWrapper {
+private fun DashboardScreenEnforcementUnverifiedPreview() = PreviewWrapper {
     DashboardScreen(
         state = DashboardUiState(
             onboardingComplete = true,
