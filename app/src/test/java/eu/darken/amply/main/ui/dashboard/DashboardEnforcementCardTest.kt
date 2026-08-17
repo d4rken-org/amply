@@ -102,6 +102,19 @@ class DashboardEnforcementCardTest {
     }
 
     @Test
+    fun `a secondary user is offered no verification`() {
+        // The registry leaves enforcement unset when the probe itself refused control (here: the
+        // Lineage keys are device-wide, so control is main-user only). Offering the check would start
+        // a verification the recorder never observes and that can therefore never complete.
+        var started = false
+        render(state(status = null, controlEnabled = false)) { started = true }
+
+        compose.onNodeWithTag(ENFORCEMENT_CARD_TEST_TAG).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.dashboard_enforcement_candidate_action)).assertDoesNotExist()
+        started shouldBe false
+    }
+
+    @Test
     fun `an adapter the question does not apply to shows no card at all`() {
         render(state(status = null, controlEnabled = true))
 

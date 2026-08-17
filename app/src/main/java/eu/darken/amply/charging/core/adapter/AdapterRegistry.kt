@@ -94,6 +94,12 @@ class AdapterRegistry @Inject constructor(
  *  4. otherwise the device is a candidate: control off until the user starts verification.
  *
  * [EnforcementEvidenceState.Loading] falls through to step 4 — fail-closed.
+ *
+ * A probe that already refused control (secondary user, missing provider) short-circuits before any
+ * of it: enforcement stays **null**, so the surfaces show the specific probe reason and no
+ * verification action. Verification is unobservable there anyway — the recorder refuses to observe
+ * off the system user and `canApply` never becomes true — so offering it would start a check that
+ * can never finish, on a card claiming controls are available.
  */
 internal fun resolveEnforcement(
     adapter: ChargingAdapter,
@@ -103,6 +109,9 @@ internal fun resolveEnforcement(
     verificationStarted: Boolean,
 ): AdapterSupport {
     if (!adapter.enforcementEvidenceRequired) return support
+    // The probe already said no for a reason the user cannot verify their way out of; keep that
+    // reason and leave enforcement unset rather than routing them into a check that cannot complete.
+    if (!support.controlEnabled) return support
     val evidence = (evidenceState as? EnforcementEvidenceState.Present)
         ?.evidence
         ?.takeIf { it.adapterId == adapter.id }
@@ -110,7 +119,7 @@ internal fun resolveEnforcement(
         evidence?.verdict == EnforcementVerdict.REFUTED || evidenceState is EnforcementEvidenceState.Corrupt ->
             support.copy(
                 controlEnabled = false,
-                detail = support.gateDetail(R.string.adapter_detail_enforcement_refuted),
+                detail = R.string.adapter_detail_enforcement_refuted,
                 // A device that accepts the setting and charges past it anyway is exactly the report
                 // the maintainer wants, even though the adapter itself is fully mapped.
                 contributionWanted = true,
@@ -121,16 +130,8 @@ internal fun resolveEnforcement(
         verificationStarted -> support.copy(enforcement = EnforcementStatus.UNDER_TEST)
         else -> support.copy(
             controlEnabled = false,
-            detail = support.gateDetail(R.string.adapter_detail_enforcement_candidate),
+            detail = R.string.adapter_detail_enforcement_candidate,
             enforcement = EnforcementStatus.CANDIDATE,
         )
     }
 }
-
-/**
- * The enforcement reason replaces the probe's detail only when the probe itself was happy. A device
- * that already failed a gate (secondary user, missing provider) keeps that more specific reason —
- * telling the user to run a verification they cannot complete would be the wrong instruction.
- */
-private fun AdapterSupport.gateDetail(enforcementDetail: Int): Int =
-    if (controlEnabled) enforcementDetail else detail

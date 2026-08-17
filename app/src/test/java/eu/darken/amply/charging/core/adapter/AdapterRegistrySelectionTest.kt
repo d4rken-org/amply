@@ -296,6 +296,31 @@ class AdapterRegistrySelectionTest {
     }
 
     @Test
+    fun `a secondary user is never offered a verification it cannot complete`() {
+        // The probe's own gate (the keys are device-wide, sessions are per-user) is not something a
+        // verification can answer: the recorder refuses to observe off the system user and canApply
+        // stays false, so an offered check would never finish. Enforcement stays unset, and the
+        // specific probe reason survives instead of being replaced by the gate's text.
+        listOf(
+            EnforcementEvidenceState.Absent,
+            EnforcementEvidenceState.Loading,
+            EnforcementEvidenceState.Corrupt,
+            lineageEvidence(EnforcementVerdict.REFUTED),
+        ).forEach { evidence ->
+            listOf(false, true).forEach { started ->
+                val support = select(
+                    lineage(codename = "raven", systemUser = false),
+                    evidence = evidence,
+                    verificationStarted = started,
+                ).support
+                support.controlEnabled shouldBe false
+                support.enforcement shouldBe null
+                support.detail shouldBe R.string.adapter_detail_secondary_user
+            }
+        }
+    }
+
+    @Test
     fun `an unqualified lineageos device is a candidate with control off`() {
         // The device is now reachable by the live adapter (that is the point of the widening), but until
         // enforcement is observed it must not be handed controls that present as protection.
