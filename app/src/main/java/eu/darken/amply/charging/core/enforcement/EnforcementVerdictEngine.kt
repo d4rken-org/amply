@@ -35,6 +35,13 @@ data class EnforcementSample(
     val percent: Int,
     val batteryStatus: Int?,
     val chargingStatus: Int?,
+    /**
+     * The selected adapter's hardware hold signal for this tick — see
+     * [eu.darken.amply.charging.core.adapter.ChargingAdapter.hardwareHoldSignal]. True is the ONLY
+     * value a CONFIRMED verdict is reachable from; false and null both leave the device under test.
+     * REFUTED never consults it.
+     */
+    val hardwareHold: Boolean?,
     val currentNowMicroamps: Int?,
     val policyGeneration: Long,
     val plugSessionId: Long,
@@ -45,14 +52,24 @@ data class EnforcementSample(
 /** Rolling observation state for one [EnforcementEpoch]; carried by the caller, never global. */
 data class EnforcementProgress(
     val epoch: EnforcementEpoch,
-    /** True once the level was observed strictly increasing inside this epoch. */
-    val rose: Boolean,
     /**
-     * The level a still-unbroken upward climb started from, or null. Only set from a sample at or
-     * below the cap: a device that was already above the cap when the epoch opened proves nothing by
-     * staying there. Cleared whenever the level drops (the climb is no longer monotonic).
+     * The level the still-unbroken climb started from, or null before the epoch's first valid sample.
+     * Only set from a sample at or below the cap: a device that was already above the cap when the
+     * epoch opened proves nothing by staying there. Reset to the new level whenever the level drops
+     * (the climb is no longer monotonic).
      */
     val climbBase: Int?,
+    /**
+     * True once the level was observed increasing since [climbBase], i.e. within the CURRENT climb.
+     * Phase-local on purpose: a global "rose at some point in this epoch" flag would let a rise from
+     * hours ago keep vouching for a plateau that the battery has since been *losing* charge into.
+     */
+    val climbRose: Boolean,
+    /**
+     * The level the running hold is pinned to, or null when no hold is running. A hold sustains only
+     * while the level stays EXACTLY here; any change (up or down) starts a new hold instead.
+     */
+    val holdPercent: Int?,
     val holdSamples: Int,
     val holdSinceElapsedMillis: Long,
     val lastPercent: Int,
@@ -69,17 +86,25 @@ data class EnforcementOutcome(
  *
  * The asymmetry between the two verdicts is deliberate.
  *
- * **CONFIRM** needs a *sustained plateau*, never one tick. [StatsLimitHitDetector.heldNow] answers
- * "limit likely reached" and fires on any plugged, below-full, NOT_CHARGING sample — thermal
- * suspension, a weak or renegotiating charger, and a kernel charge pause all qualify. So a
- * confirmation additionally requires an observed rise inside the same epoch, the level parked in the
- * band just below the cap, and the hold to persist across [MIN_HOLD_SAMPLES] samples spanning
- * [MIN_HOLD_MILLIS]. Anything weaker leaves the device a candidate.
+ * **CONFIRM is hardware-corroborated only.** A passive plateau cannot distinguish a cap hold from a
+ * thermal pause, a charger renegotiation or a weak supply: all of them park a plugged battery below
+ * full while [StatsLimitHitDetector.heldNow] reads true, and five minutes of it is well within what
+ * a hot phone on a weak charger produces. So a confirmation requires the adapter's
+ * [eu.darken.amply.charging.core.adapter.ChargingAdapter.hardwareHoldSignal] to report a hold
+ * ([EnforcementSample.hardwareHold] == true) *and* the behavioural evidence: a rise inside the
+ * current climb, [StatsLimitHitDetector.heldNow], the level parked in the band just below the cap,
+ * and that exact level sustained across [MIN_HOLD_SAMPLES] samples spanning [MIN_HOLD_MILLIS]. On an
+ * adapter with no hardware signal (`hardwareHold == null`) CONFIRMED is unreachable and the device
+ * simply stays under test forever — a stalled verification is a far cheaper error than claiming
+ * protection that isn't there. The known alternative for such adapters is a *behavioural* challenge
+ * (write a lower cap, watch charging cut, raise it, watch it resume, cut again), which no passive
+ * observer can fake; it is deliberately NOT implemented here.
  *
- * **REFUTE** keys on a *trend*, not a status sample. Requiring `BATTERY_STATUS_CHARGING` would be a
- * false-negative source: a ROM can carry the level past the cap while reporting UNKNOWN, NOT_CHARGING
- * or FULL, which would leave an earlier CONFIRMED build trusted indefinitely. Battery status and
- * charge current corroborate a hold but never gate the refutation.
+ * **REFUTE deliberately needs no hardware corroboration at all.** It keys on a *trend*: the level
+ * climbing past the cap is self-evident, whatever the hardware reports. Requiring
+ * `BATTERY_STATUS_CHARGING` or a hardware signal would be a false-negative source — a ROM can carry
+ * the level past the cap while reporting UNKNOWN, NOT_CHARGING or FULL, and a build with no hold
+ * signal must still be refutable, or an unenforced cap would go on looking harmless.
  */
 object EnforcementVerdictEngine {
 
@@ -94,6 +119,9 @@ object EnforcementVerdictEngine {
      * `targetPct - margin` and `Toggle` resumes only after falling that far, so a device that really
      * enforces legitimately rests a few points under the number Amply wrote. Covers that margin plus
      * level-reporting rounding.
+     *
+     * Only reachable on the hardware path: like [MIN_HOLD_SAMPLES] and [MIN_HOLD_MILLIS] it shapes a
+     * confirmation, and no confirmation happens without [EnforcementSample.hardwareHold] == true.
      */
     const val HOLD_BAND = 5
 
@@ -106,13 +134,18 @@ object EnforcementVerdictEngine {
      */
     const val OVERSHOOT_ALLOWANCE = 3
 
-    /** The charge monitor evaluates roughly every 30s, so this is a plateau, not a single reading. */
+    /**
+     * The charge monitor evaluates roughly every 30s, so this is a plateau, not a single reading.
+     * Reachable only on the hardware path (see [HOLD_BAND]).
+     */
     const val MIN_HOLD_SAMPLES = 3
 
     /**
-     * A thermal pause or a charger renegotiation resolves well inside this; five minutes of a plugged,
-     * non-advancing battery parked in the cap band is the cap holding. Measured on
-     * `elapsedRealtime`, so a wall-clock change cannot shorten it.
+     * How long the hardware-corroborated hold must persist. Measured on `elapsedRealtime`, so a
+     * wall-clock change cannot shorten it. This duration is NOT what separates a cap hold from a
+     * thermal pause — nothing about a plateau's length can, which is why the hardware signal gates
+     * the verdict; it only rejects a momentary coincidence. Reachable only on the hardware path
+     * (see [HOLD_BAND]).
      */
     const val MIN_HOLD_MILLIS = 5 * 60 * 1000L
 
@@ -124,15 +157,24 @@ object EnforcementVerdictEngine {
 
         val cap = epoch.capPercent
         val last = prior?.lastPercent
-        val rose = prior?.rose == true || (last != null && sample.percent > last)
+        // Phase-local climb tracking: a drop resets the base AND clears the rise, so the rise that
+        // vouches for a hold is always the one that led into it. Equal samples continue the climb
+        // (they are what a hold looks like) without ever establishing a rise on their own.
+        val dropped = last != null && sample.percent < last
         val climbBase = when {
-            // A drop breaks the monotonic climb; the new level re-opens one only from inside the cap.
-            last != null && sample.percent < last -> sample.percent.takeIf { it <= cap }
-            prior?.climbBase != null -> prior.climbBase
-            else -> sample.percent.takeIf { it <= cap }
+            last == null || dropped -> sample.percent.takeIf { it <= cap }
+            else -> prior?.climbBase
         }
-        val held = sample.percent in (cap - HOLD_BAND)..cap &&
-            (last == null || sample.percent <= last) &&
+        val climbRose = when {
+            last == null || dropped -> false
+            sample.percent > last -> true
+            else -> prior?.climbRose == true
+        }
+        // A hold pins to ONE level: "not increasing" would count a battery losing charge on a weak
+        // charger as held. Any change restarts the hold; the hardware signal gates it entirely.
+        val holding = sample.hardwareHold == true &&
+            climbRose &&
+            sample.percent in (cap - HOLD_BAND)..cap &&
             StatsLimitHitDetector.heldNow(
                 plugged = sample.plugged,
                 chargingStatus = sample.chargingStatus,
@@ -140,23 +182,30 @@ object EnforcementVerdictEngine {
                 percent = sample.percent,
                 currentNowMicroamps = sample.currentNowMicroamps,
             )
-        val holdSamples = if (held) (prior?.holdSamples ?: 0) + 1 else 0
+        val sustains = holding && prior?.holdPercent == sample.percent
+        val holdSamples = when {
+            !holding -> 0
+            sustains -> (prior?.holdSamples ?: 0) + 1
+            else -> 1
+        }
         val holdSince = when {
-            !held -> 0L
-            prior != null && prior.holdSamples > 0 -> prior.holdSinceElapsedMillis
+            !holding -> 0L
+            sustains -> prior?.holdSinceElapsedMillis ?: sample.elapsedRealtimeMillis
             else -> sample.elapsedRealtimeMillis
         }
         val progress = EnforcementProgress(
             epoch = epoch,
-            rose = rose,
             climbBase = climbBase,
+            climbRose = climbRose,
+            holdPercent = sample.percent.takeIf { holding },
             holdSamples = holdSamples,
             holdSinceElapsedMillis = holdSince,
             lastPercent = sample.percent,
         )
         val verdict = when {
             climbBase != null && sample.percent >= cap + OVERSHOOT_ALLOWANCE -> EnforcementVerdict.REFUTED
-            rose && holdSamples >= MIN_HOLD_SAMPLES &&
+            // hardwareHold, the rise and the band are already folded into `holding`.
+            holdSamples >= MIN_HOLD_SAMPLES &&
                 sample.elapsedRealtimeMillis - holdSince >= MIN_HOLD_MILLIS -> EnforcementVerdict.CONFIRMED
             else -> null
         }

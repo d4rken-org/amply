@@ -102,6 +102,22 @@ interface ChargingAdapter {
         false
 
     /**
+     * An unambiguous HARDWARE signal that the charging policy is holding the battery **right now**:
+     * true when the hardware reports a hold, false when it reports something else, and **null when
+     * this adapter has no such signal at all** — enforcement can then never be CONFIRMED on it (only
+     * REFUTED, which needs no hardware corroboration). Null by default, so no other adapter changes.
+     *
+     * Deliberately NOT folded into [decodeHardware]: that result also feeds the dashboard's
+     * observation and the settling/pending logic, and widening it for this question would change
+     * behavior far beyond the enforcement verdict.
+     *
+     * @param chargingStatus `BatteryManager.EXTRA_CHARGING_STATUS` from the same battery readout.
+     * @param plugged whether external power is present. Unplugged the sticky broadcast keeps its last
+     *   powered value, which is evidence of nothing — such adapters return null there.
+     */
+    fun hardwareHoldSignal(chargingStatus: Int?, plugged: Boolean): Boolean? = null
+
+    /**
      * Whether control on this adapter must be justified by **observed hardware enforcement** on the
      * user's own device, not by the settings read-back alone. Set where the setting can be written
      * and read back perfectly while the charging HAL never limits (LineageOS): such a device is a

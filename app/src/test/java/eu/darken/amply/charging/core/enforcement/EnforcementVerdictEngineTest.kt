@@ -23,6 +23,9 @@ class EnforcementVerdictEngineTest {
         policyGeneration: Long = 1L,
         plugSessionId: Long = 1L,
         batteryStatus: Int? = null,
+        // The adapter's hardware hold signal. Defaults to the behavioural `held` flag, i.e. the
+        // honest device shape: the ROM reports the hold state exactly while it is holding.
+        hardwareHold: Boolean? = held,
     ) = EnforcementSample(
         adapterId = "lineageos-chargingcontrol-v1",
         buildIdentity = "build-a",
@@ -33,6 +36,7 @@ class EnforcementVerdictEngineTest {
         batteryStatus = batteryStatus
             ?: if (held) BatteryManager.BATTERY_STATUS_NOT_CHARGING else BatteryManager.BATTERY_STATUS_CHARGING,
         chargingStatus = null,
+        hardwareHold = hardwareHold,
         currentNowMicroamps = null,
         policyGeneration = policyGeneration,
         plugSessionId = plugSessionId,
@@ -71,6 +75,36 @@ class EnforcementVerdictEngineTest {
     @Test
     fun `a rise followed by a sustained plateau confirms`() {
         run(riseThenHold(holdMinutes = 6)) shouldBe EnforcementVerdict.CONFIRMED
+    }
+
+    @Test
+    fun `a plateau without a hardware hold signal never confirms`() {
+        // The false-CONFIRM this gate exists for: a hot phone (or a weak charger) parks the battery
+        // at 75-80% under an 80% cap and reports NOT_CHARGING for well over five minutes. Behaviourally
+        // identical to a cap hold; only the hardware signal tells them apart.
+        listOf(false, null).forEach { signal ->
+            run(riseThenHold(holdMinutes = 20).map { it.copy(hardwareHold = signal) }) shouldBe null
+        }
+        // The same plateau WITH the signal is the real thing.
+        run(riseThenHold(holdMinutes = 20)) shouldBe EnforcementVerdict.CONFIRMED
+    }
+
+    @Test
+    fun `a declining level breaks the hold`() {
+        val rise = (70..cap).mapIndexed { index, percent -> sample(percent, index * 30_000L) }
+        val hold = (0 until 6).map { sample(percent = cap, elapsed = 330_000L + it * 30_000L, held = true) }
+        // The battery starts LOSING charge while plugged, with the hold signal still set. A plateau
+        // test that only required "not increasing" would keep counting this as a hold.
+        val decline = (0 until 40).map { sample(percent = cap - 1, elapsed = 510_000L + it * 30_000L, held = true) }
+        run(rise + hold + decline) shouldBe null
+    }
+
+    @Test
+    fun `a drop clears the rise, so the plateau after it cannot confirm on its own`() {
+        val rise = (70..(cap - 1)).mapIndexed { index, percent -> sample(percent, index * 30_000L) }
+        val drop = sample(percent = cap - 2, elapsed = 300_000L)
+        val plateau = (0 until 40).map { sample(percent = cap - 2, elapsed = 330_000L + it * 30_000L, held = true) }
+        run(rise + listOf(drop) + plateau) shouldBe null
     }
 
     @Test

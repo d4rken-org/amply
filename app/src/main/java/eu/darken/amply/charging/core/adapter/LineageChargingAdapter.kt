@@ -15,6 +15,7 @@ import eu.darken.amply.charging.core.access.LineageChargeReader
 import eu.darken.amply.charging.core.access.SettingMutation
 import eu.darken.amply.charging.core.access.SettingNamespace
 import eu.darken.amply.common.ca.toCaString
+import eu.darken.amply.stats.core.StatsLimitHitDetector
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -72,6 +73,19 @@ class LineageChargingAdapter @Inject constructor(
     override val enforcementEvidenceRequired = true
 
     override fun maintainerQualified(device: DeviceInfo) = device.codename in qualifiedCodenames
+
+    /**
+     * LineageOS drives AOSP's charge-policy plumbing, so while its Charging Control HAL holds the
+     * battery at the limit the public battery broadcast reports
+     * [StatsLimitHitDetector.HARDWARE_HOLD_STATE] — `Charging state: 4`, observed on a Pixel 6
+     * (`oriole`, LineageOS 23.2) sitting at its cap. That is the corroboration a CONFIRMED verdict
+     * needs, because a passive plateau cannot tell a cap hold from a thermal or supply-induced pause.
+     *
+     * Unplugged the extra is a stale sticky value from the last plug session, so it is not evidence
+     * in either direction: null, which the verdict engine reads as "cannot confirm".
+     */
+    override fun hardwareHoldSignal(chargingStatus: Int?, plugged: Boolean): Boolean? =
+        if (plugged) chargingStatus == StatsLimitHitDetector.HARDWARE_HOLD_STATE else null
 
     override fun probe(device: DeviceInfo): AdapterSupport {
         val matched = device.isLineageOs && device.hasLineageSettingsProvider
