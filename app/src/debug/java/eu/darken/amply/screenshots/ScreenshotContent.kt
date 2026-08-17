@@ -67,9 +67,13 @@ internal fun ReconnectGestureContent() = PreviewWrapper {
         gestureEnabled = true,
         anyLevelEnabled = false,
         canEnableGesture = true,
+        // A two-policy device, so the shot stays on the gesture options themselves.
+        availablePolicies = listOf(ChargePolicy.FixedLimit(80), ChargePolicy.Unrestricted),
+        selectedPolicyIds = listOf(ChargePolicy.FixedLimit(80).stableId, ChargePolicy.Unrestricted.stableId),
         onBack = {},
         onGestureEnabledChange = {},
         onAnyLevelChange = {},
+        onNotificationPolicyToggle = { _, _ -> },
     )
 }
 

@@ -453,6 +453,8 @@ class MainActivity : ComponentActivity() {
                             // Exactly the dashboard card's gate, so settings can never switch the
                             // gesture on where the card correctly forbids it.
                             canEnableGesture = state.charging.reconnectSupported && state.charging.canApply,
+                            availablePolicies = state.notificationActionPolicies,
+                            selectedPolicyIds = state.notificationActionSelection,
                             onBack = { destination = SettingsDestination.SETTINGS },
                             onGestureEnabledChange = { enabled ->
                                 if (enabled) {
@@ -462,6 +464,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             onAnyLevelChange = viewModel::setQuickFullChargeAnyLevel,
+                            onNotificationPolicyToggle = viewModel::toggleGestureNotificationPolicy,
                         )
                         SettingsDestination.CHARGING_HISTORY_SETTINGS -> ChargingHistorySettingsScreen(
                             // Both values come from already-resolved sources (the dashboard state and

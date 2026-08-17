@@ -413,6 +413,8 @@
     <string name="settings_reconnect_enabled_unavailable">Not available on this device</string>
     <string name="settings_reconnect_any_level_title">Any charge level</string>
     <string name="settings_reconnect_any_level_body" formatted="false">Arm the gesture whenever a protective policy is detected, not just while the 80% limit is holding the battery.</string>
+    <string name="settings_reconnect_notification_actions_category">Notification buttons</string>
+    <string name="settings_reconnect_notification_actions_hint">Pick up to three charge modes. They appear as buttons on the reconnect-gesture notification and switch your charging permanently.</string>
     <string name="settings_reconnect_any_level_hint">More sensitive: any unplug/replug of 2–10 seconds starts a full charge, e.g. also below 80%. Momentary power cuts shorter than 2 seconds, like a car cutting USB power while starting, never trigger.</string>
     <string name="dashboard_shizuku_title">Better with Shizuku</string>
     <string name="dashboard_shizuku_body">Shizuku gives Amply exact policy readback instead of relying on hardware state and the last request.</string>

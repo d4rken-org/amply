@@ -41,6 +41,7 @@ import eu.darken.amply.fullcharge.core.FullChargeStore
 import eu.darken.amply.fullcharge.core.InterruptionEvent
 import eu.darken.amply.fullcharge.core.InterruptionStore
 import eu.darken.amply.fullcharge.core.ServiceDispatch
+import eu.darken.amply.fullcharge.core.resolveQuickActionPolicies
 import eu.darken.amply.main.core.DeviceSupportReport
 import eu.darken.amply.main.core.DeviceSupportReporter
 import eu.darken.amply.main.core.OnboardingSettings
@@ -94,6 +95,13 @@ data class DashboardUiState(
     val onboardingComplete: Boolean? = null,
     val quickFullChargeEnabled: Boolean = false,
     val quickFullChargeAnyLevel: Boolean = false,
+    /**
+     * The charge modes the reconnect notification's buttons can be picked from, and the resolved
+     * current pick. Empty until an adapter is resolved — the picker withholds until then, since the
+     * capability defaults would briefly offer choices the resolved adapter forbids.
+     */
+    val notificationActionPolicies: List<ChargePolicy> = emptyList(),
+    val notificationActionSelection: List<String> = emptyList(),
     val deviceReport: DeviceSupportReport? = null,
     val quickAccess: QuickAccessState = QuickAccessState(),
     /** True once the initial widget-presence check has completed; the promo card hides until then. */
@@ -154,11 +162,20 @@ class DashboardViewModel @Inject constructor(
     /** Emitted when a gated affordance was tapped without the entitlement; the root navigates. */
     val upgradeRequiredEvents = SingleEventFlow<Unit>()
 
-    // The typed combine overloads stop at five flows; the two gesture booleans are pre-combined.
+    // The typed combine overloads stop at five flows; the gesture settings are pre-combined.
     private val gestureFlags = combine(
         fullChargeStore.quickFullChargeEnabled.flow,
         fullChargeStore.quickFullChargeAnyLevel.flow,
-    ) { enabled, anyLevel -> enabled to anyLevel }
+        fullChargeStore.gestureNotificationPolicies.flow,
+    ) { enabled, anyLevel, notificationPolicies ->
+        GestureFlags(enabled, anyLevel, notificationPolicies)
+    }
+
+    private data class GestureFlags(
+        val enabled: Boolean,
+        val anyLevel: Boolean,
+        val notificationPolicyIds: List<String>?,
+    )
 
     // Grouped so the outer combine keeps one slot each: the live battery readout, the alarm config,
     // the notifications-blocked flag, the interrupted-session warning, and the entitlement.
@@ -208,13 +225,27 @@ class DashboardViewModel @Inject constructor(
             onboardingSettings.isComplete.flow,
             gestureFlags,
             deviceReport,
-        ) { charging, session, onboardingComplete, (quickFullChargeEnabled, quickFullChargeAnyLevel), report ->
+        ) { charging, session, onboardingComplete, gesture, report ->
+            // Only a resolved adapter states what this device can do; before that the permissive
+            // capability defaults would offer a pick the resolved adapter may forbid.
+            val defaultProtective = charging.defaultProtectivePolicy
+            val actionsResolvable = charging.adapterResolved && defaultProtective != null
             DashboardUiState(
                 charging = charging,
                 session = session,
                 onboardingComplete = onboardingComplete,
-                quickFullChargeEnabled = quickFullChargeEnabled,
-                quickFullChargeAnyLevel = quickFullChargeAnyLevel,
+                quickFullChargeEnabled = gesture.enabled,
+                quickFullChargeAnyLevel = gesture.anyLevel,
+                notificationActionPolicies = if (actionsResolvable) charging.supportedPolicies else emptyList(),
+                notificationActionSelection = if (actionsResolvable) {
+                    resolveQuickActionPolicies(
+                        gesture.notificationPolicyIds,
+                        charging.supportedPolicies,
+                        defaultProtective!!,
+                    ).map { it.stableId }
+                } else {
+                    emptyList()
+                },
                 deviceReport = report,
             )
         },
@@ -485,6 +516,28 @@ class DashboardViewModel @Inject constructor(
             log(TAG, Logging.Priority.WARN) { "Watcher ${watcher.id} isEnabled failed: ${it.message}" }
             false
         }
+    }
+
+    /**
+     * The store applies the change transactionally against the adapter passed here, so a rapid
+     * second tap cannot write a selection derived from the pre-tap state.
+     */
+    fun toggleGestureNotificationPolicy(policy: ChargePolicy, selected: Boolean) = viewModelScope.launch {
+        log(TAG, Logging.Priority.INFO) { "toggleGestureNotificationPolicy(${policy.stableId}, $selected)" }
+        val charging = repository.state.value
+        val defaultProtective = charging.defaultProtectivePolicy ?: return@launch
+        fullChargeStore.toggleGestureNotificationPolicy(
+            policy = policy,
+            selected = selected,
+            supported = charging.supportedPolicies,
+            defaultProtective = defaultProtective,
+        )
+        // Same nudge as the other gesture options: a running monitor re-renders its notification
+        // with the new buttons now instead of on the next broadcast.
+        ContextCompat.startForegroundService(
+            context,
+            Intent(context, ChargeSessionService::class.java).setAction(ChargeSessionService.ACTION_MONITOR),
+        )
     }
 
     fun setQuickFullChargeAnyLevel(enabled: Boolean) = viewModelScope.launch {

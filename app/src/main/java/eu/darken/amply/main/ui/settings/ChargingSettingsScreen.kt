@@ -2,6 +2,8 @@ package eu.darken.amply.main.ui.settings
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.twotone.ArrowBack
 import androidx.compose.material.icons.twotone.BatteryChargingFull
@@ -17,8 +19,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import eu.darken.amply.R
+import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
+import eu.darken.amply.common.settings.QuickActionPolicyPicker
 import eu.darken.amply.common.settings.SettingsCategoryHeader
 import eu.darken.amply.common.settings.SettingsSwitchItem
 
@@ -28,15 +32,22 @@ import eu.darken.amply.common.settings.SettingsSwitchItem
  * correctly forbids it, leaving an "On" preference that either stops immediately or strands a useless
  * foreground monitor. The master row stays interactive while the gesture is already enabled, so an
  * unsupported configuration can always be turned back off.
+ *
+ * [availablePolicies] is empty until an adapter is resolved, and the notification-button section is
+ * shown only where there is something to choose (more than two policies) on a device that can use the
+ * gesture at all — the buttons only ever appear on that notification.
  */
 @Composable
 fun ChargingSettingsScreen(
     gestureEnabled: Boolean,
     anyLevelEnabled: Boolean,
     canEnableGesture: Boolean,
+    availablePolicies: List<ChargePolicy>,
+    selectedPolicyIds: List<String>,
     onBack: () -> Unit,
     onGestureEnabledChange: (Boolean) -> Unit,
     onAnyLevelChange: (Boolean) -> Unit,
+    onNotificationPolicyToggle: (ChargePolicy, Boolean) -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -53,7 +64,11 @@ fun ChargingSettingsScreen(
             )
         },
     ) { padding ->
-        Column(Modifier.padding(padding)) {
+        Column(
+            Modifier
+                .padding(padding)
+                .verticalScroll(rememberScrollState()),
+        ) {
             SettingsCategoryHeader(stringResource(R.string.settings_reconnect_category))
             val masterInteractive = gestureEnabled || canEnableGesture
             SettingsSwitchItem(
@@ -82,9 +97,31 @@ fun ChargingSettingsScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (availablePolicies.size > 2 && masterInteractive) {
+                SettingsCategoryHeader(
+                    stringResource(R.string.settings_reconnect_notification_actions_category),
+                )
+                QuickActionPolicyPicker(
+                    availablePolicies = availablePolicies,
+                    selectedPolicyIds = selectedPolicyIds,
+                    onToggle = onNotificationPolicyToggle,
+                    // The buttons live on the gesture notification, so there is nothing to pick
+                    // while the gesture is off — the section still shows what it would configure.
+                    rowsEnabled = gestureEnabled,
+                )
+                Text(
+                    stringResource(R.string.settings_reconnect_notification_actions_hint),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
+
+// A two-policy adapter: nothing to pick, so the notification-button section stays hidden.
+private val binaryPolicies = listOf(ChargePolicy.FixedLimit(80), ChargePolicy.Unrestricted)
 
 @AmplyPreview
 @Composable
@@ -93,9 +130,12 @@ private fun ChargingSettingsScreenPreview() = PreviewWrapper {
         gestureEnabled = true,
         anyLevelEnabled = true,
         canEnableGesture = true,
+        availablePolicies = binaryPolicies,
+        selectedPolicyIds = binaryPolicies.map { it.stableId },
         onBack = {},
         onGestureEnabledChange = {},
         onAnyLevelChange = {},
+        onNotificationPolicyToggle = { _, _ -> },
     )
 }
 
@@ -106,9 +146,12 @@ private fun ChargingSettingsScreenDisabledPreview() = PreviewWrapper {
         gestureEnabled = false,
         anyLevelEnabled = false,
         canEnableGesture = true,
+        availablePolicies = binaryPolicies,
+        selectedPolicyIds = binaryPolicies.map { it.stableId },
         onBack = {},
         onGestureEnabledChange = {},
         onAnyLevelChange = {},
+        onNotificationPolicyToggle = { _, _ -> },
     )
 }
 
@@ -119,8 +162,34 @@ private fun ChargingSettingsScreenUnavailablePreview() = PreviewWrapper {
         gestureEnabled = false,
         anyLevelEnabled = false,
         canEnableGesture = false,
+        availablePolicies = emptyList(),
+        selectedPolicyIds = emptyList(),
         onBack = {},
         onGestureEnabledChange = {},
         onAnyLevelChange = {},
+        onNotificationPolicyToggle = { _, _ -> },
+    )
+}
+
+/** A policy-rich device: the notification-button picker is only reachable here. */
+@AmplyPreview
+@Composable
+private fun ChargingSettingsScreenWithNotificationButtonsPreview() = PreviewWrapper {
+    ChargingSettingsScreen(
+        gestureEnabled = true,
+        anyLevelEnabled = false,
+        canEnableGesture = true,
+        availablePolicies = listOf(
+            ChargePolicy.FixedLimit(80),
+            ChargePolicy.FixedLimit(90),
+            ChargePolicy.Adaptive,
+            ChargePolicy.PauseAtFull,
+            ChargePolicy.Unrestricted,
+        ),
+        selectedPolicyIds = listOf("fixed:80", "adaptive", "unrestricted"),
+        onBack = {},
+        onGestureEnabledChange = {},
+        onAnyLevelChange = {},
+        onNotificationPolicyToggle = { _, _ -> },
     )
 }
