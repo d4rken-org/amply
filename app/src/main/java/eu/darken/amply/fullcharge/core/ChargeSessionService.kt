@@ -344,7 +344,7 @@ class ChargeSessionService : Service() {
             registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
                 ?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0)
         }.getOrNull() ?: 0
-        return (raw != 0) to plugKindOf(raw)
+        return (raw != 0) to PlugKind.fromExtraPlugged(raw)
     }
 
     /**
@@ -433,7 +433,7 @@ class ChargeSessionService : Service() {
         val battery = intent ?: registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val pluggedRaw = battery?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
         val plugged = pluggedRaw != 0
-        val plugKind = plugKindOf(pluggedRaw)
+        val plugKind = PlugKind.fromExtraPlugged(pluggedRaw)
         val status = battery?.getIntExtra(
             BatteryManager.EXTRA_STATUS,
             BatteryManager.BATTERY_STATUS_UNKNOWN,
@@ -1004,21 +1004,5 @@ class ChargeSessionService : Service() {
         const val ACTION_SET_PERSISTENT_POLICY = "eu.darken.amply.action.SET_PERSISTENT_POLICY"
         const val ACTION_EVALUATE_RULES = "eu.darken.amply.action.EVALUATE_CHARGE_RULES"
         const val EXTRA_TARGET_POLICY = "eu.darken.amply.extra.TARGET_POLICY"
-
-        /**
-         * The charger class from `BatteryManager.EXTRA_PLUGGED`. Null for unplugged and for a value
-         * this build does not know — an unknown charger must not silently satisfy a rule that names
-         * specific charger types.
-         */
-        // BATTERY_PLUGGED_DOCK postdates minSdk, but these are compile-time constants that inline —
-        // an older platform simply never reports the value.
-        @Suppress("InlinedApi")
-        internal fun plugKindOf(extraPlugged: Int): PlugKind? = when (extraPlugged) {
-            BatteryManager.BATTERY_PLUGGED_AC -> PlugKind.AC
-            BatteryManager.BATTERY_PLUGGED_USB -> PlugKind.USB
-            BatteryManager.BATTERY_PLUGGED_WIRELESS -> PlugKind.WIRELESS
-            BatteryManager.BATTERY_PLUGGED_DOCK -> PlugKind.DOCK
-            else -> null
-        }
     }
 }

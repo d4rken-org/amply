@@ -1,5 +1,6 @@
 package eu.darken.amply.rules.core
 
+import android.os.BatteryManager
 import eu.darken.amply.charging.core.ChargePolicy
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -17,6 +18,27 @@ enum class PlugKind {
     @SerialName("WIRELESS") WIRELESS,
 
     @SerialName("DOCK") DOCK,
+
+    ;
+
+    companion object {
+        /**
+         * The charger class from `BatteryManager.EXTRA_PLUGGED`. Null for unplugged **and** for a
+         * value this build does not know — an unknown charger must not silently satisfy a rule that
+         * names specific charger types.
+         *
+         * BATTERY_PLUGGED_DOCK postdates minSdk, but these are compile-time constants that inline —
+         * an older platform simply never reports the value.
+         */
+        @Suppress("InlinedApi")
+        fun fromExtraPlugged(value: Int): PlugKind? = when (value) {
+            BatteryManager.BATTERY_PLUGGED_AC -> AC
+            BatteryManager.BATTERY_PLUGGED_USB -> USB
+            BatteryManager.BATTERY_PLUGGED_WIRELESS -> WIRELESS
+            BatteryManager.BATTERY_PLUGGED_DOCK -> DOCK
+            else -> null
+        }
+    }
 }
 
 /**
