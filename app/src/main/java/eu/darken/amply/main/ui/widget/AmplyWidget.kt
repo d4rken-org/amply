@@ -302,12 +302,17 @@ internal fun statusLine(
         )
     }
     val label = widgetLabel(context, state.observation.policyOrNull() ?: requestedTarget)
-    // While a build is under verification the setting is real but its effect is not established, so
-    // the widget must not put a bare "Limited to 80%" on the home screen.
-    return if (state.enforcement == EnforcementStatus.UNDER_TEST) {
-        context.getString(R.string.widget_status_testing_suffix, label)
-    } else {
-        label
+    // The enforcement tier is resolved BEFORE the steady label, not as a special case after it: the
+    // label falls back to the last requested target, which survives a refutation and an OTA that
+    // resets a confirmed build to candidate. Only a confirmed build — or an adapter the question
+    // doesn't apply to — may put a bare "Limited to 80%" on the home screen.
+    return when (state.enforcement) {
+        // Controls are withheld on both of these, so whatever was once requested is not in force.
+        EnforcementStatus.CANDIDATE -> context.getString(R.string.widget_status_enforcement_candidate)
+        EnforcementStatus.REFUTED -> context.getString(R.string.widget_status_enforcement_refuted)
+        // Under test the setting is real but its effect is not established yet.
+        EnforcementStatus.UNDER_TEST -> context.getString(R.string.widget_status_testing_suffix, label)
+        EnforcementStatus.CONFIRMED, null -> label
     }
 }
 
