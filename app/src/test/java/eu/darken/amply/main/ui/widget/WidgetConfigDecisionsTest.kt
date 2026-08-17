@@ -39,4 +39,20 @@ class WidgetConfigDecisionsTest {
         resolveWidgetConfigCompletion(saveAttempted = true, saveSucceeded = false) shouldBe
             WidgetConfigCompletion(updateWidget = false, result = WidgetConfigResult.STAY_RETRY)
     }
+
+    /**
+     * What the completion guard rests on: it re-arms the screen's controls in the STAY_RETRY branch
+     * only, so every other outcome has to be one that ends the activity. A new outcome that stays on
+     * the screen would leave the controls permanently inert.
+     */
+    @Test
+    fun `a failed save is the only outcome that stays on the screen`() {
+        WidgetConfigResult.entries.filter { it != WidgetConfigResult.STAY_RETRY } shouldBe
+            listOf(WidgetConfigResult.FINISH_OK)
+        listOf(
+            resolveWidgetConfigCompletion(saveAttempted = false, saveSucceeded = false),
+            resolveWidgetConfigCompletion(saveAttempted = false, saveSucceeded = true),
+            resolveWidgetConfigCompletion(saveAttempted = true, saveSucceeded = true),
+        ).forEach { it.result shouldBe WidgetConfigResult.FINISH_OK }
+    }
 }

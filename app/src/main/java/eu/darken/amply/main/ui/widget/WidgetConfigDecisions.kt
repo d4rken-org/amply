@@ -30,6 +30,9 @@ internal fun resolveWidgetConfigEntry(appWidgetId: Int, providerMatches: Boolean
  *
  * The widget-update outcome is deliberately **not** an input: rendering is best-effort (the next
  * broadcast re-renders anyway) and must never turn a stored configuration into a discarded widget.
+ *
+ * [STAY_RETRY] is therefore the only re-entrant outcome — the only one that hands the screen back to
+ * the user — which is what lets the completion guard re-arm the controls exactly there.
  */
 internal enum class WidgetConfigResult {
     FINISH_OK,

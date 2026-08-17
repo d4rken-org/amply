@@ -39,6 +39,7 @@ class WidgetConfigScreenTest {
 
     private fun screen(
         state: WidgetConfigState,
+        completionInFlight: Boolean = false,
         onToggle: (ChargePolicy, Boolean) -> Unit = { _, _ -> },
         onConfirm: () -> Unit = {},
         onDone: () -> Unit = {},
@@ -47,6 +48,7 @@ class WidgetConfigScreenTest {
     ) = compose.setContent {
         WidgetConfigScreen(
             state = state,
+            completionInFlight = completionInFlight,
             onToggle = onToggle,
             onConfirm = onConfirm,
             onDone = onDone,
@@ -87,9 +89,9 @@ class WidgetConfigScreenTest {
     }
 
     @Test
-    fun `confirming is impossible while a save is in flight`() {
+    fun `confirming is impossible while a completion is in flight`() {
         var confirmed = 0
-        screen(ready.copy(saving = true), onConfirm = { confirmed++ })
+        screen(ready, completionInFlight = true, onConfirm = { confirmed++ })
 
         compose.onNodeWithText(string(R.string.widget_config_confirm_action))
             .performScrollTo()
@@ -97,6 +99,58 @@ class WidgetConfigScreenTest {
             .performClick()
 
         compose.runOnIdle { confirmed shouldBe 0 }
+    }
+
+    @Test
+    fun `the picker rows are inert while a completion is in flight`() {
+        var toggled = 0
+        screen(ready, completionInFlight = true, onToggle = { _, _ -> toggled++ })
+
+        compose.onNodeWithText(string(R.string.charging_policy_adaptive_label))
+            .performScrollTo()
+            .performClick()
+
+        compose.runOnIdle { toggled shouldBe 0 }
+    }
+
+    /**
+     * Leaving during a completion is what would strand a stored configuration behind a CANCELED
+     * result, so the confirming exits of the non-picker states go inert with it.
+     */
+    @Test
+    fun `the way out is inert while a completion is in flight`() {
+        var done = 0
+        screen(WidgetConfigState.Loading, completionInFlight = true, onDone = { done++ })
+
+        compose.onNodeWithText(string(R.string.widget_config_done_action))
+            .assertIsNotEnabled()
+            .performClick()
+
+        compose.runOnIdle { done shouldBe 0 }
+    }
+
+    @Test
+    fun `retrying is inert while a completion is in flight`() {
+        var retried = 0
+        screen(WidgetConfigState.Error, completionInFlight = true, onRetry = { retried++ })
+
+        compose.onNodeWithText(string(R.string.widget_config_retry_action))
+            .assertIsNotEnabled()
+            .performClick()
+
+        compose.runOnIdle { retried shouldBe 0 }
+    }
+
+    @Test
+    fun `the upgrade link is inert while a completion is in flight`() {
+        var upgraded = 0
+        screen(WidgetConfigState.Locked, completionInFlight = true, onUpgrade = { upgraded++ })
+
+        compose.onNodeWithText(string(R.string.widget_config_upgrade_action))
+            .assertIsNotEnabled()
+            .performClick()
+
+        compose.runOnIdle { upgraded shouldBe 0 }
     }
 
     @Test

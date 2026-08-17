@@ -29,10 +29,15 @@ import eu.darken.amply.common.settings.QuickActionPolicyPicker
  * Every state — including the ones with nothing to pick — offers a confirming action, because the
  * AppWidget host discards a widget whose configuration ends in RESULT_CANCELED on API 26–30. The
  * upgrade link is never the only way out of the locked state.
+ *
+ * [completionInFlight] covers the window between a confirming action and the result it produces:
+ * every control goes inert, so a second tap cannot start a competing completion or leave the screen
+ * while the one running still owes a result.
  */
 @Composable
 fun WidgetConfigScreen(
     state: WidgetConfigState,
+    completionInFlight: Boolean,
     onToggle: (ChargePolicy, Boolean) -> Unit,
     onConfirm: () -> Unit,
     onDone: () -> Unit,
@@ -60,7 +65,7 @@ fun WidgetConfigScreen(
                         availablePolicies = state.availablePolicies,
                         selectedPolicyIds = state.selectedPolicyIds,
                         onToggle = onToggle,
-                        rowsEnabled = !state.saving,
+                        rowsEnabled = !completionInFlight,
                     )
                     Message(stringResource(R.string.widget_config_picker_hint))
                     if (state.saveFailed) {
@@ -80,21 +85,21 @@ fun WidgetConfigScreen(
                 horizontalArrangement = Arrangement.End,
             ) {
                 if (state is WidgetConfigState.Locked) {
-                    TextButton(onClick = onUpgrade) {
+                    TextButton(onClick = onUpgrade, enabled = !completionInFlight) {
                         Text(stringResource(R.string.widget_config_upgrade_action))
                     }
                 }
                 if (state is WidgetConfigState.Error) {
-                    TextButton(onClick = onRetry) {
+                    TextButton(onClick = onRetry, enabled = !completionInFlight) {
                         Text(stringResource(R.string.widget_config_retry_action))
                     }
                 }
                 if (state is WidgetConfigState.Ready) {
-                    Button(onClick = onConfirm, enabled = !state.saving) {
+                    Button(onClick = onConfirm, enabled = !completionInFlight) {
                         Text(stringResource(R.string.widget_config_confirm_action))
                     }
                 } else {
-                    Button(onClick = onDone) {
+                    Button(onClick = onDone, enabled = !completionInFlight) {
                         Text(stringResource(R.string.widget_config_done_action))
                     }
                 }
@@ -126,6 +131,7 @@ private fun WidgetConfigScreenPreview() = PreviewWrapper {
             ),
             selectedPolicyIds = listOf("fixed:80", "unrestricted"),
         ),
+        completionInFlight = false,
         onToggle = { _, _ -> },
         onConfirm = {},
         onDone = {},
@@ -139,6 +145,7 @@ private fun WidgetConfigScreenPreview() = PreviewWrapper {
 private fun WidgetConfigScreenLockedPreview() = PreviewWrapper {
     WidgetConfigScreen(
         state = WidgetConfigState.Locked,
+        completionInFlight = false,
         onToggle = { _, _ -> },
         onConfirm = {},
         onDone = {},

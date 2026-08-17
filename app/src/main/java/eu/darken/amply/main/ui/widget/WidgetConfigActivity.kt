@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -85,13 +86,19 @@ class WidgetConfigActivity : ComponentActivity() {
         setContent {
             AmplyTheme {
                 val state by viewModel.state.collectAsState()
+                val completionInFlight by viewModel.completionInFlight.collectAsState()
                 LifecycleResumeEffect(Unit) {
                     // Returning from the upgrade screen must unlock the picker.
                     viewModel.onResumed()
                     onPauseOrDispose { }
                 }
+                // The result is still CANCELED until the completion emits, so Back during it would
+                // discard a widget whose configuration is already stored. Inert, not "cancel the
+                // completion": the save has run or is running either way.
+                BackHandler(enabled = completionInFlight) { }
                 WidgetConfigScreen(
                     state = state,
+                    completionInFlight = completionInFlight,
                     onToggle = viewModel::togglePolicy,
                     onConfirm = viewModel::confirm,
                     onDone = viewModel::finishWithoutSaving,
@@ -131,7 +138,6 @@ sealed interface WidgetConfigState {
     data class Ready(
         val availablePolicies: List<ChargePolicy>,
         val selectedPolicyIds: List<String>,
-        val saving: Boolean = false,
         val saveFailed: Boolean = false,
     ) : WidgetConfigState
 }
@@ -154,6 +160,18 @@ class WidgetConfigViewModel @Inject constructor(
 
     /** Emitted once the activity may return RESULT_OK and close. */
     val finishEvents = SingleEventFlow<Unit>()
+
+    private val _completionInFlight = MutableStateFlow(false)
+
+    /**
+     * A completion (save, then a best-effort widget render) is running and the activity must not be
+     * left before it emits its result. Back would otherwise finish with the initial RESULT_CANCELED
+     * while the configuration is already stored — which discards a freshly placed widget on API 26–30.
+     *
+     * Set synchronously before the coroutine starts, so it is already true when the tap that started
+     * the completion returns; cleared only where [complete] stays on the picker for a retry.
+     */
+    val completionInFlight = _completionInFlight.asStateFlow()
 
     init {
         reload()
@@ -220,8 +238,9 @@ class WidgetConfigViewModel @Inject constructor(
 
     fun confirm() {
         val ready = _state.value as? WidgetConfigState.Ready ?: return
-        if (ready.saving) return
-        _state.value = ready.copy(saving = true, saveFailed = false)
+        if (_completionInFlight.value) return
+        _completionInFlight.value = true
+        _state.value = ready.copy(saveFailed = false)
         viewModelScope.launch {
             // Save-time validation: what the picker showed can be older than the resolved adapter.
             val ids = ready.selectedPolicyIds.filter { id ->
@@ -244,13 +263,20 @@ class WidgetConfigViewModel @Inject constructor(
      * The exit every non-picker state offers: stores nothing and still returns RESULT_OK, because a
      * CANCELED configuration discards the widget the user is placing on API 26–30.
      */
-    fun finishWithoutSaving() = viewModelScope.launch {
-        complete(resolveWidgetConfigCompletion(saveAttempted = false, saveSucceeded = false), null)
+    fun finishWithoutSaving() {
+        if (_completionInFlight.value) return
+        _completionInFlight.value = true
+        viewModelScope.launch {
+            complete(resolveWidgetConfigCompletion(saveAttempted = false, saveSucceeded = false), null)
+        }
     }
 
     private suspend fun complete(completion: WidgetConfigCompletion, ready: WidgetConfigState.Ready?) {
         if (completion.result == WidgetConfigResult.STAY_RETRY) {
-            _state.value = (ready ?: return).copy(saving = false, saveFailed = true)
+            // The only branch that hands the screen back to the user, so it is the only one that
+            // re-arms the controls; every other path ends the activity.
+            _completionInFlight.value = false
+            _state.value = (ready ?: return).copy(saveFailed = true)
             return
         }
         if (completion.updateWidget) updateWidget()
