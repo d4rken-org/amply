@@ -471,19 +471,51 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
           `Build.DEVICE`, which is exactly what an allowlist entry needs. This contributor hand-dumped properties
           because of it. Held rather than changed: reversing a deliberate decision on one data point is thin, and
           the Shizuku wizard path was still open to them. Revisit if another unknown-ROM contributor hits it.
-        - **OPEN (needs one device reading): charge power renders `0.0 W` / `4 mA` while charging.** Both figures
-          come from one field, `BATTERY_PROPERTY_CURRENT_NOW`. A ROM reporting mA where Android documents µA turns
-          a real 4 A into the integer `4000`, which formats as "4 mA" and computes to
-          `4551 mV × 4000 µA / 1e6 = 18 mW`, printing as "0.0 W" — reproduced exactly in
-          `StatsPowerCalculatorTest`. `Charge counter: 6978` points the same way (documented µAh; 6978 µAh would be
-          6.98 mAh). **But an end-of-charge trickle at level 100 produces the identical value**, so the number
-          alone cannot decide, and a low-side clamp would break correct readings on healthy devices — the
-          `MAX_PLAUSIBLE_MILLIWATTS` guard only ever caught the *over*-reporting direction, and its test comment
-          asserted the wrong direction outright (both corrected). Deciding reading requested: Amply's own
-          "Charge counter" row should render **~7 mAh** if the ROM scales that property, independent of charging
-          state. No per-device telemetry seam exists (`ChargingAdapter` carries no unit capability and
-          `BatteryReader` never sees a `DeviceInfo`), so a fix is new work — and it is adapter-independent, since
-          this device has no adapter to hang it on.
+        - **CONFIRMED and FIXED: the ROM reports battery telemetry in milli-units.** Symptom was charge power
+          rendering `0.0 W` / `4 mA` while charging. Both figures come from one field,
+          `BATTERY_PROPERTY_CURRENT_NOW`: a ROM reporting mA where Android documents µA turns a real 4 A into the
+          integer `4000`, which formats as "4 mA" and computes to `4551 mV × 4000 µA / 1e6 = 18 mW`, printing as
+          "0.0 W" (reproduced exactly in `StatsPowerCalculatorTest`).
+          **Settled 2026-08-17 by screenshot** (`Screenshot_…_MainActivity.jpg`, EXIF `model=BKQ-N49`,
+          `10.0.0.193(C636E4R106P1)`): Amply's own "Charge counter" row reads **7 mAh**, which is
+          `round(6978 / 1000)` — the same raw `6978` the contributor's `dumpsys` showed, so both read one source
+          and it is scaled by 1000 on a 7100 mAh cell. Second, unprompted corroboration in the same screenshot:
+          **`Current now` = 0 mA while `Status` = Discharging with the screen on**, which is impossible; a real
+          ~300 mA arrives as `300` and `round(300/1000)` is 0. The competing "genuine end-of-charge trickle"
+          explanation is dead.
+          **Fix: a ROM gate AND the anomaly, both required** (`BatteryUnitCalibration.romMisreportsUnits` +
+          `BatteryReadoutFactory.chargeCounterLooksMilliScaled`). MagicOS is recognised by system feature
+          (`com.hihonor.software.features.honor` / `com.hihonor.system.feature`, either suffices, no `<queries>`
+          and no permission), and the reading must *also* show an implied full-charge capacity below 100_000 µAh
+          — `counter × 100 / percent`, which normalizes out the charge level, separating a correct phone
+          (≥ ~1_000_000 µAh at any level) from a milli device (single-digit thousands) by an order of magnitude
+          on both sides. So a correctly-reporting MagicOS build is left alone, and no other ROM can ever be
+          touched.
+          **Two pure-inference designs were built and abandoned first. Record the reason, it is not obvious:**
+            1. *Counter anomaly alone rescales both fields.* Refuted in review — `CURRENT_NOW` and
+               `CHARGE_COUNTER` are independent HAL fields, so an impossible counter proves nothing about
+               current. A device with a broken, stale or freshly-reset counter but healthy current would have
+               had a real 50 mA turned into 50 A, computing to ~200 W, which slips under
+               `StatsPowerCalculator`'s 250 W ceiling and lands in recorded stats as a *believable* lie.
+            2. *Require the defect in both fields at once* (impossible counter AND `BATTERY_STATUS_CHARGING`
+               while drawing under 5 mA), latched because that evidence only exists while charging. Also
+               refuted, and by Amply's own domain: **a device at a charge-limit hold reports exactly that** —
+               `StatsLimitHitDetector` uses `abs(current) < 50_000 µA` while `CHARGING` as its hold signal.
+               Amply *creates* holds deliberately, so a healthy phone holding at 80% with a broken counter
+               satisfied the conjunction and latched. There is no impossibility boundary here to build on.
+          The lesson generalizes: **the states that look like this defect are states this app manufactures**, so
+          a purely data-driven unit inference is unsound in this codebase specifically. Being wrong about a ROM's
+          units shows wrong numbers; being wrong about a healthy device corrupts good ones — the gate can only
+          ever do the former. Generalizing "all MagicOS" from one device is a deliberate bounded bet, far cheaper
+          than the adapter equivalent because the failure mode is a wrong battery figure, not a false claim that
+          a battery is protected. Other affected ROMs stay uncorrected until one is confirmed and added.
+          Other accepted limits: a device reporting **no** counter is undetectable, and the charger-advertised
+          `max_charging_*` extras are deliberately not rescaled, being separate extras never observed populated
+          on such a device.
+          **Known wart, accepted:** `ChargeStatsRecorder` persists the readout, so history recorded before the fix
+          keeps the uncorrected values and a chart spanning the upgrade shows a 1000× step. Only affects devices
+          that were already reporting garbage, and no migration can identify which stored rows came from a
+          milli-reporting device.
     - **Status after the 2026-08-17 follow-up: still NOT qualified.** Blocker 1's hardware half is now ANSWERED
       but the answer is unfavourable — the cap is real yet only ~4%, and neither key is a hard limit, so the open
       question is no longer "does it work" but "is an Adaptive-only MagicOS adapter worth building". Blocker 2's
