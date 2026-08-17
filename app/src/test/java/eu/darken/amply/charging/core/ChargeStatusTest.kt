@@ -1,5 +1,6 @@
 package eu.darken.amply.charging.core
 
+import eu.darken.amply.common.ca.toCaString
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 
@@ -74,5 +75,61 @@ class ChargeStatusTest {
     @Test
     fun `settlingTarget still reports an awaiting-replug target`() {
         state(pending = PendingRequest(target, t0, awaitingReplug = true)).settlingTarget() shouldBe target
+    }
+
+    // --- provesPolicyInEffect: does the configuration describe what the charger is doing? ---
+
+    @Test
+    fun `hardware evidence settles it for any policy`() {
+        ChargeObservation.Verified(target, BackendKind.BATTERY_HARDWARE)
+            .provesPolicyInEffect() shouldBe true
+        ChargeObservation.Verified(ChargePolicy.Adaptive, BackendKind.BATTERY_HARDWARE)
+            .provesPolicyInEffect() shouldBe true
+    }
+
+    @Test
+    fun `a readback of an unconditional policy describes what the charger does`() {
+        ChargeObservation.Verified(target, BackendKind.SHIZUKU).provesPolicyInEffect() shouldBe true
+        ChargeObservation.Verified(target, BackendKind.DIRECT_WSS).provesPolicyInEffect() shouldBe true
+        ChargeObservation.Verified(ChargePolicy.PauseAtFull, BackendKind.SHIZUKU)
+            .provesPolicyInEffect() shouldBe true
+        // Unrestricted included deliberately: it is in effect exactly as verifiably as a cap. This
+        // predicate is about knowledge, not safety — it does not claim the battery is protected.
+        ChargeObservation.Verified(ChargePolicy.Unrestricted, BackendKind.SHIZUKU)
+            .provesPolicyInEffect() shouldBe true
+    }
+
+    @Test
+    fun `a readback of adaptive proves only that the mode is configured`() {
+        // The Xiaomi 13T case: configured, verified, and charging straight past the cap.
+        ChargeObservation.Verified(ChargePolicy.Adaptive, BackendKind.SHIZUKU)
+            .provesPolicyInEffect() shouldBe false
+        ChargeObservation.Verified(ChargePolicy.Adaptive, BackendKind.DIRECT_WSS)
+            .provesPolicyInEffect() shouldBe false
+        ChargeObservation.Verified(ChargePolicy.Adaptive, BackendKind.DEEP_LINK)
+            .provesPolicyInEffect() shouldBe false
+    }
+
+    @Test
+    fun `non-verified observations never settle it`() {
+        ChargeObservation.LastRequested(target).provesPolicyInEffect() shouldBe false
+        ChargeObservation.Unknown("x".toCaString()).provesPolicyInEffect() shouldBe false
+        ChargeObservation.NeedsSetup("x".toCaString()).provesPolicyInEffect() shouldBe false
+        ChargeObservation.Unsupported("x".toCaString()).provesPolicyInEffect() shouldBe false
+    }
+
+    @Test
+    fun `the claim predicate never leaks into settling`() {
+        // Regression guard: adopting provesPolicyInEffect in isSettling (or in the repository's
+        // `settled` / computeRefreshPending sync arm) would spin every Xiaomi adaptive write for the
+        // whole window. Settling asks "did the write land", which a readback answers fully.
+        val adaptive = ChargePolicy.Adaptive
+        val s = ChargingState(
+            observation = ChargeObservation.Verified(adaptive, BackendKind.SHIZUKU),
+            pending = PendingRequest(adaptive, t0),
+        )
+        s.observation.provesPolicyInEffect() shouldBe false
+        // Unchanged behaviour: a settings readback has never cleared settling, for any policy.
+        s.isSettling(t0 + 5_000) shouldBe true
     }
 }
