@@ -103,6 +103,13 @@ class ChargeRulesStore @Inject constructor(
 
     val runtime: Flow<RuleRuntimeState> = runtimeValue.flow
 
+    /**
+     * Read-only view of the connected set, for surfaces that want to show it live (the editor's
+     * "connected now" markers stay current as ACL broadcasts land). Mutating it stays applier-only —
+     * every write still has to be serialized against evaluation.
+     */
+    val btSnapshot: Flow<BtConnectionSnapshot> = btValue.flow
+
     suspend fun rulesNow(): List<ChargeRule> = ruleSetValue.value().rules.deduped()
 
     suspend fun runtimeNow(): RuleRuntimeState = runtimeValue.value()

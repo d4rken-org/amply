@@ -45,6 +45,9 @@ class RuleApplier @Inject constructor(
     val rules: Flow<List<ChargeRule>> = store.rules
     val runtime: Flow<RuleRuntimeState> = store.runtime
 
+    /** The connected-Bluetooth set, live, for surfaces that show it (the editor's device list). */
+    val btSnapshot: Flow<BtConnectionSnapshot> = store.btSnapshot
+
     /** Point read for a one-shot caller (the editor loading a rule); collection is via [rules]. */
     suspend fun rulesNow(): List<ChargeRule> = store.rulesNow()
 
@@ -132,6 +135,25 @@ class RuleApplier @Inject constructor(
             }
         }
         perform(decision)
+    }
+
+    /**
+     * Refresh the connected set for a surface that is displaying it, without evaluating anything.
+     *
+     * Runs the same sweep the evaluation path uses (permission and boot-count handling included) and
+     * persists the result, so the editor's markers and the rules layer read one shared snapshot
+     * instead of two answers that can disagree. Under the same mutex, so it cannot interleave with
+     * an evaluation's own snapshot write.
+     *
+     * Returns false when the sweep could not produce an answer — the snapshot is then left exactly
+     * as the ACL receiver built it, and the caller must say "unavailable" rather than present a
+     * possibly-stale list as current.
+     */
+    suspend fun reconcileBluetoothForUi(): Boolean = mutex.withLock {
+        // Deliberately not routed through the rule-shaped short-circuit below: an editor filling in
+        // its FIRST Bluetooth condition has no enabled Bluetooth rule yet, and would otherwise be
+        // told nothing is connected.
+        resolveConnected(reconcile = true).swept
     }
 
     /** Receiver hook. Returns whether any enabled rule actually cares about Bluetooth. */
@@ -353,12 +375,26 @@ class RuleApplier @Inject constructor(
      * which is the safe direction.
      */
     private suspend fun resolveBtAddresses(rules: List<ChargeRule>, reconcile: Boolean): Set<String> {
+        // No rule rides on Bluetooth: skip the whole thing rather than pay for a sweep nothing reads.
         if (rules.none { it.enabled && it.condition is RuleCondition.BluetoothDevice }) return emptySet()
+        return resolveConnected(reconcile).addresses
+    }
+
+    /**
+     * [swept] answers "is this a fresh reading", which only a surface displaying the set cares
+     * about. The evaluation path acts on [addresses] either way: a sweep that could not answer
+     * leaves the receiver-built snapshot in place, which is the best available evidence.
+     */
+    private data class BtResolution(val addresses: Set<String>, val swept: Boolean)
+
+    private suspend fun resolveConnected(reconcile: Boolean): BtResolution {
         val bootCount = bootCountProvider.current()
         if (!bluetooth.hasPermission()) {
             log(TAG, Logging.Priority.WARN) { "Bluetooth permission missing; treating nothing as connected" }
             store.updateBtSnapshot { BtConnectionSnapshot(bootCount = bootCount) }
-            return emptySet()
+            // Not a failed reading: "nothing observable" IS the answer, and it is the same one the
+            // evaluation path acts on.
+            return BtResolution(emptySet(), swept = true)
         }
         if (reconcile) {
             val live = try {
@@ -371,15 +407,15 @@ class RuleApplier @Inject constructor(
             }
             if (live != null) {
                 store.updateBtSnapshot { BtConnectionSnapshot(addresses = live, bootCount = bootCount) }
-                return live
+                return BtResolution(live, swept = true)
             }
         }
         val snapshot = store.btSnapshotNow()
         if (snapshot.bootCount != bootCount) {
             store.updateBtSnapshot { BtConnectionSnapshot(bootCount = bootCount) }
-            return emptySet()
+            return BtResolution(emptySet(), swept = false)
         }
-        return snapshot.addresses
+        return BtResolution(snapshot.addresses, swept = false)
     }
 
     private companion object {

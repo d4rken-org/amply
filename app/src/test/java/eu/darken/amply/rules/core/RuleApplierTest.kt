@@ -187,6 +187,42 @@ class RuleApplierTest {
     }
 
     @Test
+    fun `a UI reconcile persists the swept set and reports it fresh`() = fixture {
+        // No enabled Bluetooth rule exists yet — an editor filling in its first condition still has
+        // to get a real answer, so this path must not take the evaluation path's short-circuit.
+        connect("11:22:33:44:55:66")
+        bluetooth.live = setOf(carAddress)
+
+        applier.reconcileBluetoothForUi() shouldBe true
+
+        store.btSnapshotNow().addresses shouldBe setOf(carAddress)
+    }
+
+    @Test
+    fun `a UI reconcile that cannot sweep reports unavailable and keeps the snapshot`() = fixture {
+        connect()
+        // All-or-nothing: the source answers null when any profile fails to report.
+        bluetooth.live = null
+
+        applier.reconcileBluetoothForUi() shouldBe false
+
+        // Untouched, so the receiver-built set stays on screen rather than a fabricated empty one.
+        store.btSnapshotNow().addresses shouldBe setOf(carAddress)
+    }
+
+    @Test
+    fun `a UI reconcile without permission answers empty, and answers it confidently`() = fixture {
+        connect()
+        bluetooth.permission = false
+
+        // Not a failure: with no permission "nothing is observable" is the same answer the
+        // evaluation path acts on, so the editor may state it rather than showing it as unknown.
+        applier.reconcileBluetoothForUi() shouldBe true
+
+        store.btSnapshotNow().addresses.shouldBeEmpty()
+    }
+
+    @Test
     fun `a lapsed entitlement blocks the write entirely`() = fixture {
         applier.addRule(btRule())
         connect()
