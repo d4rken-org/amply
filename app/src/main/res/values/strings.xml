@@ -4,6 +4,7 @@
     <string name="tile_active">Restore limit</string>
     <string name="tile_override_active">Temporary override active</string>
     <string name="tile_replug_hint">Replug to apply</string>
+    <string name="tile_enforcement_unverified">Charge limiting not confirmed on this build</string>
     <string name="tile_applying">Applying…</string>
     <string name="widget_description">Amply charge controls</string>
     <string name="session_channel_name">Full charge and restore</string>
@@ -145,6 +146,8 @@
     <string name="adapter_detail_requires_lineageos">Requires a qualified LineageOS device</string>
     <string name="adapter_detail_lineageos_no_provider">LineageOS charging control is not available on this build</string>
     <string name="adapter_detail_lineageos_ready">Charging control requires Shizuku on this device</string>
+    <string name="adapter_detail_enforcement_candidate">Charge limiting is not confirmed on this build</string>
+    <string name="adapter_detail_enforcement_refuted">This build charged past the limit it accepted, so charging control is switched off</string>
     <string name="adapter_detail_none">No charging adapter is known for this device</string>
 
     <!-- Access backend detail + summary labels -->
@@ -380,6 +383,21 @@
     <string name="dashboard_waiting_target">Waiting for the system to switch to %1$s. This can take about 15 seconds…</string>
     <string name="dashboard_waiting_replug">Takes effect the next time you unplug and replug the charger</string>
     <string name="dashboard_hw_unconfirmed">The charging hardware hasn\'t confirmed %1$s yet. It may not be applying</string>
+
+    <!-- Enforcement tier (adapters where a setting can read back while the hardware ignores it) -->
+    <string name="dashboard_enforcement_candidate_title">Charge limiting is not confirmed here</string>
+    <string name="dashboard_enforcement_candidate_body">Your build accepts a charge limit, but whether the charging hardware actually honours it differs from build to build, and Amply can\'t tell from the outside: a battery resting below the limit looks the same as one paused by heat or a weak charger. You can switch the controls on anyway. Amply won\'t claim the limit is working, and it turns the controls off again if it ever sees the battery charge past the limit.</string>
+    <string name="dashboard_enforcement_candidate_action">Enable anyway</string>
+    <string name="dashboard_enforcement_unverified_title">Charge limit not confirmed</string>
+    <string name="dashboard_enforcement_unverified_body">The controls are available, but nothing Amply can see proves the limit works on this build. It keeps watching for the opposite: if the battery is observed charging past the limit, Amply switches its charging controls back off.</string>
+    <string name="dashboard_enforcement_unverified_note">Set, but not confirmed to work on this build</string>
+    <string name="dashboard_enforcement_refuted_title">Charge limiting does not work on this build</string>
+    <string name="dashboard_enforcement_refuted_body">Your build accepted the limit and then charged past it, so the charging hardware is ignoring it. Amply has switched its charging controls off here rather than show a protection that isn\'t real. A report helps get this build looked at.</string>
+    <!-- Hero wording for the tiers that keep the controls off: the device is matched, so the generic
+         "unsupported device" line would contradict the card right below it. -->
+    <string name="dashboard_enforcement_candidate_hero_title">Charging control is not switched on</string>
+    <string name="dashboard_enforcement_candidate_hero_body">Amply can control charging on this build, it just can\'t confirm the limit holds. The card below switches it on anyway.</string>
+    <string name="dashboard_enforcement_refuted_hero_title">Charge limiting doesn\'t work here</string>
     <string name="dashboard_settling_fallback_target">the new policy</string>
     <string name="dashboard_session_once_title" formatted="false">Charging to 100% once</string>
     <string name="dashboard_session_returns">%1$s will return automatically at 100%% or when you unplug.</string>
@@ -545,6 +563,9 @@
     <string name="widget_status_charging_replug" formatted="false">1×100% · replug to start</string>
     <string name="widget_status_waiting_suffix">%1$s · waiting for system…</string>
     <string name="widget_status_replug_suffix">%1$s · replug to apply</string>
+    <string name="widget_status_unverified_suffix">%1$s · not confirmed</string>
+    <string name="widget_status_enforcement_candidate">Charge limiting off (unconfirmed)</string>
+    <string name="widget_status_enforcement_refuted">Charge limiting unavailable</string>
     <string name="widget_label_limited">Limited to %1$d%%</string>
     <string name="widget_label_unlimited" formatted="false">Unlimited (100%)</string>
     <string name="widget_label_adaptive">Adaptive charging</string>
@@ -656,4 +677,78 @@
     <string name="widget_config_unavailable">Amply can\'t control charging on this device, so the buttons stay at their defaults.</string>
     <string name="widget_config_not_configurable">This device offers only two charge modes, so the widget already shows both.</string>
     <string name="widget_config_save_failed">Saving didn\'t work. Try again.</string>
+    <!-- Charge conditions — the rules list, its editor, and the dashboard card -->
+    <string name="rules_title">Charge conditions</string>
+    <string name="rules_priority_note">The topmost matching condition wins.</string>
+    <string name="rules_empty_title">No conditions yet</string>
+    <string name="rules_empty_body">Let a charge policy follow your situation: while a Bluetooth device is connected, or while you\'re on a certain charger.</string>
+    <string name="rules_add_action">Add condition</string>
+    <string name="rules_active_marker">Active now</string>
+    <!-- Condition and effect on one card summary line, e.g. "While charging via USB · Limit to 80%" -->
+    <string name="rules_row_summary">%1$s · %2$s</string>
+    <string name="rules_kind_protection">Protects the battery</string>
+    <string name="rules_kind_charge">Charges fully</string>
+    <string name="rules_condition_bluetooth">While %1$s is connected</string>
+    <string name="rules_condition_bluetooth_unnamed">While a paired device is connected</string>
+    <string name="rules_condition_charger">While charging via %1$s</string>
+    <string name="rules_condition_charger_none">No charger type selected</string>
+    <string name="rules_condition_separator">, </string>
+    <string name="rules_condition_unsupported">This device can\'t act on charger conditions.</string>
+    <string name="rules_policy_unavailable">This charge mode isn\'t available on this device.</string>
+    <string name="rules_failure_warning">The last change couldn\'t be applied. Amply keeps retrying.</string>
+    <string name="rules_bluetooth_permission_warning">Bluetooth access is off, so device conditions can\'t be detected.</string>
+    <string name="rules_notification_footnote">While a condition is on, Amply keeps a quiet notification so it can watch for it.</string>
+    <string name="rules_action_edit">Edit</string>
+    <string name="rules_action_delete">Delete</string>
+    <string name="rules_action_move_up">Move up</string>
+    <string name="rules_action_move_down">Move down</string>
+
+    <string name="rules_editor_title_new">New condition</string>
+    <string name="rules_editor_title_edit">Edit condition</string>
+    <string name="rules_editor_when_header">When</string>
+    <string name="rules_editor_kind_bluetooth">A Bluetooth device is connected</string>
+    <string name="rules_editor_kind_bluetooth_desc">Applies while the device is connected, whether or not you\'re plugged in.</string>
+    <string name="rules_editor_kind_charger">Charging on a certain charger</string>
+    <string name="rules_editor_kind_charger_desc">Uses the charger type Android reports while you\'re plugged in.</string>
+    <string name="rules_editor_device_header">Paired device</string>
+    <string name="rules_editor_device_empty">No paired Bluetooth devices found.</string>
+    <string name="rules_editor_device_unnamed">Unnamed device</string>
+    <string name="rules_editor_device_unpaired">No longer paired</string>
+    <string name="rules_editor_device_connected">Connected now</string>
+    <string name="rules_editor_connection_unavailable">Connection status unavailable</string>
+    <string name="rules_editor_charger_header">Charger types</string>
+    <string name="rules_editor_charger_hint">Pick at least one.</string>
+    <string name="rules_editor_charger_detected">Detected now: %1$s</string>
+    <string name="rules_editor_charger_detected_unknown">Charger connected, type not recognized</string>
+    <string name="rules_editor_policy_header">Then charge like this</string>
+    <string name="rules_editor_label_header">Name (optional)</string>
+    <string name="rules_editor_label_hint">Car</string>
+    <string name="rules_editor_label_helper">The name only labels the condition. It doesn\'t affect when the condition applies.</string>
+    <string name="rules_editor_bluetooth_permission">Allow Bluetooth access to pick a paired device.</string>
+    <string name="rules_editor_bluetooth_permission_action">Allow</string>
+    <string name="rules_editor_save">Save</string>
+    <string name="rules_editor_more_actions">More options</string>
+    <string name="rules_editor_delete_title">Delete this condition?</string>
+    <string name="rules_editor_delete_body">It stops applying right away and disappears from the list.</string>
+    <string name="rules_editor_discard_title">Discard changes?</string>
+    <string name="rules_editor_discard_body">Your edits to this condition haven\'t been saved.</string>
+    <string name="rules_editor_discard_confirm">Discard</string>
+    <string name="rules_editor_discard_keep">Keep editing</string>
+
+    <string name="rules_plug_ac">AC charger</string>
+    <string name="rules_plug_usb">USB</string>
+    <string name="rules_plug_wireless">Wireless</string>
+    <string name="rules_plug_dock">Dock</string>
+
+    <string name="dashboard_conditions_title">Charge conditions</string>
+    <string name="dashboard_conditions_open">Open charge conditions</string>
+    <string name="dashboard_conditions_empty_body">Let a charge policy follow your situation, like connecting to your car.</string>
+    <string name="dashboard_conditions_empty_action">Set one up</string>
+    <string name="dashboard_conditions_waiting">Waiting for a match</string>
+    <string name="dashboard_conditions_active">Active</string>
+    <string name="dashboard_hero_condition">Set by condition: %1$s</string>
+
+    <string name="settings_rules_title">Charge conditions</string>
+    <string name="settings_rules_subtitle_on">%1$d switched on</string>
+    <string name="settings_rules_subtitle_off">Let a policy follow your situation</string>
 </resources>

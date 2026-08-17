@@ -2,7 +2,6 @@ package eu.darken.amply.charging.core.adapter
 
 import android.content.Context
 import android.content.Intent
-import android.provider.Settings
 import eu.darken.amply.R
 import eu.darken.amply.charging.core.access.AccessBackend
 import eu.darken.amply.charging.core.ChargeObservation
@@ -33,17 +32,8 @@ abstract class DisabledLabAdapter : ChargingAdapter {
 
     override suspend fun apply(policy: ChargePolicy, backend: AccessBackend) = false
 
-    override fun nativeSettingsIntent(context: Context): Intent {
-        // Prefer the system battery-usage screen, which on most OEM skins is the entry point that
-        // also holds the built-in charge-protection toggle; fall back to Battery Saver settings
-        // where it isn't resolvable. Both are generic AOSP actions — no brittle OEM ComponentNames.
-        val powerUsage = Intent(Intent.ACTION_POWER_USAGE_SUMMARY).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        return if (powerUsage.resolveActivity(context.packageManager) != null) {
-            powerUsage
-        } else {
-            Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-    }
+    override fun nativeSettingsIntent(context: Context): Intent =
+        OemChargingShortcuts.genericBatterySettings(context)
 }
 
 @Singleton
@@ -65,8 +55,11 @@ class LineageLabAdapter @Inject constructor() : DisabledLabAdapter() {
     override val id = "lineageos-lab"
     override val displayName = R.string.adapter_name_lineageos.toCaString()
 
-    // Any LineageOS build whose device codename is not in the live adapter's qualified allowlist.
-    // Charging control is HAL-dependent and unverified here, so it stays diagnostics/contribution only.
+    // Reached by a LineageOS build (or a derivative reporting the platform feature) that does NOT ship
+    // the `lineagesettings` provider — there is nothing to write, so it stays diagnostics/contribution
+    // only. Builds WITH the provider are handled by LineageChargingAdapter, which matches first and
+    // holds control back on its own enforcement evidence. Those devices used to see a more specific
+    // "not available on this build" note and now get the generic lab text.
     override fun matches(device: DeviceInfo) = device.isLineageOs
 
     // The three charging_control_* keys are already mapped and live in a provider the wizard does not capture,

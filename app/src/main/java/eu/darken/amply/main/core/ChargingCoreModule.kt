@@ -9,6 +9,8 @@ import eu.darken.amply.charging.core.access.LineageChargeReader
 import eu.darken.amply.charging.core.access.LineageSettingsClient
 import eu.darken.amply.charging.core.access.SettingsSnapshotSource
 import eu.darken.amply.charging.core.access.ShizukuSettingsBackend
+import eu.darken.amply.charging.core.enforcement.BuildIdentitySource
+import eu.darken.amply.charging.core.enforcement.DeviceBuildIdentitySource
 import eu.darken.amply.diagnostics.core.ContributionRepository
 import eu.darken.amply.diagnostics.core.DefaultContributionRepository
 
@@ -28,4 +30,8 @@ abstract class ChargingCoreModule {
     /** LineageOS charge-control reads: unprivileged ContentResolver snapshot, shared by the Lineage adapter. */
     @Binds
     abstract fun bindLineageChargeReader(impl: LineageSettingsClient): LineageChargeReader
+
+    /** Behind an interface so the evidence store and its tests don't need the Android build environment. */
+    @Binds
+    abstract fun bindBuildIdentitySource(impl: DeviceBuildIdentitySource): BuildIdentitySource
 }

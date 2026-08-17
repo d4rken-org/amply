@@ -17,6 +17,8 @@ import eu.darken.amply.charging.core.access.LineageSettingsClient
 import eu.darken.amply.charging.core.access.ShizukuSettingsBackend
 import eu.darken.amply.charging.core.access.shizuku.ShizukuController
 import eu.darken.amply.charging.core.access.shizuku.ShizukuInstallationDetector
+import eu.darken.amply.charging.core.enforcement.BuildIdentitySource
+import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceStore
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
 import eu.darken.amply.charging.core.adapter.GrapheneOsChargingAdapter
 import eu.darken.amply.charging.core.adapter.LineageChargingAdapter
@@ -73,6 +75,12 @@ class ChargingRepositoryPersistenceTest {
     private lateinit var preferences: ChargingPreferences
     private lateinit var repository: ChargingRepository
 
+    // This test drives the Pixel adapter, which needs no enforcement evidence; a fixed identity keeps
+    // the store deterministic.
+    private val buildIdentity = object : BuildIdentitySource {
+        override fun current() = "test-build"
+    }
+
     @Before
     fun setup() {
         // Satisfy the Pixel capability gate: Google manufacturer, a supported model, telephony, and a
@@ -127,6 +135,8 @@ class ChargingRepositoryPersistenceTest {
                 override fun schedule(requestedAtMillis: Long) = Unit
             },
             batteryReader = BatteryReader(context),
+            evidenceStore = EnforcementEvidenceStore(appDataStore, buildIdentity, SerializationModule.json()),
+            buildIdentity = buildIdentity,
         )
     }
 

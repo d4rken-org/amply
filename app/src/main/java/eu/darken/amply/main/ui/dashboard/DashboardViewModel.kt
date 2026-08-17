@@ -58,6 +58,10 @@ import eu.darken.amply.alarm.core.ChargeAlarmStore
 import eu.darken.amply.battery.core.BatteryReadout
 import eu.darken.amply.battery.core.BatteryReadoutSource
 import eu.darken.amply.monitor.core.ChargeMonitorWatcher
+import eu.darken.amply.rules.core.ChargeRule
+import eu.darken.amply.rules.core.RuleApplier
+import eu.darken.amply.rules.core.RulePhase
+import eu.darken.amply.rules.core.RuleRuntimeState
 import eu.darken.amply.stats.core.CaptureServiceHealth
 import eu.darken.amply.stats.core.ChargeSessionSummary
 import eu.darken.amply.stats.core.ChargeStatsRepository
@@ -115,6 +119,8 @@ data class DashboardUiState(
     val stats: StatsDashboardState = StatsDashboardState(),
     /** A pending "Amply was interrupted while owing a restore" warning, or null when there is none. */
     val interruption: InterruptionEvent? = null,
+    /** The conditional charge rules and which one, if any, currently owns the policy. */
+    val conditions: ConditionsState = ConditionsState(),
     /**
      * The Pro entitlement, or null until it has been read at all. Nullable rather than defaulted:
      * "not upgraded" and "not yet known" have to stay distinguishable, or the promo card would flash
@@ -128,6 +134,25 @@ data class UpgradeSnapshot(
     val isPro: Boolean,
     val isSettled: Boolean,
 )
+
+/**
+ * The dashboard's slice of the charge-conditions layer. Order is meaning — the topmost matching rule
+ * wins — so the list is kept exactly as stored and the active rule is resolved by id rather than by
+ * re-deriving which one "should" be winning.
+ */
+data class ConditionsState(
+    val rules: List<ChargeRule> = emptyList(),
+    val runtime: RuleRuntimeState = RuleRuntimeState(),
+) {
+    val enabledRules: List<ChargeRule> get() = rules.filter { it.enabled }
+
+    val activeRule: ChargeRule?
+        get() = runtime.activeRuleId
+            ?.takeIf { runtime.phase != RulePhase.IDLE }
+            ?.let { id -> rules.firstOrNull { it.id == id } }
+
+    val applyFailed: Boolean get() = runtime.lastApplyFailed
+}
 
 /**
  * The upgrade ask — currently the Pro badges, and the promo card once it returns — has no business
@@ -151,6 +176,7 @@ class DashboardViewModel @Inject constructor(
     private val captureServiceHealth: CaptureServiceHealth,
     private val interruptionStore: InterruptionStore,
     private val upgradeRepo: UpgradeRepo,
+    private val ruleApplier: RuleApplier,
     private val watchers: Set<@JvmSuppressWildcards ChargeMonitorWatcher>,
 ) : ViewModel() {
     private val deviceReport = MutableStateFlow<DeviceSupportReport?>(null)
@@ -177,26 +203,35 @@ class DashboardViewModel @Inject constructor(
         val notificationPolicyIds: List<String>?,
     )
 
+    // Seeded null so the dashboard renders immediately: waiting for the first billing answer would
+    // hold up the whole screen, and the promo card is the only thing that needs it.
+    private val upgradeSnapshots = upgradeRepo.upgradeInfo
+        .map<UpgradeRepo.Info, UpgradeSnapshot?> { UpgradeSnapshot(isPro = it.isPro, isSettled = it.isSettled) }
+        .catch { e ->
+            if (e is CancellationException) throw e
+            log(TAG, Logging.Priority.WARN) { "Upgrade info read failed: ${e.message}" }
+            emit(null)
+        }
+        .onStart { emit(null) }
+        .distinctUntilChanged()
+
+    // Paired with the entitlement rather than taking its own slot: the typed combine overloads stop
+    // at five, and these two are the ones the same cards read together anyway.
+    private val upgradeAndConditions = combine(
+        upgradeSnapshots,
+        combine(ruleApplier.rules, ruleApplier.runtime) { rules, runtime -> ConditionsState(rules, runtime) },
+    ) { upgrade, conditions -> upgrade to conditions }
+
     // Grouped so the outer combine keeps one slot each: the live battery readout, the alarm config,
-    // the notifications-blocked flag, the interrupted-session warning, and the entitlement.
+    // the notifications-blocked flag, the interrupted-session warning, and the entitlement + rules.
     private val unprivilegedExtras = combine(
         batteryReadoutSource.readouts(),
         chargeAlarmStore.config,
         notificationsBlocked,
         interruptionStore.event,
-        // Seeded null so the dashboard renders immediately: waiting for the first billing answer
-        // would hold up the whole screen, and the promo card is the only thing that needs it.
-        upgradeRepo.upgradeInfo
-            .map<UpgradeRepo.Info, UpgradeSnapshot?> { UpgradeSnapshot(isPro = it.isPro, isSettled = it.isSettled) }
-            .catch { e ->
-                if (e is CancellationException) throw e
-                log(TAG, Logging.Priority.WARN) { "Upgrade info read failed: ${e.message}" }
-                emit(null)
-            }
-            .onStart { emit(null) }
-            .distinctUntilChanged(),
-    ) { readout, alarm, blocked, interruption, upgrade ->
-        UnprivilegedExtras(readout, alarm, blocked, interruption, upgrade)
+        upgradeAndConditions,
+    ) { readout, alarm, blocked, interruption, (upgrade, conditions) ->
+        UnprivilegedExtras(readout, alarm, blocked, interruption, upgrade, conditions)
     }
 
     private data class UnprivilegedExtras(
@@ -205,6 +240,7 @@ class DashboardViewModel @Inject constructor(
         val notificationsBlocked: Boolean,
         val interruption: InterruptionEvent?,
         val upgrade: UpgradeSnapshot?,
+        val conditions: ConditionsState,
     )
 
     // Battery-statistics dashboard teaser. The session/count reads (which open the stats Room DB)
@@ -264,6 +300,7 @@ class DashboardViewModel @Inject constructor(
             notificationsBlocked = extras.notificationsBlocked,
             interruption = extras.interruption,
             upgrade = extras.upgrade,
+            conditions = extras.conditions,
             stats = stats,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
@@ -424,6 +461,21 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun completeOnboarding() = viewModelScope.launch { onboardingSettings.complete() }
+
+    /**
+     * Accept charging control on a build whose cap was never confirmed. The controls become available
+     * immediately and stay labelled as unconfirmed — nothing observable can confirm them (see
+     * `EnforcementVerdictEngine`) — while the refutation watch rides the monitor service, which the
+     * nudge below (re)starts now that a watcher wants it.
+     */
+    fun startEnforcementVerification() = viewModelScope.launch {
+        log(TAG, Logging.Priority.INFO) { "startEnforcementVerification()" }
+        repository.startEnforcementVerification()
+        ContextCompat.startForegroundService(
+            context,
+            Intent(context, ChargeSessionService::class.java).setAction(ChargeSessionService.ACTION_MONITOR),
+        )
+    }
 
     /**
      * Routed through the service (same command the widget's ∞ buttons use) rather than writing the
@@ -678,14 +730,22 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun openNativeSettings() {
-        val intent = repository.nativeSettingsIntent() ?: Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS)
-        runCatching { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-            .onFailure {
-                context.startActivity(
-                    Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                )
-            }
+        // Resolution (including the unmapped-device fallback) lives in the repository; this only handles a
+        // launch that throws despite having resolved — resolveActivity is advisory, so an activity can be
+        // disabled or reject the launch between the check and the start.
+        val intent = repository.nativeSettingsIntent()
+        val failure = runCatching { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            .exceptionOrNull() ?: return
+        log(TAG, Logging.Priority.WARN) { "Native settings ${intent.action} failed: ${failure.asLog()}" }
+        // Battery Saver is the repository's own last resort, so retrying it here would just throw again —
+        // and unguarded, that second throw escaped and took the action down with it.
+        if (intent.action == Settings.ACTION_BATTERY_SAVER_SETTINGS) return
+        runCatching {
+            context.startActivity(
+                Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }.onFailure { log(TAG, Logging.Priority.WARN) { "Battery-saver fallback failed: ${it.asLog()}" } }
     }
 
     fun openShizuku() = viewModelScope.launch {

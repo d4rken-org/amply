@@ -56,10 +56,45 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
 
 ## Known gaps
 
-- **LineageOS** — landed **diagnostics-only**: `QUALIFIED_CODENAMES` ships **empty**, so the live adapter never
-  matches and every LineageOS build falls to `LineageLabAdapter`. A codename is added only after that device passes
-  qualification (real charging cessation at the limit, wired + wireless, below/at/above threshold) and gets a
-  "Verified devices" row.
+- **LineageOS** — the live adapter now **matches every LineageOS build that ships the `lineagesettings` provider**;
+  `QUALIFIED_CODENAMES` still ships **empty** but is only a maintainer fast path, no longer what makes the adapter
+  reachable. Control is gated on **per-build enforcement evidence** instead: a device is a candidate with controls
+  off until the user explicitly enables control on an unconfirmed build, and loses control permanently for that
+  build if the battery is observed charging past the cap. A codename still goes into `QUALIFIED_CODENAMES` only
+  after full qualification (real charging cessation at the limit, wired + wireless, below/at/above threshold) plus
+  a "Verified devices" row — that list now buys skipping the opt-in, not access itself.
+  - **Observation can only refute, never confirm** (established 2026-08-17, see the oriole re-observation below):
+    no passively observable signal distinguishes a cap hold from a thermal or weak-supply pause. Both present as
+    plugged + `BATTERY_STATUS_NOT_CHARGING` + a static level. `EXTRA_CHARGING_STATUS` does **not** break the tie —
+    it is session-scoped, measured still reading `4` while the device charged ten points *below* its cap. A guided
+    two-cap cut/resume/cut challenge (raise the cap, verify charging resumes and re-stops at the new threshold) is
+    the known way to earn real confirmation and is deliberately not implemented.
+  - **Pixel 6 (oriole) on LineageOS 23.2 / Android build `BP4A.251205.006` — re-observed 2026-08-17. The
+    2026-07-22 LOS 23.2 NO-GO below does NOT hold on this build.** `dumpsys lineagehealth` binds
+    `ccprovider.Limit` (so the HAL *does* advertise the LIMIT mode bit again), `charging_control_mode` reads back
+    as `3` and is **not** coerced to `1`, and with `enabled=1 / mode=3 / limit=70` the device sat at exactly 70 %
+    on AC for ~4 h: `status: 4` (NOT_CHARGING), `Charging state: 4`, `Charging policy: 1`, voltage 4072 mV.
+    **Causal check**: raising `charging_control_charging_limit` to `80` resumed charging within 20 s —
+    `status: 2`, voltage 4072 → 4183 mV, temperature 294 → 311, charge counter 2908000 → 2910000 — i.e. the
+    setting demonstrably drives the charging hardware, which is stronger evidence than an observed plateau.
+    The limit was restored to `70` and re-verified by read-back; `enabled`/`mode` were never written.
+    **This is NOT a GO and oriole is NOT in `QUALIFIED_CODENAMES`**: only part of step 2 was run — wired only, no
+    wireless, no below/at/above sweep, no hold observed at the raised cap, and none of steps 3-5 (access tiers,
+    sessions, boot recovery, R8). It supersedes the "HAL dropped LIMIT" claim for *this build only*.
+    **Unexplained later observation, recorded so this row does not overclaim**: a few hours after the run above,
+    the device was found at **78 %** with `charging_control_charging_limit` still reading `70` — i.e. a level
+    above the cap. It is **not attributable** and must not be read either as enforcement failing or as anything
+    else: by then the phone had left this run's control entirely — physically unplugged and moved, and its
+    system clock force-set to `Tue Jul 21 02:01 CEST` (a month in the past, at 02:00) by another workflow, which
+    is a scheduled/night-charge experiment signature. Any of that could produce the rise. The controlled
+    observations above stand as recorded; this one is logged only so a later reader does not find it and
+    conclude the row was written selectively. Re-check under controlled conditions before treating either as
+    settled.
+    **Why it matters beyond oriole**: same device, same Lineage major version, different build, opposite HAL
+    capability. That is the concrete case for HAL capability being **build-scoped, not codename-scoped**, and it
+    is why enforcement evidence is keyed on a composite build identity (fingerprint + incremental + build time +
+    provider package version) rather than a codename — LineageOS spoofs `Build.FINGERPRINT` to stock, so the
+    fingerprint alone cannot carry it.
   - **Pixel 6 (oriole) on LineageOS 20.0 / Android 13 — tested 2026-07-22, result NO-GO (no hardware enforcement).**
     The *software chain is fully validated* — both raw (shell-UID `content query`/`content insert`) **and through the
     app's real Shizuku backend end-to-end** (R8 debug build + Shizuku granted): tapping 80 % wrote the trio via
@@ -367,6 +402,24 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
       are compile-time constants, the AIDL has no property op
       (`IChargingControlService.aidl`), and `SystemPropertyReader` structurally cannot distinguish denial from
       absence — so probing a candidate MagicOS property needs a code change, not a contributor run.
+    - **Blocker 2, IDENTITY MECHANISM RESOLVED (support mail, 2026-08-17); version scoping still open.** The
+      contributor supplied both lists from `HNBKQ`. App-readable signals now known to exist on MagicOS 10:
+        - **System features** (`hasSystemFeature`, no permission, no `<queries>` entry — the LineageOS pattern):
+          `com.hihonor.software.features.honor`, `com.hihonor.system.feature`,
+          `com.hihonor.software.features.full`, `com.hihonor.software.features.handset`,
+          `com.hihonor.software.features.oversea`, `com.hihonor.magic.api.23`.
+        - **Core system packages** (PackageManager + `FLAG_SYSTEM` — the GrapheneOS pattern):
+          `com.hihonor.systemserver`, `com.hihonor.systemmanager`, `com.hihonor.powergenie`,
+          `com.hihonor.controlcenter`, `com.hihonor.android.launcher`.
+        - Properties exist too (`ro.build.version.magic=MagicOS_10.0.0`, `ro.build.magic_api_level=42`,
+          `ro.magic.cversion=C636`) but stay the **wrong** route for the SELinux reason above; they are recorded
+          only as corroboration. `ro.product.device=HNBKQ` confirms the fingerprint-derived codename.
+      **What is still missing is ROM-generation scoping.** `com.hihonor.magic.api.23` does not line up with
+      `ro.build.magic_api_level=42`, so that feature reads as a fixed namespace marker rather than a version
+      discriminator — i.e. the features answer "is this MagicOS", not "is this MagicOS 10". Every existing OEM
+      gate is version-scoped (One UI range, `ro.mi.os.version.code`, `oplusrom == 15`); a features-only HONOR gate
+      would be the first that is not, which is exactly the weakness called out above for `Build.MANUFACTURER`.
+      Resolve that before any gate is written, not after.
     - **Level-reporting hazard to test at qualification.** The reporter states Smart battery capacity "still
       displays 100% when fully charged" while capping. A ROM reporting a synthetic 100% at a real ~80% would
       trip `full = status == BATTERY_STATUS_FULL || percent >= 100` in `ChargeSessionService`, ending a session
@@ -393,6 +446,34 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
       `dumpsys battery`, then switch the feature OFF with the cable in and re-record. Voltage and charge counter
       climbing afterwards proves the cap is real and the 100% cosmetic; unchanged means the cell was already full
       and the mode caps nothing. Same evidence shape that settled `tanzanite`.
+      **RESULT (2026-08-17), and it reframes the feature.** Contributor-run, `HNBKQ`:
+
+      | State | Charge counter | status | level | voltage |
+      | --- | --- | --- | --- | --- |
+      | Smart battery capacity ON, plugged, HONOR showing 100% (stable ≥1 min) | 6978 | 2 | 100 | 4551 |
+      | Feature OFF, cable never removed | 6978 (unchanged) | — | — | — |
+      | Feature OFF, after unplug→replug | 7256 | 5 | 100 | 4421 → 4472 |
+
+        - **The synthetic 100% is CONFIRMED in the broadcast, not just the status bar.** `level: 100` with 278 mAh
+          of real headroom, so the sharpenings above are now evidenced rather than inferred. The dumpsys `status: 2`
+          alongside a flat counter also means the ROM reports "charging" while holding.
+        - **But the cap is only ~4%, so Smart battery capacity is NOT an 80%-cap equivalent.** The C636/Singapore
+          variant is the 7100 mAh model (China 7200, Europe 6270; the contributor's own AIDA64 reading of ~7121 mAh
+          corroborates), so 278 mAh ≈ 3.8%. An 80% cap would have plateaued near 5800 mAh. This is a
+          top-of-charge voltage trim, a different class of feature from every currently supported adapter.
+          Consequence: **neither HONOR key is a hard cap** — Smart charge is adaptive (reaches 100% overnight),
+          Smart battery capacity trims ~4% — so an adapter here could offer Adaptive on/off and no percentage at
+          all, with the `allowsFullCharge` honesty gap applying. Weigh that against the build cost before
+          committing to a MagicOS adapter; the mapping being correct is no longer the deciding question.
+        - **`policyLatchesAtPlug` behaviour OBSERVED.** Disabling the feature with the cable in moved nothing; the
+          278 mAh only went in after unplug→replug. Same latch-at-plug-session-start family as GrapheneOS, so an
+          adapter would need `policyLatchesAtPlug = true`, the pending-until-replug state, and the replug grace
+          window rather than anything new. The reconnect gesture would be unsupported for the same timing reason.
+        - Caveats: single run, one sample per state, and the voltage column is not interpretable across rows
+          (4551 was measured under charge, 4421 at `status: 5` resting). The charge counter is the load-bearing
+          number. Note the ~4% figure is a **ratio** (6978/7256), so it survives the charge-counter unit question
+          raised by the telemetry defect below — a uniform 1000× scaling cancels. Only the absolute
+          "278 mAh" framing depends on the unit, and the nominal-capacity cross-check independently supports mAh.
     - **Third key, out of scope: `secure/charge_separation_all_scenarios_switch`** (bypass charging, `1`/`0`,
       reported 2026-08-16). Contributor observation: bypass engages while the screen is on and normal charging
       resumes with the screen off. Recorded as context only — Amply has **no bypass concept at all** (the sole
@@ -405,7 +486,42 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
       "Just send device info" action on the unsupported-device card (`DeviceSupportReporter` emits `device=`
       from `Build.DEVICE`, plus `brand`/`product` and the tri-state key probes; no Shizuku needed) rather than
       another wizard pass, which would omit the codename again.
-    - **Status after the 2026-08-16 follow-up: still NOT qualified, and the gate is unchanged.** One of Blocker
-      1's two halves is closed (keys drive the OEM UI both ways, mirror class excluded); the hardware half and
-      all of Blocker 2 are open. Nothing here justifies an adapter, a lab adapter, or a manufacturer read.
+    - **Three app defects this device exposed (2026-08-17), two of them not HONOR-specific.**
+        - **`FIXED`: "Open battery settings" landed on Battery Saver on every unmapped device.**
+          `ChargingRepository.nativeSettingsIntent()` returned null for `adapter == null` and its only caller
+          substituted `ACTION_BATTERY_SAVER_SETTINGS` outright, so `ACTION_POWER_USAGE_SUMMARY` was never tried —
+          despite every lab adapter preferring it, and despite the manifest already declaring its `<queries>`
+          visibility. Same user-visible symptom as the LineageOS case above, reached by a different path (that one
+          fell through to the Pixel component intent; this one had no adapter object to ask). Affected HONOR,
+          Motorola, Nothing, Sony, Fairphone, Vivo, Tecno — anything without an adapter. Fixed by making the
+          repository fall back to `OemChargingShortcuts.genericBatterySettings`, with the chain extracted so the
+          lab adapters and the null path share one implementation. **Not confirmed to change what this contributor
+          sees**: whether `POWER_USAGE_SUMMARY` resolves on MagicOS 10 is still unverified.
+        - **OPEN (deferred, deliberate): "Just send device info" cannot appear on an unrecognized ROM.**
+          `UnsupportedDeviceCard.kt` gates it on `hasSupportLead` (`ChargingRepository.kt`), a ten-way disjunction
+          of known-ROM markers, every one of which is structurally false for HONOR. Shipped in `v0.3.2-beta0`
+          (`bc55ceb`, PR #44) with a pinning test, so this contributor's build could never have shown it. The gate
+          is defensible (it exists to avoid dead-end reports) but perverse here: the less Amply recognizes a
+          device, the less it lets the user report it — and the report being withheld is the only one carrying
+          `Build.DEVICE`, which is exactly what an allowlist entry needs. This contributor hand-dumped properties
+          because of it. Held rather than changed: reversing a deliberate decision on one data point is thin, and
+          the Shizuku wizard path was still open to them. Revisit if another unknown-ROM contributor hits it.
+        - **OPEN (needs one device reading): charge power renders `0.0 W` / `4 mA` while charging.** Both figures
+          come from one field, `BATTERY_PROPERTY_CURRENT_NOW`. A ROM reporting mA where Android documents µA turns
+          a real 4 A into the integer `4000`, which formats as "4 mA" and computes to
+          `4551 mV × 4000 µA / 1e6 = 18 mW`, printing as "0.0 W" — reproduced exactly in
+          `StatsPowerCalculatorTest`. `Charge counter: 6978` points the same way (documented µAh; 6978 µAh would be
+          6.98 mAh). **But an end-of-charge trickle at level 100 produces the identical value**, so the number
+          alone cannot decide, and a low-side clamp would break correct readings on healthy devices — the
+          `MAX_PLAUSIBLE_MILLIWATTS` guard only ever caught the *over*-reporting direction, and its test comment
+          asserted the wrong direction outright (both corrected). Deciding reading requested: Amply's own
+          "Charge counter" row should render **~7 mAh** if the ROM scales that property, independent of charging
+          state. No per-device telemetry seam exists (`ChargingAdapter` carries no unit capability and
+          `BatteryReader` never sees a `DeviceInfo`), so a fix is new work — and it is adapter-independent, since
+          this device has no adapter to hang it on.
+    - **Status after the 2026-08-17 follow-up: still NOT qualified.** Blocker 1's hardware half is now ANSWERED
+      but the answer is unfavourable — the cap is real yet only ~4%, and neither key is a hard limit, so the open
+      question is no longer "does it work" but "is an Adaptive-only MagicOS adapter worth building". Blocker 2's
+      identity mechanism is resolved; its version scoping is not. Nothing here justifies an adapter, a lab
+      adapter, or a manufacturer read yet.
     - Tracking: GitHub issue #66.

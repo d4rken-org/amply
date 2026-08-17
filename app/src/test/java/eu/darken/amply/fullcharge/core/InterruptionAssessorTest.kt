@@ -203,6 +203,7 @@ class InterruptionAssessorTest {
             ChargePolicy.Unrestricted,
             workId = "wid-r",
             provenance = deadProvenance(boot = 5),
+            origin = RecoveryOrigin.SESSION_RESTORE,
         )
         val pickup = assessor.captureRecoveryPickup()
         pickup.assessment.shouldNotBeNull()
@@ -223,7 +224,11 @@ class InterruptionAssessorTest {
     @Test
     fun `a recovery pickup without provenance is adopted with no assessment`() = runTest {
         bootCount = 5
-        fullChargeStore.setPendingRecoveryTarget(ChargePolicy.Unrestricted, provenance = null)
+        fullChargeStore.setPendingRecoveryTarget(
+            ChargePolicy.Unrestricted,
+            provenance = null,
+            origin = RecoveryOrigin.SESSION_RESTORE,
+        )
 
         assessor.captureRecoveryPickup().assessment shouldBe null
         fullChargeStore.pendingRecoveryProvenance()!!.token shouldBe identity.token
@@ -236,6 +241,7 @@ class InterruptionAssessorTest {
             ChargePolicy.Unrestricted,
             workId = "wid-r",
             provenance = deadProvenance(boot = 5),
+            origin = RecoveryOrigin.SESSION_RESTORE,
         )
         val pickup = assessor.captureRecoveryPickup()
 
@@ -264,6 +270,7 @@ class InterruptionAssessorTest {
             ChargePolicy.Unrestricted,
             workId = "wid-r",
             provenance = WorkProvenance(identity.token, identity.pid, 5, 5L),
+            origin = RecoveryOrigin.SESSION_RESTORE,
         )
         val pickup = assessor.captureRecoveryPickup()
         pickup.assessment shouldBe null

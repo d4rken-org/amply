@@ -2,6 +2,7 @@ package eu.darken.amply.charging.core.adapter
 
 import android.content.Context
 import android.content.Intent
+import android.provider.Settings
 import eu.darken.amply.charging.core.DeviceInfo
 
 /**
@@ -24,5 +25,24 @@ object OemChargingShortcuts {
         } ?: return null
         candidate.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         return candidate.takeIf { it.resolveActivity(context.packageManager) != null }
+    }
+
+    /**
+     * The generic chain every adapter falls back to: the system battery-usage screen, which on most OEM skins is
+     * the entry point that also holds the built-in charge-protection toggle, then Battery Saver where it isn't
+     * resolvable. Both are AOSP actions — no brittle OEM ComponentNames. `POWER_USAGE_SUMMARY` visibility is
+     * declared in the manifest's `<queries>`, so it resolves on any ROM that ships the screen.
+     *
+     * A device Amply has **no adapter at all** for resolves through here too, which is the point: an unmapped
+     * device is the one most likely to need the OEM's own screen, and it used to land straight on Battery Saver
+     * because there was no adapter object to ask (`ChargingRepository.nativeSettingsIntent`).
+     */
+    fun genericBatterySettings(context: Context): Intent {
+        val powerUsage = Intent(Intent.ACTION_POWER_USAGE_SUMMARY).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return if (powerUsage.resolveActivity(context.packageManager) != null) {
+            powerUsage
+        } else {
+            Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
     }
 }
