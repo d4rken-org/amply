@@ -133,6 +133,30 @@ class FullChargeStore @Inject constructor(
     val quickFullChargeEnabled = dataStore.createValue("fullcharge.quick_replug_enabled.v2", false)
     val quickFullChargeAnyLevel = dataStore.createValue("fullcharge.quick_replug_any_level.v2", false)
 
+    /**
+     * The persistent-policy buttons the reconnect notification offers, as [ChargePolicy.stableId]s.
+     * Null means never configured, which [resolveQuickActionPolicies] reads as the default pair;
+     * a corrupt record decodes to null for the same reason (the selection is cosmetic, and losing it
+     * costs the user a re-pick rather than a charge policy).
+     */
+    val gestureNotificationPolicies = dataStore.createValue<List<String>?>(
+        key = "fullcharge.gesture_notification_policies.v1",
+        defaultValue = null,
+        json = json,
+        fallbackToDefault = true,
+    )
+
+    /**
+     * Per-widget-instance button selection, keyed by AppWidget id — one record under one key, so a
+     * widget being configured while another is deleted cannot write a half-updated map.
+     */
+    val widgetQuickActions = dataStore.createValue<Map<Int, List<String>>?>(
+        key = "widget.quick_actions.v1",
+        defaultValue = null,
+        json = json,
+        fallbackToDefault = true,
+    )
+
     suspend fun currentSession(): ChargeSessionRecord? = sessionValue.value()?.normalized()
 
     suspend fun startSession(
@@ -244,6 +268,35 @@ class FullChargeStore @Inject constructor(
 
     suspend fun setQuickFullChargeAnyLevel(enabled: Boolean) {
         quickFullChargeAnyLevel.value(enabled)
+    }
+
+    /**
+     * Flip one notification button on or off. The whole read-modify-write happens inside a single
+     * DataStore transaction, and the membership/bounds rules are enforced *there*, not in the UI:
+     * the picker's disabled rows are presentation, and two toggles racing from the same rendered
+     * state must not be able to write an empty (or oversized, or unsupported) selection.
+     */
+    suspend fun toggleGestureNotificationPolicy(
+        policy: ChargePolicy,
+        selected: Boolean,
+        supported: List<ChargePolicy>,
+        defaultProtective: ChargePolicy,
+    ) {
+        gestureNotificationPolicies.update { stored ->
+            val current = resolveQuickActionPolicies(stored, supported, defaultProtective)
+            toggleQuickActionPolicy(current, policy, selected, supported).map { it.stableId }
+        }
+    }
+
+    suspend fun setWidgetQuickActions(appWidgetId: Int, ids: List<String>) {
+        widgetQuickActions.update { current -> current.orEmpty() + (appWidgetId to ids) }
+    }
+
+    /** Drop the selections of deleted widgets; an emptied map clears the key entirely. */
+    suspend fun removeWidgetQuickActions(appWidgetIds: Collection<Int>) {
+        widgetQuickActions.update { current ->
+            current?.minus(appWidgetIds.toSet())?.takeIf { it.isNotEmpty() }
+        }
     }
 }
 

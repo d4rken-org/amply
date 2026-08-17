@@ -30,6 +30,7 @@
     <string name="gesture_notification_action_protect_adaptive">Adaptive charging</string>
     <string name="gesture_notification_action_protect">Charge limit</string>
     <string name="gesture_notification_action_always_full" formatted="false">Always 100%</string>
+    <string name="gesture_notification_action_pause_at_full">Pause at full</string>
     <string name="recovery_channel_name">Charge policy recovery</string>
     <string name="recovery_channel_description">Alerts you when your protective charge limit could not be restored</string>
     <string name="recovery_notification_title">Charge limit needs attention</string>
@@ -430,6 +431,8 @@
     <string name="settings_reconnect_enabled_unavailable">Not available on this device</string>
     <string name="settings_reconnect_any_level_title">Any charge level</string>
     <string name="settings_reconnect_any_level_body" formatted="false">Arm the gesture whenever a protective policy is detected, not just while the 80% limit is holding the battery.</string>
+    <string name="settings_reconnect_notification_actions_category">Notification buttons</string>
+    <string name="settings_reconnect_notification_actions_hint">Pick up to three charge modes. They appear as buttons on the reconnect-gesture notification and switch your charging permanently.</string>
     <string name="settings_reconnect_any_level_hint">More sensitive: any unplug/replug of 2–10 seconds starts a full charge, e.g. also below 80%. Momentary power cuts shorter than 2 seconds, like a car cutting USB power while starting, never trigger.</string>
     <string name="dashboard_shizuku_title">Better with Shizuku</string>
     <string name="dashboard_shizuku_body">Shizuku gives Amply exact policy readback instead of relying on hardware state and the last request.</string>
@@ -553,6 +556,7 @@
     <string name="widget_button_protect_fixed">∞%1$d%%</string>
     <string name="widget_button_protect_adaptive">∞Auto</string>
     <string name="widget_button_always_full" formatted="false">∞100%</string>
+    <string name="widget_button_pause_at_full">∞Pause</string>
     <string name="widget_button_full_once" formatted="false">1×100%</string>
     <string name="widget_status_charging_waiting" formatted="false">Charging to 100% · waiting…</string>
     <string name="widget_status_charging_once" formatted="false">Charging to 100% once</string>
@@ -660,6 +664,19 @@
     <string name="tile_upgrade_required">Tap to unlock with %1$s</string>
     <string name="widget_locked_body">Tap to unlock the widget</string>
 
+    <!-- Widget configuration -->
+    <string name="widget_config_title">Widget buttons</string>
+    <string name="widget_config_picker_hint" formatted="false">Pick up to three charge modes for this widget. They switch your charging permanently; the 1×100% button is always there.</string>
+    <string name="widget_config_confirm_action">Save</string>
+    <string name="widget_config_done_action">Add widget</string>
+    <string name="widget_config_loading">Checking this device…</string>
+    <string name="widget_config_error">Amply couldn\'t read the charging setup right now.</string>
+    <string name="widget_config_retry_action">Try again</string>
+    <string name="widget_config_locked">The widget is part of the upgrade. You can still place it, and it will unlock once you upgrade.</string>
+    <string name="widget_config_upgrade_action">Upgrade</string>
+    <string name="widget_config_unavailable">Amply can\'t control charging on this device, so the buttons stay at their defaults.</string>
+    <string name="widget_config_not_configurable">This device offers only two charge modes, so the widget already shows both.</string>
+    <string name="widget_config_save_failed">Saving didn\'t work. Try again.</string>
     <!-- Charge conditions — the rules list, its editor, and the dashboard card -->
     <string name="rules_title">Charge conditions</string>
     <string name="rules_priority_note">The topmost matching condition wins.</string>

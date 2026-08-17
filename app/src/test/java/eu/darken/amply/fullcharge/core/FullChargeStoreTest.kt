@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.common.AppDataStore
+import eu.darken.amply.common.datastore.value
 import eu.darken.amply.common.serialization.SerializationModule
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.CoroutineScope
@@ -309,6 +310,101 @@ class FullChargeStoreTest {
         }
 
         store.currentSession() shouldBe null
+    }
+
+    private val richAdapter = listOf(
+        ChargePolicy.FixedLimit(80),
+        ChargePolicy.FixedLimit(90),
+        ChargePolicy.Adaptive,
+        ChargePolicy.Unrestricted,
+    )
+
+    @Test
+    fun `the notification selection defaults to the adapter's protective default plus unrestricted`() = runTest {
+        store.gestureNotificationPolicies.value() shouldBe null
+
+        store.toggleGestureNotificationPolicy(
+            ChargePolicy.Adaptive,
+            selected = true,
+            supported = richAdapter,
+            defaultProtective = fixedLimit,
+        )
+
+        // The unconfigured default pair is what the toggle starts from.
+        store.gestureNotificationPolicies.value() shouldBe listOf("fixed:80", "adaptive", "unrestricted")
+    }
+
+    @Test
+    fun `the notification toggle enforces membership and bounds inside the transaction`() = runTest {
+        // A fourth entry is refused …
+        store.toggleGestureNotificationPolicy(ChargePolicy.Adaptive, true, richAdapter, fixedLimit)
+        store.toggleGestureNotificationPolicy(ChargePolicy.FixedLimit(90), true, richAdapter, fixedLimit)
+        store.gestureNotificationPolicies.value() shouldBe listOf("fixed:80", "adaptive", "unrestricted")
+
+        // … as is an unsupported one, and emptying the selection.
+        store.toggleGestureNotificationPolicy(ChargePolicy.PauseAtFull, true, richAdapter, fixedLimit)
+        store.gestureNotificationPolicies.value() shouldBe listOf("fixed:80", "adaptive", "unrestricted")
+
+        store.toggleGestureNotificationPolicy(ChargePolicy.Adaptive, false, richAdapter, fixedLimit)
+        store.toggleGestureNotificationPolicy(ChargePolicy.Unrestricted, false, richAdapter, fixedLimit)
+        store.toggleGestureNotificationPolicy(fixedLimit, false, richAdapter, fixedLimit)
+        store.gestureNotificationPolicies.value() shouldBe listOf("fixed:80")
+    }
+
+    /**
+     * Two toggles issued from the same rendered picker state: the second must see the first's write,
+     * which only holds because the read-modify-write is one transaction rather than a read followed
+     * by a write of a remembered list.
+     */
+    @Test
+    fun `sequential toggles from the same start do not lose an update`() = runTest {
+        store.toggleGestureNotificationPolicy(ChargePolicy.Unrestricted, false, richAdapter, fixedLimit)
+        store.toggleGestureNotificationPolicy(ChargePolicy.Adaptive, true, richAdapter, fixedLimit)
+
+        store.gestureNotificationPolicies.value() shouldBe listOf("fixed:80", "adaptive")
+    }
+
+    @Test
+    fun `a corrupt notification selection decodes to no selection`() = runTest {
+        appDataStore.store.edit {
+            it[stringPreferencesKey("fullcharge.gesture_notification_policies.v1")] = """{"not":"a list"}"""
+        }
+
+        store.gestureNotificationPolicies.value() shouldBe null
+    }
+
+    @Test
+    fun `widget selections round-trip per widget id`() = runTest {
+        store.setWidgetQuickActions(11, listOf("fixed:80", "adaptive"))
+        store.setWidgetQuickActions(22, listOf("unrestricted"))
+
+        store.widgetQuickActions.value() shouldBe mapOf(
+            11 to listOf("fixed:80", "adaptive"),
+            22 to listOf("unrestricted"),
+        )
+    }
+
+    @Test
+    fun `deleting a widget removes exactly its selection`() = runTest {
+        store.setWidgetQuickActions(11, listOf("fixed:80"))
+        store.setWidgetQuickActions(22, listOf("unrestricted"))
+
+        store.removeWidgetQuickActions(listOf(11))
+
+        store.widgetQuickActions.value() shouldBe mapOf(22 to listOf("unrestricted"))
+
+        // The last removal clears the key rather than leaving an empty map behind.
+        store.removeWidgetQuickActions(listOf(22))
+        store.widgetQuickActions.value() shouldBe null
+    }
+
+    @Test
+    fun `a corrupt widget selection map decodes to none`() = runTest {
+        appDataStore.store.edit {
+            it[stringPreferencesKey("widget.quick_actions.v1")] = """["not","a","map"]"""
+        }
+
+        store.widgetQuickActions.value() shouldBe null
     }
 
     @Test

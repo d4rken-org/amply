@@ -19,6 +19,7 @@ import eu.darken.amply.main.ui.MainActivity
 object SessionNotifications {
     const val SESSION_ID = 4101
     private const val RECOVERY_ID = 4102
+    private const val ACTION_REQUEST_CODE_BASE = 8
     // Channel ids are invisible to the user and permanent — changing one resets that channel's
     // settings — so this keeps its original id while its display name has moved on.
     private const val SESSION_CHANNEL = "temporary_full_charge"
@@ -164,14 +165,15 @@ object SessionNotifications {
     }
 
     /**
-     * [protectPolicy] is the adapter's declared protective default and has no default value on
-     * purpose: the action writes it persistently, so the capability has to be handed in by the
-     * caller that resolved the adapter rather than guessed here.
+     * [actionPolicies] are the persistent-policy buttons to offer, already resolved and validated
+     * against the adapter by the caller (see [resolveQuickActionPolicies]) — no default value on
+     * purpose: these actions write persistently, so the capability has to be handed in rather than
+     * guessed here.
      */
     fun gesture(
         context: Context,
         decision: QuickFullChargeDecision,
-        protectPolicy: ChargePolicy,
+        actionPolicies: List<ChargePolicy>,
         anyLevel: Boolean = false,
         limitPercent: Int? = null,
     ): Notification {
@@ -235,35 +237,34 @@ object SessionNotifications {
         // WAITING_FOR_RECONNECT": TRIGGER also reaches this builder, and neither the 10s countdown
         // nor the tick that starts a full charge should offer a competing persistent write.
         if (decision == QuickFullChargeDecision.IDLE || decision == QuickFullChargeDecision.ARMED) {
-            builder
-                .addAction(
+            actionPolicies.forEachIndexed { index, policy ->
+                builder.addAction(
                     R.drawable.ic_launcher_monochrome,
-                    protectActionLabel(context, protectPolicy),
-                    persistentPolicyIntent(context, 8, protectPolicy),
+                    policyActionLabel(context, policy),
+                    persistentPolicyIntent(context, ACTION_REQUEST_CODE_BASE + index, policy),
                 )
-                .addAction(
-                    R.drawable.ic_launcher_monochrome,
-                    context.getString(R.string.gesture_notification_action_always_full),
-                    persistentPolicyIntent(context, 9, ChargePolicy.Unrestricted),
-                )
+            }
         }
         return builder.build()
     }
 
-    /** Mirrors the widget's protect-button naming; other policies are not protective defaults today. */
-    private fun protectActionLabel(context: Context, policy: ChargePolicy): String = when (policy) {
+    /** Mirrors the widget's button naming. */
+    private fun policyActionLabel(context: Context, policy: ChargePolicy): String = when (policy) {
         is ChargePolicy.FixedLimit -> context.getString(
             R.string.gesture_notification_action_protect_fixed,
             policy.percent,
         )
         ChargePolicy.Adaptive -> context.getString(R.string.gesture_notification_action_protect_adaptive)
+        ChargePolicy.Unrestricted -> context.getString(R.string.gesture_notification_action_always_full)
+        ChargePolicy.PauseAtFull -> context.getString(R.string.gesture_notification_action_pause_at_full)
         else -> context.getString(R.string.gesture_notification_action_protect)
     }
 
     /**
-     * Both actions share [ChargeSessionService.ACTION_SET_PERSISTENT_POLICY] and differ only in an
+     * All actions share [ChargeSessionService.ACTION_SET_PERSISTENT_POLICY] and differ only in an
      * extra, which does NOT factor into PendingIntent equality — hence the distinct [requestCode]
-     * per action, or the second would overwrite the first's target.
+     * per slot, or a later action would overwrite an earlier one's target. The base leaves the
+     * request codes this file already uses (1–5, 7) alone.
      */
     private fun persistentPolicyIntent(
         context: Context,

@@ -106,7 +106,8 @@ fun SettingsPreferenceItem(
 @Composable
 fun SettingsSwitchItem(
     title: String,
-    subtitle: String,
+    // Nullable: a row whose title already says everything (a charge-mode pick) has no second line.
+    subtitle: String?,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     icon: ImageVector? = null,
