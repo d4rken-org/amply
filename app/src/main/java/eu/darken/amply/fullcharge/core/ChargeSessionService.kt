@@ -20,6 +20,7 @@ import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingPreferences
 import eu.darken.amply.charging.core.ChargingRepository
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
+import eu.darken.amply.common.datastore.value
 import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
@@ -538,9 +539,14 @@ class ChargeSessionService : Service() {
                 SessionNotifications.gesture(
                     this,
                     decision = decision,
-                    // The notification's mode actions write persistently, so they must offer this
-                    // adapter's declared protective default, not a hardcoded limit.
-                    protectPolicy = adapter.defaultProtectivePolicy,
+                    // The notification's mode actions write persistently, so they must offer
+                    // policies this adapter actually supports — the user's picked set where one
+                    // exists, this adapter's default pair otherwise.
+                    actionPolicies = resolveQuickActionPolicies(
+                        fullChargeStore.gestureNotificationPolicies.value(),
+                        adapter.supportedPolicies,
+                        adapter.defaultProtectivePolicy,
+                    ),
                     anyLevel = when (decision) {
                         // The armed copy states the condition the gesture will fire under. The
                         // latched basis is not that condition: at the limit, LIMIT_HOLD wins the
@@ -757,11 +763,25 @@ class ChargeSessionService : Service() {
         // Central guard: if no backend can write (e.g. a Shizuku-only adapter with Shizuku not
         // connected), refuse before persisting a recovery target — otherwise a widget/tile tap
         // would strand a pending target that never converges. The app's controls guide setup.
-        if (!repository.refresh().canApply) {
+        val state = repository.refresh()
+        if (!state.canApply) {
             log(TAG, Logging.Priority.WARN) { "Persistent policy skipped: charging control not writable" }
             // Tell the user why nothing happened. The widget/tile pre-check writability and open the
             // app instead of dispatching, but a notification action cannot pre-check, so without this
             // its tap is a silent no-op (it also covers a surface racing a lost write capability).
+            SessionNotifications.showRecovery(this, R.string.recovery_notification_body_unavailable)
+            SurfaceUpdater.updateNow(this)
+            continueGestureOrStop()
+            return
+        }
+        // Same refusal for a target this adapter cannot apply: a notification action (or a widget
+        // button) built for a previous adapter selection outlives the render that produced it, and
+        // persisting its recovery target would leave the device converging on something the
+        // repository rejects on every attempt.
+        if (policy !in state.supportedPolicies) {
+            log(TAG, Logging.Priority.WARN) {
+                "Persistent policy skipped: ${policy.stableId} is not supported by the current adapter"
+            }
             SessionNotifications.showRecovery(this, R.string.recovery_notification_body_unavailable)
             SurfaceUpdater.updateNow(this)
             continueGestureOrStop()

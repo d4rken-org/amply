@@ -29,6 +29,7 @@
     <string name="gesture_notification_action_protect_adaptive">Adaptive charging</string>
     <string name="gesture_notification_action_protect">Charge limit</string>
     <string name="gesture_notification_action_always_full" formatted="false">Always 100%</string>
+    <string name="gesture_notification_action_pause_at_full">Pause at full</string>
     <string name="recovery_channel_name">Charge policy recovery</string>
     <string name="recovery_channel_description">Alerts you when your protective charge limit could not be restored</string>
     <string name="recovery_notification_title">Charge limit needs attention</string>

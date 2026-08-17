@@ -23,23 +23,25 @@ class SessionNotificationsGestureTest {
 
     private val context: Context = ApplicationProvider.getApplicationContext()
 
+    private val defaultPair = listOf(ChargePolicy.FixedLimit(80), ChargePolicy.Unrestricted)
+
     private fun notification(
         decision: QuickFullChargeDecision,
-        protectPolicy: ChargePolicy = ChargePolicy.FixedLimit(80),
+        actionPolicies: List<ChargePolicy> = defaultPair,
         anyLevel: Boolean = false,
         limitPercent: Int? = null,
     ): Notification = SessionNotifications.gesture(
         context,
         decision = decision,
-        protectPolicy = protectPolicy,
+        actionPolicies = actionPolicies,
         anyLevel = anyLevel,
         limitPercent = limitPercent,
     )
 
     private fun actions(
         decision: QuickFullChargeDecision,
-        protectPolicy: ChargePolicy = ChargePolicy.FixedLimit(80),
-    ): List<Notification.Action> = notification(decision, protectPolicy).actions?.toList().orEmpty()
+        actionPolicies: List<ChargePolicy> = defaultPair,
+    ): List<Notification.Action> = notification(decision, actionPolicies).actions?.toList().orEmpty()
 
     private fun targetPolicyOf(action: Notification.Action): String? = shadowOf(action.actionIntent)
         .savedIntent
@@ -132,42 +134,69 @@ class SessionNotificationsGestureTest {
     }
 
     @Test
-    fun `the protect action is labelled after the adapter's protective default`() {
-        actions(QuickFullChargeDecision.IDLE, ChargePolicy.FixedLimit(80))[0].title.toString() shouldBe
-            context.getString(R.string.gesture_notification_action_protect_fixed, 80)
-        actions(QuickFullChargeDecision.IDLE, ChargePolicy.Adaptive)[0].title.toString() shouldBe
+    fun `the number of actions follows the passed selection`() {
+        actions(QuickFullChargeDecision.IDLE, listOf(ChargePolicy.Adaptive)).size shouldBe 1
+        actions(QuickFullChargeDecision.IDLE, defaultPair).size shouldBe 2
+        actions(
+            QuickFullChargeDecision.IDLE,
+            listOf(ChargePolicy.FixedLimit(80), ChargePolicy.PauseAtFull, ChargePolicy.Unrestricted),
+        ).size shouldBe 3
+        actions(QuickFullChargeDecision.IDLE, emptyList()).size shouldBe 0
+    }
+
+    @Test
+    fun `every policy gets its own label`() {
+        val labels = actions(
+            QuickFullChargeDecision.IDLE,
+            listOf(ChargePolicy.FixedLimit(85), ChargePolicy.PauseAtFull, ChargePolicy.Unrestricted),
+        ).map { it.title.toString() }
+
+        labels shouldBe listOf(
+            context.getString(R.string.gesture_notification_action_protect_fixed, 85),
+            context.getString(R.string.gesture_notification_action_pause_at_full),
+            context.getString(R.string.gesture_notification_action_always_full),
+        )
+        actions(QuickFullChargeDecision.IDLE, listOf(ChargePolicy.Adaptive))[0].title.toString() shouldBe
             context.getString(R.string.gesture_notification_action_protect_adaptive)
-        actions(QuickFullChargeDecision.IDLE, ChargePolicy.PauseAtFull)[0].title.toString() shouldBe
-            context.getString(R.string.gesture_notification_action_protect)
     }
 
     @Test
-    fun `the protect action targets the passed policy and the other one always full`() {
-        targetPolicyOf(actions(QuickFullChargeDecision.IDLE, ChargePolicy.FixedLimit(80))[0]) shouldBe "fixed:80"
-        targetPolicyOf(actions(QuickFullChargeDecision.IDLE, ChargePolicy.Adaptive)[0]) shouldBe "adaptive"
-        targetPolicyOf(actions(QuickFullChargeDecision.IDLE)[1]) shouldBe "unrestricted"
+    fun `the actions target their policies in the given order`() {
+        val targets = actions(
+            QuickFullChargeDecision.IDLE,
+            listOf(ChargePolicy.Adaptive, ChargePolicy.FixedLimit(80), ChargePolicy.Unrestricted),
+        ).map { targetPolicyOf(it) }
+
+        targets shouldBe listOf("adaptive", "fixed:80", "unrestricted")
     }
 
     @Test
-    fun `both actions are distinct foreground-service intents for the session service`() {
-        val (protect, alwaysFull) = actions(QuickFullChargeDecision.ARMED)
+    fun `every action is a distinct foreground-service intent for the session service`() {
+        val actions = actions(
+            QuickFullChargeDecision.ARMED,
+            listOf(ChargePolicy.FixedLimit(80), ChargePolicy.Adaptive, ChargePolicy.Unrestricted),
+        )
 
-        listOf(protect, alwaysFull).forEach { action ->
+        actions.forEach { action ->
             val shadow = shadowOf(action.actionIntent)
             shadow.isForegroundService shouldBe true
             shadow.savedIntent.component shouldBe
                 ComponentName(context, ChargeSessionService::class.java)
             shadow.savedIntent.action shouldBe ChargeSessionService.ACTION_SET_PERSISTENT_POLICY
         }
-        // Extras don't factor into PendingIntent equality — only the distinct request codes keep
-        // the second action from overwriting the first one's target.
-        protect.actionIntent shouldNotBe alwaysFull.actionIntent
+        // Extras don't factor into PendingIntent equality — only the distinct per-slot request codes
+        // keep a later action from overwriting an earlier one's target.
+        actions.map { it.actionIntent }.toSet().size shouldBe 3
+        actions[0].actionIntent shouldNotBe actions[1].actionIntent
     }
 
     @Test
     fun `sending an action starts the session service with its policy`() {
         val application: Application = ApplicationProvider.getApplicationContext()
-        val (protect, alwaysFull) = actions(QuickFullChargeDecision.IDLE, ChargePolicy.Adaptive)
+        val (protect, alwaysFull) = actions(
+            QuickFullChargeDecision.IDLE,
+            listOf(ChargePolicy.Adaptive, ChargePolicy.Unrestricted),
+        )
         shadowOf(application).clearStartedServices()
 
         protect.actionIntent.send()
