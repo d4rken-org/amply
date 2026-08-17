@@ -48,10 +48,10 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
 |---|---|---|---|---|
 | Pixel | Pixel 8 `shiba` A17/API37; Pixel 9 Pro `caiman` A16/API36; Pixel 7a `lynx` A16/API36 | Full — sysfs `charging_policy` follows writes (~11–12s) | Access tiers, sessions, boot recovery, wireless hold, at-threshold, reconnect gesture, natural 100%, interrupted-session detection (7a) | 2026-07-15/-19/-20/-25 |
 | Samsung | Galaxy Tab A9+ SM-X210 One UI 8.0; Galaxy S20 FE SM-G781B One UI 4.1 | Full — sync readback + HAL enforcement | Modern multi-mode + legacy toggle, session E2E, native-change cancel, reboot recovery, R8 beta | 2026-07-21 |
-| Xiaomi | Xiaomi 13T `2306EPN60G` HyperOS 2.0 (`ro.mi.os.version.code=2`) | **Partial** — mapping/readback/session verified; the adaptive 80% hold could not be triggered, so daemon-level hardware enforcement is **not yet demonstrated** | Read matrix, both-direction writes, session at 100%, unknown-value refusal, R8 beta | 2026-07-21 |
+| Xiaomi | Xiaomi 13T `2306EPN60G` (`aristotle`) HyperOS 2.0 (`ro.mi.os.version.code=2`); 2026-08-16 re-run on `OS2.0.216.0.VMFEUXM` / Android 15 | **Partial, now characterized** — external shell-UID writes provably drive the daemon identically to native UI taps (`getProtectMode` → `checkUiModeProtect` → `setEnable`, ~80 ms, both directions, no hidden UI-only flag). The adaptive 80% hold is still **unobserved**: charged 59→100% with no plateau, `getNightChargingState` = 0 on all 140 evaluations. Cause identified — the gate is a *learned* charging-routine model (`key_ave_night_charge_start_minutes`, `…_sd`, `key_enter_night_charge_times`), not a clock window (forced clock to 02:30 did not open it). **BLOCKED on an unused test device, not FAILED.** No hardware hold signal (`Charging state`/`policy` = 0/0) | Read matrix, both-direction writes, session at 100%, unknown-value refusal, R8 beta (2026-07-21). Added 2026-08-16: external-vs-UI write-path equivalence, native UI reflects external key, learned-schedule root cause, clock-forcing negative | 2026-07-21 / 2026-08-16 |
 | OnePlus (Oplus) | OnePlus Nord CE4 Lite `CPH2621` ColorOS 15 (`ro.build.version.oplusrom=V15.0.0`) | Full — enforcement directly observable (device holds at 80%); external writes stick | Two mutually-exclusive `system` keys (Charging limit / Smart charging), WSS-only write rejected + Shizuku write succeeds for all three policies, WSS-only UX (controls disabled + Shizuku-required banner) | 2026-07-21 |
 | GrapheneOS | Pixel 9 Pro XL `komodo`, GrapheneOS 2026080501 / Android 17 — **REMOTE qualification via issue #49** (tester-run protocol, not maintainer hardware) | **Enforcement observed**: held at 80% with shield, `dumpsys battery` status=4/Charging state=4/policy=2 (limit on) vs 2/1/1 (off); shell-UID writes move the Settings UI live, **latch at plug-session start** — mid-session writes have no hardware effect until unplug→replug, replug reliably applies the current value | Key isolation (`settings list` diff → single `global battery_charge_limit` 0/1), write→UI both directions, mid-session no-op both directions, replug latch both directions, hardware signal both states. **NOT run**: app-context access tiers (WSS write from Amply, `app.grapheneos.*` package visibility), sessions/boot recovery, wireless, factory-absent key state, secondary user | 2026-08-12 |
-| Xiaomi (HyperOS 3) | Redmi Note 14 `24117RN76G` (`tanzanite`), HyperOS 3.0.302 / Android 16 (`ro.mi.os.version.code=3`) — **REMOTE qualification via issue #48** (contributor-run protocol, not maintainer hardware) | **Both-direction enforcement of EXTERNAL shell-UID writes observed** (the same write path as Amply's Shizuku service): `settings put … 2` below the cap → Battery protection active, Settings UI follows immediately, held at 80% for ~20 min under active use (voltage 4228 mV holding vs 4391 mV charging, charge counter 4283 vs 4341 corroborate; sysfs `current_now` permission-denied, so no current reading); `settings put … 0` mid-hold → charging resumes past 80 immediately. **No hardware hold signal**: `dumpsys battery` reports `status: 2` / `Charging state: 0` / `Charging policy: 0` in both states → read-back-only verification | Key mapping (three modes incl. `2` = Battery protection @80, cap fixed — no percent picker), external write → UI both directions, sustained hold, mid-hold release. Beta run 2026-08-14 added: app-context three-mode control (direct WSS), factory-absent key = Intelligent (confirmed). Session restore FAILED in that run (observer noise cancel — app bug, fixed; see Known gaps). **NOT run**: Shizuku tier, boot recovery, wireless, R8, session re-verify post-fix | 2026-08-14 |
+| Xiaomi (HyperOS 3) | Redmi Note 14 `24117RN76G` (`tanzanite`), HyperOS 3.0.302 / Android 16 (`ro.mi.os.version.code=3`) — **REMOTE qualification via issue #48** (contributor-run protocol, not maintainer hardware) | **Both-direction enforcement of EXTERNAL shell-UID writes observed** (the same write path as Amply's Shizuku service): `settings put … 2` below the cap → Battery protection active, Settings UI follows immediately, held at 80% for ~20 min under active use (voltage 4228 mV holding vs 4391 mV charging, charge counter 4283 vs 4341 corroborate; sysfs `current_now` permission-denied, so no current reading); `settings put … 0` mid-hold → charging resumes past 80 immediately. **No hardware hold signal**: `dumpsys battery` reports `status: 2` / `Charging state: 0` / `Charging policy: 0` in both states → read-back-only verification | Key mapping (three modes incl. `2` = Battery protection @80, cap fixed — no percent picker), external write → UI both directions, sustained hold, mid-hold release. Beta run 2026-08-14 added: app-context three-mode control (direct WSS), factory-absent key = Intelligent (confirmed). Session restore FAILED in that run (observer noise cancel — app bug, fixed in #65). Re-verified 2026-08-16 on v0.3.4-beta0: **session restore PASSES** — full-charge session ran to 100% and Battery protection was re-written automatically while still plugged. **NOT run**: Shizuku tier, boot recovery, wireless, R8, unplug-early restore | 2026-08-16 |
 | GrapheneOS (follow-up) | Same device, **0.3.2-beta0 on-device report via issue #49** | **Package detection VERIFIED from app context** (`is_grapheneos=true` with the FLAG_SYSTEM check); **unprivileged key read DENIED** — `has_battery_charge_limit=false` while the very same report showed `battery_charging_status=4` (limit enforcing). Root cause in GrapheneOS source: the key is `@Protected(read = SYSTEM_UI, readWrite = SETTINGS)` (frameworks_base `c30c6393`); SettingsProvider throws SecurityException for all other packages **including WSS holders**, with the shell UID explicitly exempt ("ADB is used for testing", `e87c93a2`) — so the tester's earlier adb runs ARE the Shizuku-path evidence. Factory-absent semantics resolved from source: `BoolSetting(..., default false)` → absent = off | Detection + fail-closed probe verified live; adapter re-gated to Shizuku-only in response | 2026-08-13 |
 
 ## Known gaps
@@ -149,8 +149,60 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
     (`ro.build.version.opporom`) is read, so pre-ColorOS-12 builds remain undetectable as Oplus by ROM version. A
     device with a *working* pre-15 ColorOS charge-protection feature would need a new gate signal, not a widened
     version constant — and the usual bar applies: physically observed charging cessation, not a settings mapping.
-- **Xiaomi** — adaptive hardware enforcement of external writes unconfirmed; treat the adapter as provisional until
-  the 80% hold is physically observed.
+- **Xiaomi** — **external-write handling RESOLVED (2026-08-16); the adaptive 80% hold remains unobserved and is
+  now believed UNQUALIFIABLE on an unused test device.** Split the old "adaptive enforcement unconfirmed" gap into
+  its two halves — one is now closed, the other is characterized rather than merely open.
+  - **Closed: external shell-UID writes are functionally identical to native UI taps** (Xiaomi 13T `aristotle`,
+    HyperOS 2 `OS2.0.216.0.VMFEUXM`, Android 15, maintainer hardware). Both paths produce the same daemon chain
+    with the same values, within ~80 ms of the write:
+    `ChargeProtectionUtils: getProtectMode mode:N` → `SmartChargeProtectManager: checkUiModeProtect:N` →
+    `BaseChargeProtect_: MODE_NIGHT,setEnable fromShouldWork:false,to:false,enable:{true|false}`.
+    Verified in both directions and both origins (UI tap to Charge fully / Intelligent, external
+    `settings put … 0` / `… 1`). **There is no hidden internal flag that only the Settings UI sets** — an
+    explicitly tested hypothesis, refuted. The native UI also reflects an externally-written key on next open.
+    So Amply's write mechanism is complete and correct on HyperOS 2; nothing in the adapter needs changing for
+    the write path.
+  - **Still unobserved: the hold itself.** With the key at `1` (Intelligent, written externally), the device
+    charged **59% → 100% continuously with no plateau at any level** — uniform ~4 min per point, voltage and
+    charge counter rising monotonically through 80 (4265→4293 mV, counter 3390000→3493000), `status: 2`
+    throughout. `getNightChargingState` was evaluated **140 times across the run and returned `0` every time**
+    (60 s cadence while charging). No hardware hold signal exists — `Charging state: 0` / `Charging policy: 0`
+    in all states, same as HyperOS 3.
+  - **Root cause of the non-engagement: the gate is a LEARNED schedule, not a clock window.** Strings in
+    `com.miui.securitycenter` (`com.miui.powercenter.nightcharge`) show the feature keeps a statistical model of
+    habitual overnight charging: `key_ave_night_charge_start_minutes`, `key_night_charge_start_minutes_sd`,
+    `key_night_charge_end_minutes_sd` (standard deviations), `key_enter_night_charge_times` (occurrence count),
+    `key_earliest_night_charge_end_minutes`, `key_night_charge_record`, plus four distinct
+    `isNeedNightChargeProtection return false case 1..4` rejection paths. Directly corroborated: forcing the
+    device clock to 02:30 (via `cmd time_detector set_time_state_for_tests`; shell UID lacks both `SET_TIME` and
+    `SUGGEST_MANUAL_TIME_AND_ZONE`) did **not** open the window — `isNightChargeProtectionOpen` stayed `false`.
+    Time of day alone is insufficient; the daemon wants a low-variance charging history the device does not have.
+  - **Consequence for qualification: this device cannot settle it.** The 13T is a maintainer *test* device with no
+    normal daily use, so it can never accumulate the routine the model requires. Qualifying Adaptive would need
+    either weeks of genuine (or convincingly simulated) nightly charging at a consistent time, or root to seed
+    SecurityCenter's private prefs. Record the July "could not be triggered" and this run as the **same** result
+    with a now-known cause, not as two independent failures. **Adaptive on Xiaomi is therefore BLOCKED, not
+    FAILED** — no evidence exists that it fails to hold, only that its precondition never became true.
+  - **Consequence for the adapter, RESOLVED in the same change** (see `XiaomiChargingAdapter.kt`,
+    `defaultProtectivePolicy = Adaptive`): Amply's protective policy on HyperOS 2 is a mode that, by the OEM's own
+    design, only acts inside a learned overnight window, so a device with Adaptive configured charges to 100%
+    outside it. The read was never *wrong* (the mode genuinely is configured) but "protected" overstated it. The
+    default stays — HyperOS 2 offers no unconditional protective mode — and the honesty moved to presentation:
+    `ChargePolicy.enforcementIsConditional` + `ChargeObservation.provesPolicyInEffect()` withhold the confirmed
+    checkmark from a conditional policy that only settings can vouch for. **Verified on `aristotle` itself**
+    (2026-08-16, foss debug + direct WSS): Adaptive renders with the neutral shield and "the system chooses when
+    it applies", 100% still renders with the green check and the plain readback line, and both apply without a
+    settling spinner — the last point being the visible symptom if the predicate ever leaks into pending logic.
+    Note HyperOS blocks adb installs behind an on-device "Install via USB" dialog with a 5s auto-deny, so an
+    install must be confirmed on screen while it is awake.
+  - **Dead end, do not re-investigate:** `global battery_charging_state_enforce_level` and
+    `battery_charging_state_update_delay` (both `-1` on this device) look like an enforcement lever from their
+    names — they are not. Resolved 2026-08-16 by disassembling the device's own `/system/framework/services.jar`
+    (`dexdump`): both are read by **`com.android.server.power.stats.BatteryStatsImpl$Constants`**, alongside
+    `KEY_BATTERY_CHARGED_DELAY_MS`, `KEY_MAX_HISTORY_FILES`, and `KEY_KERNEL_UID_READERS_THROTTLE_TIME`. This is
+    stock AOSP **battery-statistics bookkeeping** (when batterystats treats the device as charged, for history
+    reset), not Xiaomi charge control, and it cannot cap charging current. Never written to. Recorded here
+    specifically so the plausible-sounding name does not cost anyone a second investigation.
   - **HyperOS 3 candidate mapping (contribution report, 2026-08-07 — unqualified at the time; since landed,
     see the LANDED bullet below).** A
     Redmi Note 14 `24117RN76G` (`tanzanite`, Android 16 / SDK 36, `ro.mi.os.version.code=3`, ROM
@@ -234,8 +286,16 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
         re-written. Root-caused from the run's artifacts — the contributor's 22:22 screenshot shows the
         dashboard already idle at 96% while their 2s key monitor shows no value change after the 21:59:08
         override write. Fixed by `NativeChangeGuard` (readback-verified cancellation, see
-        `rules/architecture.md`); **session-lifecycle re-verification is the headline ask for the next beta**.
-        Boot recovery and R8 smoke remain NOT RUN.
+        `rules/architecture.md`).
+      - **Session restore RE-VERIFIED PASS (2026-08-16, issue #48, v0.3.4-beta0 — the first release carrying
+        the #65 fix).** With Battery protection active, the contributor started the temporary full-charge
+        session; the battery charged past the cap to 100% and Amply re-wrote Battery protection automatically
+        on reaching full, **with the cable still connected**. So the `RESTORE_FULL` path fires without needing
+        a disconnect, and `NativeChangeGuard` no longer eats the session on this device's notification
+        pattern — the guard fix is now confirmed against the exact device that produced the bug. This closes
+        the only failing item from the 2026-08-14 run; `tanzanite` becomes the second remote-qualified device
+        with a verified session lifecycle. **Still NOT run** here: the disconnect-early restore path
+        (`RESTORE_DISCONNECTED`), the Shizuku access tier, boot recovery, and an R8 beta/release smoke.
       - **Cap is fixed at 80%** (no percent picker in the Battery protection screen), and mode `2`'s own
         description says the device will "charge fully only when scheduled" — HyperOS reserves an OEM-side
         scheduled full charge while in Battery protection. No code impact (verification is settings readback;
@@ -275,18 +335,158 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
       the shell UID, then check whether HONOR's own battery screen and the charging hardware follow), the same
       test that settled `tanzanite`. The contributor completed the Shizuku-gated wizard, so they have a working
       Shizuku setup and are a strong candidate to run it.
+    - **Blocker 1, HALF resolved (support mail, 2026-08-16).** The contributor ran the external-write test from
+      Termux via Shizuku/rish. **Both keys accept the write and HONOR's own battery screen follows the value in
+      both directions**, for `UserSmartPeakCap`/Smart battery capacity and for `asw_ui_state`/Smart charge alike.
+      That **rules out the read-only-mirror class** the Oplus comparison pointed at — the ColorOS `_status` keys
+      are read-only (`95618cc`: "The OEM enforces exclusion and mirrors a read-only `_status`"), and these are
+      not. The `_ui_` name is no longer a reason to distrust `asw_ui_state` specifically.
+      **It does NOT satisfy step 2 of the protocol**, which passes only when writes move the *real charging
+      hardware*, "not just the Settings UI". The surviving failure mode is a key the Settings UI genuinely reads
+      *and* writes while a separate mechanism drives the charger — precisely the oriole/LineageOS 20 result
+      (write accepted, `ChargingControlController` picked it up and reported the new config back, battery charged
+      92→95% at ~1.2 A). Treat UI-follows-write as a **precondition met**, never as qualification.
+    - **Smart charge is adaptive, not a cap (same mail).** Overnight the device reaches 100% by morning, matching
+      HONOR's described hold-then-top-off behaviour. So the feature maps to `ChargePolicy.Adaptive`, not a
+      `FixedLimit`, and there is no plateau for the step-2 hardware test to observe — **only Smart battery
+      capacity is hardware-testable here**, and it is also the key carrying the level hazard below. Note the
+      Adaptive honesty gap recorded for Xiaomi above applies identically: `allowsFullCharge`
+      (`ChargePolicy.kt:12-13`) excludes Adaptive, so Amply would call this "protective" for a mode that reaches
+      full on its own.
     - **Blocker 2 — no gate signal identified.** The fingerprint is stock-shaped
       (`HONOR/BKQ-N49/HNBKQ:16/HONORBKQ-N49/10.0.0.193C636E4R106P1:user/release-keys`), so fingerprint sniffing
       is out for the same reason it was for LineageOS. Whether a MagicOS-exclusive property analogous to
       `ro.mi.os.version.code` exists **and is readable from an `untrusted_app` process** is unknown and cannot be
       settled by adb `getprop` (adb runs as shell — see the SELinux trap above). `Build.MANUFACTURER == "HONOR"`
       alone is a manufacturer gate with no ROM scoping, weaker than every existing OEM gate.
+      **Unchanged by the 2026-08-16 follow-up, and it outlives the mapping**: even a clean hardware result leaves
+      no safe way to switch an adapter on only where it applies. Asked the contributor for `pm list features` and
+      `pm list packages -s` filtered on honor/magic, i.e. the two mechanisms that *are* app-readable and already
+      carry LineageOS (`org.lineageos.android` system feature) and GrapheneOS (`app.grapheneos.*` core packages).
+      A property would not do, for the reason above. Also note the app itself cannot answer this: property names
+      are compile-time constants, the AIDL has no property op
+      (`IChargingControlService.aidl`), and `SystemPropertyReader` structurally cannot distinguish denial from
+      absence — so probing a candidate MagicOS property needs a code change, not a contributor run.
+    - **Blocker 2, IDENTITY MECHANISM RESOLVED (support mail, 2026-08-17); version scoping still open.** The
+      contributor supplied both lists from `HNBKQ`. App-readable signals now known to exist on MagicOS 10:
+        - **System features** (`hasSystemFeature`, no permission, no `<queries>` entry — the LineageOS pattern):
+          `com.hihonor.software.features.honor`, `com.hihonor.system.feature`,
+          `com.hihonor.software.features.full`, `com.hihonor.software.features.handset`,
+          `com.hihonor.software.features.oversea`, `com.hihonor.magic.api.23`.
+        - **Core system packages** (PackageManager + `FLAG_SYSTEM` — the GrapheneOS pattern):
+          `com.hihonor.systemserver`, `com.hihonor.systemmanager`, `com.hihonor.powergenie`,
+          `com.hihonor.controlcenter`, `com.hihonor.android.launcher`.
+        - Properties exist too (`ro.build.version.magic=MagicOS_10.0.0`, `ro.build.magic_api_level=42`,
+          `ro.magic.cversion=C636`) but stay the **wrong** route for the SELinux reason above; they are recorded
+          only as corroboration. `ro.product.device=HNBKQ` confirms the fingerprint-derived codename.
+      **What is still missing is ROM-generation scoping.** `com.hihonor.magic.api.23` does not line up with
+      `ro.build.magic_api_level=42`, so that feature reads as a fixed namespace marker rather than a version
+      discriminator — i.e. the features answer "is this MagicOS", not "is this MagicOS 10". Every existing OEM
+      gate is version-scoped (One UI range, `ro.mi.os.version.code`, `oplusrom == 15`); a features-only HONOR gate
+      would be the first that is not, which is exactly the weakness called out above for `Build.MANUFACTURER`.
+      Resolve that before any gate is written, not after.
     - **Level-reporting hazard to test at qualification.** The reporter states Smart battery capacity "still
       displays 100% when fully charged" while capping. A ROM reporting a synthetic 100% at a real ~80% would
       trip `full = status == BATTERY_STATUS_FULL || percent >= 100` in `ChargeSessionService`, ending a session
       early via `RESTORE_FULL`, and would corrupt `StatsLimitHitDetector`. Verify before any adapter ships.
+      Three sharpenings (2026-08-16), because the phrasing above understates it:
+        - **The predicate is a disjunction, so `BATTERY_STATUS_FULL` alone trips it**
+          (`ChargeSessionService.kt:374`). Guarding only `percent >= 100` would close nothing: a ROM that fakes
+          the level almost certainly drives `EXTRA_STATUS` through the same platform path. `full` is also the
+          **first** branch of `SessionDecisionEngine.decide` (`SessionDecision.kt:122`), outranking the safety
+          timeout, the disconnect path and the replug grace window, and the resulting `RESTORE_FULL` is silent —
+          Amply re-applies the protective policy and believes it finished the job.
+        - **Nothing establishes that the *broadcast* carries the synthetic value.** The contributor reported what
+          HONOR *displays*. SystemUI reads the same broadcast so the two usually agree, but that is an inference.
+          The qualification measurement must read `dumpsys battery` (level/status/voltage/charge counter), not
+          the status bar.
+        - **No workaround exists to build on.** There is no level clamp, plausibility check, or level-vs-hardware
+          cross-check anywhere in the app; `BatteryReadoutFactory.kt:54-57` rejects only a malformed level/scale
+          pair. Tolerating a lying ROM would be new work with no existing seam, so do not describe it as a
+          compatibility tweak. Blast radius beyond sessions: `StatsLimitHitDetector.kt:44` returns `false`
+          unconditionally at ≥100 (the "limit reached" signal would never fire on exactly this device class), and
+          `ChargeAlarmEngine.kt:39` would fire at any configured target outside a session (inside one,
+          `sessionActive` suppresses it).
+      **Measurement asked for (2026-08-16):** charge to a displayed 100% with Smart battery capacity ON, record
+      `dumpsys battery`, then switch the feature OFF with the cable in and re-record. Voltage and charge counter
+      climbing afterwards proves the cap is real and the 100% cosmetic; unchanged means the cell was already full
+      and the mode caps nothing. Same evidence shape that settled `tanzanite`.
+      **RESULT (2026-08-17), and it reframes the feature.** Contributor-run, `HNBKQ`:
+
+      | State | Charge counter | status | level | voltage |
+      | --- | --- | --- | --- | --- |
+      | Smart battery capacity ON, plugged, HONOR showing 100% (stable ≥1 min) | 6978 | 2 | 100 | 4551 |
+      | Feature OFF, cable never removed | 6978 (unchanged) | — | — | — |
+      | Feature OFF, after unplug→replug | 7256 | 5 | 100 | 4421 → 4472 |
+
+        - **The synthetic 100% is CONFIRMED in the broadcast, not just the status bar.** `level: 100` with 278 mAh
+          of real headroom, so the sharpenings above are now evidenced rather than inferred. The dumpsys `status: 2`
+          alongside a flat counter also means the ROM reports "charging" while holding.
+        - **But the cap is only ~4%, so Smart battery capacity is NOT an 80%-cap equivalent.** The C636/Singapore
+          variant is the 7100 mAh model (China 7200, Europe 6270; the contributor's own AIDA64 reading of ~7121 mAh
+          corroborates), so 278 mAh ≈ 3.8%. An 80% cap would have plateaued near 5800 mAh. This is a
+          top-of-charge voltage trim, a different class of feature from every currently supported adapter.
+          Consequence: **neither HONOR key is a hard cap** — Smart charge is adaptive (reaches 100% overnight),
+          Smart battery capacity trims ~4% — so an adapter here could offer Adaptive on/off and no percentage at
+          all, with the `allowsFullCharge` honesty gap applying. Weigh that against the build cost before
+          committing to a MagicOS adapter; the mapping being correct is no longer the deciding question.
+        - **`policyLatchesAtPlug` behaviour OBSERVED.** Disabling the feature with the cable in moved nothing; the
+          278 mAh only went in after unplug→replug. Same latch-at-plug-session-start family as GrapheneOS, so an
+          adapter would need `policyLatchesAtPlug = true`, the pending-until-replug state, and the replug grace
+          window rather than anything new. The reconnect gesture would be unsupported for the same timing reason.
+        - Caveats: single run, one sample per state, and the voltage column is not interpretable across rows
+          (4551 was measured under charge, 4421 at `status: 5` resting). The charge counter is the load-bearing
+          number. Note the ~4% figure is a **ratio** (6978/7256), so it survives the charge-counter unit question
+          raised by the telemetry defect below — a uniform 1000× scaling cancels. Only the absolute
+          "278 mAh" framing depends on the unit, and the nominal-capacity cross-check independently supports mAh.
+    - **Third key, out of scope: `secure/charge_separation_all_scenarios_switch`** (bypass charging, `1`/`0`,
+      reported 2026-08-16). Contributor observation: bypass engages while the screen is on and normal charging
+      resumes with the screen off. Recorded as context only — Amply has **no bypass concept at all** (the sole
+      codebase mention is a KDoc line in `GrapheneOsChargingAdapter.kt:25` describing what GrapheneOS's key does
+      underneath), and `ChargePolicy` cannot express a bypass-only state. Not a candidate for the write allowlist.
     - `rom_version=magicos 10.0.0.193` in the report is **free text typed by the contributor**, not a detector
       output; `one_ui_version=none` / `hyperos_version=none` are the real detectors correctly returning null.
       Note also that contribution reports carry **no codename field** (unlike the direct device-support report),
-      so an allowlist entry can only come from the fingerprint or a follow-up.
+      so an allowlist entry can only come from the fingerprint or a follow-up. Asked the contributor to run the
+      "Just send device info" action on the unsupported-device card (`DeviceSupportReporter` emits `device=`
+      from `Build.DEVICE`, plus `brand`/`product` and the tri-state key probes; no Shizuku needed) rather than
+      another wizard pass, which would omit the codename again.
+    - **Three app defects this device exposed (2026-08-17), two of them not HONOR-specific.**
+        - **`FIXED`: "Open battery settings" landed on Battery Saver on every unmapped device.**
+          `ChargingRepository.nativeSettingsIntent()` returned null for `adapter == null` and its only caller
+          substituted `ACTION_BATTERY_SAVER_SETTINGS` outright, so `ACTION_POWER_USAGE_SUMMARY` was never tried —
+          despite every lab adapter preferring it, and despite the manifest already declaring its `<queries>`
+          visibility. Same user-visible symptom as the LineageOS case above, reached by a different path (that one
+          fell through to the Pixel component intent; this one had no adapter object to ask). Affected HONOR,
+          Motorola, Nothing, Sony, Fairphone, Vivo, Tecno — anything without an adapter. Fixed by making the
+          repository fall back to `OemChargingShortcuts.genericBatterySettings`, with the chain extracted so the
+          lab adapters and the null path share one implementation. **Not confirmed to change what this contributor
+          sees**: whether `POWER_USAGE_SUMMARY` resolves on MagicOS 10 is still unverified.
+        - **OPEN (deferred, deliberate): "Just send device info" cannot appear on an unrecognized ROM.**
+          `UnsupportedDeviceCard.kt` gates it on `hasSupportLead` (`ChargingRepository.kt`), a ten-way disjunction
+          of known-ROM markers, every one of which is structurally false for HONOR. Shipped in `v0.3.2-beta0`
+          (`bc55ceb`, PR #44) with a pinning test, so this contributor's build could never have shown it. The gate
+          is defensible (it exists to avoid dead-end reports) but perverse here: the less Amply recognizes a
+          device, the less it lets the user report it — and the report being withheld is the only one carrying
+          `Build.DEVICE`, which is exactly what an allowlist entry needs. This contributor hand-dumped properties
+          because of it. Held rather than changed: reversing a deliberate decision on one data point is thin, and
+          the Shizuku wizard path was still open to them. Revisit if another unknown-ROM contributor hits it.
+        - **OPEN (needs one device reading): charge power renders `0.0 W` / `4 mA` while charging.** Both figures
+          come from one field, `BATTERY_PROPERTY_CURRENT_NOW`. A ROM reporting mA where Android documents µA turns
+          a real 4 A into the integer `4000`, which formats as "4 mA" and computes to
+          `4551 mV × 4000 µA / 1e6 = 18 mW`, printing as "0.0 W" — reproduced exactly in
+          `StatsPowerCalculatorTest`. `Charge counter: 6978` points the same way (documented µAh; 6978 µAh would be
+          6.98 mAh). **But an end-of-charge trickle at level 100 produces the identical value**, so the number
+          alone cannot decide, and a low-side clamp would break correct readings on healthy devices — the
+          `MAX_PLAUSIBLE_MILLIWATTS` guard only ever caught the *over*-reporting direction, and its test comment
+          asserted the wrong direction outright (both corrected). Deciding reading requested: Amply's own
+          "Charge counter" row should render **~7 mAh** if the ROM scales that property, independent of charging
+          state. No per-device telemetry seam exists (`ChargingAdapter` carries no unit capability and
+          `BatteryReader` never sees a `DeviceInfo`), so a fix is new work — and it is adapter-independent, since
+          this device has no adapter to hang it on.
+    - **Status after the 2026-08-17 follow-up: still NOT qualified.** Blocker 1's hardware half is now ANSWERED
+      but the answer is unfavourable — the cap is real yet only ~4%, and neither key is a hard limit, so the open
+      question is no longer "does it work" but "is an Adaptive-only MagicOS adapter worth building". Blocker 2's
+      identity mechanism is resolved; its version scoping is not. Nothing here justifies an adapter, a lab
+      adapter, or a manufacturer read yet.
     - Tracking: GitHub issue #66.

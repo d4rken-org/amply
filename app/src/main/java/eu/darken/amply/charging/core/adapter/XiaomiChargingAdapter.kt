@@ -44,6 +44,14 @@ class XiaomiChargingAdapter @Inject constructor() : ChargingAdapter {
         ChargePolicy.Unrestricted,
     )
 
+    /**
+     * The only adapter whose protective default is conditional ([ChargePolicy.enforcementIsConditional]),
+     * and unavoidably so: the HyperOS 2 key domain is `{0,1}`, so Adaptive is the sole protective mode
+     * this ROM offers. HyperOS only engages it inside a learned overnight window — a 13T with Adaptive
+     * configured and read back charged 59%→100% untouched (2026-08-16) — so the honesty burden lands on
+     * presentation, which refuses to claim active protection for it. The HyperOS 3 adapter has an
+     * unconditional mode available and defaults to `FixedLimit(80)` instead.
+     */
     override val defaultProtectivePolicy = ChargePolicy.Adaptive
     override val verification = VerificationStrategy.SYNC_READBACK
 
@@ -152,7 +160,9 @@ class XiaomiHyperOs3ChargingAdapter @Inject constructor() : ChargingAdapter {
             detail = when {
                 !matched -> R.string.adapter_detail_requires_xiaomi_hyperos3
                 !device.isSystemUser -> R.string.adapter_detail_secondary_user
-                else -> R.string.adapter_detail_xiaomi_ready
+                // Distinct from the HyperOS 2 string: Battery protection has demonstrated hardware
+                // enforcement (issue #48), so the stronger claim stays accurate here.
+                else -> R.string.adapter_detail_xiaomi_hyperos3_ready
             },
             contributionWanted = false,
         )

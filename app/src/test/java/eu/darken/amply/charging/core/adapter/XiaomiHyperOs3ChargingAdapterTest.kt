@@ -42,7 +42,9 @@ class XiaomiHyperOs3ChargingAdapterTest {
 
         support.matched shouldBe true
         support.controlEnabled shouldBe true
-        support.detail shouldBe R.string.adapter_detail_xiaomi_ready
+        // Its own string, not the HyperOS 2 one: Battery protection has demonstrated hardware
+        // enforcement, so this generation keeps the stronger "applies to the hardware" claim.
+        support.detail shouldBe R.string.adapter_detail_xiaomi_hyperos3_ready
     }
 
     @Test
@@ -144,6 +146,9 @@ class XiaomiHyperOs3ChargingAdapterTest {
         adapter.reconnectGestureSupported shouldBe false
         adapter.preferShizukuForWrites shouldBe false
         adapter.policyLatchesAtPlug shouldBe false
+        // Unlike HyperOS 2, this ROM has an unconditional protective mode (Battery protection), so
+        // the default is one Amply can honestly claim is holding.
+        adapter.defaultProtectivePolicy.enforcementIsConditional shouldBe false
     }
 
     private class FakeBackend(

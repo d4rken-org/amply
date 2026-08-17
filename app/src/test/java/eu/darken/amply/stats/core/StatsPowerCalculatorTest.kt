@@ -31,13 +31,25 @@ class StatsPowerCalculatorTest {
 
     @Test
     fun `implausible OEM current is rejected rather than poisoning the average`() {
-        // A device reporting current in mA instead of uA would look like ~1000x too much power.
+        // Only the upper bound is guarded: a firmware over-reporting by ~10x lands past the 250 W cap.
         StatsPowerCalculator.milliwatts(4000, 2_000_000_0 /* 20 A in uA-ish scale */).let {
             // 4000mV * 20_000_000uA = 80W = 80000mW, still under cap
             it shouldBe 80000
         }
         // 4000 mV * 100_000_000 (bad units) = 400 W > cap → null
         StatsPowerCalculator.milliwatts(4000, 100_000_000) shouldBe null
+    }
+
+    @Test
+    fun `mA-where-uA-expected is silently under-reported, not clamped`() {
+        // The inverse error: a firmware reporting mA where Android documents uA makes readings 1000x too
+        // SMALL, so no clamp fires. A real 4 A at 4551 mV (HONOR MagicOS 10 shape) arrives as `4000` and
+        // computes to 18 mW, which the UI formats as "0.0 W". Pinned so nobody "fixes" this with a lower
+        // bound: the same 18 mW is what a genuine end-of-charge trickle produces, so the value alone
+        // cannot tell the two apart.
+        StatsPowerCalculator.milliwatts(4551, 4_000) shouldBe 18
+        // The reading it should have produced, had the unit been what the API documents.
+        StatsPowerCalculator.milliwatts(4551, 4_000_000) shouldBe 18204
     }
 
     @Test

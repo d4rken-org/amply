@@ -68,6 +68,7 @@ import eu.darken.amply.charging.core.access.AccessSnapshot
 import eu.darken.amply.charging.core.access.BackendStatus
 import eu.darken.amply.charging.core.isAwaitingReplug
 import eu.darken.amply.charging.core.isSettling
+import eu.darken.amply.charging.core.provesPolicyInEffect
 import eu.darken.amply.charging.core.settlingTarget
 import eu.darken.amply.common.ca.CaString
 import eu.darken.amply.common.ca.caString
@@ -441,7 +442,9 @@ private fun StatusCard(
         }
     }
     val settling = state.charging.isSettling(now)
-    val verified = observation is ChargeObservation.Verified
+    // Not "is it Verified" — a readback of a conditional policy (adaptive) proves the mode is set,
+    // not that the charger is acting on it, so it must not earn the confirmed checkmark.
+    val policyInEffect = observation.provesPolicyInEffect()
 
     // Not clickable. The card states the policy; the measurements (and the way through to them) live
     // in the charging card below. A whole-card tap here used to land on voltage and cycle counts,
@@ -461,9 +464,9 @@ private fun StatusCard(
                 )
             } else {
                 Icon(
-                    imageVector = if (verified) Icons.Default.CheckCircle else Icons.Default.Security,
+                    imageVector = if (policyInEffect) Icons.Default.CheckCircle else Icons.Default.Security,
                     contentDescription = null,
-                    tint = if (verified) Color(0xFF1A7F5A) else MaterialTheme.colorScheme.tertiary,
+                    tint = if (policyInEffect) Color(0xFF1A7F5A) else MaterialTheme.colorScheme.tertiary,
                 )
             }
             Text(
@@ -930,10 +933,16 @@ private fun ChargeObservation.title(): CaString = when (this) {
 }
 
 private fun ChargeObservation.detail(): CaString = when (this) {
-    is ChargeObservation.Verified -> if (backend == BackendKind.BATTERY_HARDWARE) {
-        R.string.dashboard_detail_hw_confirmed.toCaString()
-    } else {
-        caString {
+    // The backend placeholder stays in both readback strings: this line's job is provenance.
+    is ChargeObservation.Verified -> when {
+        backend == BackendKind.BATTERY_HARDWARE -> R.string.dashboard_detail_hw_confirmed.toCaString()
+        policy.enforcementIsConditional -> caString {
+            it.getString(
+                R.string.dashboard_detail_readback_conditional,
+                backend.name.replace('_', ' ').lowercase(),
+            )
+        }
+        else -> caString {
             it.getString(R.string.dashboard_detail_readback, backend.name.replace('_', ' ').lowercase())
         }
     }
@@ -1219,6 +1228,81 @@ private fun DashboardScreenHwUnconfirmedPreview() = PreviewWrapper {
         onOpenSupportIssue = {},
         onEmailSupport = {},
         onHelp = {},
+    )
+}
+
+// The conditional-enforcement state, reproducing the real failure: a Xiaomi 13T sitting at 100% on
+// the charger with Adaptive configured and verified. HyperOS engages Intelligent charging only in a
+// learned overnight window, so the card must name the mode without claiming it is holding anything —
+// no protection checkmark, and a detail line saying the system chooses when it applies.
+@AmplyPreview
+@Composable
+private fun DashboardScreenConditionalPolicyPreview() = PreviewWrapper {
+    DashboardScreen(
+        state = DashboardUiState(
+            onboardingComplete = true,
+            batteryReadout = BatteryReadout(
+                levelPercent = 100,
+                status = android.os.BatteryManager.BATTERY_STATUS_FULL,
+                plugged = android.os.BatteryManager.BATTERY_PLUGGED_AC,
+                temperatureTenthsC = 316,
+            ),
+            charging = ChargingState(
+                device = DeviceInfo("Xiaomi", "23078RKD5G", 35, "preview"),
+                adapterName = "Xiaomi charging protection".toCaString(),
+                adapterId = "xiaomi-hyperos2-v1",
+                adapterDetail = "Setting changes apply immediately; no reconnect needed".toCaString(),
+                supportedPolicies = listOf(
+                    ChargePolicy.Adaptive,
+                    ChargePolicy.Unrestricted,
+                ),
+                defaultProtectivePolicy = ChargePolicy.Adaptive,
+                syncVerification = true,
+                controlEnabled = true,
+                access = AccessSnapshot(
+                    direct = BackendStatus(
+                        available = true,
+                        granted = true,
+                        detail = "Charge-control access granted".toCaString(),
+                    ),
+                    shizuku = BackendStatus(
+                        available = true,
+                        granted = true,
+                        detail = "Shizuku ready".toCaString(),
+                    ),
+                ),
+                observation = ChargeObservation.Verified(ChargePolicy.Adaptive, BackendKind.SHIZUKU),
+            ),
+        ),
+        adbCommand = "adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS",
+        onRefresh = {},
+        onSettings = {},
+        onStartFull = {},
+        onRestore = {},
+        onApply = {},
+        onQuickFullChargeChange = {},
+        onAlarmEnabledChange = {},
+        onAlarmTargetChange = {},
+        onFixNotifications = {},
+        onOpenBatteryHub = {},
+        onRetryCapture = {},
+        onPinWidget = {},
+        onAddTile = {},
+        onDismissQuickAccess = {},
+        onDismissInterruption = {},
+        onNativeSettings = {},
+        onOpenShizuku = {},
+        onAllowShizuku = {},
+        onGrantWss = {},
+        onCopyAdb = {},
+        onCopyWebUsbLink = {},
+        onPrepareSupportReport = {},
+        onCopySupportReport = {},
+        onOpenContribution = {},
+        onOpenSupportIssue = {},
+        onEmailSupport = {},
+        onHelp = {},
+        onOpenConditions = {},
     )
 }
 
