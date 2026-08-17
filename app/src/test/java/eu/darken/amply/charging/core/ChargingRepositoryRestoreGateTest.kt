@@ -33,6 +33,8 @@ import eu.darken.amply.charging.core.enforcement.EnforcementVerdict
 import eu.darken.amply.charging.core.enforcement.EnforcementVerdictEngine
 import eu.darken.amply.common.AppDataStore
 import eu.darken.amply.common.serialization.SerializationModule
+import eu.darken.amply.fullcharge.core.RecoveryOrigin
+import eu.darken.amply.fullcharge.core.writeRecoveryTarget
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import kotlinx.coroutines.CoroutineScope
@@ -170,6 +172,37 @@ class ChargingRepositoryRestoreGateTest {
             .observation.shouldBeInstanceOf<ChargeObservation.Unsupported>()
 
         repository.restorePersistent(ChargePolicy.FixedLimit(80), forceNotify = true)
+            .observation.shouldBeInstanceOf<ChargeObservation.Unknown>()
+    }
+
+    /**
+     * The recovery dispatch, which is where the bypass could leak: `setPersistentPolicy` persists its
+     * target BEFORE the risky write, so a process death or a failed write leaves a *fresh user
+     * choice* as pending recovery work. Boot recovery must write that one through the gate — the
+     * build can have become a candidate (an OTA changes the composite build identity) or been refuted
+     * meanwhile — while an owed session restore keeps its bypass.
+     */
+    @Test
+    fun `a candidate build gates a pending user request but not an owed restore`() = runTest {
+        repository.writeRecoveryTarget(ChargePolicy.Unrestricted, RecoveryOrigin.USER_REQUEST).let {
+            it.success shouldBe false
+            it.observation.shouldBeInstanceOf<ChargeObservation.Unsupported>()
+        }
+
+        repository.writeRecoveryTarget(ChargePolicy.FixedLimit(80), RecoveryOrigin.SESSION_RESTORE)
+            .observation.shouldBeInstanceOf<ChargeObservation.Unknown>()
+    }
+
+    @Test
+    fun `a refuted build gates a pending user request but not an owed restore`() = runTest {
+        refute()
+
+        repository.writeRecoveryTarget(ChargePolicy.Unrestricted, RecoveryOrigin.USER_REQUEST).let {
+            it.success shouldBe false
+            it.observation.shouldBeInstanceOf<ChargeObservation.Unsupported>()
+        }
+
+        repository.writeRecoveryTarget(ChargePolicy.FixedLimit(80), RecoveryOrigin.SESSION_RESTORE)
             .observation.shouldBeInstanceOf<ChargeObservation.Unknown>()
     }
 

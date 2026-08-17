@@ -668,22 +668,33 @@ class ChargeSessionService : Service() {
 
     private val recoveryHooks = object : BootRecoveryFlow.Hooks {
         override suspend fun currentSessionTarget() = fullChargeStore.currentSession()?.restorePolicy
-        override suspend fun pendingTarget() = fullChargeStore.pendingRecoveryTarget()
+
+        // One record read, not target-then-origin: the two must never be paired across a concurrent
+        // write (see FullChargeStore.currentRecovery).
+        override suspend fun pendingTarget() = fullChargeStore.currentRecovery()?.let {
+            BootRecoveryFlow.PendingRecovery(target = it.target, origin = it.origin)
+        }
+
         override suspend fun setPendingTarget(policy: ChargePolicy) {
             // A session-only recovery seeds the pending target from the session it is recovering, so it
             // continues the SAME owed work — inherit the session's work id; otherwise mint a fresh one.
             val workId = fullChargeStore.currentSession()?.workId ?: UUID.randomUUID().toString()
-            fullChargeStore.setPendingRecoveryTarget(policy, workId, currentWorkProvenance())
+            fullChargeStore.setPendingRecoveryTarget(
+                policy = policy,
+                workId = workId,
+                provenance = currentWorkProvenance(),
+                origin = RecoveryOrigin.SESSION_RESTORE,
+            )
         }
 
         override suspend fun clearPendingTarget() = fullChargeStore.clearPendingRecoveryTarget()
         override suspend fun restoreSession() = manager.restore().success
         override suspend fun dropStaleSession() = manager.cancelWithoutRestore()
-        // Boot recovery repays an obligation the user already had, so it takes the ungated restore
-        // path: an OTA between the session start and this boot changes the build identity, which
-        // would otherwise leave the owed protective write refused by the enforcement gate.
-        override suspend fun rewrite(policy: ChargePolicy) =
-            repository.restorePersistent(policy, forceNotify = true).success
+
+        // The origin decides the write path: an owed restore bypasses the enforcement evidence tier,
+        // a pending user request does not. See writeRecoveryTarget.
+        override suspend fun rewrite(policy: ChargePolicy, origin: RecoveryOrigin) =
+            repository.writeRecoveryTarget(policy, origin).success
 
         override suspend fun intendedTarget() = preferences.lastRequestedNow()
 
@@ -775,8 +786,15 @@ class ChargeSessionService : Service() {
         // Persist the intended end state as the recovery target BEFORE the risky write and before dropping
         // the session, so a failed write or a mid-write process death still converges here on next boot
         // instead of leaving charging in whatever transient state the session had. An explicit persistent
-        // choice is new owed work, so it gets a fresh work id.
-        fullChargeStore.setPendingRecoveryTarget(policy, UUID.randomUUID().toString(), currentWorkProvenance())
+        // choice is new owed work, so it gets a fresh work id — and USER_REQUEST, so that a boot recovery
+        // resuming it writes it through the enforcement gate exactly like this call does, rather than
+        // through the ungated restore path (the build can be a candidate or refuted by then).
+        fullChargeStore.setPendingRecoveryTarget(
+            policy = policy,
+            workId = UUID.randomUUID().toString(),
+            provenance = currentWorkProvenance(),
+            origin = RecoveryOrigin.USER_REQUEST,
+        )
         restoring = true
         coordinator.close()
         try {

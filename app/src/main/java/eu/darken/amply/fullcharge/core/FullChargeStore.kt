@@ -61,8 +61,35 @@ data class ChargeSessionRecord(
 )
 
 /**
+ * Why a recovery target is owed, which decides how it may be written back later.
+ *
+ * The distinction is a safety boundary, not bookkeeping: a [SESSION_RESTORE] repays a protective
+ * policy the user ALREADY had and therefore takes the ungated
+ * `ChargingRepository.restorePersistent()`, while a [USER_REQUEST] is a fresh choice — possibly
+ * `Unrestricted` — and must go through the gated `reapplyPersistent()`. Between the write being
+ * persisted and it landing, the build can become a candidate (an OTA changes the composite build
+ * identity) or be refuted, and a fresh user write must not slip past the enforcement gate just
+ * because a process death turned it into recovery work.
+ */
+@Serializable
+enum class RecoveryOrigin {
+    /** Repaying the protective policy of a session or an earlier boot recovery: ungated. */
+    @SerialName("SESSION_RESTORE")
+    SESSION_RESTORE,
+
+    /** A policy the user explicitly asked for (widget/tile persistent choice): gated. */
+    @SerialName("USER_REQUEST")
+    USER_REQUEST,
+}
+
+/**
  * The restore Amply still owes after a boot or an interrupted session, held as one record so its
  * target, correlation id and provenance can never be read as a mismatched set.
+ *
+ * [origin] defaults to the **safe** [RecoveryOrigin.USER_REQUEST]: a record written by a build that
+ * did not know the field decodes to the gated path, so an older record can never bypass the
+ * enforcement gate. The cost of the wrong default in the other direction is a refused restore, which
+ * the boot recovery notification surfaces; the cost here would be a silent ungated write.
  */
 @Serializable
 data class RecoveryRecord(
@@ -71,6 +98,7 @@ data class RecoveryRecord(
     val target: ChargePolicy,
     @SerialName("workId") val workId: String? = null,
     @SerialName("provenance") val provenance: WorkProvenance? = null,
+    @SerialName("origin") val origin: RecoveryOrigin = RecoveryOrigin.USER_REQUEST,
 )
 
 /**
@@ -175,12 +203,19 @@ class FullChargeStore @Inject constructor(
 
     suspend fun pendingRecoveryWorkId(): String? = currentRecovery()?.workId
 
+    /**
+     * [origin] has no default: it decides whether the target may later be written through the ungated
+     * restore path, so every caller must state which kind of work it is persisting.
+     */
     suspend fun setPendingRecoveryTarget(
         policy: ChargePolicy,
         workId: String? = null,
         provenance: WorkProvenance? = null,
+        origin: RecoveryOrigin,
     ) {
-        recoveryValue.update { RecoveryRecord(target = policy, workId = workId, provenance = provenance) }
+        recoveryValue.update {
+            RecoveryRecord(target = policy, workId = workId, provenance = provenance, origin = origin)
+        }
     }
 
     /** Re-stamp the pending recovery target's provenance to the current process, if one is present. */

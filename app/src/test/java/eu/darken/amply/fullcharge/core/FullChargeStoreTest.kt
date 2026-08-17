@@ -112,7 +112,11 @@ class FullChargeStoreTest {
     @Test
     fun `recovery provenance round-trips including a null boot count`() = runTest {
         val provenance = WorkProvenance(token = "tok-r", pid = 99, bootCount = null, createdAtMillis = 2_500L)
-        store.setPendingRecoveryTarget(ChargePolicy.Unrestricted, provenance = provenance)
+        store.setPendingRecoveryTarget(
+            ChargePolicy.Unrestricted,
+            provenance = provenance,
+            origin = RecoveryOrigin.SESSION_RESTORE,
+        )
 
         store.pendingRecoveryProvenance() shouldBe provenance
     }
@@ -122,6 +126,7 @@ class FullChargeStoreTest {
         store.setPendingRecoveryTarget(
             ChargePolicy.Unrestricted,
             provenance = WorkProvenance("tok-r", 99, 3, 2_500L),
+            origin = RecoveryOrigin.SESSION_RESTORE,
         )
         store.clearPendingRecoveryTarget()
 
@@ -150,6 +155,7 @@ class FullChargeStoreTest {
         store.setPendingRecoveryTarget(
             ChargePolicy.Unrestricted,
             provenance = WorkProvenance("old", 1, 1, 5L),
+            origin = RecoveryOrigin.SESSION_RESTORE,
         )
         val adopted = WorkProvenance(token = "new", pid = 2, bootCount = 4, createdAtMillis = 9L)
         store.adoptRecoveryOwner(adopted)
@@ -209,7 +215,11 @@ class FullChargeStoreTest {
 
     @Test
     fun `recovery work id is written at creation and cleared with the target`() = runTest {
-        store.setPendingRecoveryTarget(ChargePolicy.Unrestricted, workId = "wid-r")
+        store.setPendingRecoveryTarget(
+            ChargePolicy.Unrestricted,
+            workId = "wid-r",
+            origin = RecoveryOrigin.SESSION_RESTORE,
+        )
         store.pendingRecoveryWorkId() shouldBe "wid-r"
 
         store.clearPendingRecoveryTarget()
@@ -234,6 +244,7 @@ class FullChargeStoreTest {
             ChargePolicy.FixedLimit(90),
             workId = "wid-r",
             provenance = WorkProvenance("tok-r", 43, 7, 1_100L),
+            origin = RecoveryOrigin.SESSION_RESTORE,
         )
         store.setLastSeenBootCount(7)
 
@@ -250,6 +261,7 @@ class FullChargeStoreTest {
             target = ChargePolicy.FixedLimit(90),
             workId = "wid-r",
             provenance = WorkProvenance("tok-r", 43, 7, 1_100L),
+            origin = RecoveryOrigin.SESSION_RESTORE,
         )
         restarted.lastSeenBootCount() shouldBe 7
     }
@@ -305,6 +317,7 @@ class FullChargeStoreTest {
             ChargePolicy.Unrestricted,
             workId = "wid-r",
             provenance = WorkProvenance("old", 1, 1, 5L),
+            origin = RecoveryOrigin.SESSION_RESTORE,
         )
         store.adoptRecoveryOwner(WorkProvenance("new", 2, 1, 9L))
 

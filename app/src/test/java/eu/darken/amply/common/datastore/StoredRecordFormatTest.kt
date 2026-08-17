@@ -13,6 +13,7 @@ import eu.darken.amply.fullcharge.core.ChargeSessionRecord
 import eu.darken.amply.fullcharge.core.InterruptionEvent
 import eu.darken.amply.fullcharge.core.InterruptionOutcome
 import eu.darken.amply.fullcharge.core.InterruptionReason
+import eu.darken.amply.fullcharge.core.RecoveryOrigin
 import eu.darken.amply.fullcharge.core.RecoveryRecord
 import eu.darken.amply.fullcharge.core.WorkProvenance
 import eu.darken.amply.main.core.QuickAccessState
@@ -98,7 +99,8 @@ class StoredRecordFormatTest {
         // green through a @SerialName rename that would orphan every already-stored record.
         json.encodeToString(RecoveryRecord.serializer(), record) shouldBe
             """{"target":"unrestricted","workId":"wid-r",""" +
-            """"provenance":{"token":"tok-a","pid":42,"createdAtMillis":1000}}"""
+            """"provenance":{"token":"tok-a","pid":42,"createdAtMillis":1000},""" +
+            """"origin":"USER_REQUEST"}"""
     }
 
     @Test
@@ -109,7 +111,20 @@ class StoredRecordFormatTest {
             target = ChargePolicy.FixedLimit(90),
             workId = "wid-r",
             provenance = null,
+            origin = RecoveryOrigin.USER_REQUEST,
         )
+    }
+
+    /**
+     * A record written before the origin field existed must decode to the GATED path. The other
+     * default would let a fresh user write — persisted by an older build and resumed by this one —
+     * reach the ungated restore path on a build the enforcement gate refuses.
+     */
+    @Test
+    fun `a recovery record without an origin decodes as a gated user request`() {
+        json.decodeFromString(RecoveryRecord.serializer(), """{"target":"unrestricted"}""")
+            .origin shouldBe RecoveryOrigin.USER_REQUEST
+        RecoveryRecord(target = ChargePolicy.Unrestricted).origin shouldBe RecoveryOrigin.USER_REQUEST
     }
 
     @Test
@@ -125,7 +140,7 @@ class StoredRecordFormatTest {
 
         expected.forEach { (policy, wire) ->
             json.encodeToString(RecoveryRecord.serializer(), RecoveryRecord(target = policy)) shouldBe
-                """{"target":"$wire"}"""
+                """{"target":"$wire","origin":"USER_REQUEST"}"""
             json.decodeFromString(RecoveryRecord.serializer(), """{"target":"$wire"}""").target shouldBe policy
         }
     }

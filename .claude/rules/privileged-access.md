@@ -199,9 +199,16 @@ control. A probe that **already** refused control (secondary user, missing provi
 resolution: enforcement stays null and no surface offers an opt-in that could not change anything.
 
 The gate governs **new control only**. A restore the user is already owed — the session restore, its rollback, boot
-recovery — goes through `ChargingRepository.restorePersistent()`, which applies every adapter precondition but not
-the evidence tier: an OTA mid-session changes the build identity, and refusing the owed protective write would
-strand the device in the session's Unrestricted state.
+recovery of one — goes through `ChargingRepository.restorePersistent()`, which applies every adapter precondition
+but not the evidence tier: an OTA mid-session changes the build identity, and refusing the owed protective write
+would strand the device in the session's Unrestricted state.
+
+Pending recovery work is **not** automatically an owed restore, so every recovery target carries a persisted
+`RecoveryOrigin` and `writeRecoveryTarget()` dispatches on it: `SESSION_RESTORE` takes the ungated path,
+`USER_REQUEST` (a widget/tile persistent choice, which `setPersistentPolicy` persists *before* its write) stays on
+the gated `reapplyPersistent()`. A fresh user write — `Unrestricted` included — must not reach a build the gate
+refuses just because a process death turned it into recovery work. The field's default is the gated
+`USER_REQUEST`, so a record from a build without it cannot bypass the gate either.
 
 Evidence is produced by `charging/core/enforcement/`: a pure `EnforcementVerdictEngine` over the monitor's battery
 ticks, persisted by `EnforcementEvidenceStore`. Three properties are load-bearing and must not be relaxed:
