@@ -494,6 +494,36 @@ private fun ConditionChoice(
     }
 }
 
+// The row itself, across its variants: the supporting line has to wrap rather than truncate, and the
+// connected accent has to read as status rather than as a second control.
+@AmplyPreview
+@Preview(showBackground = true, name = "Large font", fontScale = 1.8f)
+@Composable
+private fun ConditionChoicePreview() = PreviewWrapper {
+    Column(Modifier.padding(16.dp)) {
+        ConditionChoice(
+            text = "A Bluetooth device is connected",
+            supporting = "Applies while the device is connected, whether or not you're plugged in.",
+            selected = true,
+            onClick = {},
+        )
+        ConditionChoice(
+            text = "Charging on a certain charger",
+            supporting = "Uses the charger type Android reports while you're plugged in.",
+            selected = false,
+            onClick = {},
+        )
+        ConditionChoice(
+            text = "Car audio",
+            supporting = "AA:BB:CC:DD:EE:FF",
+            accent = "Connected now",
+            selected = true,
+            onClick = {},
+        )
+        ConditionChoice(text = "Adaptive", selected = false, onClick = {})
+    }
+}
+
 private val previewPolicies = listOf(
     ChargePolicy.FixedLimit(80),
     ChargePolicy.Adaptive,
