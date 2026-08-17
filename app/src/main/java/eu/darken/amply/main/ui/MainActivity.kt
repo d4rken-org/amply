@@ -1,6 +1,8 @@
 package eu.darken.amply.main.ui
 
 import android.Manifest
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -63,6 +65,10 @@ import eu.darken.amply.main.ui.settings.SettingsDestination
 import eu.darken.amply.main.ui.settings.SettingsScreen
 import eu.darken.amply.main.ui.settings.SettingsViewModel
 import eu.darken.amply.main.ui.settings.SupportScreen
+import eu.darken.amply.rules.core.PlugKind
+import eu.darken.amply.rules.ui.ChargeRuleEditorScreen
+import eu.darken.amply.rules.ui.ChargeRulesScreen
+import eu.darken.amply.rules.ui.ChargeRulesViewModel
 import eu.darken.amply.stats.ui.ChargeHistoryScreen
 import eu.darken.amply.stats.ui.StatsSessionDetailScreen
 import eu.darken.amply.stats.ui.StatsViewModel
@@ -74,6 +80,7 @@ class MainActivity : ComponentActivity() {
     private val settingsViewModel: SettingsViewModel by viewModels()
     private val contributionViewModel: ContributionWizardViewModel by viewModels()
     private val statsViewModel: StatsViewModel by viewModels()
+    private val rulesViewModel: ChargeRulesViewModel by viewModels()
 
     // Compose-observable so a widget launch that reuses an already-running activity (SINGLE_TOP →
     // onNewIntent, which does not re-run LaunchedEffect(Unit)) still triggers the permission flow.
@@ -146,6 +153,9 @@ class MainActivity : ComponentActivity() {
                     // the origin is recorded at the request instead of read off `destination` when
                     // the answer lands (the user may have navigated on by then).
                     var captureGateOrigin by rememberSaveable { mutableStateOf(SettingsDestination.BATTERY) }
+                    // The rules screen is reached from the dashboard card and from the settings hub,
+                    // so Back returns to whichever one opened it.
+                    var rulesOrigin by rememberSaveable { mutableStateOf(SettingsDestination.DASHBOARD) }
                     val enterUpgrade = { origin: SettingsDestination, manage: Boolean ->
                         // Never record the upgrade screen as its own return target: a second entry
                         // while it is already open would strand Back on this screen.
@@ -171,23 +181,36 @@ class MainActivity : ComponentActivity() {
                         detailOrigin = origin
                         destination = SettingsDestination.STATS_SESSION_DETAIL
                     }
+                    val enterRules = { origin: SettingsDestination ->
+                        rulesOrigin = origin
+                        destination = SettingsDestination.CHARGE_RULES
+                    }
+                    val rulesState by rulesViewModel.state.collectAsState()
+                    val ruleEditor by rulesViewModel.editor.collectAsState()
                 var notificationAction by remember { mutableStateOf<NotificationAction?>(null) }
+                // Which rule the pending ENABLE_CHARGE_RULE belongs to; recorded at the request
+                // because the permission answer arrives asynchronously.
+                var pendingRuleId by remember { mutableStateOf<String?>(null) }
+                val runNotificationAction: (NotificationAction?) -> Unit = { action ->
+                    when (action) {
+                        NotificationAction.START_FULL_CHARGE -> viewModel.startFullCharge()
+                        NotificationAction.ENABLE_QUICK_GESTURE -> viewModel.setQuickFullChargeEnabled(true)
+                        NotificationAction.ENABLE_CHARGE_ALARM -> viewModel.setChargeAlarmEnabled(true)
+                        NotificationAction.ENABLE_STATS -> statsViewModel.setCaptureEnabled(true)
+                        NotificationAction.ENABLE_CHARGE_RULE ->
+                            pendingRuleId?.let { rulesViewModel.setRuleEnabled(it, true) }
+                        null -> Unit
+                    }
+                }
                 val notificationLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestPermission(),
                 ) { granted ->
-                    if (granted) {
-                        when (notificationAction) {
-                            NotificationAction.START_FULL_CHARGE -> viewModel.startFullCharge()
-                            NotificationAction.ENABLE_QUICK_GESTURE -> viewModel.setQuickFullChargeEnabled(true)
-                            NotificationAction.ENABLE_CHARGE_ALARM -> viewModel.setChargeAlarmEnabled(true)
-                            NotificationAction.ENABLE_STATS -> statsViewModel.setCaptureEnabled(true)
-                            null -> Unit
-                        }
-                    }
+                    if (granted) runNotificationAction(notificationAction)
                     // A refused permission leaves the alarm switch off (an alarm that can't alert
                     // is worse than a silent one); the user can retry from the card, and the blocked
                     // warning appears once the alarm is enabled while delivery is still off.
                     notificationAction = null
+                    pendingRuleId = null
                 }
 
                 fun runWithNotifications(action: NotificationAction) {
@@ -199,12 +222,20 @@ class MainActivity : ComponentActivity() {
                         notificationAction = action
                         notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     } else {
-                        when (action) {
-                            NotificationAction.START_FULL_CHARGE -> viewModel.startFullCharge()
-                            NotificationAction.ENABLE_QUICK_GESTURE -> viewModel.setQuickFullChargeEnabled(true)
-                            NotificationAction.ENABLE_CHARGE_ALARM -> viewModel.setChargeAlarmEnabled(true)
-                            NotificationAction.ENABLE_STATS -> statsViewModel.setCaptureEnabled(true)
-                        }
+                        runNotificationAction(action)
+                    }
+                }
+
+                // Runtime-requested only from API 31; below that the manifest permission is granted
+                // at install time and the prompt does not exist.
+                val bluetoothLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestPermission(),
+                ) { rulesViewModel.refreshEditorBluetooth() }
+                val requestBluetooth = {
+                    if (Build.VERSION.SDK_INT >= 31) {
+                        bluetoothLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                    } else {
+                        rulesViewModel.refreshEditorBluetooth()
                     }
                 }
 
@@ -244,6 +275,79 @@ class MainActivity : ComponentActivity() {
                         runWithNotifications(NotificationAction.ENABLE_STATS)
                     }
                 }
+                // The same contract as the stats gate: a denial routes to the upgrade screen, a pass
+                // routes to the notification prompt (a rule keeps the monitor's quiet notification
+                // up), and a third event says the editor's working copy is ready to navigate to.
+                LaunchedEffect(Unit) {
+                    rulesViewModel.upgradeRequiredEvents.collect {
+                        enterUpgrade(SettingsDestination.CHARGE_RULES, false)
+                    }
+                }
+                LaunchedEffect(Unit) {
+                    rulesViewModel.proceedWithEnableEvents.collect { ruleId ->
+                        pendingRuleId = ruleId
+                        runWithNotifications(NotificationAction.ENABLE_CHARGE_RULE)
+                    }
+                }
+                LaunchedEffect(Unit) {
+                    rulesViewModel.openEditorEvents.collect {
+                        destination = SettingsDestination.CHARGE_RULE_EDIT
+                    }
+                }
+                // Every editor exit — saved, deleted, backed out unchanged, or discarded — arrives
+                // here. Navigating from the call sites instead would mean each one re-deciding
+                // whether the draft may be abandoned, and one of them getting it wrong.
+                LaunchedEffect(Unit) {
+                    rulesViewModel.closeEditorEvents.collect {
+                        destination = SettingsDestination.CHARGE_RULES
+                    }
+                }
+                // While the editor is open, keep its Bluetooth picture live: the adapter being
+                // switched on or off, and devices being paired or unpaired, both change what the
+                // list should show while the user is looking at it. Scoped to the destination and
+                // to RESUMED, so nothing is registered from anywhere else in the app.
+                LifecycleResumeEffect(destination) {
+                    val bluetoothWatcher = if (destination == SettingsDestination.CHARGE_RULE_EDIT) {
+                        object : BroadcastReceiver() {
+                            override fun onReceive(context: Context?, intent: Intent?) {
+                                // Terminal states only: the TURNING_ON/TURNING_OFF steps would each
+                                // trigger a sweep that answers for an adapter still in motion.
+                                val interesting = when (intent?.action) {
+                                    BluetoothAdapter.ACTION_STATE_CHANGED -> {
+                                        val state = intent.getIntExtra(
+                                            BluetoothAdapter.EXTRA_STATE,
+                                            BluetoothAdapter.ERROR,
+                                        )
+                                        state == BluetoothAdapter.STATE_ON || state == BluetoothAdapter.STATE_OFF
+                                    }
+                                    BluetoothDevice.ACTION_BOND_STATE_CHANGED -> {
+                                        val bond = intent.getIntExtra(
+                                            BluetoothDevice.EXTRA_BOND_STATE,
+                                            BluetoothDevice.ERROR,
+                                        )
+                                        bond == BluetoothDevice.BOND_BONDED || bond == BluetoothDevice.BOND_NONE
+                                    }
+                                    else -> false
+                                }
+                                if (interesting) rulesViewModel.refreshEditorBluetooth()
+                            }
+                        }.also {
+                            ContextCompat.registerReceiver(
+                                this@MainActivity,
+                                it,
+                                IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED).apply {
+                                    addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+                                },
+                                ContextCompat.RECEIVER_EXPORTED,
+                            )
+                        }
+                    } else {
+                        null
+                    }
+                    onPauseOrDispose {
+                        bluetoothWatcher?.let { runCatching { unregisterReceiver(it) } }
+                    }
+                }
                 LifecycleResumeEffect(Unit) {
                     viewModel.refresh()
                     // Separate from refresh(): that one runs on every battery broadcast, and a
@@ -254,6 +358,9 @@ class MainActivity : ComponentActivity() {
                     // Re-check Shizuku for the contribution wizard too, so granting access from its intro card
                     // (which pauses the activity behind Shizuku's dialog) updates the card on return.
                     contributionViewModel.refreshStatus()
+                    // The Bluetooth grant is made in a system dialog that pauses the activity, so
+                    // re-read it on return rather than trusting the value from before.
+                    rulesViewModel.refreshEditorBluetooth()
                     val nudge = viewModel.nudgeChargeService()
                     onPauseOrDispose { nudge.cancel() }
                 }
@@ -298,6 +405,11 @@ class MainActivity : ComponentActivity() {
                             SettingsDestination.BATTERY -> destination = SettingsDestination.DASHBOARD
                             // The history list is only reachable from the battery hub's top bar.
                             SettingsDestination.CHARGE_HISTORY -> destination = SettingsDestination.BATTERY
+                            // Reached from the dashboard card or the settings hub.
+                            SettingsDestination.CHARGE_RULES -> destination = rulesOrigin
+                            // Asks rather than closes: an edited draft raises the discard
+                            // confirmation, and the navigation happens on the close event.
+                            SettingsDestination.CHARGE_RULE_EDIT -> rulesViewModel.requestCloseEditor()
                             // The session detail returns to whichever surface opened it.
                             SettingsDestination.STATS_SESSION_DETAIL -> {
                                 statsViewModel.closeSession()
@@ -339,6 +451,7 @@ class MainActivity : ComponentActivity() {
                             },
                             onAlarmTargetChange = viewModel::setChargeAlarmTarget,
                             onFixNotifications = viewModel::openNotificationSettings,
+                            onOpenConditions = { enterRules(SettingsDestination.DASHBOARD) },
                             onOpenBatteryHub = { destination = SettingsDestination.BATTERY },
                             // Re-dispatch the charge service after a failed start (charging card retry).
                             onRetryCapture = { viewModel.nudgeChargeService() },
@@ -376,6 +489,8 @@ class MainActivity : ComponentActivity() {
                             onGeneral = { destination = SettingsDestination.GENERAL },
                             gestureEnabled = state.quickFullChargeEnabled,
                             onCharging = { destination = SettingsDestination.CHARGING },
+                            activeRuleCount = state.conditions.enabledRules.size,
+                            onChargeRules = { enterRules(SettingsDestination.SETTINGS) },
                             captureEnabled = state.stats.enabled,
                             onChargingHistory = {
                                 destination = SettingsDestination.CHARGING_HISTORY_SETTINGS
@@ -463,6 +578,59 @@ class MainActivity : ComponentActivity() {
                             },
                             onAnyLevelChange = viewModel::setQuickFullChargeAnyLevel,
                         )
+                        SettingsDestination.CHARGE_RULES -> ChargeRulesScreen(
+                            state = rulesState,
+                            onBack = { destination = rulesOrigin },
+                            // Gated: the ViewModel answers with either the upgrade route or the
+                            // editor-ready event, so nobody fills in a condition and is refused at
+                            // the end.
+                            onAdd = rulesViewModel::requestAddRule,
+                            onEdit = rulesViewModel::editRule,
+                            onDelete = rulesViewModel::deleteRule,
+                            // Enabling passes the gate and the notification prompt; disabling is
+                            // direct, so a lapsed entitlement can never trap a running rule.
+                            onEnabledChange = { id, enabled ->
+                                if (enabled) {
+                                    rulesViewModel.requestEnableRule(id)
+                                } else {
+                                    rulesViewModel.setRuleEnabled(id, false)
+                                }
+                            },
+                            onMove = rulesViewModel::moveRule,
+                            onFixBluetoothPermission = requestBluetooth,
+                        )
+                        // Rendering waits for the working copy: the destination can be restored from
+                        // saved state after a process death, when there is no draft left to edit.
+                        SettingsDestination.CHARGE_RULE_EDIT -> {
+                            val editor = ruleEditor
+                            if (editor == null) {
+                                LaunchedEffect(Unit) { destination = SettingsDestination.CHARGE_RULES }
+                            } else {
+                                val plugged = state.batteryReadout?.plugged ?: 0
+                                val detectedPlugKind = PlugKind.fromExtraPlugged(plugged)
+                                ChargeRuleEditorScreen(
+                                    state = editor,
+                                    // Read off the dashboard's live battery state, which the root
+                                    // already collects — the editor never reaches for it itself.
+                                    detectedPlugKind = detectedPlugKind,
+                                    chargerUnrecognized = plugged != 0 && detectedPlugKind == null,
+                                    // Navigation for all four exits happens on closeEditorEvents.
+                                    onCloseRequest = rulesViewModel::requestCloseEditor,
+                                    onLabelChange = rulesViewModel::setEditorLabel,
+                                    onConditionKindChange = rulesViewModel::setEditorConditionKind,
+                                    onDeviceSelect = rulesViewModel::setEditorDevice,
+                                    onPlugKindToggle = rulesViewModel::toggleEditorPlugKind,
+                                    onPolicySelect = rulesViewModel::setEditorPolicy,
+                                    onSave = rulesViewModel::saveEditor,
+                                    // The editor's own delete: it closes this editor, unlike the
+                                    // list's, which must never touch whatever draft is open.
+                                    onDelete = rulesViewModel::deleteEditingRule,
+                                    onConfirmDiscard = rulesViewModel::confirmDiscardEditor,
+                                    onKeepEditing = rulesViewModel::keepEditing,
+                                    onRequestBluetoothPermission = requestBluetooth,
+                                )
+                            }
+                        }
                         SettingsDestination.CHARGING_HISTORY_SETTINGS -> ChargingHistorySettingsScreen(
                             // Both values come from already-resolved sources (the dashboard state and
                             // the root-collected retention flow), so neither the switch nor the slider
@@ -594,6 +762,7 @@ class MainActivity : ComponentActivity() {
         ENABLE_QUICK_GESTURE,
         ENABLE_CHARGE_ALARM,
         ENABLE_STATS,
+        ENABLE_CHARGE_RULE,
     }
 
     companion object {

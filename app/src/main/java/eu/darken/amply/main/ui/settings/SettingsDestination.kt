@@ -11,6 +11,15 @@ enum class SettingsDestination {
     CHARGING,
 
     /**
+     * The conditional charge rules. Reached from the dashboard card *and* the settings hub, so it
+     * records where to return to — see `rulesOrigin` at the composition root.
+     */
+    CHARGE_RULES,
+
+    /** The single-rule editor, always entered from (and returning to) [CHARGE_RULES]. */
+    CHARGE_RULE_EDIT,
+
+    /**
      * The recording **preferences** — the capture switch and the retention window — reached from the
      * settings hub. Not to be confused with [CHARGE_HISTORY], which is the recorded data itself.
      */

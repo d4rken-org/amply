@@ -26,6 +26,8 @@ import eu.darken.amply.common.debug.logging.logTag
 import eu.darken.amply.main.core.SurfaceUpdater
 import eu.darken.amply.monitor.core.ChargeMonitorTick
 import eu.darken.amply.monitor.core.ChargeMonitorWatcher
+import eu.darken.amply.rules.core.PlugKind
+import eu.darken.amply.rules.core.RuleApplier
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -49,6 +51,7 @@ class ChargeSessionService : Service() {
     @Inject lateinit var interruptionAssessor: InterruptionAssessor
     @Inject lateinit var processIdentity: ProcessIdentity
     @Inject lateinit var bootCountProvider: BootCountProvider
+    @Inject lateinit var ruleApplier: RuleApplier
 
     // Optional, permission-free battery observers (charge alarm, …), contributed via @IntoSet.
     @Inject lateinit var watchers: Set<@JvmSuppressWildcards ChargeMonitorWatcher>
@@ -73,6 +76,8 @@ class ChargeSessionService : Service() {
     // Written under the dispatch lock, but read by the battery receiver/monitor loop outside it.
     @Volatile private var recoveryJob: Job? = null
     private var settingObserverRegistered = false
+    // Whether this service instance has already swept the Bluetooth profile proxies (see evaluateRules).
+    private var bluetoothReconciled = false
     @Volatile private var restoring = false
     // One-shot interruption assessment for a freshly resumed persisted session: set when
     // beginOrResume picks up an existing session, consumed by the first battery evaluation, and
@@ -203,7 +208,33 @@ class ChargeSessionService : Service() {
             log(TAG) { "Starting a one-time full-charge session" }
             // A brand-new session in this process is not an interruption; drop any stale assessment.
             pendingSessionAssessment = null
-            val result = manager.begin(pluggedAtStart = currentPlugged())
+            // A conditional rule may currently own the policy. Hand its baseline to the session: what
+            // is configured right now is the rule's temporary override, so the session must restore
+            // the user's real policy, not the override.
+            val ruleBaseline = ruleApplier.readActiveBaseline()
+            val result = manager.begin(
+                pluggedAtStart = currentPlugged(),
+                restoreOverride = ruleBaseline,
+                // Handed over inside begin(), in the window between the session record being
+                // persisted and the override write: from that moment the session owes the restore,
+                // and clearing any later would leave both layers claiming the baseline across a
+                // write that can fail or die with the process.
+                //
+                // Contained, because begin() runs this between persisting the session and writing
+                // the override: letting a DataStore failure escape would abort the start after the
+                // record exists, stranding a session whose override write never ran. Stale rule
+                // bookkeeping is the far cheaper failure — the next evaluation clears it against the
+                // live session anyway.
+                afterPersisted = {
+                    try {
+                        ruleApplier.clearActiveAfterSessionPersist()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        log(TAG, Logging.Priority.WARN) { "Rule ownership handoff failed: ${e.message}" }
+                    }
+                },
+            )
             if (!result.success) {
                 log(TAG, Logging.Priority.WARN) { "Unable to start full-charge session: ${result.message}" }
                 if (fullChargeStore.currentSession() != null) SessionNotifications.showRecovery(this)
@@ -269,6 +300,51 @@ class ChargeSessionService : Service() {
             log(TAG, Logging.Priority.WARN) { "Watcher ${watcher.id} isEnabled failed: ${e.message}" }
             false
         }
+    }
+
+    /**
+     * Run one conditional-charge-rule evaluation.
+     *
+     * A first-class step of the evaluation path, NOT watcher work: watcher ticks are optional and
+     * bounded by a per-watcher budget, while a rule write changes the charging policy and owes a
+     * restore — it must never be cut short. It runs *after* the safety-critical session decisions
+     * above (a restore must never queue behind it) and before the optional watchers.
+     *
+     * Failure is contained the same way a watcher's is: the rules layer must not be able to stop a
+     * battery evaluation.
+     */
+    private suspend fun evaluateRules(
+        plugged: Boolean,
+        plugKind: PlugKind?,
+        sessionActive: Boolean,
+        reconcileBluetooth: Boolean = false,
+    ) {
+        try {
+            ruleApplier.evaluate(
+                plugged = plugged,
+                plugKind = plugKind,
+                sessionActive = sessionActive,
+                // Always on this instance's first pass, whichever command brought the service up: a
+                // process that was not running missed every ACL broadcast in the meantime, and the
+                // stored snapshot is only as good as the last one it received. After that the
+                // receiver keeps it current and the sweep would just cost Binder round-trips.
+                reconcileBluetooth = reconcileBluetooth || !bluetoothReconciled,
+            )
+            bluetoothReconciled = true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log(TAG, Logging.Priority.ERROR) { "Rule evaluation failed: ${e.message}" }
+        }
+    }
+
+    /** Current plug state and charger class from the sticky broadcast, for a command-driven pass. */
+    private fun currentPlug(): Pair<Boolean, PlugKind?> {
+        val raw = runCatching {
+            registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                ?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0)
+        }.getOrNull() ?: 0
+        return (raw != 0) to PlugKind.fromExtraPlugged(raw)
     }
 
     /**
@@ -355,7 +431,9 @@ class ChargeSessionService : Service() {
         // An in-flight evaluation can outlive the quiesce in startRecovery; never race recovery.
         if (recoveryJob?.isActive == true) return
         val battery = intent ?: registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-        val plugged = (battery?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
+        val pluggedRaw = battery?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
+        val plugged = pluggedRaw != 0
+        val plugKind = PlugKind.fromExtraPlugged(pluggedRaw)
         val status = battery?.getIntExtra(
             BatteryManager.EXTRA_STATUS,
             BatteryManager.BATTERY_STATUS_UNKNOWN,
@@ -447,6 +525,8 @@ class ChargeSessionService : Service() {
                     )
                 }
             }
+            // A live session outranks the rules layer; this pass only reconciles its bookkeeping.
+            evaluateRules(plugged, plugKind, sessionActive = true)
             // Non-restore session tick: let watchers observe it (the alarm claims the cycle here).
             dispatchWatchers(plugged, percent, status, sessionOwned = true, battery, observedAtElapsed)
             return
@@ -461,6 +541,7 @@ class ChargeSessionService : Service() {
         val gestureEnabled = fullChargeStore.isQuickFullChargeEnabled()
         val adapter = if (gestureEnabled) adapterRegistry.select().adapter else null
         if (!gestureEnabled || adapter?.reconnectGestureSupported != true) {
+            evaluateRules(plugged, plugKind, sessionActive = false)
             dispatchWatchers(plugged, percent, status, sessionOwned = false, battery, observedAtElapsed)
             // Gesture inactive: keep running only if a watcher still wants the service, showing the
             // quiet monitoring notification instead of the gesture cue.
@@ -519,6 +600,7 @@ class ChargeSessionService : Service() {
                     "plugged=$plugged percent=$percent status=$status"
             }
         }
+        evaluateRules(plugged, plugKind, sessionActive = false)
         // A triggering tick is a deliberate full charge about to begin, so the alarm must treat it
         // as session-owned and NOT fire "unplug now" on the very reconnect that started the charge.
         dispatchWatchers(
@@ -587,6 +669,20 @@ class ChargeSessionService : Service() {
         when (action) {
             ACTION_RESTORE -> if (recoveryJob?.isActive != true) restoreAndContinue()
             ACTION_MONITOR -> if (recoveryJob?.isActive != true) continueGestureOrStop()
+            // A rule edit or a Bluetooth connection change. Gated on recovery like ACTION_MONITOR: a
+            // rule write must never race the boot-recovery convergence loop. No forced Bluetooth
+            // sweep here — the once-per-service-instance one in evaluateRules already covers the
+            // missed-broadcast case, and sweeping on every ACL event risks a lagging profile proxy
+            // writing a just-disconnected address back over the receiver's fresher snapshot.
+            ACTION_EVALUATE_RULES -> if (recoveryJob?.isActive != true) {
+                val (plugged, plugKind) = currentPlug()
+                evaluateRules(
+                    plugged = plugged,
+                    plugKind = plugKind,
+                    sessionActive = fullChargeStore.currentSession() != null,
+                )
+                continueGestureOrStop()
+            }
             ACTION_START -> {
                 // A user-initiated session supersedes boot recovery; the new session
                 // overwrites the policy anyway. Join so a cancelled re-write cannot
@@ -644,6 +740,19 @@ class ChargeSessionService : Service() {
             // Assess whether this recovery is picking up work a dead process left behind, BEFORE the
             // flow mutates the pending target.
             val pickup = interruptionAssessor.captureRecoveryPickup()
+            // A persisted session already carries the baseline as its restore target, so rule
+            // bookkeeping left ACTIVE beside it is stale: recovery is about to write policies, and
+            // the rules layer must not come back afterwards claiming to own the result.
+            if (fullChargeStore.currentSession() != null) {
+                try {
+                    ruleApplier.clearActiveAfterSessionPersist()
+                } catch (e: CancellationException) {
+                    // A cancelled recovery job must actually stop here, not carry on into the flow.
+                    throw e
+                } catch (e: Exception) {
+                    log(TAG, Logging.Priority.WARN) { "Rule ownership clear failed: ${e.message}" }
+                }
+            }
             val result = BootRecoveryFlow(recoveryHooks).run()
             log(TAG) { "Boot recovery outcome: ${result.outcome}" }
             // A converged recovery restored the protective policy, so clear any lingering alarm.
@@ -772,6 +881,17 @@ class ChargeSessionService : Service() {
         // instead of leaving charging in whatever transient state the session had. An explicit persistent
         // choice is new owed work, so it gets a fresh work id.
         fullChargeStore.setPendingRecoveryTarget(policy, UUID.randomUUID().toString(), currentWorkProvenance())
+        // Suspend the rules layer here, in the same persisted-intent step and BEFORE the write: a
+        // process death between the write and a post-success suspension would leave the explicit
+        // policy configured with every rule still armed to overwrite it on the next tick.
+        val (pluggedNow, plugKindNow) = currentPlug()
+        try {
+            ruleApplier.suspendMatchingCohort(pluggedNow, plugKindNow)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log(TAG, Logging.Priority.WARN) { "Rule suspension failed: ${e.message}" }
+        }
         restoring = true
         coordinator.close()
         try {
@@ -882,6 +1002,7 @@ class ChargeSessionService : Service() {
         const val ACTION_RECOVER = "eu.darken.amply.action.RECOVER_CHARGE_LIMIT"
         const val ACTION_CHECK = "eu.darken.amply.action.CHECK_CHARGE_STATE"
         const val ACTION_SET_PERSISTENT_POLICY = "eu.darken.amply.action.SET_PERSISTENT_POLICY"
+        const val ACTION_EVALUATE_RULES = "eu.darken.amply.action.EVALUATE_CHARGE_RULES"
         const val EXTRA_TARGET_POLICY = "eu.darken.amply.extra.TARGET_POLICY"
     }
 }
