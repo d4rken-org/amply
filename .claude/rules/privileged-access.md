@@ -192,14 +192,24 @@ forgot", "not read yet" and "genuinely nothing stored" cannot collapse into cont
 this order: **REFUTED** (or a corrupt record, which may be one) → control off, contribution wanted; **CONFIRMED**
 (maintainer codename or a local confirmation) → control as probed; **UNDER_TEST** (the user started verification) →
 control as probed, but no surface may claim the cap is proven; otherwise **CANDIDATE** → control off. Callers that
-only need adapter *capabilities* pass `EnforcementEvidenceState.Loading`, which can never enable control.
+only need adapter *capabilities* pass `EnforcementEvidenceState.Loading`, which can never enable control. A probe
+that **already** refused control (secondary user, missing provider) short-circuits the whole resolution: enforcement
+stays null and no surface offers a verification the recorder could never observe.
+
+The gate governs **new control only**. A restore the user is already owed — the session restore, its rollback, boot
+recovery — goes through `ChargingRepository.restorePersistent()`, which applies every adapter precondition but not
+the evidence tier: an OTA mid-session changes the build identity, and refusing the owed protective write would
+strand the device in the session's Unrestricted state.
 
 Evidence is produced by `charging/core/enforcement/`: a pure `EnforcementVerdictEngine` over the monitor's battery
 ticks, persisted by `EnforcementEvidenceStore`. Three properties are load-bearing and must not be relaxed:
 
-- **CONFIRM needs a sustained plateau**, not one `StatsLimitHitDetector.heldNow` tick (which also fires on thermal
-  suspension and weak chargers), while **REFUTE keys on an upward level trend** through the cap and deliberately
-  ignores the reported battery status, which a ROM can misreport while charging past the limit.
+- **CONFIRM requires a hardware hold signal** (`ChargingAdapter.hardwareHoldSignal`, on LineageOS the AOSP
+  charge-policy state 4) on top of a sustained, level-pinned plateau. A plateau alone cannot distinguish a cap hold
+  from a thermal pause or a weak charger — `StatsLimitHitDetector.heldNow` fires on all of them — so an adapter
+  without the signal can never be confirmed, only refuted. **REFUTE keys on an upward level trend** through the cap
+  from any starting level, needs no hardware signal, and deliberately ignores the reported battery status, which a
+  ROM can misreport while charging past the limit.
 - Evidence is scoped to a **composite build identity** (fingerprint + incremental + build time + provider version
   code, hashed). `Build.FINGERPRINT` alone is useless here: LineageOS spoofs it to stock.
 - A refutation is **terminal** for its scope, and a corrupt record is treated as a refutation. Both are fail-closed
