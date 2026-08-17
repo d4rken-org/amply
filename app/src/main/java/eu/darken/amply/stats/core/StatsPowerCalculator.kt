@@ -10,9 +10,19 @@ import kotlin.math.abs
  * not encode direction (charge vs discharge) — the caller derives direction from plug/charging state.
  *
  * `mV × µA = 10⁻⁹ W = 10⁻⁶ mW`, so `mW = mV × |µA| / 1_000_000`, computed in [Long] to avoid the
- * `Int` overflow that `4300 mV × 3_000_000 µA` would hit. Values outside a plausible phone/tablet
- * range are rejected as `null` because some OEM firmwares report current in the wrong unit (mA, or
- * deci-units) and would otherwise poison the session average.
+ * `Int` overflow that `4300 mV × 3_000_000 µA` would hit. Results above [MAX_PLAUSIBLE_MILLIWATTS] are
+ * rejected as `null`, which catches a grossly over-reporting firmware before it poisons the session
+ * average. It is a backstop, not a unit check: a 10× over-report of a real 4 A at 4.551 V lands at
+ * ~182 W and is accepted, as the 20 A case in the tests shows.
+ *
+ * **The opposite error is not detectable here, and deliberately is not guarded.** A firmware that
+ * reports `CURRENT_NOW` in mA where Android documents µA makes every reading 1000× too *small*: a real
+ * 4 A arrives as the integer `4000`, renders as "4 mA", and computes to 18 mW — which formats as
+ * "0.0 W". No lower bound can separate that from a legitimate end-of-charge trickle, because a phone
+ * genuinely drawing single-digit mA at 100% produces the identical value. Distinguishing them needs
+ * context this function does not have (charge level, or a second property known to be misscaled), so
+ * the fix belongs wherever that context lives, not in a magnitude clamp here. Observed on HONOR
+ * MagicOS 10 (unconfirmed) — see the HONOR entry in the device-qualification skill.
  */
 object StatsPowerCalculator {
 
