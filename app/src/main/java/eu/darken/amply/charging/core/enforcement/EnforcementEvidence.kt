@@ -25,14 +25,16 @@ enum class EnforcementVerdict {
  * default so a record written by an older build still decodes. [verdict] defaults to
  * [EnforcementVerdict.REFUTED] — a record that lost its verdict field must never read as a claim of
  * enforcement. A record naming a verdict this build no longer knows does not decode at all and reads
- * as [EnforcementEvidenceState.Corrupt], i.e. control off — the safe direction, and unreachable in
- * practice since the confirmation path never shipped.
+ * as [EnforcementEvidenceState.Corrupt], i.e. control off — the safe direction. The one such name that
+ * really exists on disk, version 1's `"CONFIRMED"`, is translated before deserialization is attempted
+ * (see [EnforcementEvidenceStore]).
  *
  * @param buildIdentity see [composeBuildIdentity]; scopes the verdict to the exact ROM build it was
  *   observed on, because charge-control HAL capability is build-scoped, not device-scoped.
  * @param algorithmVersion the [EnforcementVerdictEngine.ALGORITHM_VERSION] that produced the verdict.
- *   A later tightening of the heuristic bumps it, and every record from the weaker one stops counting
- *   (it reads as no evidence, exactly like a build-identity mismatch).
+ *   A later tightening of the heuristic bumps it, and a record from the weaker one only survives
+ *   where the tightening left its verdict intact — [EnforcementEvidenceStore] migrates those per
+ *   verdict, so dropping an arm never hands control back to a device that failed under the old one.
  * @param capPercent the configured cap the observation was made against.
  * @param observedPercent the battery level at the moment the verdict was reached.
  */

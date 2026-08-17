@@ -11,6 +11,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -41,9 +45,13 @@ sealed interface EnforcementEvidenceState {
  * a write that declines to replace it, which a state-typed writer could not express — it would
  * encode the undecodable state as "clear the key".
  *
- * Reads are **scoped**: a record from another ROM build or from an older
- * [EnforcementVerdictEngine.ALGORITHM_VERSION] reads as [EnforcementEvidenceState.Absent], since
- * charge-control HAL capability is build-scoped and an older heuristic's verdict is not this one's.
+ * Reads are **scoped**: a record from another ROM build reads as [EnforcementEvidenceState.Absent],
+ * since charge-control HAL capability is build-scoped.
+ *
+ * A record from an older [EnforcementVerdictEngine.ALGORITHM_VERSION] is **migrated per verdict**,
+ * not dropped wholesale — see [decode]. Dropping them all would fail *open*: the version-1 to -2 bump
+ * only invalidated the confirmation arm, so discarding a version-1 refutation would re-enable control
+ * on a build already observed charging past its cap, with the opt-in preference still set.
  */
 @Singleton
 class EnforcementEvidenceStore @Inject constructor(
@@ -94,10 +102,21 @@ class EnforcementEvidenceStore @Inject constructor(
         else -> state
     }
 
+    /**
+     * The wire version and verdict are read **before** typed deserialization, because a version-1
+     * record can no longer be deserialized into today's types at all (its `"CONFIRMED"` constant is
+     * gone) and because the two version-1 verdicts must migrate in opposite directions.
+     */
     private fun decode(raw: String?): EnforcementEvidenceState {
         if (raw == null) return EnforcementEvidenceState.Absent
         return try {
-            EnforcementEvidenceState.Present(json.decodeFromString(EnforcementEvidence.serializer(), raw))
+            val wire = json.parseToJsonElement(raw).jsonObject
+            val version = wire[FIELD_ALGORITHM_VERSION]?.jsonPrimitive?.intOrNull
+            if (version == SUPERSEDED_ALGORITHM_VERSION) {
+                migrateSuperseded(wire[FIELD_VERDICT]?.jsonPrimitive?.contentOrNull, raw)
+            } else {
+                EnforcementEvidenceState.Present(json.decodeFromString(EnforcementEvidence.serializer(), raw))
+            }
         } catch (e: SerializationException) {
             log(TAG, Logging.Priority.ERROR) { "Corrupt enforcement evidence: ${e.message}" }
             EnforcementEvidenceState.Corrupt
@@ -107,11 +126,47 @@ class EnforcementEvidenceStore @Inject constructor(
         }
     }
 
+    /**
+     * Version 1 → 2, decided by the verdict on the wire. The bump invalidated exactly one arm:
+     *
+     * - a version-1 `"CONFIRMED"` rested on a hardware signal now known to be session-scoped, so it is
+     *   worth nothing and reads as [EnforcementEvidenceState.Absent] — the same "no evidence" a fresh
+     *   install has, which is what the constant's removal was meant to produce (untranslated it would
+     *   fail to deserialize and read [EnforcementEvidenceState.Corrupt], locking the device out for
+     *   good);
+     * - a version-1 `"REFUTED"` never depended on that signal and is semantically unchanged, so it is
+     *   kept and **restamped to the current version** — a refutation is terminal, and leaving the old
+     *   stamp on it would let the very next observation re-record over it;
+     * - anything else is a record this build cannot reason about: fail closed with
+     *   [EnforcementEvidenceState.Corrupt], which the gate treats as a refutation.
+     */
+    private fun migrateSuperseded(wireVerdict: String?, raw: String): EnforcementEvidenceState = when (wireVerdict) {
+        WIRE_VERDICT_CONFIRMED -> {
+            log(TAG, Logging.Priority.INFO) { "Dropping a superseded version-1 confirmation" }
+            EnforcementEvidenceState.Absent
+        }
+        WIRE_VERDICT_REFUTED -> EnforcementEvidenceState.Present(
+            json.decodeFromString(EnforcementEvidence.serializer(), raw)
+                .copy(algorithmVersion = EnforcementVerdictEngine.ALGORITHM_VERSION),
+        )
+        else -> {
+            log(TAG, Logging.Priority.ERROR) { "Unreadable version-1 verdict: $wireVerdict" }
+            EnforcementEvidenceState.Corrupt
+        }
+    }
+
     private fun encode(evidence: EnforcementEvidence): String =
         json.encodeToString(EnforcementEvidence.serializer(), evidence)
 
     private companion object {
         const val KEY = "enforcement.evidence.v1"
+        const val FIELD_ALGORITHM_VERSION = "algorithmVersion"
+        const val FIELD_VERDICT = "verdict"
+        /** The heuristic that also weighed the hardware signal; superseded by version 2. */
+        const val SUPERSEDED_ALGORITHM_VERSION = 1
+        /** Wire literals, not enum names: `CONFIRMED` no longer exists as a Kotlin constant. */
+        const val WIRE_VERDICT_CONFIRMED = "CONFIRMED"
+        const val WIRE_VERDICT_REFUTED = "REFUTED"
         val TAG = logTag("Charging", "Enforcement", "Store")
     }
 }

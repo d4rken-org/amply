@@ -104,9 +104,10 @@ object EnforcementVerdictEngine {
      * Bumped whenever this heuristic materially changes. Stored on every [EnforcementEvidence], so a
      * verdict produced by a different version stops counting instead of being trusted forever.
      *
-     * Version 2 dropped the confirmation arm entirely (see above); a version-1 record was produced by
-     * a heuristic that also weighed a hardware signal now known to be session-scoped, so it reads as
-     * no evidence at all.
+     * Version 2 dropped the confirmation arm entirely (see above). A version-1 record is therefore
+     * migrated per verdict rather than discarded (see [EnforcementEvidenceStore]): its confirmation
+     * rested on a hardware signal now known to be session-scoped and reads as no evidence, while its
+     * refutation never depended on that signal and is kept, restamped to this version.
      */
     const val ALGORITHM_VERSION = 2
 

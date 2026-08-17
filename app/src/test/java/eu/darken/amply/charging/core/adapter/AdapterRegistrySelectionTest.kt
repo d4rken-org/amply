@@ -1,22 +1,36 @@
 package eu.darken.amply.charging.core.adapter
 
+import android.content.Context
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.test.core.app.ApplicationProvider
 import eu.darken.amply.R
 import eu.darken.amply.charging.core.DeviceInfo
 import eu.darken.amply.charging.core.SettingProbe
 import eu.darken.amply.charging.core.access.LineageChargeReadout
 import eu.darken.amply.charging.core.access.LineageChargeReader
+import eu.darken.amply.charging.core.enforcement.BuildIdentitySource
 import eu.darken.amply.charging.core.enforcement.EnforcementEvidence
 import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceState
+import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceStore
 import eu.darken.amply.charging.core.enforcement.EnforcementStatus
 import eu.darken.amply.charging.core.enforcement.EnforcementVerdict
 import eu.darken.amply.charging.core.enforcement.EnforcementVerdictEngine
+import eu.darken.amply.common.AppDataStore
 import eu.darken.amply.common.ca.toCaString
+import eu.darken.amply.common.serialization.SerializationModule
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.io.File
 
 /**
  * Registry-level selection: the first matched adapter wins, so the Samsung adapters' matched
@@ -364,6 +378,51 @@ class AdapterRegistrySelectionTest {
             selection.support.contributionWanted shouldBe true
             selection.support.detail shouldBe R.string.adapter_detail_enforcement_refuted
         }
+    }
+
+    @Test
+    fun `a refutation recorded under the old algorithm version still disables control`() {
+        // The regression an algorithm-version bump invites: the user accepted the unconfirmed build
+        // (the opt-in is retained across updates), the device was then observed charging past its cap
+        // under version 1, and the app updated. Reading that stored refutation as "no evidence" would
+        // hand control straight back — through UNVERIFIED, silently — to the exact hardware this gate
+        // exists to keep it away from.
+        val raw = """
+            {"adapterId":"lineageos-chargingcontrol-v1","buildIdentity":"build-a","algorithmVersion":1,
+            "verdict":"REFUTED","capPercent":80,"observedPercent":84,"observedAtWallMillis":1000}
+        """.trimIndent()
+        val storeScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        val stored = try {
+            val appDataStore = AppDataStore(
+                PreferenceDataStoreFactory.create(scope = storeScope) {
+                    File(
+                        ApplicationProvider.getApplicationContext<Context>().cacheDir,
+                        "enforcement-migration-${System.nanoTime()}.preferences_pb",
+                    )
+                },
+            )
+            val store = EnforcementEvidenceStore(
+                appDataStore,
+                object : BuildIdentitySource {
+                    override fun current() = "build-a"
+                },
+                SerializationModule.json(),
+            )
+            runBlocking {
+                appDataStore.store.edit { it[stringPreferencesKey("enforcement.evidence.v1")] = raw }
+                store.currentState()
+            }
+        } finally {
+            storeScope.cancel()
+        }
+
+        val selection = select(
+            lineage(codename = "raven"),
+            evidence = stored,
+            verificationStarted = true,
+        )
+        selection.support.controlEnabled shouldBe false
+        selection.support.enforcement shouldBe EnforcementStatus.REFUTED
     }
 
     @Test
