@@ -13,6 +13,7 @@ import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
 import eu.darken.amply.common.flow.SingleEventFlow
+import eu.darken.amply.fullcharge.core.BootCountProvider
 import eu.darken.amply.fullcharge.core.ChargeSessionService
 import eu.darken.amply.rules.core.BondedDevice
 import eu.darken.amply.rules.core.ChargeRule
@@ -28,6 +29,7 @@ import eu.darken.amply.upgrade.core.isProForUi
 import eu.darken.amply.upgrade.core.isProSettled
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -68,6 +70,29 @@ enum class ConditionKind {
 }
 
 /**
+ * How much the editor may claim about which devices are connected.
+ *
+ * Tri-state on purpose: "we have not looked yet" and "we looked and could not tell" must not both
+ * render as "not connected". A marker saying a device is connected is a claim about the world right
+ * now, so it is shown only under [FRESH].
+ */
+enum class ConnectionFreshness {
+    UNKNOWN,
+    FRESH,
+    UNAVAILABLE,
+}
+
+/** One selectable device row, including one the rule points at that is no longer paired. */
+data class EditorDeviceRow(
+    val address: String,
+    val name: String?,
+    val selected: Boolean,
+    /** The rule's device is gone from the bonded list; shown anyway so Save is never a surprise. */
+    val unpaired: Boolean,
+    val connected: Boolean,
+)
+
+/**
  * The editor's working copy. Held here rather than in the screen so a rotation mid-edit doesn't lose
  * it and so the pure screen stays a function of state.
  */
@@ -89,6 +114,11 @@ data class RuleEditorState(
     val bondedDevices: List<BondedDevice> = emptyList(),
     val chargerTypeSupported: Boolean = true,
     val bluetoothPermissionMissing: Boolean = false,
+    /** Addresses reported connected; only ever presented as such under [ConnectionFreshness.FRESH]. */
+    val connectedAddresses: Set<String> = emptySet(),
+    val freshness: ConnectionFreshness = ConnectionFreshness.UNKNOWN,
+    /** The user asked to leave with unsaved edits; the screen renders the discard confirmation. */
+    val showDiscardConfirm: Boolean = false,
 ) {
     val isNew: Boolean get() = ruleId == null
 
@@ -98,7 +128,65 @@ data class RuleEditorState(
             ConditionKind.BLUETOOTH -> !address.isNullOrBlank()
             ConditionKind.CHARGER -> plugKinds.isNotEmpty()
         }
+
+    /**
+     * The device list as the editor shows it: the bonded devices, plus — when the rule points at a
+     * device that is no longer paired — a row for that device too, still selected and marked. The
+     * selection is never silently dropped: what Save would keep has to stay visible.
+     */
+    val deviceRows: List<EditorDeviceRow>
+        get() {
+            val selectedAddress = address?.takeIf { it.isNotBlank() }
+            val normalizedSelection = selectedAddress?.let(::normalizeBtAddress)
+            val rows = bondedDevices.map { device ->
+                val normalized = normalizeBtAddress(device.address)
+                EditorDeviceRow(
+                    address = device.address,
+                    name = device.name,
+                    selected = normalized == normalizedSelection,
+                    unpaired = false,
+                    connected = isConnected(normalized),
+                )
+            }
+            if (selectedAddress == null || rows.any { it.selected }) return rows
+            return rows + EditorDeviceRow(
+                address = selectedAddress,
+                name = deviceName,
+                selected = true,
+                unpaired = true,
+                connected = isConnected(normalizeBtAddress(selectedAddress)),
+            )
+        }
+
+    private fun isConnected(normalizedAddress: String) =
+        freshness == ConnectionFreshness.FRESH && normalizedAddress in connectedAddresses
 }
+
+/**
+ * Just the fields a user edits. Everything else on [RuleEditorState] — the bonded list, connection
+ * freshness, the adapter's policies — refreshes underneath them from the outside, and comparing the
+ * whole state would report a background refresh as an unsaved change and demand a discard
+ * confirmation the user never earned.
+ */
+internal data class RuleDraft(
+    val label: String,
+    val conditionKind: ConditionKind,
+    val address: String?,
+    val plugKinds: Set<PlugKind>,
+    val policyId: String?,
+)
+
+/**
+ * Deliberately excludes the device NAME: it travels with the address when the user picks a device,
+ * but it can also change on its own when the device is renamed in the OS, which is not an edit.
+ */
+internal fun RuleEditorState.draft() = RuleDraft(
+    label = label,
+    conditionKind = conditionKind,
+    address = address,
+    plugKinds = plugKinds,
+    policyId = policy?.stableId,
+)
 
 @HiltViewModel
 class ChargeRulesViewModel @Inject constructor(
@@ -106,6 +194,7 @@ class ChargeRulesViewModel @Inject constructor(
     private val applier: RuleApplier,
     private val repository: ChargingRepository,
     private val upgradeRepo: UpgradeRepo,
+    private val bootCountProvider: BootCountProvider,
 ) : ViewModel() {
 
     /** A gated affordance was used without the entitlement; the root navigates to the upgrade screen. */
@@ -121,8 +210,24 @@ class ChargeRulesViewModel @Inject constructor(
     /** The editor is ready (its state is already set); the root navigates to it. */
     val openEditorEvents = SingleEventFlow<Unit>()
 
+    /**
+     * The editor is done and the root may navigate away. Every exit routes through here — save,
+     * delete, an unchanged back-out, and a confirmed discard — so there is exactly one place that
+     * decides an edit is over, and no call site can navigate past a draft that still needs a
+     * confirmation.
+     */
+    val closeEditorEvents = SingleEventFlow<Unit>()
+
     private val bluetoothPermissionMissing = MutableStateFlow(!applier.hasBluetoothPermission())
     private val editorState = MutableStateFlow<RuleEditorState?>(null)
+
+    /** The draft as it was when the editor opened; what "unsaved changes" is measured against. */
+    private var pristineDraft: RuleDraft? = null
+
+    // Both are restartable and last-write-wins: an older, slower answer must never land on top of a
+    // newer one and show a stale device list or a stale freshness.
+    private var bluetoothRefreshJob: Job? = null
+    private var reconcileJob: Job? = null
 
     /**
      * Resolved once, off the main thread: the answer comes from adapter selection, which reads
@@ -136,6 +241,16 @@ class ChargeRulesViewModel @Inject constructor(
     init {
         viewModelScope.launch(Dispatchers.Default) {
             chargerTypeSupported.value = applier.chargerTypeSupported()
+        }
+        // The connected set stays live while the editor is open: the manifest ACL receiver keeps the
+        // store current, so a device connecting or dropping shows up without another sweep. A
+        // snapshot from a previous boot describes connections that cannot still exist.
+        viewModelScope.launch {
+            applier.btSnapshot.collect { snapshot ->
+                val boot = withContext(Dispatchers.Default) { bootCountProvider.current() }
+                val addresses = if (snapshot.bootCount == boot) snapshot.addresses else emptySet()
+                editorState.update { it.copy(connectedAddresses = addresses) }
+            }
         }
     }
 
@@ -186,17 +301,42 @@ class ChargeRulesViewModel @Inject constructor(
     }
 
     /**
-     * Re-read after returning from the system permission prompt. An open editor is updated in place
-     * — a grant made *from* the editor's own "Allow" button must fill its device list right there,
-     * not only after backing out and re-entering.
+     * Re-read the permission AND the bonded list, and re-check which devices are connected.
+     *
+     * Driven by the root while the editor is open: the system permission prompt, but also Bluetooth
+     * being switched on or off and devices being paired or unpaired, all change what this screen
+     * should be showing while the user is looking at it.
+     *
+     * Restartable: the previous run is cancelled so a slower earlier answer — an empty list read
+     * while the adapter was still coming up — can never land on top of a newer one.
      */
-    fun refreshBluetoothPermission() {
-        viewModelScope.launch {
+    fun refreshEditorBluetooth() {
+        bluetoothRefreshJob?.cancel()
+        bluetoothRefreshJob = viewModelScope.launch {
             val missing = withContext(Dispatchers.Default) { !applier.hasBluetoothPermission() }
             bluetoothPermissionMissing.value = missing
             if (editorState.value == null) return@launch
             val devices = withContext(Dispatchers.Default) { applier.bondedDevices() }
             editorState.update { it.copy(bluetoothPermissionMissing = missing, bondedDevices = devices) }
+            reconcileConnections()
+        }
+    }
+
+    /**
+     * Refresh which devices are connected, without holding anything up. Never awaited by the editor's
+     * own opening: the profile sweep can take seconds, and rows that render immediately with markers
+     * appearing a moment later beat a screen that stalls on a Bluetooth round-trip.
+     */
+    private fun reconcileConnections() {
+        reconcileJob?.cancel()
+        reconcileJob = viewModelScope.launch {
+            editorState.update { it.copy(freshness = ConnectionFreshness.UNKNOWN) }
+            val fresh = withContext(Dispatchers.Default) { applier.reconcileBluetoothForUi() }
+            editorState.update {
+                it.copy(
+                    freshness = if (fresh) ConnectionFreshness.FRESH else ConnectionFreshness.UNAVAILABLE,
+                )
+            }
         }
     }
 
@@ -211,8 +351,7 @@ class ChargeRulesViewModel @Inject constructor(
                 upgradeRequiredEvents.tryEmit(Unit)
                 return@launch
             }
-            editorState.value = editorDefaults()
-            openEditorEvents.tryEmit(Unit)
+            openEditor(editorDefaults())
         }
     }
 
@@ -221,30 +360,67 @@ class ChargeRulesViewModel @Inject constructor(
         viewModelScope.launch {
             val rule = applier.rulesNow().firstOrNull { it.id == id } ?: return@launch
             val condition = rule.condition
-            editorState.value = editorDefaults().copy(
-                ruleId = rule.id,
-                enabled = rule.enabled,
-                label = rule.label,
-                conditionKind = when (condition) {
-                    is RuleCondition.BluetoothDevice -> ConditionKind.BLUETOOTH
-                    is RuleCondition.ChargerType -> ConditionKind.CHARGER
-                },
-                address = (condition as? RuleCondition.BluetoothDevice)?.address,
-                deviceName = (condition as? RuleCondition.BluetoothDevice)?.name,
-                plugKinds = (condition as? RuleCondition.ChargerType)?.types.orEmpty(),
-                policy = rule.policy,
+            openEditor(
+                editorDefaults().copy(
+                    ruleId = rule.id,
+                    enabled = rule.enabled,
+                    label = rule.label,
+                    conditionKind = when (condition) {
+                        is RuleCondition.BluetoothDevice -> ConditionKind.BLUETOOTH
+                        is RuleCondition.ChargerType -> ConditionKind.CHARGER
+                    },
+                    address = (condition as? RuleCondition.BluetoothDevice)?.address,
+                    deviceName = (condition as? RuleCondition.BluetoothDevice)?.name,
+                    plugKinds = (condition as? RuleCondition.ChargerType)?.types.orEmpty(),
+                    policy = rule.policy,
+                ),
             )
-            openEditorEvents.tryEmit(Unit)
         }
     }
 
-    fun closeEditor() {
+    private fun openEditor(state: RuleEditorState) {
+        editorState.value = state
+        // The yardstick for "unsaved changes", captured before the user can touch anything.
+        pristineDraft = state.draft()
+        openEditorEvents.tryEmit(Unit)
+        if (state.conditionKind == ConditionKind.BLUETOOTH) reconcileConnections()
+    }
+
+    /**
+     * The single exit door. An untouched draft leaves immediately; a modified one raises the discard
+     * confirmation instead of throwing the edit away. Saving never comes through here — a save is
+     * not a discard, and must never be blocked by the dialog.
+     */
+    fun requestCloseEditor() {
+        val current = editorState.value
+        if (current == null) {
+            closeEditorEvents.tryEmit(Unit)
+            return
+        }
+        if (current.draft() == pristineDraft) {
+            finishEditing()
+        } else {
+            editorState.update { it.copy(showDiscardConfirm = true) }
+        }
+    }
+
+    fun confirmDiscardEditor() = finishEditing()
+
+    fun keepEditing() = editorState.update { it.copy(showDiscardConfirm = false) }
+
+    private fun finishEditing() {
         editorState.value = null
+        pristineDraft = null
+        closeEditorEvents.tryEmit(Unit)
     }
 
     fun setEditorLabel(label: String) = editorState.update { it.copy(label = label) }
 
-    fun setEditorConditionKind(kind: ConditionKind) = editorState.update { it.copy(conditionKind = kind) }
+    fun setEditorConditionKind(kind: ConditionKind) {
+        editorState.update { it.copy(conditionKind = kind) }
+        // Switching TO Bluetooth is when the device list first matters; refresh what it shows.
+        if (kind == ConditionKind.BLUETOOTH) reconcileConnections()
+    }
 
     fun setEditorDevice(device: BondedDevice) = editorState.update {
         it.copy(address = device.address, deviceName = device.name)
@@ -288,7 +464,7 @@ class ChargeRulesViewModel @Inject constructor(
                 policyId = policy.stableId,
             )
             if (draft.isNew) applier.addRule(rule) else applier.updateRule(rule)
-            editorState.value = null
+            finishEditing()
             nudgeService()
             // Now ask for the rule to be switched on, through the same gate every other enable uses.
             // A refusal leaves the rule saved and off rather than active-then-revoked.
@@ -299,7 +475,9 @@ class ChargeRulesViewModel @Inject constructor(
     fun deleteRule(id: String) {
         viewModelScope.launch {
             applier.deleteRule(id)
-            editorState.value = null
+            // Also closes the editor when the delete came from it; a no-op from the list screen,
+            // where the root is already on the destination this navigates to.
+            finishEditing()
             nudgeService()
         }
     }

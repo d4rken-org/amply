@@ -1,6 +1,8 @@
 package eu.darken.amply.main.ui
 
 import android.Manifest
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -63,6 +65,7 @@ import eu.darken.amply.main.ui.settings.SettingsDestination
 import eu.darken.amply.main.ui.settings.SettingsScreen
 import eu.darken.amply.main.ui.settings.SettingsViewModel
 import eu.darken.amply.main.ui.settings.SupportScreen
+import eu.darken.amply.rules.core.PlugKind
 import eu.darken.amply.rules.ui.ChargeRuleEditorScreen
 import eu.darken.amply.rules.ui.ChargeRulesScreen
 import eu.darken.amply.rules.ui.ChargeRulesViewModel
@@ -227,12 +230,12 @@ class MainActivity : ComponentActivity() {
                 // at install time and the prompt does not exist.
                 val bluetoothLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestPermission(),
-                ) { rulesViewModel.refreshBluetoothPermission() }
+                ) { rulesViewModel.refreshEditorBluetooth() }
                 val requestBluetooth = {
                     if (Build.VERSION.SDK_INT >= 31) {
                         bluetoothLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
                     } else {
-                        rulesViewModel.refreshBluetoothPermission()
+                        rulesViewModel.refreshEditorBluetooth()
                     }
                 }
 
@@ -291,6 +294,60 @@ class MainActivity : ComponentActivity() {
                         destination = SettingsDestination.CHARGE_RULE_EDIT
                     }
                 }
+                // Every editor exit — saved, deleted, backed out unchanged, or discarded — arrives
+                // here. Navigating from the call sites instead would mean each one re-deciding
+                // whether the draft may be abandoned, and one of them getting it wrong.
+                LaunchedEffect(Unit) {
+                    rulesViewModel.closeEditorEvents.collect {
+                        destination = SettingsDestination.CHARGE_RULES
+                    }
+                }
+                // While the editor is open, keep its Bluetooth picture live: the adapter being
+                // switched on or off, and devices being paired or unpaired, both change what the
+                // list should show while the user is looking at it. Scoped to the destination and
+                // to RESUMED, so nothing is registered from anywhere else in the app.
+                LifecycleResumeEffect(destination) {
+                    val bluetoothWatcher = if (destination == SettingsDestination.CHARGE_RULE_EDIT) {
+                        object : BroadcastReceiver() {
+                            override fun onReceive(context: Context?, intent: Intent?) {
+                                // Terminal states only: the TURNING_ON/TURNING_OFF steps would each
+                                // trigger a sweep that answers for an adapter still in motion.
+                                val interesting = when (intent?.action) {
+                                    BluetoothAdapter.ACTION_STATE_CHANGED -> {
+                                        val state = intent.getIntExtra(
+                                            BluetoothAdapter.EXTRA_STATE,
+                                            BluetoothAdapter.ERROR,
+                                        )
+                                        state == BluetoothAdapter.STATE_ON || state == BluetoothAdapter.STATE_OFF
+                                    }
+                                    BluetoothDevice.ACTION_BOND_STATE_CHANGED -> {
+                                        val bond = intent.getIntExtra(
+                                            BluetoothDevice.EXTRA_BOND_STATE,
+                                            BluetoothDevice.ERROR,
+                                        )
+                                        bond == BluetoothDevice.BOND_BONDED || bond == BluetoothDevice.BOND_NONE
+                                    }
+                                    else -> false
+                                }
+                                if (interesting) rulesViewModel.refreshEditorBluetooth()
+                            }
+                        }.also {
+                            ContextCompat.registerReceiver(
+                                this@MainActivity,
+                                it,
+                                IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED).apply {
+                                    addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+                                },
+                                ContextCompat.RECEIVER_EXPORTED,
+                            )
+                        }
+                    } else {
+                        null
+                    }
+                    onPauseOrDispose {
+                        bluetoothWatcher?.let { runCatching { unregisterReceiver(it) } }
+                    }
+                }
                 LifecycleResumeEffect(Unit) {
                     viewModel.refresh()
                     // Separate from refresh(): that one runs on every battery broadcast, and a
@@ -303,7 +360,7 @@ class MainActivity : ComponentActivity() {
                     contributionViewModel.refreshStatus()
                     // The Bluetooth grant is made in a system dialog that pauses the activity, so
                     // re-read it on return rather than trusting the value from before.
-                    rulesViewModel.refreshBluetoothPermission()
+                    rulesViewModel.refreshEditorBluetooth()
                     val nudge = viewModel.nudgeChargeService()
                     onPauseOrDispose { nudge.cancel() }
                 }
@@ -350,11 +407,9 @@ class MainActivity : ComponentActivity() {
                             SettingsDestination.CHARGE_HISTORY -> destination = SettingsDestination.BATTERY
                             // Reached from the dashboard card or the settings hub.
                             SettingsDestination.CHARGE_RULES -> destination = rulesOrigin
-                            // The editor is only ever entered from the rules list.
-                            SettingsDestination.CHARGE_RULE_EDIT -> {
-                                rulesViewModel.closeEditor()
-                                destination = SettingsDestination.CHARGE_RULES
-                            }
+                            // Asks rather than closes: an edited draft raises the discard
+                            // confirmation, and the navigation happens on the close event.
+                            SettingsDestination.CHARGE_RULE_EDIT -> rulesViewModel.requestCloseEditor()
                             // The session detail returns to whichever surface opened it.
                             SettingsDestination.STATS_SESSION_DETAIL -> {
                                 statsViewModel.closeSession()
@@ -551,27 +606,25 @@ class MainActivity : ComponentActivity() {
                             if (editor == null) {
                                 LaunchedEffect(Unit) { destination = SettingsDestination.CHARGE_RULES }
                             } else {
+                                val plugged = state.batteryReadout?.plugged ?: 0
+                                val detectedPlugKind = PlugKind.fromExtraPlugged(plugged)
                                 ChargeRuleEditorScreen(
                                     state = editor,
-                                    onBack = {
-                                        rulesViewModel.closeEditor()
-                                        destination = SettingsDestination.CHARGE_RULES
-                                    },
+                                    // Read off the dashboard's live battery state, which the root
+                                    // already collects — the editor never reaches for it itself.
+                                    detectedPlugKind = detectedPlugKind,
+                                    chargerUnrecognized = plugged != 0 && detectedPlugKind == null,
+                                    // Navigation for all four exits happens on closeEditorEvents.
+                                    onCloseRequest = rulesViewModel::requestCloseEditor,
                                     onLabelChange = rulesViewModel::setEditorLabel,
                                     onConditionKindChange = rulesViewModel::setEditorConditionKind,
                                     onDeviceSelect = rulesViewModel::setEditorDevice,
                                     onPlugKindToggle = rulesViewModel::toggleEditorPlugKind,
                                     onPolicySelect = rulesViewModel::setEditorPolicy,
-                                    // A denied save answers with the upgrade event, which navigates
-                                    // afterwards — so leaving for the list here is safe either way.
-                                    onSave = {
-                                        rulesViewModel.saveEditor()
-                                        destination = SettingsDestination.CHARGE_RULES
-                                    },
-                                    onDelete = { id ->
-                                        rulesViewModel.deleteRule(id)
-                                        destination = SettingsDestination.CHARGE_RULES
-                                    },
+                                    onSave = rulesViewModel::saveEditor,
+                                    onDelete = rulesViewModel::deleteRule,
+                                    onConfirmDiscard = rulesViewModel::confirmDiscardEditor,
+                                    onKeepEditing = rulesViewModel::keepEditing,
                                     onRequestBluetoothPermission = requestBluetooth,
                                 )
                             }
