@@ -81,6 +81,15 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
     **This is NOT a GO and oriole is NOT in `QUALIFIED_CODENAMES`**: only part of step 2 was run — wired only, no
     wireless, no below/at/above sweep, no hold observed at the raised cap, and none of steps 3-5 (access tiers,
     sessions, boot recovery, R8). It supersedes the "HAL dropped LIMIT" claim for *this build only*.
+    **Unexplained later observation, recorded so this row does not overclaim**: a few hours after the run above,
+    the device was found at **78 %** with `charging_control_charging_limit` still reading `70` — i.e. a level
+    above the cap. It is **not attributable** and must not be read either as enforcement failing or as anything
+    else: by then the phone had left this run's control entirely — physically unplugged and moved, and its
+    system clock force-set to `Tue Jul 21 02:01 CEST` (a month in the past, at 02:00) by another workflow, which
+    is a scheduled/night-charge experiment signature. Any of that could produce the rise. The controlled
+    observations above stand as recorded; this one is logged only so a later reader does not find it and
+    conclude the row was written selectively. Re-check under controlled conditions before treating either as
+    settled.
     **Why it matters beyond oriole**: same device, same Lineage major version, different build, opposite HAL
     capability. That is the concrete case for HAL capability being **build-scoped, not codename-scoped**, and it
     is why enforcement evidence is keyed on a composite build identity (fingerprint + incremental + build time +
