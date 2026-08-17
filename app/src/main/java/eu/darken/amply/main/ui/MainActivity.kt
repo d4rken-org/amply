@@ -622,7 +622,9 @@ class MainActivity : ComponentActivity() {
                                     onPlugKindToggle = rulesViewModel::toggleEditorPlugKind,
                                     onPolicySelect = rulesViewModel::setEditorPolicy,
                                     onSave = rulesViewModel::saveEditor,
-                                    onDelete = rulesViewModel::deleteRule,
+                                    // The editor's own delete: it closes this editor, unlike the
+                                    // list's, which must never touch whatever draft is open.
+                                    onDelete = rulesViewModel::deleteEditingRule,
                                     onConfirmDiscard = rulesViewModel::confirmDiscardEditor,
                                     onKeepEditing = rulesViewModel::keepEditing,
                                     onRequestBluetoothPermission = requestBluetooth,

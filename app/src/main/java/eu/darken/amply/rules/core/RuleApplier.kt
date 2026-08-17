@@ -145,15 +145,20 @@ class RuleApplier @Inject constructor(
      * instead of two answers that can disagree. Under the same mutex, so it cannot interleave with
      * an evaluation's own snapshot write.
      *
-     * Returns false when the sweep could not produce an answer — the snapshot is then left exactly
-     * as the ACL receiver built it, and the caller must say "unavailable" rather than present a
+     * Returns null when the sweep could not produce an answer — the snapshot is then left exactly as
+     * the ACL receiver built it, and the caller must say "unavailable" rather than present a
      * possibly-stale list as current.
+     *
+     * It returns the resolved snapshot rather than a bare success flag so the caller can adopt the
+     * addresses and mark them fresh in ONE step. With a flag it would have to source the set from
+     * the store's flow instead, whose next emission is not ordered against this return — leaving a
+     * window where the reading is declared fresh while the previous set is still on screen.
      */
-    suspend fun reconcileBluetoothForUi(): Boolean = mutex.withLock {
+    suspend fun reconcileBluetoothForUi(): BtConnectionSnapshot? = mutex.withLock {
         // Deliberately not routed through the rule-shaped short-circuit below: an editor filling in
         // its FIRST Bluetooth condition has no enabled Bluetooth rule yet, and would otherwise be
         // told nothing is connected.
-        resolveConnected(reconcile = true).swept
+        resolveConnected(reconcile = true).let { if (it.swept) it.snapshot else null }
     }
 
     /** Receiver hook. Returns whether any enabled rule actually cares about Bluetooth. */
@@ -377,24 +382,25 @@ class RuleApplier @Inject constructor(
     private suspend fun resolveBtAddresses(rules: List<ChargeRule>, reconcile: Boolean): Set<String> {
         // No rule rides on Bluetooth: skip the whole thing rather than pay for a sweep nothing reads.
         if (rules.none { it.enabled && it.condition is RuleCondition.BluetoothDevice }) return emptySet()
-        return resolveConnected(reconcile).addresses
+        return resolveConnected(reconcile).snapshot.addresses
     }
 
     /**
      * [swept] answers "is this a fresh reading", which only a surface displaying the set cares
-     * about. The evaluation path acts on [addresses] either way: a sweep that could not answer
-     * leaves the receiver-built snapshot in place, which is the best available evidence.
+     * about. The evaluation path acts on [snapshot] either way: a sweep that could not answer leaves
+     * the receiver-built snapshot in place, which is the best available evidence.
      */
-    private data class BtResolution(val addresses: Set<String>, val swept: Boolean)
+    private data class BtResolution(val snapshot: BtConnectionSnapshot, val swept: Boolean)
 
     private suspend fun resolveConnected(reconcile: Boolean): BtResolution {
         val bootCount = bootCountProvider.current()
         if (!bluetooth.hasPermission()) {
             log(TAG, Logging.Priority.WARN) { "Bluetooth permission missing; treating nothing as connected" }
-            store.updateBtSnapshot { BtConnectionSnapshot(bootCount = bootCount) }
+            val empty = BtConnectionSnapshot(bootCount = bootCount)
+            store.updateBtSnapshot { empty }
             // Not a failed reading: "nothing observable" IS the answer, and it is the same one the
             // evaluation path acts on.
-            return BtResolution(emptySet(), swept = true)
+            return BtResolution(empty, swept = true)
         }
         if (reconcile) {
             val live = try {
@@ -406,16 +412,18 @@ class RuleApplier @Inject constructor(
                 null
             }
             if (live != null) {
-                store.updateBtSnapshot { BtConnectionSnapshot(addresses = live, bootCount = bootCount) }
-                return BtResolution(live, swept = true)
+                val swept = BtConnectionSnapshot(addresses = live, bootCount = bootCount)
+                store.updateBtSnapshot { swept }
+                return BtResolution(swept, swept = true)
             }
         }
         val snapshot = store.btSnapshotNow()
         if (snapshot.bootCount != bootCount) {
-            store.updateBtSnapshot { BtConnectionSnapshot(bootCount = bootCount) }
-            return BtResolution(emptySet(), swept = false)
+            val reset = BtConnectionSnapshot(bootCount = bootCount)
+            store.updateBtSnapshot { reset }
+            return BtResolution(reset, swept = false)
         }
-        return BtResolution(snapshot.addresses, swept = false)
+        return BtResolution(snapshot, swept = false)
     }
 
     private companion object {

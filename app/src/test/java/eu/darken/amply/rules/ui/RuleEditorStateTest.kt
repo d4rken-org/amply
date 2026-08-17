@@ -55,6 +55,40 @@ class RuleEditorStateTest {
     }
 
     @Test
+    fun `an accepted save takes the Save control out of play`() {
+        // The draft is still perfectly saveable — that is the point: without the second condition a
+        // second tap during the write would create a second rule under a second id, because the
+        // applier's mutex can be held for seconds by a Bluetooth sweep.
+        base.canSave shouldBe true
+        base.canSaveNow shouldBe true
+
+        val saving = base.copy(isSaving = true)
+        saving.canSave shouldBe true
+        saving.canSaveNow shouldBe false
+    }
+
+    @Test
+    fun `an incomplete draft cannot be saved either way`() {
+        val noPolicy = base.copy(policy = null)
+        noPolicy.canSave shouldBe false
+        noPolicy.canSaveNow shouldBe false
+
+        val noDevice = base.copy(address = null)
+        noDevice.canSaveNow shouldBe false
+
+        // A charger condition needs at least one type, or it would be a rule that matches nothing.
+        val noChargerType = base.copy(conditionKind = ConditionKind.CHARGER, plugKinds = emptySet())
+        noChargerType.canSaveNow shouldBe false
+        noChargerType.copy(plugKinds = setOf(PlugKind.AC)).canSaveNow shouldBe true
+    }
+
+    @Test
+    fun `saving is not an edit`() {
+        // Otherwise accepting a save would itself mark the draft dirty.
+        base.copy(isSaving = true).draft() shouldBe base.draft()
+    }
+
+    @Test
     fun `a device that is no longer paired keeps its row and its selection`() {
         val state = base.copy(
             address = "99:88:77:66:55:44",

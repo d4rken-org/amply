@@ -133,7 +133,9 @@ fun ChargeRuleEditorScreen(
                             }
                         }
                     }
-                    TextButton(onClick = onSave, enabled = state.canSave) {
+                    // canSaveNow, not canSave: the second half of it is "no save is already running",
+                    // and the write can outlast several taps.
+                    TextButton(onClick = onSave, enabled = state.canSaveNow) {
                         Text(stringResource(R.string.rules_editor_save))
                     }
                 },

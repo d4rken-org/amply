@@ -119,6 +119,11 @@ data class RuleEditorState(
     val freshness: ConnectionFreshness = ConnectionFreshness.UNKNOWN,
     /** The user asked to leave with unsaved edits; the screen renders the discard confirmation. */
     val showDiscardConfirm: Boolean = false,
+    /**
+     * A save has been accepted and is being written. The draft is committed from this moment: Save is
+     * inert, and backing out no longer offers to discard something that is already on its way to disk.
+     */
+    val isSaving: Boolean = false,
 ) {
     val isNew: Boolean get() = ruleId == null
 
@@ -128,6 +133,14 @@ data class RuleEditorState(
             ConditionKind.BLUETOOTH -> !address.isNullOrBlank()
             ConditionKind.CHARGER -> plugKinds.isNotEmpty()
         }
+
+    /**
+     * What the Save control binds to. Separate from [canSave] — which describes the draft — so a
+     * second tap during the write cannot start a second save: the applier's mutex can be held for
+     * seconds by a Bluetooth sweep, which is more than enough time to tap twice and create two
+     * rules with two different ids.
+     */
+    val canSaveNow: Boolean get() = canSave && !isSaving
 
     /**
      * The device list as the editor shows it: the bonded devices, plus — when the rule points at a
@@ -224,10 +237,35 @@ class ChargeRulesViewModel @Inject constructor(
     /** The draft as it was when the editor opened; what "unsaved changes" is measured against. */
     private var pristineDraft: RuleDraft? = null
 
-    // Both are restartable and last-write-wins: an older, slower answer must never land on top of a
-    // newer one and show a stale device list or a stale freshness.
+    /**
+     * Identifies one editing session. Async work captures it when it starts and re-checks it before
+     * touching editor state, so a save or delete that completes after the user has already left —
+     * or opened a different rule — cannot clear the draft that is on screen now.
+     *
+     * Only ever read and written on the main thread (every entry point is a UI callback and every
+     * continuation resumes on the main dispatcher), so no synchronization is needed.
+     */
+    private var editorSession = 0L
+
+    // Restartable and last-write-wins: an older, slower answer must never land on top of a newer one
+    // and show a stale device list or a stale freshness.
     private var bluetoothRefreshJob: Job? = null
     private var reconcileJob: Job? = null
+
+    /**
+     * Bumped synchronously at every refresh entry point. The jobs are cancelled too, but cancellation
+     * is not instantaneous — a coroutine already past its last suspension point still runs to
+     * completion — so the generation is what actually decides whose answer is allowed to land.
+     */
+    private var refreshGeneration = 0L
+
+    /**
+     * The generation whose reconciliation is still in flight, or null when none is. While it is set,
+     * the connected set on screen is deliberately frozen: the sweep is about to deliver a complete,
+     * fresher answer, and letting store emissions through in the meantime would show fragments of
+     * the old reading against a freshness the new one has not established yet.
+     */
+    private var pendingReconcile: Long? = null
 
     /**
      * Resolved once, off the main thread: the answer comes from adapter selection, which reads
@@ -247,7 +285,11 @@ class ChargeRulesViewModel @Inject constructor(
         // snapshot from a previous boot describes connections that cannot still exist.
         viewModelScope.launch {
             applier.btSnapshot.collect { snapshot ->
+                // A reconciliation in flight owns the next set; see [pendingReconcile].
+                if (pendingReconcile != null) return@collect
                 val boot = withContext(Dispatchers.Default) { bootCountProvider.current() }
+                // Re-checked after the suspension: a refresh may have started while we were away.
+                if (pendingReconcile != null) return@collect
                 val addresses = if (snapshot.bootCount == boot) snapshot.addresses else emptySet()
                 editorState.update { it.copy(connectedAddresses = addresses) }
             }
@@ -311,15 +353,34 @@ class ChargeRulesViewModel @Inject constructor(
      * while the adapter was still coming up — can never land on top of a newer one.
      */
     fun refreshEditorBluetooth() {
-        bluetoothRefreshJob?.cancel()
+        val generation = beginRefresh()
         bluetoothRefreshJob = viewModelScope.launch {
             val missing = withContext(Dispatchers.Default) { !applier.hasBluetoothPermission() }
+            if (generation != refreshGeneration) return@launch
             bluetoothPermissionMissing.value = missing
-            if (editorState.value == null) return@launch
+            if (editorState.value == null) {
+                clearPending(generation)
+                return@launch
+            }
             val devices = withContext(Dispatchers.Default) { applier.bondedDevices() }
+            if (generation != refreshGeneration) return@launch
             editorState.update { it.copy(bluetoothPermissionMissing = missing, bondedDevices = devices) }
-            reconcileConnections()
+            runReconcile(generation)
         }
+    }
+
+    /**
+     * Everything a refresh must do *synchronously*, before its first suspension: claim a generation,
+     * stop the previous attempt, and drop the freshness claim. Doing any of it after a suspension
+     * would leave a window where the screen still asserts a reading that is already being replaced.
+     */
+    private fun beginRefresh(): Long {
+        refreshGeneration += 1
+        pendingReconcile = refreshGeneration
+        bluetoothRefreshJob?.cancel()
+        reconcileJob?.cancel()
+        editorState.update { it.copy(freshness = ConnectionFreshness.UNKNOWN) }
+        return refreshGeneration
     }
 
     /**
@@ -328,16 +389,31 @@ class ChargeRulesViewModel @Inject constructor(
      * appearing a moment later beat a screen that stalls on a Bluetooth round-trip.
      */
     private fun reconcileConnections() {
-        reconcileJob?.cancel()
-        reconcileJob = viewModelScope.launch {
-            editorState.update { it.copy(freshness = ConnectionFreshness.UNKNOWN) }
-            val fresh = withContext(Dispatchers.Default) { applier.reconcileBluetoothForUi() }
-            editorState.update {
-                it.copy(
-                    freshness = if (fresh) ConnectionFreshness.FRESH else ConnectionFreshness.UNAVAILABLE,
-                )
+        val generation = beginRefresh()
+        reconcileJob = viewModelScope.launch { runReconcile(generation) }
+    }
+
+    /**
+     * The set and the freshness are applied together, from the one snapshot the sweep resolved —
+     * never freshness first and addresses from a later flow emission, which would briefly present
+     * the *previous* set as "connected now".
+     */
+    private suspend fun runReconcile(generation: Long) {
+        val snapshot = withContext(Dispatchers.Default) { applier.reconcileBluetoothForUi() }
+        if (generation != refreshGeneration) return
+        clearPending(generation)
+        editorState.update {
+            if (snapshot != null) {
+                it.copy(connectedAddresses = snapshot.addresses, freshness = ConnectionFreshness.FRESH)
+            } else {
+                it.copy(freshness = ConnectionFreshness.UNAVAILABLE)
             }
         }
+    }
+
+    /** Release the snapshot-flow freeze, but only if this generation is still the one holding it. */
+    private fun clearPending(generation: Long) {
+        if (pendingReconcile == generation) pendingReconcile = null
     }
 
     /**
@@ -379,6 +455,8 @@ class ChargeRulesViewModel @Inject constructor(
     }
 
     private fun openEditor(state: RuleEditorState) {
+        // A new session: work still in flight from the previous one can no longer touch this draft.
+        editorSession += 1
         editorState.value = state
         // The yardstick for "unsaved changes", captured before the user can touch anything.
         pristineDraft = state.draft()
@@ -390,6 +468,10 @@ class ChargeRulesViewModel @Inject constructor(
      * The single exit door. An untouched draft leaves immediately; a modified one raises the discard
      * confirmation instead of throwing the edit away. Saving never comes through here — a save is
      * not a discard, and must never be blocked by the dialog.
+     *
+     * Once a save has been accepted there is nothing left to discard: the draft is committed and the
+     * write is on its way, so this waits for that write's own close rather than offering to throw
+     * away something that is already being persisted.
      */
     fun requestCloseEditor() {
         val current = editorState.value
@@ -397,6 +479,7 @@ class ChargeRulesViewModel @Inject constructor(
             closeEditorEvents.tryEmit(Unit)
             return
         }
+        if (current.isSaving) return
         if (current.draft() == pristineDraft) {
             finishEditing()
         } else {
@@ -409,8 +492,12 @@ class ChargeRulesViewModel @Inject constructor(
     fun keepEditing() = editorState.update { it.copy(showDiscardConfirm = false) }
 
     private fun finishEditing() {
+        // Bumped here too: anything still in flight for the session that just ended must not be able
+        // to act on the next one.
+        editorSession += 1
         editorState.value = null
         pristineDraft = null
+        pendingReconcile = null
         closeEditorEvents.tryEmit(Unit)
     }
 
@@ -442,11 +529,19 @@ class ChargeRulesViewModel @Inject constructor(
      * only ever leave the user with a visible, inert rule they can switch on later.
      *
      * An edit carries the existing switch through untouched — saving must not turn a rule on or off.
+     *
+     * Accepting the save flips [RuleEditorState.isSaving] **synchronously**, before the coroutine
+     * starts. The write goes through the applier's mutex, which a Bluetooth sweep can hold for
+     * seconds — long enough to tap Save again and create a second rule under a second id, or to back
+     * out and discard a draft that is already being written.
      */
     fun saveEditor() {
         val draft = editorState.value ?: return
+        if (draft.isSaving) return
         val policy = draft.policy ?: return
         if (!draft.canSave) return
+        val session = editorSession
+        editorState.update { it.copy(isSaving = true, showDiscardConfirm = false) }
         viewModelScope.launch {
             val condition = when (draft.conditionKind) {
                 ConditionKind.BLUETOOTH -> RuleCondition.BluetoothDevice(
@@ -463,22 +558,46 @@ class ChargeRulesViewModel @Inject constructor(
                 condition = condition,
                 policyId = policy.stableId,
             )
-            if (draft.isNew) applier.addRule(rule) else applier.updateRule(rule)
-            finishEditing()
+            try {
+                if (draft.isNew) applier.addRule(rule) else applier.updateRule(rule)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log(TAG, Logging.Priority.ERROR) { "Saving rule $id failed: ${e.message}" }
+                // Keep the draft and let the user try again — closing here would lose their work
+                // and leave nothing written.
+                if (editorSession == session) editorState.update { it.copy(isSaving = false) }
+                return@launch
+            }
             nudgeService()
-            // Now ask for the rule to be switched on, through the same gate every other enable uses.
-            // A refusal leaves the rule saved and off rather than active-then-revoked.
+            // Only this session's own editor may be closed: by now the user may have backed out and
+            // opened a different rule, and that draft is not ours to clear.
+            if (editorSession == session) finishEditing()
+            // Unconditional: the rule exists now, so it still deserves its enable prompt whatever
+            // happened to the editor meanwhile.
             if (draft.isNew) requestEnableRule(id)
         }
     }
 
+    /**
+     * Delete from the rules LIST. Deliberately blind to the editor: the two entry points used to
+     * share one method, so a list delete completing after the user opened some other rule's editor
+     * cleared that draft and navigated away from it.
+     */
     fun deleteRule(id: String) {
         viewModelScope.launch {
             applier.deleteRule(id)
-            // Also closes the editor when the delete came from it; a no-op from the list screen,
-            // where the root is already on the destination this navigates to.
-            finishEditing()
             nudgeService()
+        }
+    }
+
+    /** Delete from the editor's overflow: closes the editor, but only the one that asked. */
+    fun deleteEditingRule(id: String) {
+        val session = editorSession
+        viewModelScope.launch {
+            applier.deleteRule(id)
+            nudgeService()
+            if (editorSession == session && editorState.value?.ruleId == id) finishEditing()
         }
     }
 
