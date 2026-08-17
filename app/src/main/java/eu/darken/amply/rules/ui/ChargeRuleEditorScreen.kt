@@ -8,10 +8,12 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.twotone.ArrowBack
 import androidx.compose.material.icons.filled.Check
@@ -106,17 +108,22 @@ fun ChargeRuleEditorScreen(
                         stringResource(R.string.rules_editor_when_header),
                         style = MaterialTheme.typography.titleMedium,
                     )
-                    ConditionChoice(
-                        text = stringResource(R.string.rules_editor_kind_bluetooth),
-                        selected = state.conditionKind == ConditionKind.BLUETOOTH,
-                        onClick = { onConditionKindChange(ConditionKind.BLUETOOTH) },
-                    )
-                    if (state.chargerTypeSupported) {
+                    // One radio group: rows sit contiguous inside it (their own 56dp height is the
+                    // separation, per the M3 selection-list pattern) instead of inheriting the
+                    // card's item spacing between every option.
+                    Column(Modifier.selectableGroup()) {
                         ConditionChoice(
-                            text = stringResource(R.string.rules_editor_kind_charger),
-                            selected = state.conditionKind == ConditionKind.CHARGER,
-                            onClick = { onConditionKindChange(ConditionKind.CHARGER) },
+                            text = stringResource(R.string.rules_editor_kind_bluetooth),
+                            selected = state.conditionKind == ConditionKind.BLUETOOTH,
+                            onClick = { onConditionKindChange(ConditionKind.BLUETOOTH) },
                         )
+                        if (state.chargerTypeSupported) {
+                            ConditionChoice(
+                                text = stringResource(R.string.rules_editor_kind_charger),
+                                selected = state.conditionKind == ConditionKind.CHARGER,
+                                onClick = { onConditionKindChange(ConditionKind.CHARGER) },
+                            )
+                        }
                     }
                 }
             }
@@ -146,14 +153,16 @@ fun ChargeRuleEditorScreen(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            else -> state.bondedDevices.forEach { device ->
-                                ConditionChoice(
-                                    text = device.name?.takeIf { it.isNotBlank() }
-                                        ?: stringResource(R.string.rules_editor_device_unnamed),
-                                    supporting = device.address,
-                                    selected = state.address == device.address,
-                                    onClick = { onDeviceSelect(device) },
-                                )
+                            else -> Column(Modifier.selectableGroup()) {
+                                state.bondedDevices.forEach { device ->
+                                    ConditionChoice(
+                                        text = device.name?.takeIf { it.isNotBlank() }
+                                            ?: stringResource(R.string.rules_editor_device_unnamed),
+                                        supporting = device.address,
+                                        selected = state.address == device.address,
+                                        onClick = { onDeviceSelect(device) },
+                                    )
+                                }
                             }
                         }
                     }
@@ -201,20 +210,25 @@ fun ChargeRuleEditorScreen(
                         style = MaterialTheme.typography.titleMedium,
                     )
                     // Grouped by the derived kind, so "protect" and "charge fully" read as the two
-                    // things a condition can be for rather than as one flat list of modes.
+                    // things a condition can be for rather than as one flat list of modes. One
+                    // selectableGroup across both: the selection is single across the whole card,
+                    // and the headers are plain (non-selectable) children within it.
                     val (charging, protecting) = state.supportedPolicies.partition { it.allowsFullCharge }
-                    PolicyGroup(
-                        header = stringResource(R.string.rules_kind_protection),
-                        policies = protecting,
-                        selected = state.policy,
-                        onSelect = onPolicySelect,
-                    )
-                    PolicyGroup(
-                        header = stringResource(R.string.rules_kind_charge),
-                        policies = charging,
-                        selected = state.policy,
-                        onSelect = onPolicySelect,
-                    )
+                    Column(Modifier.selectableGroup()) {
+                        PolicyGroup(
+                            header = stringResource(R.string.rules_kind_protection),
+                            policies = protecting,
+                            selected = state.policy,
+                            onSelect = onPolicySelect,
+                        )
+                        PolicyGroup(
+                            header = stringResource(R.string.rules_kind_charge),
+                            policies = charging,
+                            selected = state.policy,
+                            onSelect = onPolicySelect,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
                 }
             }
             item(key = "editor.label") {
@@ -251,12 +265,14 @@ private fun PolicyGroup(
     policies: List<ChargePolicy>,
     selected: ChargePolicy?,
     onSelect: (ChargePolicy) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     if (policies.isEmpty()) return
     Text(
         header,
         style = MaterialTheme.typography.labelLarge,
         color = MaterialTheme.colorScheme.primary,
+        modifier = modifier,
     )
     policies.forEach { policy ->
         ConditionChoice(
@@ -268,8 +284,11 @@ private fun PolicyGroup(
 }
 
 /**
- * A radio row. The **row** carries the selection semantics and the radio button itself is inert, so
- * the tap target is the whole line and accessibility announces one control, not two.
+ * A radio row per the M3 selection-list pattern. The **row** carries the selection semantics and the
+ * radio button itself is inert, so the tap target is the whole line and accessibility announces one
+ * control, not two. Because the inert radio brings no interactive minimum of its own, the row must
+ * enforce the dimensions itself: 56dp minimum height (M3 single-line selection row; also keeps the
+ * two-line paired-device rows above the 48dp touch-target floor) and the 16dp control-to-label gap.
  */
 @Composable
 private fun ConditionChoice(
@@ -281,7 +300,9 @@ private fun ConditionChoice(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 56.dp)
             .selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         RadioButton(selected = selected, onClick = null)
