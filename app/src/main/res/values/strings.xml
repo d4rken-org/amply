@@ -496,6 +496,7 @@
     <string name="battery_value_not_reported">Not reported</string>
     <string name="battery_value_unknown">Unknown</string>
     <string name="battery_value_not_charging">Not charging</string>
+    <string name="battery_value_none">—</string>
     <string name="battery_hub_title">Battery &amp; charging</string>
     <string name="battery_hub_history_action">Charge history</string>
     <string name="battery_hub_section_now">Now</string>

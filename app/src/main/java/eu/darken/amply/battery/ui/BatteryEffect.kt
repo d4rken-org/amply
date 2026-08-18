@@ -106,3 +106,35 @@ fun chargePowerFallbackRes(effect: BatteryEffect): Int = when (effect) {
     BatteryEffect.Unknown,
     -> R.string.battery_value_not_reported
 }
+
+/** What a half-width tile shows for a withheld charge power, and what it announces instead. */
+data class ChargePowerTileFallback(
+    @StringRes val textRes: Int,
+    @StringRes val spokenRes: Int,
+)
+
+/**
+ * The tile-grid variant of [chargePowerFallbackRes] — same `when`, different rendering, kept
+ * adjacent so any future divergence between the two is visible in one place.
+ *
+ * A tile is half the screen wide and fits roughly twelve characters, so "Not charging" is a
+ * wrapped or ellipsised sentence in a slot whose neighbours are numbers. The dash reads as absence
+ * at that size and the spoken form carries the meaning that the glyph cannot, which is why this
+ * returns both. A label-left/value-right detail row has no such width problem, so it keeps the
+ * words.
+ *
+ * "Not reported" never collapses into the dash: it states a *device capability* — the platform
+ * exposed no figure — rather than a charging state, and a dash there would claim the battery is
+ * observably not charging when nothing observed it.
+ */
+fun chargePowerTileFallback(effect: BatteryEffect): ChargePowerTileFallback = when (effect) {
+    is BatteryEffect.OnBattery,
+    is BatteryEffect.ConnectedNotCharging,
+    is BatteryEffect.Full,
+    -> ChargePowerTileFallback(R.string.battery_value_none, R.string.battery_value_not_charging)
+
+    is BatteryEffect.Charging,
+    is BatteryEffect.Connected,
+    BatteryEffect.Unknown,
+    -> ChargePowerTileFallback(R.string.battery_value_not_reported, R.string.battery_value_not_reported)
+}

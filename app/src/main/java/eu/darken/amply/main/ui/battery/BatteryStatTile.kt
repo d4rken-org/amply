@@ -25,6 +25,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -54,6 +56,11 @@ import eu.darken.amply.common.compose.chart.Sparkline
  *
  * Tiles are laid out by [BatteryStatTileRow], which sizes both tiles in a row to the taller one so a
  * wrapped label or value can't stagger the grid.
+ *
+ * [valueColor] and [valueDescription] exist for values that stand in for a missing figure: a
+ * dimmed placeholder reads as absence rather than as a reading, and a glyph that carries no words
+ * needs a spoken form. Both default to the ordinary rendering, so a tile showing a real value is
+ * unchanged.
  */
 @Composable
 fun BatteryStatTile(
@@ -61,6 +68,8 @@ fun BatteryStatTile(
     value: String,
     modifier: Modifier = Modifier,
     valueStyle: TextStyle = MaterialTheme.typography.headlineSmall,
+    valueColor: Color = Color.Unspecified,
+    valueDescription: String? = null,
     icon: ImageVector? = null,
     sparkline: List<ChartPoint> = emptyList(),
     accentColor: Color = MaterialTheme.colorScheme.primary,
@@ -112,8 +121,14 @@ fun BatteryStatTile(
             Text(
                 value,
                 style = valueStyle,
+                color = valueColor,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+                modifier = if (valueDescription != null) {
+                    Modifier.semantics { contentDescription = valueDescription }
+                } else {
+                    Modifier
+                },
             )
         }
     }
