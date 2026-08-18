@@ -108,6 +108,17 @@ class QualificationRunner @Inject constructor(
      */
     private val stateMutex = Mutex()
 
+    /**
+     * Serializes [finish] end to end — claim, finalization and the release of the claim.
+     *
+     * [finish] is reachable from two places at once: this runner's own tick consumer, and the charge
+     * service's scope by way of [startRequested]. Without this, a tick that finds a claimed record
+     * could force-reclaim one a live finalization is still working through, and both would restore the
+     * baseline and write evidence for the same run. Held, that tick simply waits and then finds the
+     * record already cleared.
+     */
+    private val finalizationMutex = Mutex()
+
     init {
         scope.launch {
             // Before any tick, exactly as ChargeStatsRecorder does: a record left behind by a dead
@@ -356,6 +367,24 @@ class QualificationRunner @Inject constructor(
             finish(RunTerminal.Aborted(AbortReason.PROCESS_DEATH), reclaimRunId = record.runId)
             return
         }
+        // A claimed record is close-out-only for the same reason, one step further in: a finalization
+        // is either in flight for it or was abandoned by one. Its own release is a store write and can
+        // fail exactly as the finalization did — full storage, a transient I/O failure — and a claim
+        // left held is refused by every ordinary terminal path, so the app would keep reading a run as
+        // live for the rest of the process's life: rules suspended, no session, no new run, and the
+        // baseline this run owes never restored.
+        //
+        // The forced reclaim is safe only because [finalizationMutex] serializes the whole of [finish]:
+        // a finalization still in flight holds it, so this waits and then finds nothing left to claim.
+        // An abandoned claim has no holder, so this is what recovers it, on the next tick after the
+        // store recovers.
+        if (record.finalizing) {
+            log(TAG, Logging.Priority.WARN) {
+                "Qualification run ${record.runId} is still claimed for finalization; closing it out"
+            }
+            finish(RunTerminal.Aborted(AbortReason.FINALIZATION_INTERRUPTED), reclaimRunId = record.runId)
+            return
+        }
         // One coherent snapshot, taken here on this runner's own worker: the level and the charge
         // counter come from the same read, and the timestamp describes that read rather than whenever
         // the broadcast that woke us was captured.
@@ -427,8 +456,13 @@ class QualificationRunner @Inject constructor(
      * and runs [NonCancellable], or it would be cancelled with everything else. On the success path it
      * is a no-op: [finalize] cleared the record, so the run-id guard finds nothing to match.
      *
-     * [reclaimRunId] is for the startup repair alone: a record abandoned mid-finalization by a dead
-     * process is claimed already, and closing it out is the only way it ever ends.
+     * That release can itself fail — it is another store write — which is why it is not the only way a
+     * claim comes back: [onTick] closes out any record it finds still claimed.
+     *
+     * [reclaimRunId] is for the close-out paths alone: a record abandoned mid-finalization, by a dead
+     * process or by a release that could not be written, is claimed already, and forcing the claim is
+     * the only way it ever ends. It is safe only under [finalizationMutex] — a finalization still in
+     * flight holds it, so no reclaim can run beside one.
      */
     internal suspend fun finish(
         terminal: RunTerminal,
@@ -437,11 +471,11 @@ class QualificationRunner @Inject constructor(
         exitPercent: Int = -1,
         exitCounter: Int? = null,
         reclaimRunId: String? = null,
-    ) {
+    ): Unit = finalizationMutex.withLock {
         val record = runStore.claimForFinalization(reclaimRunId)
         if (record == null) {
             log(TAG, Logging.Priority.WARN) { "Nothing to finalize for $terminal; the run is already being closed out" }
-            return
+            return@withLock
         }
         val effective = when {
             record.cancelled -> RunTerminal.Aborted(AbortReason.USER_CANCELLED)
@@ -458,7 +492,17 @@ class QualificationRunner @Inject constructor(
         } catch (e: Exception) {
             log(TAG, Logging.Priority.ERROR) { "Run ${record.runId} finalization failed: ${e.message}" }
         } finally {
-            withContext(NonCancellable) { runStore.releaseFinalizationClaim(record.runId) }
+            // The release is a store write and can fail for whatever reason the finalization did.
+            // Swallowed rather than thrown: it would replace the finalization's exception — the one
+            // that says what actually went wrong — with a second symptom of the same cause. Nothing is
+            // lost by it, because a claim left held is recovered by the next tick.
+            withContext(NonCancellable) {
+                runCatching { runStore.releaseFinalizationClaim(record.runId) }.onFailure {
+                    log(TAG, Logging.Priority.ERROR) {
+                        "Run ${record.runId} could not release its finalization claim: ${it.message}"
+                    }
+                }
+            }
         }
     }
 

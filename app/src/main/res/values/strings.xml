@@ -367,6 +367,7 @@
     <string name="qualification_result_ceiling_body">The check ran out of time. Nothing was recorded, and your charge setting has been put back.</string>
     <string name="qualification_result_process_death_body">Amply was stopped while the check was running, so it couldn\'t finish. Your charge setting has been put back.</string>
     <string name="qualification_result_service_unavailable_body">Amply couldn\'t start the background service the check needs, so it never got going. Nothing was changed. Check that Amply is allowed to run in the background and try again.</string>
+    <string name="qualification_result_finalization_body">The check couldn\'t be closed out cleanly, so nothing was recorded. Your charge setting has been put back. If your phone is low on storage, freeing some up and trying again should help.</string>
 
     <string name="qualification_notification_title">Checking the charge limit</string>
     <string name="qualification_notification_stop">Stop</string>
