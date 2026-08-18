@@ -10,12 +10,12 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.shareIn
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -38,10 +38,18 @@ sealed interface ChargeTimeModelState {
  * neither may load and re-extract ten sessions of samples on its own — hence a singleton with a
  * shared, replayed flow rather than a per-ViewModel one.
  *
- * The refresh trigger is the finished-session count with an explicit `distinctUntilChanged`. Room
- * invalidates per *table*, so every per-tick update to the open session re-emits an unchanged count;
- * without the guard the whole ten-session extraction would rerun every recorder tick during a
- * charge.
+ * The refresh trigger is the **identities** of the recent finished sessions plus the retention
+ * window, with an explicit `distinctUntilChanged`. Room invalidates per *table*, so every per-tick
+ * update to the open session re-emits an unchanged list; without the guard the whole ten-session
+ * extraction would rerun every recorder tick during a charge. A bare count would be the wrong key in
+ * the other direction: a sealed charge and a purged one landing in the same invalidation window
+ * cancel out, leaving the fold quoting history that is gone. The retention setting rides along
+ * because it is what decides which samples the fold may use.
+ *
+ * There is deliberately **no** `onStart { emit(Loading) }`. It would sit upstream of the `shareIn`
+ * and therefore re-run on every upstream restart, so a subscriber returning after the stop timeout
+ * would get the replayed `Ready` followed by a fresh `Loading` — the card visibly blinking back to
+ * its loading line. First-load `Loading` comes from the downstream initial state instead.
  *
  * Nothing here touches Room until [states] is actually collected: the trigger flow is built inside
  * the `flow` block, so merely injecting this class never creates `stats.db`.
@@ -49,17 +57,26 @@ sealed interface ChargeTimeModelState {
 @Singleton
 class ChargeTimeModelSource @Inject constructor(
     private val repository: ChargeStatsRepository,
+    private val statsPreferences: StatsPreferences,
     @param:StatsDispatcher private val dispatcher: CoroutineDispatcher,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
 
     val states: Flow<ChargeTimeModelState> = flow<ChargeTimeModelState> {
         emitAll(
-            repository.sessionCount()
+            combine(
+                repository.recentFinishedSessionIds(),
+                statsPreferences.retentionDays.flow,
+            ) { sessionIds, retentionDays -> sessionIds to retentionDays }
                 .distinctUntilChanged()
-                .map { count ->
-                    log(TAG) { "Rebuilding the charge-time model over $count finished sessions" }
-                    val batch = repository.bandObservations()
+                .map { (sessionIds, retentionDays) ->
+                    log(TAG) { "Rebuilding the charge-time model over ${sessionIds.size} finished sessions" }
+                    val batch = repository.bandObservations(
+                        cutoffWallMillis = StatsRetention.cutoffWallMillis(
+                            nowWallMillis = System.currentTimeMillis(),
+                            days = StatsRetention.clampDays(retentionDays),
+                        ),
+                    )
                     ChargeTimeModelState.Ready(
                         ChargeTimeEstimator.buildModel(
                             observations = batch.observations,
@@ -69,7 +86,6 @@ class ChargeTimeModelSource @Inject constructor(
                 },
         )
     }
-        .onStart { emit(ChargeTimeModelState.Loading) }
         .catch { e ->
             log(TAG, Logging.Priority.ERROR) { "Charge-time model failed: ${e.asLog()}" }
             emit(ChargeTimeModelState.Unavailable)
