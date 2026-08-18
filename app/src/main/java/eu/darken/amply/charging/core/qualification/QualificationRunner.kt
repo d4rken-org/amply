@@ -27,6 +27,7 @@ import eu.darken.amply.rules.core.RuleApplier
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -36,6 +37,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -333,10 +335,27 @@ class QualificationRunner @Inject constructor(
         finish(RunTerminal.Aborted(AbortReason.PROCESS_DEATH), reclaimRunId = stale.runId)
     }
 
-    private suspend fun onTick(tick: RawQualificationTick) {
+    internal suspend fun onTick(tick: RawQualificationTick) {
         val record = stateMutex.withLock {
             runStore.currentRun().also { runActiveNow = it != null }
         } ?: return
+        // A run is never resumable across a process boundary: its anchors, hold clock and baseline
+        // rate describe observations this process never made. A foreign record may therefore only
+        // ever be closed out, never measured — evaluating one could end it Passed or Refuted on
+        // readings from a dead process, which are the two catastrophes this design exists to prevent.
+        //
+        // [startupRepair] normally closes such a record out before the first tick, but its
+        // finalization can fail (a store write, the pending recovery target) and then it returns with
+        // the foreign record still stored and no longer claimed. The guard belongs here, where the
+        // damage would happen: a failed repair simply retries on the next tick instead of the engine
+        // measuring what it left behind.
+        if (record.provenance?.token != processIdentity.token) {
+            log(TAG, Logging.Priority.WARN) {
+                "Qualification run ${record.runId} belongs to another process; closing it out"
+            }
+            finish(RunTerminal.Aborted(AbortReason.PROCESS_DEATH), reclaimRunId = record.runId)
+            return
+        }
         // One coherent snapshot, taken here on this runner's own worker: the level and the charge
         // counter come from the same read, and the timestamp describes that read rather than whenever
         // the broadcast that woke us was captured.
@@ -399,11 +418,14 @@ class QualificationRunner @Inject constructor(
      * the terminal, even one already computed as a pass; one arriving after cannot commit at all. The
      * direction is safe by construction: a downgrade never turns an abort into a pass.
      *
-     * A failure inside [finalize] **gives the claim back**. The claim is durable, so leaving it held
-     * after a throw would make the record unfinalizable for the rest of this process's life while
-     * still reading as a live run — the run would never end and the user's own policy would never be
-     * restored. The release is guarded by the run id, so it can neither resurrect a record
-     * finalization already cleared nor unclaim a later run.
+     * Leaving [finalize] without having cleared the record **gives the claim back**, on every exit —
+     * a throw and a cancellation alike. The claim is durable, so leaving it held would make the record
+     * unfinalizable for the rest of this process's life while still reading as a live run: the run
+     * would never end and the user's own policy would never be restored. Cancellation is not the
+     * exotic case here — the production caller is the charge service's own lifecycle scope, which
+     * `onDestroy` cancels, and the window spans the restore write. So the release sits in a `finally`
+     * and runs [NonCancellable], or it would be cancelled with everything else. On the success path it
+     * is a no-op: [finalize] cleared the record, so the run-id guard finds nothing to match.
      *
      * [reclaimRunId] is for the startup repair alone: a record abandoned mid-finalization by a dead
      * process is claimed already, and closing it out is the only way it ever ends.
@@ -435,7 +457,8 @@ class QualificationRunner @Inject constructor(
             throw e
         } catch (e: Exception) {
             log(TAG, Logging.Priority.ERROR) { "Run ${record.runId} finalization failed: ${e.message}" }
-            runStore.releaseFinalizationClaim(record.runId)
+        } finally {
+            withContext(NonCancellable) { runStore.releaseFinalizationClaim(record.runId) }
         }
     }
 

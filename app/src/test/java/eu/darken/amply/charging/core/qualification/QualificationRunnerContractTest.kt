@@ -18,6 +18,7 @@ import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingRepository
 import eu.darken.amply.charging.core.enforcement.BuildIdentitySource
 import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceStore
+import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.fullcharge.core.BootCountProvider
 import eu.darken.amply.fullcharge.core.ChargeSessionService
 import eu.darken.amply.fullcharge.core.FullChargeStore
@@ -26,9 +27,11 @@ import eu.darken.amply.fullcharge.core.RecoveryOrigin
 import eu.darken.amply.fullcharge.core.WorkProvenance
 import eu.darken.amply.rules.core.RuleApplier
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
@@ -41,6 +44,8 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 
 /**
  * What the run guarantees about *owning* the charge policy, as opposed to what it measures (that is
@@ -235,6 +240,117 @@ class QualificationRunnerContractTest {
             runStore.currentRun() shouldBe null
             runner.isRunning() shouldBe false
         }
+    }
+
+    /**
+     * The same permanent wedge reached from the other side. Finalization is not only fallible, it is
+     * **cancellable**: the production caller is the charge service's own lifecycle scope, and
+     * `onDestroy` cancels it across a window that spans the restore write. A claim left held by that
+     * cancellation is indistinguishable from one held by a live finalization — this process's own
+     * provenance means startup repair will not reclaim it — so every terminal attempt is refused for
+     * the rest of the process's life.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `a finalization cancelled after its claim gives the claim back`() {
+        val runStore = deps.runStore()
+        // Never advanced: the runner's own startup repair stays queued, so the only thing the stepping
+        // below moves is the finish() under test.
+        val runner = runner(StandardTestDispatcher(TestCoroutineScheduler()))
+        runBlocking { runStore.put(record(runId = "run-4", token = "token-4")) }
+
+        // finish() runs on a dispatcher this test hands one continuation at a time, which turns "cancel
+        // somewhere inside finalization" from a race into a step: when finalization's opening line has
+        // been logged the claim is committed and the coroutine is parked in the restore that follows.
+        val steps = StepDispatcher()
+        val watcher = LogWatcher("Run run-4 finished")
+        Logging.install(watcher)
+        val job = try {
+            val job = CoroutineScope(steps).launch { runner.finish(RunTerminal.Passed) }
+            stepUntil(steps) { watcher.seen } shouldBe true
+            runBlocking { runStore.currentRun()?.finalizing } shouldBe true
+            job.cancel()
+            stepUntil(steps) { job.isCompleted } shouldBe true
+            job
+        } finally {
+            Logging.remove(watcher)
+        }
+
+        job.isCancelled shouldBe true
+        runBlocking {
+            runStore.currentRun()?.finalizing shouldBe false
+            // The run can be closed out again, by an ordinary terminal path rather than a reclaim.
+            runStore.claimForFinalization()?.runId shouldBe "run-4"
+        }
+    }
+
+    /**
+     * A run is never resumable across a process boundary. Startup repair normally closes a foreign
+     * record out before the first tick, but its finalization can fail and leave the record stored and
+     * unclaimed — and then the tick loop would measure a dead process's anchors, hold clock and
+     * baseline rate, and could end the run Passed or Refuted on observations this process never made.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `a tick closes out a record this process does not own instead of measuring it`() {
+        val runStore = deps.runStore()
+        // Never advanced, so the runner's own startup repair cannot be what closes the record out.
+        val runner = runner(StandardTestDispatcher(TestCoroutineScheduler()))
+        runBlocking {
+            runStore.put(
+                record(runId = "run-5", token = "token-5").copy(
+                    phase = RunPhase.BASELINE,
+                    provenance = WorkProvenance(
+                        token = "a-dead-process",
+                        pid = 2,
+                        bootCount = 1,
+                        createdAtMillis = 1_000L,
+                    ),
+                ),
+            )
+
+            // Contained for the same reason as above: the surface push at the very end cannot complete
+            // in this environment, and everything asserted here is decided before it.
+            runCatching { runner.onTick(RawQualificationTick(sessionActive = false)) }
+
+            runner.lastResult.value?.terminal shouldBe RunTerminal.Aborted(AbortReason.PROCESS_DEATH)
+            // Closed out exactly as it was found: the engine was never asked to judge it.
+            runner.lastResult.value?.record?.phase shouldBe RunPhase.BASELINE
+            runStore.currentRun() shouldBe null
+        }
+    }
+
+    /** Runs one dispatched continuation at a time, so a cancellation can be placed exactly. */
+    private class StepDispatcher : kotlinx.coroutines.CoroutineDispatcher() {
+        private val queued = LinkedBlockingQueue<Runnable>()
+
+        override fun dispatch(context: kotlin.coroutines.CoroutineContext, block: Runnable) {
+            queued.add(block)
+        }
+
+        fun step(): Boolean = queued.poll(200L, TimeUnit.MILLISECONDS)?.also { it.run() } != null
+    }
+
+    private class LogWatcher(private val marker: String) : Logging.Logger {
+        @Volatile var seen: Boolean = false
+
+        override fun log(
+            priority: Logging.Priority,
+            tag: String,
+            message: String,
+            metadata: Map<String, Any>?,
+        ) {
+            if (message.contains(marker)) seen = true
+        }
+    }
+
+    private fun stepUntil(steps: StepDispatcher, condition: () -> Boolean): Boolean {
+        val deadline = System.currentTimeMillis() + 10_000L
+        while (System.currentTimeMillis() < deadline) {
+            if (condition()) return true
+            steps.step()
+        }
+        return condition()
     }
 
     private fun runner(dispatcher: kotlinx.coroutines.CoroutineDispatcher) = QualificationRunner(
