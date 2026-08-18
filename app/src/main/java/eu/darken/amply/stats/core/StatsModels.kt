@@ -25,12 +25,21 @@ data class ChargeSessionSummary(
     val sealReason: StatsSealReason?,
 )
 
-/** One point on a session's charge curve, timed from the session start. */
+/**
+ * One point on a session's charge curve, timed from the session start.
+ *
+ * [voltageMillivolts] and [currentNowMicroamps] are raw observations carried through verbatim —
+ * unlike [powerMilliwatts] they are **not** withheld while the battery isn't taking charge, because
+ * they are directional readings that stay meaningful in either direction (the current keeps the
+ * sign the OEM reported; it is never made absolute here).
+ */
 data class ChargeCurvePoint(
     val elapsedFromStartMillis: Long,
     val percent: Int?,
     val powerMilliwatts: Int?,
     val temperatureTenthsC: Int?,
+    val voltageMillivolts: Int? = null,
+    val currentNowMicroamps: Int? = null,
 )
 
 /**

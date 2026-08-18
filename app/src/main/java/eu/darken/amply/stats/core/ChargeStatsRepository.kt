@@ -66,17 +66,55 @@ class ChargeStatsRepository @Inject constructor(
      */
     fun curveFlow(id: Long, maxPoints: Int = DEFAULT_CURVE_POINTS): Flow<List<ChargeCurvePoint>> =
         database.get().statsDao().samplesForSession(id).map { samples ->
-            val start = samples.firstOrNull()?.elapsedRealtimeMillis ?: 0L
-            val points = samples.map { sample ->
-                ChargeCurvePoint(
-                    elapsedFromStartMillis = sample.elapsedRealtimeMillis - start,
-                    percent = sample.percent,
-                    powerMilliwatts = sample.chargePowerMilliwatts(),
-                    temperatureTenthsC = sample.temperatureTenthsC,
-                )
-            }
-            StatsDownsampler.decimate(points, maxPoints)
+            StatsDownsampler.decimate(samples.toCurve(), maxPoints)
         }
+
+    /**
+     * A session's decimated curve **and** the exact per-metric aggregates, from one pass over the
+     * same raw samples.
+     *
+     * The aggregates deliberately do NOT come from the returned curve: [curveFlow]'s decimation
+     * keeps a uniform stride, so a short temperature or current extreme is simply not among the
+     * points that survive. A screen printing "Maximum" must print the session's real maximum, and
+     * computing both here is what keeps the chart and the numbers beside it from disagreeing.
+     */
+    fun sessionMetrics(id: Long, maxPoints: Int = DEFAULT_CURVE_POINTS): Flow<SessionMetricData> =
+        database.get().statsDao().samplesForSession(id).map { samples ->
+            val points = samples.toCurve()
+            SessionMetricData(
+                curve = StatsDownsampler.decimate(points, maxPoints),
+                aggregates = CurveAggregates.of(points),
+            )
+        }
+
+    /**
+     * A **bounded** recent curve for a session, for the battery hub's sparklines. Unlike [curveFlow]
+     * this reads only the most recent [LIVE_SAMPLE_WINDOW] samples: the hub keeps this subscribed
+     * while it is open, and a session held at an OEM limit stays open for days, so an unbounded read
+     * would reload the entire curve on every appended sample.
+     */
+    fun recentCurveFlow(id: Long, maxPoints: Int = LIVE_CURVE_POINTS): Flow<List<ChargeCurvePoint>> =
+        database.get().statsDao().recentSamplesForSession(id, LIVE_SAMPLE_WINDOW).map { samples ->
+            StatsDownsampler.decimate(samples.toCurve(), maxPoints)
+        }
+
+    /**
+     * Raw samples → curve points, timed from the first sample. Voltage and current ride along
+     * untouched (see [ChargeCurvePoint]); only power passes the charging gate below.
+     */
+    private fun List<BatterySampleEntity>.toCurve(): List<ChargeCurvePoint> {
+        val start = firstOrNull()?.elapsedRealtimeMillis ?: 0L
+        return map { sample ->
+            ChargeCurvePoint(
+                elapsedFromStartMillis = sample.elapsedRealtimeMillis - start,
+                percent = sample.percent,
+                powerMilliwatts = sample.chargePowerMilliwatts(),
+                temperatureTenthsC = sample.temperatureTenthsC,
+                voltageMillivolts = sample.voltageMillivolts,
+                currentNowMicroamps = sample.currentNowMicroamps,
+            )
+        }
+    }
 
     /**
      * A sample's power, but only where it is charge power.
@@ -110,6 +148,8 @@ class ChargeStatsRepository @Inject constructor(
                 percent = sample.percent,
                 powerMilliwatts = sample.chargePowerMilliwatts(),
                 temperatureTenthsC = sample.temperatureTenthsC,
+                voltageMillivolts = sample.voltageMillivolts,
+                currentNowMicroamps = sample.currentNowMicroamps,
             )
         }
         return StatsLiveSession(
@@ -144,6 +184,9 @@ class ChargeStatsRepository @Inject constructor(
     private companion object {
         const val DEFAULT_SESSION_LIMIT = 100
         const val DEFAULT_CURVE_POINTS = 200
+
+        // How many recent finished sessions the charge-time model folds over.
+        const val DEFAULT_BAND_SESSION_LIMIT = 10
 
         // Live dashboard curve: a bounded recent window, decimated for a compact glance.
         const val LIVE_SAMPLE_WINDOW = 300
