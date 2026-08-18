@@ -16,6 +16,7 @@ import eu.darken.amply.upgrade.core.billing.TestPurchases
 import eu.darken.amply.upgrade.core.billing.client.BillingConnection
 import eu.darken.amply.upgrade.core.billing.client.BillingConnectionProvider
 import eu.darken.amply.upgrade.core.billing.toBillingData
+import eu.darken.amply.upgrade.core.billing.work.FakePurchaseAckScheduler
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
@@ -80,6 +81,7 @@ class UpgradeRepoGplayFlowTest {
         object : BillingConnectionProvider(ApplicationProvider.getApplicationContext()) {
             override val connection: Flow<BillingConnection> = emptyFlow()
         },
+        FakePurchaseAckScheduler(),
     ) {
         override val freshBillingData: Flow<FreshData> = emptyFlow()
         override val purchaseFailures: Flow<BillingResult> = emptyFlow()
@@ -97,6 +99,12 @@ class UpgradeRepoGplayFlowTest {
             launchAnswer()
     }
 
+    private val ackScheduler = FakePurchaseAckScheduler()
+
+    // Every repo in this class goes through here so the ack safety net stays one shared recorder.
+    private fun gplayRepo(manager: BillingManager, cache: BillingCache) =
+        UpgradeRepoGplay(manager, cache, ackScheduler)
+
     private fun manager(
         billingData: Flow<BillingData>,
         failureSettled: Flow<Boolean> = MutableStateFlow(false),
@@ -108,7 +116,7 @@ class UpgradeRepoGplayFlowTest {
     private fun activity(): Activity = Robolectric.buildActivity(Activity::class.java).get()
 
     @Test fun `an owned purchase settles as pro`(): Unit = runBlocking {
-        val repo = UpgradeRepoGplay(
+        val repo = gplayRepo(
             manager(MutableStateFlow(listOf(TestPurchases.purchase(iapId)).toBillingData())),
             cache(),
         )
@@ -122,7 +130,7 @@ class UpgradeRepoGplayFlowTest {
     }
 
     @Test fun `an empty answer from play settles as not pro`(): Unit = runBlocking {
-        val repo = UpgradeRepoGplay(manager(MutableStateFlow(BillingData(emptyList()))), cache())
+        val repo = gplayRepo(manager(MutableStateFlow(BillingData(emptyList()))), cache())
 
         withTimeout(TIMEOUT_MS) {
             repo.upgradeInfo.first { it.isSettled }.isPro shouldBe false
@@ -132,7 +140,7 @@ class UpgradeRepoGplayFlowTest {
     @Test fun `a recent confirmation keeps the upgrade through an empty answer`(): Unit = runBlocking {
         val cache = cache()
         cache.stampLastProState(iapId, System.currentTimeMillis())
-        val repo = UpgradeRepoGplay(manager(MutableStateFlow(BillingData(emptyList()))), cache)
+        val repo = gplayRepo(manager(MutableStateFlow(BillingData(emptyList()))), cache)
 
         withTimeout(TIMEOUT_MS) {
             // Play returning nothing during a hiccup must not revoke a purchase we confirmed minutes
@@ -147,7 +155,7 @@ class UpgradeRepoGplayFlowTest {
             OurSku.Sub.PRO_UPGRADE.id,
             System.currentTimeMillis() - UpgradeRepoGplay.GRACE_PERIOD_MS - 1,
         )
-        val repo = UpgradeRepoGplay(manager(MutableStateFlow(BillingData(emptyList()))), cache)
+        val repo = gplayRepo(manager(MutableStateFlow(BillingData(emptyList()))), cache)
 
         withTimeout(TIMEOUT_MS) {
             repo.upgradeInfo.first { it.isSettled }.isPro shouldBe false
@@ -158,7 +166,7 @@ class UpgradeRepoGplayFlowTest {
         // The cache says the window is long gone; the purchase still wins.
         val cache = cache()
         cache.stampLastProState(iapId, 1L)
-        val repo = UpgradeRepoGplay(
+        val repo = gplayRepo(
             manager(MutableStateFlow(listOf(TestPurchases.purchase(iapId)).toBillingData())),
             cache,
         )
@@ -174,7 +182,7 @@ class UpgradeRepoGplayFlowTest {
     @Test fun `an unreachable play settles the seed instead of waiting forever`(): Unit = runBlocking {
         // No billing data will ever arrive; only the failure signal can settle this, and it must —
         // otherwise every UI gate would sit on its timeout during a Play outage.
-        val repo = UpgradeRepoGplay(
+        val repo = gplayRepo(
             manager(billingData = emptyFlow(), failureSettled = MutableStateFlow(true)),
             cache(),
         )
@@ -188,7 +196,7 @@ class UpgradeRepoGplayFlowTest {
     }
 
     @Test fun `a pending payment is reported without granting the upgrade`(): Unit = runBlocking {
-        val repo = UpgradeRepoGplay(
+        val repo = gplayRepo(
             manager(MutableStateFlow(listOf(TestPurchases.purchase(iapId, pending = true)).toBillingData())),
             cache(),
         )
@@ -204,7 +212,7 @@ class UpgradeRepoGplayFlowTest {
         // The billing flow can resubscribe and re-emit its unsettled seed; a gate that saw "settled"
         // must not be told to wait again.
         val data = MutableStateFlow<BillingData?>(null)
-        val repo = UpgradeRepoGplay(
+        val repo = gplayRepo(
             manager(data.filterNotNull(), failureSettled = MutableStateFlow(true)),
             cache(),
         )
@@ -222,7 +230,7 @@ class UpgradeRepoGplayFlowTest {
         // with a silent screen.
         val cache = cache()
         cache.stampLastProState(iapId, System.currentTimeMillis())
-        val repo = UpgradeRepoGplay(
+        val repo = gplayRepo(
             manager(MutableStateFlow(listOf(TestPurchases.purchase(iapId, pending = true)).toBillingData())),
             cache,
         )
@@ -242,7 +250,7 @@ class UpgradeRepoGplayFlowTest {
         val manager = freeManager().apply {
             strictAnswer = { throw GplayServiceUnavailableException(RuntimeException("one product type failed")) }
         }
-        val repo = UpgradeRepoGplay(manager, cache)
+        val repo = gplayRepo(manager, cache)
 
         // Even a recent owner gets the error: a gate that can't verify must not let a purchase
         // through on the strength of a grace window.
@@ -258,7 +266,7 @@ class UpgradeRepoGplayFlowTest {
                 ).toBillingData()
             }
         }
-        val repo = UpgradeRepoGplay(manager, cache())
+        val repo = gplayRepo(manager, cache())
 
         val info = repo.verifyPurchaseStateNow()
 
@@ -274,7 +282,7 @@ class UpgradeRepoGplayFlowTest {
             launchAnswer = { throw ItemAlreadyOwnedBillingException(RuntimeException("launch result")) }
             refreshAnswer = { listOf(TestPurchases.purchase(iapId, pending = true)).toBillingData() }
         }
-        val repo = UpgradeRepoGplay(manager, cache())
+        val repo = gplayRepo(manager, cache())
 
         val errors = mutableListOf<Throwable>()
         withTimeout(TIMEOUT_MS) {
@@ -288,7 +296,7 @@ class UpgradeRepoGplayFlowTest {
 
     @Test fun `wasEverPro tracks whether this install ever confirmed a purchase`(): Unit = runBlocking {
         val cache = cache()
-        val repo = UpgradeRepoGplay(manager(MutableStateFlow(BillingData(emptyList()))), cache)
+        val repo = gplayRepo(manager(MutableStateFlow(BillingData(emptyList()))), cache)
 
         withTimeout(TIMEOUT_MS) {
             repo.wasEverPro.first() shouldBe false
@@ -297,7 +305,46 @@ class UpgradeRepoGplayFlowTest {
         }
     }
 
+    // region the persistent ack safety net
+
+    @Test fun `launching a billing flow arms the persistent ack safety net first`(): Unit = runBlocking {
+        val order = mutableListOf<String>()
+        val scheduler = FakePurchaseAckScheduler(order)
+        val manager = freeManager().apply { launchAnswer = { order.add(LAUNCH) } }
+        val repo = UpgradeRepoGplay(manager, cache(), scheduler)
+
+        withTimeout(TIMEOUT_MS) {
+            repo.launchBillingFlowNow(activity(), OurSku.Iap.PRO_UPGRADE, null) { }
+        }
+
+        // Armed (and awaited) BEFORE the Play sheet can open: the process may die around the sheet,
+        // and the WorkManager transaction has to land first to be worth anything.
+        order shouldBe listOf(FakePurchaseAckScheduler.LAUNCH, LAUNCH)
+    }
+
+    @Test fun `a failing safety net arm never blocks the purchase flow`(): Unit = runBlocking {
+        val scheduler = FakePurchaseAckScheduler().apply {
+            failure = { RuntimeException("workmanager broken") }
+        }
+        val launches = mutableListOf<Sku>()
+        val manager = freeManager().apply { launchAnswer = { launches.add(OurSku.Iap.PRO_UPGRADE) } }
+        val repo = UpgradeRepoGplay(manager, cache(), scheduler)
+
+        val errors = mutableListOf<Throwable>()
+        withTimeout(TIMEOUT_MS) {
+            repo.launchBillingFlowNow(activity(), OurSku.Iap.PRO_UPGRADE, null) { errors.add(it) }
+        }
+
+        // The net is best-effort: the foreground ack path still exists, the purchase must proceed.
+        errors shouldBe emptyList()
+        launches shouldBe listOf(OurSku.Iap.PRO_UPGRADE)
+    }
+
+    // endregion
+
     private companion object {
         const val TIMEOUT_MS = 10_000L
+        // Recorded by the fake manager when a launch actually reached Play.
+        const val LAUNCH = "launch"
     }
 }

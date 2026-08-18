@@ -68,6 +68,20 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <!-- WorkManager resolves its configuration from AmplyApp (Configuration.Provider) so the
+             HiltWorkerFactory is in place; that on-demand initialization only happens when the
+             androidx.startup initializer is removed. -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
+
         <activity
             android:name=".main.ui.MainActivity"
             android:exported="true">

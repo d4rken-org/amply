@@ -8,7 +8,9 @@ import eu.darken.amply.upgrade.core.OurSku
 import eu.darken.amply.upgrade.core.billing.client.BillingConnection
 import eu.darken.amply.upgrade.core.billing.client.BillingConnectionProvider
 import eu.darken.amply.upgrade.core.billing.client.FakeBillingClient
+import eu.darken.amply.upgrade.core.billing.work.FakePurchaseAckScheduler
 import io.kotest.assertions.throwables.shouldThrow
+import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -49,6 +51,10 @@ class BillingManagerTest {
     private val iapId = OurSku.Iap.PRO_UPGRADE.id
     private val subId = OurSku.Sub.PRO_UPGRADE.id
 
+    // The safety net is fail-open plumbing around the ack pass; only the dedicated tests below
+    // assert on it, everything else just needs it to record and return.
+    private val ackScheduler = FakePurchaseAckScheduler()
+
     @After fun teardown() {
         testScope.cancel()
     }
@@ -68,6 +74,7 @@ class BillingManagerTest {
 
     private fun manager(attempts: Channel<Unit>): BillingManager = BillingManager(
         FakeProvider(ApplicationProvider.getApplicationContext(), attempts),
+        ackScheduler,
     )
 
     /**
@@ -94,6 +101,7 @@ class BillingManagerTest {
         attempts: Channel<Unit> = Channel(Channel.UNLIMITED),
     ): BillingManager = BillingManager(
         ConnectingProvider(ApplicationProvider.getApplicationContext(), clients.toList(), attempts),
+        ackScheduler,
     )
 
     private fun client(
@@ -338,6 +346,145 @@ class BillingManagerTest {
 
     // endregion
 
+    // region the persistent ack safety net
+
+    @Test fun `a sweep acknowledges what its own refresh returned and reports COMPLETE`(): Unit = runBlocking {
+        val unacked = TestPurchases.purchase(iapId, acknowledged = false)
+        val playClient = client(iap = FakeBillingClient.Answer(purchases = listOf(unacked)))
+        val manager = connectedManager(playClient)
+        withTimeout(TIMEOUT_MS) { manager.billingData.first() }
+
+        // The ack happens IN this call, not via the async collector: the worker needs the
+        // happens-before to report success instead of retrying.
+        withTimeout(TIMEOUT_MS) { manager.ensureAllAcknowledged() } shouldBe
+            BillingManager.AckSweepResult.COMPLETE
+        playClient.acknowledged.distinct() shouldBe listOf(unacked.purchaseToken)
+    }
+
+    @Test fun `a sweep with nothing to acknowledge reports COMPLETE`(): Unit = runBlocking {
+        val playClient = client(iap = FakeBillingClient.Answer(purchases = listOf(TestPurchases.purchase(iapId))))
+        val manager = connectedManager(playClient)
+        withTimeout(TIMEOUT_MS) { manager.billingData.first() }
+
+        withTimeout(TIMEOUT_MS) { manager.ensureAllAcknowledged() } shouldBe
+            BillingManager.AckSweepResult.COMPLETE
+    }
+
+    @Test fun `a sweep reports RETRY when the ack fails transiently`(): Unit = runBlocking {
+        val unacked = TestPurchases.purchase(iapId, acknowledged = false)
+        // BILLING_UNAVAILABLE is the connection-level transient: the pass aborts after one attempt
+        // instead of burning the inline retry backoff, and the outcome is still "come back later".
+        val playClient = client(iap = FakeBillingClient.Answer(purchases = listOf(unacked))).apply {
+            acknowledgeResponseCode = BillingResponseCode.BILLING_UNAVAILABLE
+        }
+        val manager = connectedManager(playClient)
+        withTimeout(TIMEOUT_MS) { manager.billingData.first() }
+
+        withTimeout(TIMEOUT_MS) { manager.ensureAllAcknowledged() } shouldBe
+            BillingManager.AckSweepResult.RETRY
+    }
+
+    @Test fun `a sweep reports PERMANENT_FAILURE on a permanently rejected ack`(): Unit = runBlocking {
+        val unacked = TestPurchases.purchase(iapId, acknowledged = false)
+        val playClient = client(iap = FakeBillingClient.Answer(purchases = listOf(unacked))).apply {
+            acknowledgeResponseCode = BillingResponseCode.DEVELOPER_ERROR
+        }
+        val manager = connectedManager(playClient)
+        withTimeout(TIMEOUT_MS) { manager.billingData.first() }
+
+        // Play will keep rejecting this one; retrying until the refund deadline would just burn
+        // battery, so the worker has to be told to stop.
+        withTimeout(TIMEOUT_MS) { manager.ensureAllAcknowledged() } shouldBe
+            BillingManager.AckSweepResult.PERMANENT_FAILURE
+    }
+
+    @Test fun `a sweep reports RETRY on an incomplete refresh even with nothing to ack`(): Unit = runBlocking {
+        val playClient = client(
+            iap = FakeBillingClient.Answer(purchases = listOf(TestPurchases.purchase(iapId))),
+            subs = failing(BillingResponseCode.SERVICE_UNAVAILABLE),
+        )
+        val manager = connectedManager(playClient)
+        withTimeout(TIMEOUT_MS) { manager.billingData.first() }
+
+        // A failed product-type query may be hiding an unacknowledged purchase of that type: the
+        // worker must come back instead of reporting the net complete.
+        withTimeout(TIMEOUT_MS) { manager.ensureAllAcknowledged() } shouldBe
+            BillingManager.AckSweepResult.RETRY
+    }
+
+    @Test fun `a sweep reports RETRY when the refresh itself fails`(): Unit = runBlocking {
+        val playClient = client()
+        val manager = connectedManager(playClient)
+        withTimeout(TIMEOUT_MS) { manager.billingData.first() }
+
+        // Play goes away after the connection was established: the refresh learned nothing and both
+        // queries failed, so it throws rather than reporting "nothing owned".
+        playClient.answers = mapOf(
+            BillingClient.ProductType.INAPP to failing(BillingResponseCode.SERVICE_UNAVAILABLE),
+            BillingClient.ProductType.SUBS to failing(BillingResponseCode.SERVICE_UNAVAILABLE),
+        )
+
+        withTimeout(TIMEOUT_MS) { manager.ensureAllAcknowledged() } shouldBe
+            BillingManager.AckSweepResult.RETRY
+    }
+
+    @Test fun `an ack pass arms the safety net before attempting, with the newest refund deadline`(): Unit =
+        runBlocking {
+            val order = mutableListOf<String>()
+            val scheduler = FakePurchaseAckScheduler(order)
+            val playClient = client(
+                iap = FakeBillingClient.Answer(
+                    purchases = listOf(TestPurchases.purchase(iapId, purchaseTime = 5_000L, acknowledged = false)),
+                ),
+                subs = FakeBillingClient.Answer(
+                    purchases = listOf(TestPurchases.purchase(subId, purchaseTime = 9_000L, acknowledged = false)),
+                ),
+            ).apply { onAcknowledge = { order.add(ACK) } }
+            BillingManager(
+                ConnectingProvider(
+                    ApplicationProvider.getApplicationContext(),
+                    listOf(playClient),
+                    Channel(Channel.UNLIMITED),
+                ),
+                scheduler,
+            )
+
+            withTimeout(TIMEOUT_MS) {
+                while (playClient.acknowledged.isEmpty()) delay(50)
+            }
+
+            // Armed (and awaited) BEFORE the first attempt: a process death during the inline
+            // retries must still leave the persistent net in place. The deadline derives from the
+            // NEWEST purchase, so a purchase made later is covered for its full three days.
+            order.first() shouldBe
+                "${FakePurchaseAckScheduler.RESCUE}:${9_000L + BillingManager.ACK_SAFETY_NET_DEADLINE_MS}"
+            order shouldContain ACK
+        }
+
+    @Test fun `a failing safety net arm never blocks the ack pass`(): Unit = runBlocking {
+        val scheduler = FakePurchaseAckScheduler().apply {
+            failure = { RuntimeException("workmanager broken") }
+        }
+        val unacked = TestPurchases.purchase(iapId, acknowledged = false)
+        val playClient = client(iap = FakeBillingClient.Answer(purchases = listOf(unacked)))
+        BillingManager(
+            ConnectingProvider(
+                ApplicationProvider.getApplicationContext(),
+                listOf(playClient),
+                Channel(Channel.UNLIMITED),
+            ),
+            scheduler,
+        )
+
+        // The net is an extra layer: a broken WorkManager must never stop the ack itself.
+        withTimeout(TIMEOUT_MS) {
+            while (playClient.acknowledged.isEmpty()) delay(50)
+        }
+        playClient.acknowledged.distinct() shouldBe listOf(unacked.purchaseToken)
+    }
+
+    // endregion
+
     private companion object {
         const val TIMEOUT_MS = 15_000L
         // Long enough for the (synchronous) fake round-trips and their flow plumbing to have run.
@@ -345,5 +492,8 @@ class BillingManagerTest {
         // Comfortably inside the loop's 2s first backoff, so "did not retry yet" and "retried early"
         // are both decidable without racing the timer.
         const val BACKOFF_FLOOR_MS = 1_500L
+        // Recorded by the fake Play client when it is asked to acknowledge, so the ack round-trips
+        // and the safety-net arming land in one ordered list.
+        const val ACK = "ack"
     }
 }

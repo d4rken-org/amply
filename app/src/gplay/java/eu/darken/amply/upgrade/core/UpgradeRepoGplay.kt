@@ -19,6 +19,7 @@ import eu.darken.amply.upgrade.core.billing.Sku
 import eu.darken.amply.upgrade.core.billing.SkuDetails
 import eu.darken.amply.upgrade.core.billing.UserCanceledBillingException
 import eu.darken.amply.upgrade.core.billing.client.redacted
+import eu.darken.amply.upgrade.core.billing.work.PurchaseAckScheduler
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -53,6 +54,7 @@ import javax.inject.Singleton
 class UpgradeRepoGplay @Inject constructor(
     private val billingManager: BillingManager,
     private val billingCache: BillingCache,
+    private val ackScheduler: PurchaseAckScheduler,
 ) : UpgradeRepo {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -244,6 +246,18 @@ class UpgradeRepoGplay @Inject constructor(
             return
         }
         try {
+            // Persistent ack safety net, launch trigger: armed and AWAITED before the Play sheet can
+            // open, so the WorkManager DB transaction lands even if the process dies around the
+            // sheet — the exact window behind Play's unacknowledged-purchase auto-refunds. Failure
+            // to arm never blocks the purchase; the foreground ack path still exists.
+            try {
+                ackScheduler.armForBillingFlowLaunch()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log(TAG, WARN) { "Failed to arm ack safety net for launch: ${e.asLog()}" }
+            }
+
             // Bounded, like every other Play path. useConnection waits for a healthy connection
             // indefinitely, so a Play outage between rendering the offers and this tap would park the
             // launch forever — with launchBusySku still held, which leaves every purchase button busy
