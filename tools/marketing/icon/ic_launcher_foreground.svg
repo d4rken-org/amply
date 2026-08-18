@@ -4,7 +4,7 @@
     <stop offset="1" stop-color="#1FD1C4"/>
   </linearGradient>
   <clipPath id="bodyClip"><path d="M120 262 H392 Q414 262 414 284 V326 Q414 436 304 436 H208 Q98 436 98 326 V284 Q98 262 120 262 Z"/></clipPath>
-</defs><g transform="translate(256 256) scale(0.7) translate(-256 -256)">
+</defs><g transform="translate(256 256) scale(0.64) translate(-256 -256)">
   <line x1="172" y1="116" x2="132" y2="60" stroke="#3DDC84" stroke-width="21" stroke-linecap="round"/>
   <line x1="340" y1="116" x2="380" y2="60" stroke="#3DDC84" stroke-width="21" stroke-linecap="round"/>
   <path d="M96 250 C96 150 164 96 256 96 C348 96 416 150 416 250 Z" fill="#3DDC84"/>
