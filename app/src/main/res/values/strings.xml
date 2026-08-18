@@ -508,16 +508,15 @@
     <string name="battery_hub_teaser_loading">Loading…</string>
     <string name="battery_hub_teaser_unavailable">Statistics are unavailable right now</string>
     <string name="battery_hub_teaser_open_action">View charge session</string>
-    <string name="battery_detail_section_charging">Charging</string>
-    <string name="battery_detail_section_health">Health</string>
-    <string name="battery_detail_section_electrical">Electrical</string>
+    <string name="battery_detail_section_battery">This battery</string>
+    <string name="battery_detail_section_charger">This charger</string>
     <string name="battery_detail_status">Status</string>
     <string name="battery_detail_power_source">Power source</string>
     <string name="battery_detail_technology">Technology</string>
-    <string name="battery_detail_health">Health</string>
+    <string name="battery_detail_health">Battery health</string>
     <string name="battery_detail_cycle_count">Charge cycles</string>
     <string name="battery_detail_charger_max">Charger max</string>
-    <string name="battery_detail_charge_counter">Charge counter</string>
+    <string name="battery_detail_charge_counter">Charge remaining</string>
 
     <!-- Per-metric tiles and their detail screen -->
     <string name="battery_metric_open_action">Open metric details</string>

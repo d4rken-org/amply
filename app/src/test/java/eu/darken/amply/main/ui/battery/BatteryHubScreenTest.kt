@@ -9,7 +9,6 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -149,8 +148,14 @@ class BatteryHubScreenTest {
             R.string.battery_detail_cycle_count,
             R.string.battery_detail_charger_max,
             R.string.battery_detail_charge_counter,
-            // "Health" is both a section title and a row label, so match the first of either.
-        ).forEach { res -> compose.onAllNodesWithText(string(res)).onFirst().assertExists() }
+        ).forEach { res -> compose.onNodeWithText(string(res)).assertExists() }
+    }
+
+    @Test
+    fun `the detail rows are grouped into a battery and a charger section`() {
+        render(charging)
+        compose.onNodeWithText(string(R.string.battery_detail_section_battery)).assertExists()
+        compose.onNodeWithText(string(R.string.battery_detail_section_charger)).assertExists()
     }
 
     @Test
