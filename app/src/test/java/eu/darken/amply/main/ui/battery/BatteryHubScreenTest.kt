@@ -2,6 +2,7 @@ package eu.darken.amply.main.ui.battery
 
 import android.app.Application
 import android.os.BatteryManager
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -9,6 +10,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.test.core.app.ApplicationProvider
 import eu.darken.amply.R
 import eu.darken.amply.battery.core.BatteryReadout
@@ -170,6 +172,22 @@ class BatteryHubScreenTest {
         // Nothing is connected, so the advertised maximum is the screen's only "Not reported" — the
         // extras are not read through while off the charger even when the platform left them set.
         compose.onNodeWithText(string(R.string.battery_value_not_reported)).assertExists()
+    }
+
+    @Test
+    @Config(qualifiers = "+w411dp")
+    fun `the longest status value renders whole at phone width`() {
+        // The reported case: on a Pixel 7a the status tile clipped this to "Plugged in, n…". The
+        // width qualifier is the geometry under test — half of a 411dp screen, minus the tile's own
+        // padding — so a regression to a single fixed-height line fails here rather than on a device.
+        render(charging.copy(status = BatteryManager.BATTERY_STATUS_NOT_CHARGING))
+        val status = string(R.string.battery_status_plugged_not_charging)
+        val node = compose.onNodeWithText(status).fetchSemanticsNode()
+        val layouts = mutableListOf<TextLayoutResult>()
+        node.config[SemanticsActions.GetTextLayoutResult].action?.invoke(layouts)
+        val layout = layouts.single()
+        layout.layoutInput.text.text shouldBe status
+        layout.hasVisualOverflow shouldBe false
     }
 
     @Test
