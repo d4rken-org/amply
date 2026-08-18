@@ -151,9 +151,11 @@ fun BatteryHubScreen(
                     onOpenMetric = onOpenMetric,
                 )
             }
-            item { ChargingSection(data) }
-            item { HealthSection(data) }
-            item { ElectricalSection(data) }
+            // Battery before charger: unplugged, both charger rows read "Not reported", and a
+            // charger-first order would open the section list with two empty rows in the most
+            // common state. Keep this order.
+            item { BatterySection(data) }
+            item { ChargerSection(data) }
         }
     }
 }
@@ -267,25 +269,15 @@ private fun BatteryMetric.accentColor(): Color = when (this) {
     BatteryMetric.VOLTAGE, BatteryMetric.CURRENT -> MaterialTheme.colorScheme.secondary
 }
 
+/** Facts about the cell itself. Voltage, current and charge power moved up into the tile grid. */
 @Composable
-private fun ChargingSection(readout: BatteryReadout) {
+private fun BatterySection(readout: BatteryReadout) {
     val notReported = stringResource(R.string.battery_value_not_reported)
-    DetailSection(stringResource(R.string.battery_detail_section_charging)) {
-        DetailRow(
-            stringResource(R.string.battery_detail_power_source),
-            batteryPlugLabel(readout.plugged)?.let { stringResource(it) } ?: notReported,
-        )
+    DetailSection(stringResource(R.string.battery_detail_section_battery)) {
         DetailRow(
             stringResource(R.string.battery_detail_technology),
             readout.technology ?: notReported,
         )
-    }
-}
-
-@Composable
-private fun HealthSection(readout: BatteryReadout) {
-    val notReported = stringResource(R.string.battery_value_not_reported)
-    DetailSection(stringResource(R.string.battery_detail_section_health)) {
         DetailRow(
             stringResource(R.string.battery_detail_health),
             stringResource(batteryHealthLabel(readout.health)),
@@ -294,15 +286,22 @@ private fun HealthSection(readout: BatteryReadout) {
             stringResource(R.string.battery_detail_cycle_count),
             readout.cycleCount?.toString() ?: notReported,
         )
+        DetailRow(
+            stringResource(R.string.battery_detail_charge_counter),
+            formatChargeCounter(readout.chargeCounterMicroampHours) ?: notReported,
+        )
     }
 }
 
+/** Facts about whatever is currently plugged in. */
 @Composable
-private fun ElectricalSection(readout: BatteryReadout) {
+private fun ChargerSection(readout: BatteryReadout) {
     val notReported = stringResource(R.string.battery_value_not_reported)
-    // Voltage, current and charge power moved up into the tile grid; what stays here is the pair
-    // that has no live series to chart.
-    DetailSection(stringResource(R.string.battery_detail_section_electrical)) {
+    DetailSection(stringResource(R.string.battery_detail_section_charger)) {
+        DetailRow(
+            stringResource(R.string.battery_detail_power_source),
+            batteryPlugLabel(readout.plugged)?.let { stringResource(it) } ?: notReported,
+        )
         // Advertised, not measured: what the connected supply claims. Nothing connected means nothing
         // to claim, so the extras are only read through while on a charger.
         DetailRow(
@@ -310,10 +309,6 @@ private fun ElectricalSection(readout: BatteryReadout) {
             readout.takeIf { it.onCharger }
                 ?.let { StatsFormat.power(StatsPowerCalculator.advertisedMaxMilliwatts(it)) }
                 ?: notReported,
-        )
-        DetailRow(
-            stringResource(R.string.battery_detail_charge_counter),
-            formatChargeCounter(readout.chargeCounterMicroampHours) ?: notReported,
         )
     }
 }
