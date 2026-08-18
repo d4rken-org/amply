@@ -43,7 +43,7 @@ class ChargeTimeEstimatorTest {
         val model = ChargeTimeEstimator.buildModel(
             steps(1L, 30, 40, 60_000) + steps(2L, 30, 40, 120_000) + steps(3L, 30, 40, 360_000),
         )
-        model.pooled.bands[30] shouldBe 120_000L
+        model.pooled.bands[30]!!.medianMillisPerPercent shouldBe 120_000L
     }
 
     @Test
@@ -115,18 +115,18 @@ class ChargeTimeEstimatorTest {
     @Test
     fun `average speed is the median of the contributing sessions' own averages`() {
         val model = ChargeTimeEstimator.buildModel(
-            observations = steps(1L, 40, 60, 60_000) + steps(2L, 40, 60, 60_000) + steps(3L, 40, 60, 60_000),
+            observations = steps(1L, 50, 80, 60_000) + steps(2L, 50, 80, 60_000) + steps(3L, 50, 80, 60_000),
             sessionPowerMilliwatts = mapOf(1L to 8_000, 2L to 12_000, 3L to 25_000),
         )
-        project(model, 40).shouldNotBeNull().estimate.avgSpeedMilliwatts shouldBe 12_000
+        project(model, 50).shouldNotBeNull().estimate.avgSpeedMilliwatts shouldBe 12_000
     }
 
     @Test
     fun `basedOnSessions counts distinct contributing sessions`() {
         val model = ChargeTimeEstimator.buildModel(
-            steps(1L, 40, 60, 60_000) + steps(2L, 40, 60, 60_000) + steps(3L, 40, 60, 60_000),
+            steps(1L, 50, 80, 60_000) + steps(2L, 50, 80, 60_000) + steps(3L, 50, 80, 60_000),
         )
-        project(model, 40).shouldNotBeNull().estimate.basedOnSessions shouldBe 3
+        project(model, 50).shouldNotBeNull().estimate.basedOnSessions shouldBe 3
         // The count is of contributors, not of everything the extractor ever saw.
         model.observedSessions shouldBe 3
     }
@@ -134,9 +134,50 @@ class ChargeTimeEstimatorTest {
     @Test
     fun `a band only one session reached contributes nobody to the count`() {
         val model = ChargeTimeEstimator.buildModel(
-            steps(1L, 40, 60, 60_000) + steps(2L, 40, 60, 60_000) + steps(9L, 80, 100, 60_000),
+            steps(1L, 50, 80, 60_000) + steps(2L, 50, 80, 60_000) + steps(9L, 80, 100, 60_000),
         )
-        project(model, 40).shouldNotBeNull().estimate.basedOnSessions shouldBe 2
+        project(model, 50).shouldNotBeNull().estimate.basedOnSessions shouldBe 2
+    }
+
+    @Test
+    fun `provenance counts only the charges behind the figures actually shown`() {
+        // Two sessions produced a usable band nothing on the card is drawn from (0-10), two others
+        // produced the 50-80 stretch every displayed figure comes from. "From N charges" must
+        // describe the second pair only, and so must the speed median.
+        val model = ChargeTimeEstimator.buildModel(
+            observations = steps(1L, 0, 10, 60_000) + steps(2L, 0, 10, 60_000) +
+                steps(3L, 50, 80, 60_000) + steps(4L, 50, 80, 60_000),
+            sessionPowerMilliwatts = mapOf(1L to 2_000, 2L to 2_000, 3L to 10_000, 4L to 20_000),
+        )
+        val estimate = project(model, 50).shouldNotBeNull().estimate
+        estimate.toEightyMillis shouldBe 30 * 60_000L
+        estimate.basedOnSessions shouldBe 2
+        estimate.avgSpeedMilliwatts shouldBe 15_000
+    }
+
+    @Test
+    fun `a stratum whose bands project nothing from here yields no projection at all`() {
+        // 40-60 is corroborated, but from 40% it reaches no target and completes no split segment.
+        // A card here would carry provenance for bands nothing displayed, so there is no card.
+        val model = ChargeTimeEstimator.buildModel(
+            steps(1L, 40, 60, 60_000) + steps(2L, 40, 60, 60_000),
+        )
+        model.hasData shouldBe true
+        project(model, 40).shouldBeNull()
+    }
+
+    @Test
+    fun `same-type history keeps the label when pooling cannot answer a target either`() {
+        // At 82% the 80-target is null by rule, and history that stops at 80 answers no full-charge
+        // target — but pooling adds nothing here, so the card must not claim to be drawn from every
+        // charger type. Observed on a device during QA.
+        val model = ChargeTimeEstimator.buildModel(
+            steps(1L, 40, 80, 60_000, ChargingType.AC) + steps(2L, 40, 80, 60_000, ChargingType.AC),
+        )
+        val projection = project(model, 82, ChargingType.AC).shouldNotBeNull()
+        projection.basis shouldBe ChargeTimeBasis.SAME_TYPE
+        projection.estimate.hasAnyTarget shouldBe false
+        projection.estimate.split.fiftyToEightyMillis shouldBe 30 * 60_000L
     }
 
     @Test

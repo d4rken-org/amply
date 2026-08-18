@@ -33,7 +33,9 @@ data class ChargeTimeEstimate(
     val split: ChargeBandSplit,
     /** Distinct contributing sessions — never the global finished-session count. */
     val basedOnSessions: Int,
-)
+) {
+    val hasAnyTarget: Boolean get() = toEightyMillis != null || toFullMillis != null
+}
 
 /** An estimate plus which history it came from. */
 data class ChargeTimeProjection(
@@ -42,17 +44,31 @@ data class ChargeTimeProjection(
 )
 
 /**
- * One stratum of the model: the usable bands and who contributed to them.
+ * One usable band: the median across sessions of that session's mean milliseconds per 1% inside it,
+ * **with** the sessions that produced that median.
  *
- * [bands] maps a band's start level (0, 10, … 90) to the median across sessions of that session's
- * mean milliseconds per 1% inside the band. A band that only one session ever crossed is **not**
- * here: a single charge produces ~10 observations inside one band, so counting observations would
- * let one charge masquerade as corroborated history.
+ * The contributors are stored per band rather than per stratum because a figure may only be
+ * described by the charges behind it: unioning every usable band's contributors would let a session
+ * that covered one isolated band count towards a duration it contributed nothing to.
+ */
+data class ChargeTimeBand(
+    val medianMillisPerPercent: Long,
+    val sessionIds: Set<Long>,
+)
+
+/**
+ * One stratum of the model: the usable bands, keyed by their start level (0, 10, … 90).
+ *
+ * A band that only one session ever crossed is **not** here: a single charge produces ~10
+ * observations inside one band, so counting observations would let one charge masquerade as
+ * corroborated history.
+ *
+ * [sessionPowerMilliwatts] carries the contributing sessions' own recorded averages, so the speed
+ * figure can be narrowed to whichever of them actually stand behind a projection.
  */
 data class ChargeTimeStratum(
-    val bands: Map<Int, Long> = emptyMap(),
-    val sessionIds: Set<Long> = emptySet(),
-    val avgSpeedMilliwatts: Int? = null,
+    val bands: Map<Int, ChargeTimeBand> = emptyMap(),
+    val sessionPowerMilliwatts: Map<Long, Int> = emptyMap(),
 ) {
     val hasData: Boolean get() = bands.isNotEmpty()
 }
@@ -102,9 +118,15 @@ object ChargeTimeEstimator {
     /**
      * The projection for [currentPercent] on [chargingType].
      *
-     * Falls back to the pooled history when the same-type stratum cannot answer either target from
-     * here — a median mixing a slow wireless charge with a fast wired one describes neither, so the
-     * caller is told which it got and says so.
+     * Falls back to the pooled history only when pooling actually answers a target the same-type
+     * history could not — a median mixing a slow wireless charge with a fast wired one describes
+     * neither, so it is worth the trade only when it buys a figure, and the caller is told which it
+     * got and says so.
+     *
+     * The condition is not "the same-type stratum produced a target": [toEightyMillis] is null by
+     * rule from 80% up, so at 82% with same-type history that stops below 80 both targets are null
+     * and a target-only test would label the card "across all charger types" (and render the pooled
+     * split) although the same-type history is the better description of everything else on it.
      */
     fun project(
         model: ChargeTimeModel,
@@ -113,42 +135,74 @@ object ChargeTimeEstimator {
     ): ChargeTimeProjection? {
         if (!model.hasData) return null
         val level = currentPercent.coerceIn(0, 100)
-        val sameType = model.byType[chargingType]
-        val sameTypeEstimate = sameType?.let { estimate(it, level) }
-        if (sameTypeEstimate != null && (sameTypeEstimate.toEightyMillis != null || sameTypeEstimate.toFullMillis != null)) {
+        val sameTypeEstimate = model.byType[chargingType]?.let { estimate(it, level) }
+        val pooledEstimate = estimate(model.pooled, level)
+        if (sameTypeEstimate != null &&
+            (sameTypeEstimate.hasAnyTarget || pooledEstimate?.hasAnyTarget != true)
+        ) {
             return ChargeTimeProjection(sameTypeEstimate, ChargeTimeBasis.SAME_TYPE)
         }
-        return ChargeTimeProjection(estimate(model.pooled, level), ChargeTimeBasis.POOLED)
+        return pooledEstimate?.let { ChargeTimeProjection(it, ChargeTimeBasis.POOLED) }
     }
 
-    private fun estimate(stratum: ChargeTimeStratum, level: Int): ChargeTimeEstimate = ChargeTimeEstimate(
+    /**
+     * The figures for [level], plus the provenance of exactly those figures.
+     *
+     * Null when nothing at all could be projected — no target and no split segment. A card whose
+     * "From N charges" line described bands that produced nothing displayed would be worse than the
+     * not-enough-data state it replaces.
+     */
+    private fun estimate(stratum: ChargeTimeStratum, level: Int): ChargeTimeEstimate? {
         // Nothing to count down to once the target is behind us.
-        toEightyMillis = if (level >= 80) null else span(stratum, level, 80),
-        toFullMillis = if (level >= 100) null else span(stratum, level, 100),
-        avgSpeedMilliwatts = stratum.avgSpeedMilliwatts,
-        split = ChargeBandSplit(
-            toFiftyMillis = span(stratum, 0, 50),
-            fiftyToEightyMillis = span(stratum, 50, 80),
-            eightyToHundredMillis = span(stratum, 80, 100),
-        ),
-        basedOnSessions = stratum.sessionIds.size,
-    )
+        val toEighty = if (level >= 80) null else span(stratum, level, 80)
+        val toFull = if (level >= 100) null else span(stratum, level, 100)
+        val toFifty = span(stratum, 0, 50)
+        val fiftyToEighty = span(stratum, 50, 80)
+        val eightyToHundred = span(stratum, 80, 100)
+
+        val shown = listOfNotNull(toEighty, toFull, toFifty, fiftyToEighty, eightyToHundred)
+        if (shown.isEmpty()) return null
+
+        // Only the spans that actually produced a figure: those charges, and no others, are what the
+        // provenance line and the speed median describe.
+        val contributors = shown.flatMapTo(mutableSetOf()) { it.sessionIds }
+        return ChargeTimeEstimate(
+            toEightyMillis = toEighty?.millis,
+            toFullMillis = toFull?.millis,
+            avgSpeedMilliwatts = contributors
+                .mapNotNull { stratum.sessionPowerMilliwatts[it] }
+                .takeIf { it.isNotEmpty() }
+                ?.let { median(it.map(Int::toLong)).toInt() },
+            split = ChargeBandSplit(
+                toFiftyMillis = toFifty?.millis,
+                fiftyToEightyMillis = fiftyToEighty?.millis,
+                eightyToHundredMillis = eightyToHundred?.millis,
+            ),
+            basedOnSessions = contributors.size,
+        )
+    }
+
+    /** A projected stretch: its duration and the sessions the bands it consumed were medians of. */
+    private data class Span(val millis: Long, val sessionIds: Set<Long>)
 
     /** Sum of the per-percent rates from [from] to [to]; null as soon as one band is unusable. */
-    private fun span(stratum: ChargeTimeStratum, from: Int, to: Int): Long? {
+    private fun span(stratum: ChargeTimeStratum, from: Int, to: Int): Span? {
         if (from >= to) return null
         var total = 0L
+        val contributors = mutableSetOf<Long>()
         for (percent in from until to) {
-            total += stratum.bands[bandOf(percent)] ?: return null
+            val band = stratum.bands[bandOf(percent)] ?: return null
+            total += band.medianMillisPerPercent
+            contributors += band.sessionIds
         }
-        return total
+        return Span(millis = total, sessionIds = contributors)
     }
 
     private fun stratum(
         observations: List<BandObservation>,
         sessionPowerMilliwatts: Map<Long, Int>,
     ): ChargeTimeStratum {
-        val bands = mutableMapOf<Int, Long>()
+        val bands = mutableMapOf<Int, ChargeTimeBand>()
         val contributors = mutableSetOf<Long>()
 
         observations.groupBy { bandOf(it.percentFrom) }.forEach { (band, inBand) ->
@@ -157,19 +211,18 @@ object ChargeTimeEstimator {
             val perSession = inBand.groupBy { it.sessionId }
                 .mapValues { (_, steps) -> steps.sumOf { it.millis } / steps.size }
             if (perSession.size < MIN_SESSIONS_PER_BAND) return@forEach
-            bands[band] = median(perSession.values.toList())
+            bands[band] = ChargeTimeBand(
+                medianMillisPerPercent = median(perSession.values.toList()),
+                sessionIds = perSession.keys.toSet(),
+            )
             contributors += perSession.keys
         }
 
         return ChargeTimeStratum(
             bands = bands,
-            sessionIds = contributors,
-            // The speed figure describes the same charges the durations do, so it is a median over
-            // the contributing sessions' own recorded averages — not a recomputation.
-            avgSpeedMilliwatts = contributors
-                .mapNotNull { sessionPowerMilliwatts[it] }
-                .takeIf { it.isNotEmpty() }
-                ?.let { median(it.map(Int::toLong)).toInt() },
+            // Kept for the sessions behind a usable band only; the projection narrows it further to
+            // the ones behind the figures it actually shows.
+            sessionPowerMilliwatts = sessionPowerMilliwatts.filterKeys { it in contributors },
         )
     }
 
