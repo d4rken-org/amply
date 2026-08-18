@@ -37,7 +37,7 @@ import eu.darken.amply.battery.ui.BatteryEffect
 import eu.darken.amply.battery.ui.batteryHealthLabel
 import eu.darken.amply.battery.ui.batteryPlugLabel
 import eu.darken.amply.battery.ui.batteryStatusLabel
-import eu.darken.amply.battery.ui.chargePowerFallbackRes
+import eu.darken.amply.battery.ui.chargePowerTileFallback
 import eu.darken.amply.battery.ui.formatChargeCounter
 import eu.darken.amply.common.compose.AmplyCard
 import eu.darken.amply.common.compose.AmplyCardDefaults
@@ -195,16 +195,27 @@ private fun StatTileGrid(
     val openLabel = stringResource(R.string.battery_metric_open_action)
     val notReported = stringResource(R.string.battery_value_not_reported)
     // Charge power is the one reading with a meaningful "not charging" state, and it is the same
-    // rule the electrical rows used before the tiles existed.
-    val powerFallback = stringResource(chargePowerFallbackRes(BatteryEffect.from(readout)))
+    // rule the electrical rows used before the tiles existed — rendered as a dash here, because a
+    // half-width tile has no room for the words.
+    val powerFallback = chargePowerTileFallback(BatteryEffect.from(readout))
+    val powerFallbackText = stringResource(powerFallback.textRes)
+    val powerFallbackSpoken = stringResource(powerFallback.spokenRes)
 
     @Composable
     fun metricTile(metric: BatteryMetric, modifier: Modifier, icon: ImageVector? = null) {
-        val fallback = if (metric == BatteryMetric.POWER) powerFallback else notReported
+        val isPower = metric == BatteryMetric.POWER
+        val fallback = if (isPower) powerFallbackText else notReported
+        val shown = metric.format(metric.select(readout))
+        // The dash stands in for a figure rather than being one, so it is dimmed and speaks the
+        // words it replaces — which is exactly the case where the fallback's shown and spoken forms
+        // differ. Every other value, "Not reported" included, renders as written.
+        val isDash = isPower && shown == null && powerFallback.textRes != powerFallback.spokenRes
         BatteryStatTile(
             label = stringResource(metric.titleRes),
-            value = metric.format(metric.select(readout)) ?: fallback,
+            value = shown ?: fallback,
             modifier = modifier,
+            valueColor = if (isDash) MaterialTheme.colorScheme.onSurfaceVariant else Color.Unspecified,
+            valueDescription = if (isDash) powerFallbackSpoken else null,
             icon = icon,
             sparkline = curve.map {
                 ChartPoint(it.elapsedFromStartMillis.toFloat(), metric.select(it)?.toFloat())

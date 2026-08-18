@@ -8,6 +8,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.text.TextLayoutResult
@@ -155,8 +156,34 @@ class BatteryHubScreenTest {
     @Test
     fun `a limit hold says the battery is not charging, not that nothing was reported`() {
         render(charging.copy(status = BatteryManager.BATTERY_STATUS_NOT_CHARGING))
-        // The status tile spells this out as "Plugged in, not charging", so this is the power tile.
-        compose.onNodeWithText(string(R.string.battery_value_not_charging)).assertExists()
+        // The tile is half a screen wide, so the words become a dash — but only for the state the
+        // battery positively reported. What this case exists to prove is that the two stay
+        // distinguishable: every other reading here is present, so "Not reported" (a device that
+        // exposes no figure, which the dash must never stand in for) is nowhere on the screen.
+        compose.onNodeWithText(string(R.string.battery_value_none)).assertExists()
+        compose.onAllNodesWithText(string(R.string.battery_value_not_reported)).assertCountEquals(0)
+        // The status tile still spells it out as "Plugged in, not charging"; the bare words do not
+        // appear, because the tile that would have carried them now shows the dash.
+        compose.onAllNodesWithText(string(R.string.battery_value_not_charging)).assertCountEquals(0)
+    }
+
+    @Test
+    fun `a charging battery that reports no current still says not reported, never a dash`() {
+        // The figure is missing, not zero: the device is taking charge and simply exposes no
+        // current. Collapsing that into the dash would claim an observation nothing made.
+        render(charging.copy(currentNowMicroamps = null))
+        compose.onAllNodesWithText(string(R.string.battery_value_none)).assertCountEquals(0)
+        // Two tiles are affected — charge power, which is derived from the current, and current
+        // itself.
+        compose.onAllNodesWithText(string(R.string.battery_value_not_reported)).assertCountEquals(2)
+    }
+
+    @Test
+    fun `the dash announces the state it replaces`() {
+        render(charging.copy(status = BatteryManager.BATTERY_STATUS_NOT_CHARGING))
+        // A dash is a meaningless glyph to a screen reader, so the tile speaks the words the width
+        // did not allow.
+        compose.onNodeWithContentDescription(string(R.string.battery_value_not_charging)).assertExists()
     }
 
     @Test
@@ -168,9 +195,12 @@ class BatteryHubScreenTest {
                 currentNowMicroamps = -500_000,
             ),
         )
-        compose.onNodeWithText(string(R.string.battery_value_not_charging)).assertExists()
+        // Off the charger there is no charge power to state, which the tile shows as a dash.
+        compose.onNodeWithText(string(R.string.battery_value_none)).assertExists()
+        compose.onAllNodesWithText(string(R.string.battery_value_not_charging)).assertCountEquals(0)
         // Nothing is connected, so the advertised maximum is the screen's only "Not reported" — the
         // extras are not read through while off the charger even when the platform left them set.
+        // The single match also proves the dash did not displace it onto the power tile.
         compose.onNodeWithText(string(R.string.battery_value_not_reported)).assertExists()
     }
 
