@@ -273,10 +273,42 @@ class ChargeStatsRepositoryLiveTest {
             dao.insertSample(sample(sessionId, elapsed = i * 60_000L, percent = 40 + i))
         }
 
-        val batch = repository.bandObservations()
+        val batch = repository.bandObservations(cutoffWallMillis = 0L)
         batch.observations.map { it.percentFrom } shouldBe listOf(41, 42, 43)
         batch.observations.map { it.chargingType }.distinct() shouldBe listOf(ChargingType.AC)
         batch.sessionPowerMilliwatts shouldBe mapOf(sessionId to 11_000)
+    }
+
+    @Test
+    fun `a session keeps its id while its early samples expire, so the cutoff applies to samples`() = runTest {
+        // Retention drops sessions by their end stamp but samples by their own, so a charge that sat
+        // at an OEM limit for days and ended recently survives with only its later samples. The fold
+        // must describe what is left, not what the row still implies.
+        val dao = database.statsDao()
+        val sessionId = dao.insertSession(
+            ChargeSessionEntity(
+                startedAtWallMillis = 0L,
+                startedElapsedRealtimeMillis = 0L,
+                endedAtWallMillis = 500_000L,
+                endedElapsedRealtimeMillis = 500_000L,
+                bootId = 7,
+                startPercent = 40,
+                endPercent = 45,
+                pluggedRaw = 1,
+                avgPowerMilliwatts = 11_000,
+            ),
+        )
+        (0..5).forEach { i ->
+            dao.insertSample(sample(sessionId, elapsed = i * 60_000L, percent = 40 + i))
+        }
+
+        // Everything before minute three is outside the window: the surviving samples are 43, 44 and
+        // 45, whose first step is dropped as unobserved like any other run start.
+        val batch = repository.bandObservations(cutoffWallMillis = 3 * 60_000L)
+        batch.observations.map { it.percentFrom } shouldBe listOf(44)
+        // The whole session is still there without the cutoff.
+        repository.bandObservations(cutoffWallMillis = 0L)
+            .observations.map { it.percentFrom } shouldBe listOf(41, 42, 43, 44)
     }
 
     private suspend fun awaitEmission(channel: Channel<List<Int?>>, expected: List<Int?>) {

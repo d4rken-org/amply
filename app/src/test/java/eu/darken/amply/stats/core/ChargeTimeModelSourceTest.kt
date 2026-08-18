@@ -20,6 +20,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -36,9 +37,10 @@ import java.io.File
 
 /**
  * The shared charge-time fold. The property under test is the refresh trigger: Room invalidates per
- * *table*, so every per-tick write to the open session re-runs the finished-session count query and
- * re-emits an unchanged number. Without the explicit `distinctUntilChanged` the whole ten-session
- * extraction would rerun roughly every 20 seconds for the duration of a charge.
+ * *table*, so every per-tick write to the open session re-runs the finished-session query and
+ * re-emits an unchanged list. Without the explicit `distinctUntilChanged` the whole ten-session
+ * extraction would rerun roughly every 20 seconds for the duration of a charge. The second property
+ * is what a returning subscriber sees: a replayed `Ready` must not be followed by a fresh `Loading`.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -49,6 +51,7 @@ class ChargeTimeModelSourceTest {
 
     private lateinit var database: StatsDatabase
     private lateinit var repository: ChargeStatsRepository
+    private lateinit var preferences: StatsPreferences
     private lateinit var dataStoreScope: CoroutineScope
 
     @Before
@@ -59,16 +62,17 @@ class ChargeTimeModelSourceTest {
             .build()
         dataStoreScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         val bootIdSource = BootIdSource(context)
+        preferences = StatsPreferences(
+            AppDataStore(
+                PreferenceDataStoreFactory.create(scope = dataStoreScope) {
+                    File(tempFolder.root, "stats-${System.nanoTime()}.preferences_pb")
+                },
+            ),
+        )
         val recorder = ChargeStatsRecorder(
             context = context,
             database = { database },
-            preferences = StatsPreferences(
-                AppDataStore(
-                    PreferenceDataStoreFactory.create(scope = dataStoreScope) {
-                        File(tempFolder.root, "stats-${System.nanoTime()}.preferences_pb")
-                    },
-                ),
-            ),
+            preferences = preferences,
             bootIdSource = bootIdSource,
             batteryReader = BatteryReader(context, BatteryUnitCalibration(context)),
             dispatcher = Dispatchers.IO,
@@ -86,12 +90,17 @@ class ChargeTimeModelSourceTest {
         database.close()
     }
 
+    /**
+     * Wall stamps are anchored to *now*, not to the epoch: the fold applies the retention window to
+     * the samples, so epoch-relative stamps would all fall outside it and the model would be empty.
+     */
     private suspend fun insertFinishedSession(startPercent: Int, endPercent: Int): Long {
+        val nowWallMillis = System.currentTimeMillis()
         val id = database.statsDao().insertSession(
             ChargeSessionEntity(
-                startedAtWallMillis = 1_000L,
+                startedAtWallMillis = nowWallMillis,
                 startedElapsedRealtimeMillis = 0L,
-                endedAtWallMillis = 1_000_000L,
+                endedAtWallMillis = nowWallMillis + 1_000_000L,
                 endedElapsedRealtimeMillis = 1_000_000L,
                 bootId = 7,
                 startPercent = startPercent,
@@ -104,7 +113,7 @@ class ChargeTimeModelSourceTest {
             database.statsDao().insertSample(
                 BatterySampleEntity(
                     sessionId = id,
-                    wallMillis = i * 60_000L,
+                    wallMillis = nowWallMillis + i * 60_000L,
                     elapsedRealtimeMillis = i * 60_000L,
                     bootId = 7,
                     percent = startPercent + i,
@@ -141,6 +150,7 @@ class ChargeTimeModelSourceTest {
                 ),
                 bootIdSource = BootIdSource(context),
             ),
+            statsPreferences = preferences,
             dispatcher = Dispatchers.IO,
         )
         // Reading the property builds the cold flow; the trigger query lives inside it.
@@ -148,10 +158,10 @@ class ChargeTimeModelSourceTest {
     }
 
     @Test
-    fun `an unchanged session count never re-folds the history`() = runBlocking {
+    fun `an open session's ticks never re-fold the history`() = runBlocking {
         insertFinishedSession(startPercent = 40, endPercent = 50)
         insertFinishedSession(startPercent = 40, endPercent = 50)
-        val source = ChargeTimeModelSource(repository, Dispatchers.IO)
+        val source = ChargeTimeModelSource(repository, preferences, Dispatchers.IO)
 
         val emissions = Channel<ChargeTimeModelState>(Channel.UNLIMITED)
         val collector = launch(Dispatchers.IO) { source.states.collect { emissions.send(it) } }
@@ -161,10 +171,10 @@ class ChargeTimeModelSourceTest {
                 while (next !is ChargeTimeModelState.Ready) next = emissions.receive()
                 next
             }
-            ready.model.pooled.bands[40] shouldBe 60_000L
+            ready.model.pooled.bands[40]!!.medianMillisPerPercent shouldBe 60_000L
 
-            // Exactly what a recorder tick does: rewrite the open session row. The count query is
-            // invalidated and re-runs, but the number it returns has not changed.
+            // Exactly what a recorder tick does: rewrite the open session row. The trigger query is
+            // invalidated and re-runs, but an open session is not in the finished list it returns.
             val open = database.statsDao().insertSession(
                 ChargeSessionEntity(
                     startedAtWallMillis = 2_000L,
@@ -188,7 +198,7 @@ class ChargeTimeModelSourceTest {
     fun `a newly finished session does re-fold the history`(): Unit = runBlocking {
         insertFinishedSession(startPercent = 40, endPercent = 50)
         insertFinishedSession(startPercent = 40, endPercent = 50)
-        val source = ChargeTimeModelSource(repository, Dispatchers.IO)
+        val source = ChargeTimeModelSource(repository, preferences, Dispatchers.IO)
 
         val emissions = Channel<ChargeTimeModelState>(Channel.UNLIMITED)
         val collector = launch(Dispatchers.IO) { source.states.collect { emissions.send(it) } }
@@ -212,8 +222,43 @@ class ChargeTimeModelSourceTest {
         }
     }
 
+    @Test
+    fun `a resubscription after the stop timeout never shows Loading between two Ready values`(): Unit =
+        runBlocking {
+            // `onStart` upstream of `shareIn` re-runs whenever the upstream restarts, so a returning
+            // subscriber would get the replayed Ready followed by a fresh Loading — the charge-time
+            // card blinking back to its loading line every time the app is reopened.
+            insertFinishedSession(startPercent = 40, endPercent = 50)
+            insertFinishedSession(startPercent = 40, endPercent = 50)
+            val source = ChargeTimeModelSource(repository, preferences, Dispatchers.IO)
+
+            val first = Channel<ChargeTimeModelState>(Channel.UNLIMITED)
+            val warmUp = launch(Dispatchers.IO) { source.states.collect { first.send(it) } }
+            withTimeout(TIMEOUT_MS) {
+                var next = first.receive()
+                while (next !is ChargeTimeModelState.Ready) next = first.receive()
+            }
+            warmUp.cancelAndJoin()
+
+            // Past the stop timeout the upstream is cancelled while the replay cache keeps its Ready.
+            delay(STOP_TIMEOUT_MS + 1_000L)
+
+            val second = Channel<ChargeTimeModelState>(Channel.UNLIMITED)
+            val collector = launch(Dispatchers.IO) { source.states.collect { second.send(it) } }
+            try {
+                val seen = withTimeout(TIMEOUT_MS) { List(2) { second.receive() } }
+                seen.filterIsInstance<ChargeTimeModelState.Loading>() shouldBe emptyList()
+                seen.all { it is ChargeTimeModelState.Ready } shouldBe true
+            } finally {
+                collector.cancelAndJoin()
+            }
+        }
+
     private companion object {
         const val TIMEOUT_MS = 10_000L
         const val QUIET_MS = 1_000L
+
+        /** Mirrors `ChargeTimeModelSource.STOP_TIMEOUT_MILLIS`, which is private. */
+        const val STOP_TIMEOUT_MS = 5_000L
     }
 }

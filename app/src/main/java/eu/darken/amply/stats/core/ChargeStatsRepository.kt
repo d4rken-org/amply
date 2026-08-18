@@ -34,6 +34,17 @@ class ChargeStatsRepository @Inject constructor(
     fun sessionCount(): Flow<Int> = database.get().statsDao().finishedSessionCount()
 
     /**
+     * The ids of the most recent finished sessions — the refresh key for the charge-time fold.
+     *
+     * Identities, not a count: a newly sealed charge and a retention purge landing in one Room
+     * invalidation window leave the count unchanged while the history behind it is a different set,
+     * and a fold keyed on the count would keep quoting the removed charge. An open session is not in
+     * this list, so the per-tick recorder writes it suppresses stay suppressed.
+     */
+    fun recentFinishedSessionIds(limit: Int = DEFAULT_BAND_SESSION_LIMIT): Flow<List<Long>> =
+        database.get().statsDao().finishedSessions(limit).map { rows -> rows.map { it.id } }
+
+    /**
      * The in-progress charge session of the current boot, or null when nothing is open, as a live flow
      * for the dashboard card. The curve is a bounded recent window (decimated) so a session that stays
      * open for days at an OEM charge limit never triggers an unbounded reload on every appended sample.
@@ -113,20 +124,31 @@ class ChargeStatsRepository @Inject constructor(
      *
      * Suspending and one-shot on purpose: the charge-time model is an expensive fold that must run
      * off the main thread, and nothing here may touch Room until it is actually called.
+     *
+     * [cutoffWallMillis] applies the retention window to the **samples**, not just to the sessions.
+     * Sessions expire by their end stamp while samples expire by their own, so a charge that stayed
+     * open for days at an OEM limit and ended recently survives as an entry while its early samples
+     * are already outside the window (see `StatsDao.deleteSamplesOlderThan`). Dropping them here
+     * makes the fold describe what retention will leave, whenever the purge actually runs.
      */
-    suspend fun bandObservations(sessionLimit: Int = DEFAULT_BAND_SESSION_LIMIT): BandObservationBatch {
+    suspend fun bandObservations(
+        cutoffWallMillis: Long,
+        sessionLimit: Int = DEFAULT_BAND_SESSION_LIMIT,
+    ): BandObservationBatch {
         val dao = database.get().statsDao()
         val sessions = dao.finishedSessions(sessionLimit).first()
         val observations = mutableListOf<BandObservation>()
         val power = mutableMapOf<Long, Int>()
         sessions.forEach { row ->
-            val steps = dao.samplesForSessionNow(row.id).map { sample ->
-                ChargeStepSample(
-                    elapsedMillis = sample.elapsedRealtimeMillis,
-                    percent = sample.percent,
-                    batteryStatus = sample.batteryStatus,
-                )
-            }
+            val steps = dao.samplesForSessionNow(row.id)
+                .filter { it.wallMillis >= cutoffWallMillis }
+                .map { sample ->
+                    ChargeStepSample(
+                        elapsedMillis = sample.elapsedRealtimeMillis,
+                        percent = sample.percent,
+                        batteryStatus = sample.batteryStatus,
+                    )
+                }
             observations += ChargeBandExtractor.extract(
                 sessionId = row.id,
                 chargingType = ChargingTypes.fromPluggedRaw(row.pluggedRaw),
