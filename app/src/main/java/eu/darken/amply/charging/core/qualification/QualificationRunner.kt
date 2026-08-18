@@ -335,6 +335,13 @@ class QualificationRunner @Inject constructor(
      * the forced claim the record would be permanently unfinalizable — a run that never ends, so no
      * rule ever evaluates, no session ever starts, and the user's own policy is never restored. The
      * provenance filter above is what keeps this from stealing a finalization still in flight *here*.
+     *
+     * A record whose finalization got as far as writing its outcome down is **replayed**, not aborted:
+     * a `Passed` or `Refuted` decided before the process died now finishes here instead of becoming
+     * [AbortReason.PROCESS_DEATH]. Deliberate — that measurement was complete and its verdict was
+     * durably decided before the death, and the dangerous direction is dropping a refutation, which
+     * leaves the device holding control it demonstrably does not honour. [AbortReason.PROCESS_DEATH]
+     * remains the fallback for a record that never got that far.
      */
     internal suspend fun startupRepair() {
         val stale = stateMutex.withLock {
@@ -343,7 +350,10 @@ class QualificationRunner @Inject constructor(
             record?.takeIf { it.provenance?.token != processIdentity.token }
         } ?: return
         log(TAG, Logging.Priority.WARN) { "Qualification run ${stale.runId} survived its process; closing it out" }
-        finish(RunTerminal.Aborted(AbortReason.PROCESS_DEATH), reclaimRunId = stale.runId)
+        finish(
+            stale.finalization?.toTerminal() ?: RunTerminal.Aborted(AbortReason.PROCESS_DEATH),
+            reclaimRunId = stale.runId,
+        )
     }
 
     internal suspend fun onTick(tick: RawQualificationTick) {
@@ -360,11 +370,18 @@ class QualificationRunner @Inject constructor(
         // the foreign record still stored and no longer claimed. The guard belongs here, where the
         // damage would happen: a failed repair simply retries on the next tick instead of the engine
         // measuring what it left behind.
+        //
+        // Closing it out replays the outcome it already decided when it has one, and only falls back
+        // to PROCESS_DEATH when it does not — see [startupRepair] for why that direction is the safe
+        // one.
         if (record.provenance?.token != processIdentity.token) {
             log(TAG, Logging.Priority.WARN) {
                 "Qualification run ${record.runId} belongs to another process; closing it out"
             }
-            finish(RunTerminal.Aborted(AbortReason.PROCESS_DEATH), reclaimRunId = record.runId)
+            finish(
+                record.finalization?.toTerminal() ?: RunTerminal.Aborted(AbortReason.PROCESS_DEATH),
+                reclaimRunId = record.runId,
+            )
             return
         }
         // A claimed record is close-out-only for the same reason, one step further in: a finalization
@@ -378,11 +395,19 @@ class QualificationRunner @Inject constructor(
         // a finalization still in flight holds it, so this waits and then finds nothing left to claim.
         // An abandoned claim has no holder, so this is what recovers it, on the next tick after the
         // store recovers.
-        if (record.finalizing) {
+        //
+        // A stored outcome is close-out-only too, claim or no claim: the release is a separate write
+        // and can succeed where the clear failed, leaving a record that is unclaimed but whose terminal
+        // was already decided. Either way the outcome is REPLAYED — FINALIZATION_INTERRUPTED is only
+        // for a record claimed by a build that did not write one down.
+        if (record.finalizing || record.finalization != null) {
             log(TAG, Logging.Priority.WARN) {
-                "Qualification run ${record.runId} is still claimed for finalization; closing it out"
+                "Qualification run ${record.runId} has an unfinished finalization; closing it out"
             }
-            finish(RunTerminal.Aborted(AbortReason.FINALIZATION_INTERRUPTED), reclaimRunId = record.runId)
+            finish(
+                record.finalization?.toTerminal() ?: RunTerminal.Aborted(AbortReason.FINALIZATION_INTERRUPTED),
+                reclaimRunId = record.runId,
+            )
             return
         }
         // One coherent snapshot, taken here on this runner's own worker: the level and the charge
@@ -442,10 +467,15 @@ class QualificationRunner @Inject constructor(
      * write succeeded** — a failed restore deliberately leaves the target behind so the shipped boot
      * and foreground recovery paths still owe it.
      *
-     * The record is **claimed for finalization in one transaction** first, and what that claim saw
-     * decides the outcome. A cancel (or a failed write) that committed before the claim downgrades
-     * the terminal, even one already computed as a pass; one arriving after cannot commit at all. The
-     * direction is safe by construction: a downgrade never turns an abort into a pass.
+     * The record is **claimed for finalization in one transaction** first, and that claim is where the
+     * outcome is both resolved and written down. A cancel (or a failed write) that committed before it
+     * downgrades the terminal, even one already computed as a pass; one arriving after cannot commit
+     * at all. The direction is safe by construction: a downgrade never turns an abort into a pass.
+     *
+     * What the claim returns is therefore authoritative, not the [terminal] argument: a record that
+     * already carries a [FinalizationIntent] is one whose finalization was interrupted, and this is a
+     * **replay** of the outcome it decided rather than a fresh decision. [terminal] is only the
+     * proposal, used when there is no stored intent.
      *
      * Leaving [finalize] without having cleared the record **gives the claim back**, on every exit —
      * a throw and a cancellation alike. The claim is durable, so leaving it held would make the record
@@ -472,21 +502,27 @@ class QualificationRunner @Inject constructor(
         exitCounter: Int? = null,
         reclaimRunId: String? = null,
     ): Unit = finalizationMutex.withLock {
-        val record = runStore.claimForFinalization(reclaimRunId)
+        val record = runStore.claimForFinalization(
+            proposed = FinalizationIntent.of(terminal, System.currentTimeMillis()),
+            reclaimRunId = reclaimRunId,
+            // The measurement is persisted with the outcome that was decided from it, so a replay
+            // finds both. Nothing to merge on a close-out path, which has no sample of its own.
+            merge = if (progress != null) {
+                { it.merge(progress, phaseRatePerHour, exitPercent, exitCounter) }
+            } else {
+                { it }
+            },
+        )
         if (record == null) {
             log(TAG, Logging.Priority.WARN) { "Nothing to finalize for $terminal; the run is already being closed out" }
             return@withLock
         }
-        val effective = when {
-            record.cancelled -> RunTerminal.Aborted(AbortReason.USER_CANCELLED)
-            record.writeFailed -> RunTerminal.Aborted(AbortReason.WRITE_FAILED)
-            else -> terminal
-        }
+        val effective = record.finalization?.toTerminal() ?: terminal
         if (effective != terminal) {
             log(TAG, Logging.Priority.INFO) { "Run ${record.runId} outcome downgraded from $terminal to $effective" }
         }
         try {
-            finalize(record, effective, progress, phaseRatePerHour, exitPercent, exitCounter)
+            finalize(record, effective)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -506,15 +542,29 @@ class QualificationRunner @Inject constructor(
         }
     }
 
+    /**
+     * Write [terminal] out for [record]: restore, evidence, publish, clear.
+     *
+     * **Replayable, and idempotent by construction rather than by machinery.** Any of the four steps
+     * can fail halfway, so the outcome is persisted with the claim and this runs again — possibly in
+     * the next process — against a record that may already have had some of it applied. Each step
+     * survives that: restoring the baseline again is a no-op write of a policy that is already set;
+     * `QualificationEvidenceStore.record` overwrites unconditionally, and everything it writes is
+     * taken from the record, so the second write is byte-identical; `EnforcementEvidenceStore.record`
+     * refuses a duplicate for the same scope and returns false; and republishing [resultFlow] hands
+     * whatever is watching the same result twice. Nothing here needs a "have I already done this"
+     * ledger, and one would only be a second thing to keep in sync.
+     *
+     * That byte-identity is also why the evidence timestamps come from the intent's
+     * [FinalizationIntent.decidedAtWallMillis] rather than a fresh clock read.
+     */
     private suspend fun finalize(
         record: QualificationRunRecord,
         terminal: RunTerminal,
-        progress: QualificationProgress?,
-        phaseRatePerHour: Long,
-        exitPercent: Int,
-        exitCounter: Int?,
     ) {
         log(TAG, Logging.Priority.INFO) { "Run ${record.runId} finished: $terminal" }
+        val decidedAt = record.finalization?.decidedAtWallMillis?.takeIf { it != 0L }
+            ?: System.currentTimeMillis()
         // CONFIGURATION_DRIFT means the user made a NEWER choice than the baseline this run captured.
         // Restoring here would overwrite it with a stale value, which is the one thing worse than not
         // restoring at all. A full-charge session starting mid-run is NOT such a case any more: run
@@ -553,15 +603,15 @@ class QualificationRunner @Inject constructor(
                     buildIdentity = record.buildIdentity,
                     protocolVersion = QualificationProtocol.PROTOCOL_VERSION,
                     shape = record.shape,
-                    signal = progress?.signal ?: record.signal,
+                    signal = record.signal,
                     capPercent = record.lowCap,
-                    observedHoldPercent = progress?.observedHoldPercent ?: record.observedHoldPercent ?: -1,
+                    observedHoldPercent = record.observedHoldPercent ?: -1,
                     candidatePromotion = record.candidate,
                     exercisedPolicies = listOf(
                         ChargePolicy.FixedLimit(record.lowCap).stableId,
                         record.releasePolicy.stableId,
                     ),
-                    completedAtWallMillis = System.currentTimeMillis(),
+                    completedAtWallMillis = decidedAt,
                 ),
             )
 
@@ -572,8 +622,8 @@ class QualificationRunner @Inject constructor(
                     algorithmVersion = EnforcementVerdictEngine.ALGORITHM_VERSION,
                     verdict = EnforcementVerdict.REFUTED,
                     capPercent = record.lowCap,
-                    observedPercent = progress?.observedHoldPercent ?: -1,
-                    observedAtWallMillis = System.currentTimeMillis(),
+                    observedPercent = record.observedHoldPercent ?: -1,
+                    observedAtWallMillis = decidedAt,
                 ),
             )
 
@@ -581,10 +631,7 @@ class QualificationRunner @Inject constructor(
             // record must never be readable as a pass.
             is RunTerminal.Inconclusive, is RunTerminal.Aborted -> Unit
         }
-        resultFlow.value = QualificationResult(
-            terminal,
-            progress?.let { record.merge(it, phaseRatePerHour, exitPercent, exitCounter) } ?: record,
-        )
+        resultFlow.value = QualificationResult(terminal, record)
         stateMutex.withLock {
             runStore.clear()
             runActiveNow = false
