@@ -62,10 +62,22 @@ enum class EnforcementStatus {
 
     /**
      * Maintainer-qualified: a device physically qualified against the protocol in the
-     * `device-qualification` skill. This is the ONLY route to a confirmed cap — local observation
+     * `device-qualification` skill. This is the ONLY route to a confirmed cap — local *observation*
      * cannot produce one (see [EnforcementVerdictEngine]).
      */
     CONFIRMED,
+
+    /**
+     * The user ran the guided qualification challenge on this exact build and it passed: charging was
+     * driven to stop, restart on command, and stop again — a sequence no thermal or weak-supply pause
+     * imitates. Control is enabled exactly as for [CONFIRMED].
+     *
+     * Deliberately **not** [CONFIRMED]. That constant means a maintainer physically qualified the
+     * device and earned a row in the ledger; this one means one user's device proved itself once, on
+     * one build, and an OTA re-opens the question. Surfaces should say so rather than claiming the
+     * device is supported. See `charging/core/qualification/`.
+     */
+    SELF_QUALIFIED,
 
     /** Observed charging past the cap on this build: control is off and stays off. */
     REFUTED,

@@ -31,9 +31,11 @@ const val ENFORCEMENT_CARD_TEST_TAG = "dashboard.enforcement.card"
  * perfectly while the charging hardware ignores it (LineageOS).
  *
  * Nothing is shown for [EnforcementStatus.CONFIRMED] or for adapters the question doesn't apply to —
- * that is the ordinary case, and a card stating the ordinary case is noise. The three cases it does
- * render are the ones where the dashboard would otherwise lie by omission: controls withheld without
- * a reason, controls offered that prove nothing, and controls withdrawn after a refutation.
+ * that is the ordinary case, and a card stating the ordinary case is noise. The cases it does render
+ * are the ones where the dashboard would otherwise lie by omission: controls withheld without a
+ * reason, controls offered that prove nothing, controls withdrawn after a refutation, and controls
+ * the user earned themselves on this one build rather than the maintainer having qualified the
+ * device.
  *
  * [onStartVerification] is an opt-in to control on an unconfirmed build, NOT the start of a check:
  * nothing Amply can observe confirms a cap (see `EnforcementVerdictEngine`), so the copy must not
@@ -48,6 +50,24 @@ fun EnforcementCard(
 ) {
     when (status) {
         EnforcementStatus.CONFIRMED -> Unit
+        // A quiet confirmation rather than nothing: unlike CONFIRMED, this claim is the user's own
+        // and is scoped to one build, so the card says which build it applies to instead of letting
+        // the dashboard imply the device is supported outright.
+        EnforcementStatus.SELF_QUALIFIED -> AmplyCard(
+            modifier = modifier.testTag(ENFORCEMENT_CARD_TEST_TAG),
+            tone = AmplyCardTone.SurfaceContainer,
+            verticalArrangement = Arrangement.spacedBy(AmplyCardDefaults.ItemSpacing),
+        ) {
+            AmplyCardHeader(
+                title = stringResource(R.string.dashboard_enforcement_self_qualified_title),
+                icon = Icons.TwoTone.Shield,
+                iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                stringResource(R.string.dashboard_enforcement_self_qualified_body),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
         EnforcementStatus.CANDIDATE -> AmplyCard(
             modifier = modifier.testTag(ENFORCEMENT_CARD_TEST_TAG),
             tone = AmplyCardTone.TertiaryContainer,

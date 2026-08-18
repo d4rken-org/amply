@@ -9,6 +9,8 @@ import eu.darken.amply.charging.core.ChargingPreferences
 import eu.darken.amply.charging.core.ChargingRepository
 import eu.darken.amply.charging.core.DeviceInfo
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
+import eu.darken.amply.charging.core.qualification.QualificationEvidenceState
+import eu.darken.amply.charging.core.qualification.QualificationRunStore
 import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
@@ -57,6 +59,7 @@ class EnforcementRecorder @Inject constructor(
     private val buildIdentity: BuildIdentitySource,
     private val repository: ChargingRepository,
     private val batteryReader: BatteryReader,
+    private val runStore: QualificationRunStore,
     @EnforcementDispatcher dispatcher: CoroutineDispatcher,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
@@ -102,7 +105,7 @@ class EnforcementRecorder @Inject constructor(
         return shouldObserveEnforcement(
             evidence = evidence,
             isSystemUser = device.isSystemUser,
-            adapterRequiresEvidence = registry.select(device, evidence).adapter?.enforcementEvidenceRequired == true,
+            adapterRequiresEvidence = registry.select(device, evidence, QualificationEvidenceState.Loading).adapter?.enforcementEvidenceRequired == true,
             verificationStarted = preferences.verificationStartedForNow() == buildIdentity.current(),
             persistentPolicy = preferences.lastPersistentPolicyNow(),
         )
@@ -119,7 +122,7 @@ class EnforcementRecorder @Inject constructor(
         if (existing?.verdict == EnforcementVerdict.REFUTED) return
 
         val device = DeviceInfo.current(context)
-        val adapter = registry.select(device, evidence).adapter ?: return
+        val adapter = registry.select(device, evidence, QualificationEvidenceState.Loading).adapter ?: return
         if (!adapter.enforcementEvidenceRequired || !device.isSystemUser) return
         if (preferences.verificationStartedForNow() != buildIdentity.current()) return
 
@@ -130,6 +133,7 @@ class EnforcementRecorder @Inject constructor(
             // synchronously, which the engine then declines to evaluate.
             configured = repository.syncReadback(),
             sessionActive = tick.sessionActive,
+            runActive = runStore.currentRun() != null,
             plugged = tick.plugged,
             // The level is the whole observation, so a tick without one falls back to the broadcast
             // this tick was taken from rather than dropping the sample.

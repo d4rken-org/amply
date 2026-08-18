@@ -31,6 +31,8 @@ import eu.darken.amply.charging.core.adapter.XiaomiHyperOs3ChargingAdapter
 import eu.darken.amply.charging.core.adapter.XiaomiLabAdapter
 import eu.darken.amply.charging.core.enforcement.BuildIdentitySource
 import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceStore
+import eu.darken.amply.charging.core.qualification.QualificationEvidenceStore
+import eu.darken.amply.charging.core.qualification.QualificationRunStore
 import eu.darken.amply.common.AppDataStore
 import eu.darken.amply.common.serialization.SerializationModule
 import io.kotest.matchers.shouldBe
@@ -112,6 +114,8 @@ class UnmappedDeviceSettingsIntentTest {
             },
             batteryReader = BatteryReader(context, BatteryUnitCalibration(context)),
             evidenceStore = EnforcementEvidenceStore(appDataStore, buildIdentity, SerializationModule.json()),
+            qualificationStore = QualificationEvidenceStore(appDataStore, buildIdentity, SerializationModule.json()),
+            runStore = QualificationRunStore(appDataStore, SerializationModule.json()),
             buildIdentity = buildIdentity,
         )
     }

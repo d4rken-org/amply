@@ -17,6 +17,10 @@ import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceStore
 import eu.darken.amply.charging.core.enforcement.EnforcementStatus
 import eu.darken.amply.charging.core.enforcement.EnforcementVerdict
 import eu.darken.amply.charging.core.enforcement.EnforcementVerdictEngine
+import eu.darken.amply.charging.core.qualification.QualificationEvidence
+import eu.darken.amply.charging.core.qualification.QualificationEvidenceState
+import eu.darken.amply.charging.core.qualification.QualificationOutcomeRecord
+import eu.darken.amply.charging.core.qualification.QualificationProtocol
 import eu.darken.amply.common.AppDataStore
 import eu.darken.amply.common.ca.toCaString
 import eu.darken.amply.common.serialization.SerializationModule
@@ -70,7 +74,20 @@ class AdapterRegistrySelectionTest {
         device: DeviceInfo,
         evidence: EnforcementEvidenceState = EnforcementEvidenceState.Absent,
         verificationStarted: Boolean = false,
-    ) = registry.select(device, evidence, verificationStarted)
+        qualification: QualificationEvidenceState = QualificationEvidenceState.Absent,
+    ) = registry.select(device, evidence, qualification, verificationStarted)
+
+    private fun qualificationPass(
+        adapterId: String = "lineageos-chargingcontrol-v1",
+    ) = QualificationEvidenceState.Present(
+        QualificationEvidence(
+            adapterId = adapterId,
+            buildIdentity = "build-a",
+            protocolVersion = QualificationProtocol.PROTOCOL_VERSION,
+            outcome = QualificationOutcomeRecord.PASSED,
+            capPercent = 70,
+        ),
+    )
 
     private fun lineageEvidence(
         verdict: EnforcementVerdict,

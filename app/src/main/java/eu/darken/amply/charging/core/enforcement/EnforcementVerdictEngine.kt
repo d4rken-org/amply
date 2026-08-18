@@ -36,6 +36,18 @@ data class EnforcementSample(
     val configured: ChargeObservation?,
     /** A temporary full-charge session deliberately lifts the cap, so nothing is observable then. */
     val sessionActive: Boolean,
+    /**
+     * A guided qualification run is driving the cap (see `charging/core/qualification/`). Its resume
+     * phase deliberately charges the battery past a cap configured moments earlier, which is exactly
+     * the shape this engine refutes on.
+     *
+     * It *should* already be unobservable — the resume phase writes a policy that is not a
+     * `FixedLimit`, or a higher one, so [epochOf] returns null or opens a new epoch, and every write
+     * bumps `policyGeneration`, which resets the climb. But that is two subtle invariants standing
+     * between a passing device and a **terminal** refutation, so the guarantee is stated here rather
+     * than inferred.
+     */
+    val runActive: Boolean = false,
     val plugged: Boolean,
     /** Battery level, or -1 when unknown. An unknown level moves no state at all. */
     val percent: Int,
@@ -150,13 +162,14 @@ object EnforcementVerdictEngine {
 
     /**
      * The window this sample belongs to, or null when nothing is observable: unplugged (no charge to
-     * limit), a running full-charge session (the cap is deliberately lifted), a configured state that
+     * limit), a running full-charge session or qualification run (the cap is deliberately lifted or
+     * driven by Amply itself), a configured state that
      * is not a *verified* [ChargePolicy.FixedLimit] (Adaptive has no observable cap, and a merely
      * last-requested policy is not known to be configured at all), or a 100% "cap", which limits
      * nothing.
      */
     private fun epochOf(sample: EnforcementSample): EnforcementEpoch? {
-        if (!sample.plugged || sample.sessionActive) return null
+        if (!sample.plugged || sample.sessionActive || sample.runActive) return null
         val verified = sample.configured as? ChargeObservation.Verified ?: return null
         val cap = (verified.policy as? ChargePolicy.FixedLimit)?.percent ?: return null
         if (cap >= 100) return null

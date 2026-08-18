@@ -10,6 +10,7 @@ import eu.darken.amply.charging.core.enforcement.EnforcementEvidence
 import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceState
 import eu.darken.amply.charging.core.enforcement.EnforcementVerdict
 import eu.darken.amply.charging.core.enforcement.EnforcementVerdictEngine
+import eu.darken.amply.charging.core.qualification.QualificationEvidenceState
 import eu.darken.amply.common.ca.toCaString
 import io.kotest.matchers.shouldBe
 import org.junit.Test
@@ -44,7 +45,7 @@ class ContributionEligibilityTest {
         device: DeviceInfo,
         evidence: EnforcementEvidenceState = EnforcementEvidenceState.Absent,
         verificationStarted: Boolean = false,
-    ) = registry.select(device, evidence, verificationStarted)
+    ) = registry.select(device, evidence, QualificationEvidenceState.Absent, verificationStarted)
 
     private fun device(manufacturer: String, model: String = "X", sdk: Int = 35) = DeviceInfo(
         manufacturer = manufacturer,
