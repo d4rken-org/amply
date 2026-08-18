@@ -92,6 +92,31 @@ class QualificationEvidenceStoreTest {
     }
 
     /**
+     * The version bump has to actually invalidate the old algorithm's passes, which is the whole
+     * point of storing the version. A protocol-1 run could pass without the within-run baseline
+     * control, on a device whose gauge reports too coarsely for a quiet cut window to mean anything,
+     * and while licensing nothing — so its record must read as no evidence rather than as protection.
+     *
+     * The `1` is deliberately a literal: written against [QualificationProtocol.PROTOCOL_VERSION] the
+     * case would pin nothing.
+     */
+    @Test
+    fun `a pass produced by the superseded version 1 protocol does not apply here`() = runTest {
+        store.record(evidence(protocolVersion = 1))
+
+        store.currentState() shouldBe QualificationEvidenceState.Absent
+    }
+
+    @Test
+    fun `a pass produced by the current protocol version still applies`() = runTest {
+        store.record(evidence(protocolVersion = QualificationProtocol.PROTOCOL_VERSION))
+
+        val state = store.currentState()
+        state.shouldBeInstanceOf<QualificationEvidenceState.Present>()
+        state.evidence.protocolVersion shouldBe QualificationProtocol.PROTOCOL_VERSION
+    }
+
+    /**
      * The load-bearing fail-closed property. Unlike the enforcement record — whose only verdict is
      * the restrictive one, so field loss degrades safely — a positive record that lost its fields
      * must not read as a pass. `protocolVersion` defaults to 0 and is what scopes it out.
