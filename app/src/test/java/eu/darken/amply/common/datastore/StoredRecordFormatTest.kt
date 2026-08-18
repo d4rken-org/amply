@@ -4,6 +4,12 @@ import eu.darken.amply.alarm.core.ChargeAlarmConfig
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.enforcement.EnforcementEvidence
 import eu.darken.amply.charging.core.enforcement.EnforcementVerdict
+import eu.darken.amply.charging.core.qualification.AbortReason
+import eu.darken.amply.charging.core.qualification.FinalizationIntent
+import eu.darken.amply.charging.core.qualification.FlowSignal
+import eu.darken.amply.charging.core.qualification.QualificationRunRecord
+import eu.darken.amply.charging.core.qualification.RunShape
+import eu.darken.amply.charging.core.qualification.TerminalKind
 import eu.darken.amply.common.serialization.SerializationModule
 import eu.darken.amply.common.theming.ThemeColor
 import eu.darken.amply.common.theming.ThemeMode
@@ -214,6 +220,61 @@ class StoredRecordFormatTest {
     fun `enforcement evidence defaults to the refuting verdict`() {
         json.decodeFromString(EnforcementEvidence.serializer(), "{}") shouldBe EnforcementEvidence()
         EnforcementEvidence().verdict shouldBe EnforcementVerdict.REFUTED
+    }
+
+    /**
+     * The run record outlives the process that wrote it, and its finalization intent is what a
+     * recovering process replays: a rename here would make an interrupted finalization decode as one
+     * that never decided anything, and the run would be reported as aborted while the evidence its
+     * real terminal produced is already on disk.
+     */
+    @Test
+    fun `a qualification run record with a decided outcome encodes to the pinned shape`() {
+        val record = QualificationRunRecord(
+            baseline = ChargePolicy.FixedLimit(80),
+            runId = "run-1",
+            runToken = "tok-1",
+            adapterId = "lineageos-chargingcontrol-v1",
+            buildIdentity = "0123456789abcdef",
+            protocolVersion = 2,
+            shape = RunShape.VARIABLE_CAP,
+            lowCap = 70,
+            releasePolicy = ChargePolicy.FixedLimit(85),
+            signal = FlowSignal.COUNTER,
+            observedHoldPercent = 71,
+            finalizing = true,
+            finalization = FinalizationIntent(
+                kind = TerminalKind.ABORTED,
+                abortReason = AbortReason.RUN_CEILING,
+                decidedAtWallMillis = 1_700_000_000_000L,
+            ),
+        )
+
+        json.encodeToString(QualificationRunRecord.serializer(), record) shouldBe
+            """{"baseline":"fixed:80","runId":"run-1","runToken":"tok-1",""" +
+            """"adapterId":"lineageos-chargingcontrol-v1","buildIdentity":"0123456789abcdef",""" +
+            """"protocolVersion":2,"shape":"VARIABLE_CAP","candidate":false,"baselineVerified":false,""" +
+            """"phase":"PREFLIGHT","runStartedAtWallMillis":0,"phaseStartedAtWallMillis":0,"lowCap":70,""" +
+            """"releasePolicy":"fixed:85","commandedAtWallMillis":0,"commandAckedAtWallMillis":0,""" +
+            """"windowAnchoredAtWallMillis":0,"windowStartPercent":-1,"windowSignalChanges":0,""" +
+            """"baselineRatePerHour":0,"impliedFullCapacity":0,"signal":"COUNTER","observedHoldPercent":71,""" +
+            """"writeFailed":false,"cancelled":false,"finalizing":true,""" +
+            """"finalization":{"kind":"ABORTED","abortReason":"RUN_CEILING",""" +
+            """"decidedAtWallMillis":1700000000000},"phaseLog":[]}"""
+    }
+
+    /**
+     * A record claimed by a build from before the intent existed. It must stay *claimed* — reading it
+     * as unclaimed would hand a half-finalized run back to the engine to measure — while carrying no
+     * outcome, so the close-out says a finalization was interrupted rather than inventing a verdict.
+     */
+    @Test
+    fun `a run record without a finalization intent decodes as claimed with none`() {
+        val stored = """{"baseline":"fixed:80","runId":"run-1","runToken":"tok-1","finalizing":true}"""
+
+        val decoded = json.decodeFromString(QualificationRunRecord.serializer(), stored)
+        decoded.finalizing shouldBe true
+        decoded.finalization shouldBe null
     }
 
     @Test

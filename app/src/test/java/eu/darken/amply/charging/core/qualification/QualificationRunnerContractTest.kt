@@ -20,7 +20,9 @@ import eu.darken.amply.battery.core.BatteryReader
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingRepository
 import eu.darken.amply.charging.core.enforcement.BuildIdentitySource
+import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceState
 import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceStore
+import eu.darken.amply.charging.core.enforcement.EnforcementVerdict
 import eu.darken.amply.common.AppDataStore
 import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.serialization.SerializationModule
@@ -301,8 +303,13 @@ class QualificationRunnerContractTest {
         job.isCancelled shouldBe true
         runBlocking {
             runStore.currentRun()?.finalizing shouldBe false
+            // The outcome it decided stays on the record, so the next attempt replays it instead of
+            // inventing one from a later tick's readings.
+            runStore.currentRun()?.finalization?.toTerminal() shouldBe RunTerminal.Passed
             // The run can be closed out again, by an ordinary terminal path rather than a reclaim.
-            runStore.claimForFinalization()?.runId shouldBe "run-4"
+            runStore.claimForFinalization(
+                FinalizationIntent.of(RunTerminal.Aborted(AbortReason.FINALIZATION_INTERRUPTED), 1L),
+            )?.runId shouldBe "run-4"
         }
     }
 
@@ -352,11 +359,13 @@ class QualificationRunnerContractTest {
      * baseline this run owes never restored.
      *
      * So a claimed record is close-out-only on the next tick, which is the retry the store recovery has
-     * no other way of reaching.
+     * no other way of reaching — and that retry **replays the terminal the run decided**, which is
+     * written down with the claim. Substituting an abort here would tell the user the run ended for a
+     * reason it did not, and on a pass or a refutation it would contradict evidence already on disk.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun `a claim left behind by a failed release is closed out by the next tick`() {
+    fun `a claim left behind by a failed release is replayed, not aborted, by the next tick`() {
         val flaky = FlakyStore(
             PreferenceDataStoreFactory.create(scope = storeScope) {
                 File(tempFolder.newFolder(), "run.preferences_pb")
@@ -378,16 +387,167 @@ class QualificationRunnerContractTest {
             flaky.writeBudget = FlakyStore.UNLIMITED
             runStore.currentRun()?.finalizing shouldBe true
             // A recovered store changes nothing on its own: the ordinary terminal path is still refused.
-            runStore.claimForFinalization() shouldBe null
+            runStore.claimForFinalization(FinalizationIntent.of(RunTerminal.Passed, 1L)) shouldBe null
+            runner.clearResult()
 
             // Contained like the cases above: the surface push at the very end of finalization cannot
             // complete in this environment, and everything asserted here is decided before it.
             runCatching { runner.onTick(RawQualificationTick(sessionActive = false)) }
 
-            runner.lastResult.value?.terminal shouldBe RunTerminal.Aborted(AbortReason.FINALIZATION_INTERRUPTED)
+            runner.lastResult.value?.terminal shouldBe RunTerminal.Aborted(AbortReason.RUN_CEILING)
             // Closed out as it was found: the engine was never asked to judge a half-finalized record.
             runner.lastResult.value?.record?.phase shouldBe RunPhase.BASELINE
             runStore.currentRun() shouldBe null
+        }
+    }
+
+    /**
+     * The reporting half of the same failure, and the one that matters most. Finalization writes the
+     * evidence *before* it clears the record, so a store that fails in between leaves a pass that
+     * licenses charge control on disk while the record says only "a finalization started". Inventing
+     * an abort there tells the user nothing was recorded about a run that did earn its pass.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `a pass interrupted after its evidence write is replayed as a pass`() {
+        val flaky = FlakyStore(
+            PreferenceDataStoreFactory.create(scope = storeScope) {
+                File(tempFolder.newFolder(), "run.preferences_pb")
+            },
+        )
+        val runStore = QualificationRunStore(AppDataStore(flaky), SerializationModule.json())
+        val evidenceStore = deps.qualificationEvidenceStore()
+        val runner = runner(StandardTestDispatcher(TestCoroutineScheduler()), runStore = runStore)
+        runBlocking {
+            runStore.put(
+                record(runId = "run-7", token = "token-7").copy(
+                    buildIdentity = deps.buildIdentity().current(),
+                    phase = RunPhase.CUT_2,
+                    signal = FlowSignal.COUNTER,
+                    observedHoldPercent = 70,
+                ),
+            )
+
+            // The claim spends the last write; the evidence store has its own, so the pass lands and
+            // then the clear and the release both fail.
+            flaky.writeBudget = 1
+            runCatching { runner.finish(RunTerminal.Passed) }
+
+            flaky.writeBudget = FlakyStore.UNLIMITED
+            (evidenceStore.currentState() is QualificationEvidenceState.Present) shouldBe true
+            // Only the replay may put this back, so a stale value cannot be what the assertion reads.
+            runner.clearResult()
+
+            runCatching { runner.onTick(RawQualificationTick(sessionActive = false)) }
+
+            runner.lastResult.value?.terminal shouldBe RunTerminal.Passed
+            runStore.currentRun() shouldBe null
+            val state = evidenceStore.currentState()
+            (state as QualificationEvidenceState.Present).evidence.capPercent shouldBe 70
+        }
+    }
+
+    /** The same for a refutation, which is terminal: dropping it would hand control back for good. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `a refutation interrupted after its evidence write is replayed as a refutation`() {
+        val flaky = FlakyStore(
+            PreferenceDataStoreFactory.create(scope = storeScope) {
+                File(tempFolder.newFolder(), "run.preferences_pb")
+            },
+        )
+        val runStore = QualificationRunStore(AppDataStore(flaky), SerializationModule.json())
+        val enforcementStore = deps.enforcementEvidenceStore()
+        val runner = runner(StandardTestDispatcher(TestCoroutineScheduler()), runStore = runStore)
+        runBlocking {
+            runStore.put(
+                record(runId = "run-8", token = "token-8").copy(
+                    buildIdentity = deps.buildIdentity().current(),
+                    phase = RunPhase.CUT_1,
+                    signal = FlowSignal.COUNTER,
+                    observedHoldPercent = 75,
+                ),
+            )
+
+            flaky.writeBudget = 1
+            runCatching { runner.finish(RunTerminal.Refuted) }
+
+            flaky.writeBudget = FlakyStore.UNLIMITED
+            runner.clearResult()
+
+            runCatching { runner.onTick(RawQualificationTick(sessionActive = false)) }
+
+            runner.lastResult.value?.terminal shouldBe RunTerminal.Refuted
+            runStore.currentRun() shouldBe null
+            val state = enforcementStore.currentState()
+            (state as EnforcementEvidenceState.Present).evidence.verdict shouldBe EnforcementVerdict.REFUTED
+            state.evidence.observedPercent shouldBe 75
+        }
+    }
+
+    /**
+     * A record claimed by a build that had no intent to write down. There is nothing to replay, so the
+     * close-out keeps saying what it can honestly say: a finalization started and did not finish.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `a claim with no recorded outcome still closes out as interrupted`() {
+        val runStore = deps.runStore()
+        val runner = runner(StandardTestDispatcher(TestCoroutineScheduler()), runStore = runStore)
+        runBlocking {
+            runStore.put(
+                record(runId = "run-9", token = "token-9").copy(
+                    phase = RunPhase.BASELINE,
+                    finalizing = true,
+                ),
+            )
+
+            runCatching { runner.onTick(RawQualificationTick(sessionActive = false)) }
+
+            runner.lastResult.value?.terminal shouldBe RunTerminal.Aborted(AbortReason.FINALIZATION_INTERRUPTED)
+            runStore.currentRun() shouldBe null
+        }
+    }
+
+    /**
+     * A process death between deciding a terminal and writing it out is the same interruption as a
+     * failed store write, and gets the same answer. The measurement was over and the verdict durably
+     * decided before the death, so the run finishes here rather than becoming
+     * [AbortReason.PROCESS_DEATH] — which for a refutation would leave the device holding control it
+     * demonstrably does not honour.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `a foreign record carrying an outcome is replayed rather than aborted`() {
+        val runStore = deps.runStore()
+        // Never advanced, so the runner's own startup repair cannot be what closes the record out.
+        val runner = runner(StandardTestDispatcher(TestCoroutineScheduler()), runStore = runStore)
+        runBlocking {
+            runStore.put(
+                record(runId = "run-10", token = "token-10").copy(
+                    buildIdentity = deps.buildIdentity().current(),
+                    phase = RunPhase.CUT_2,
+                    signal = FlowSignal.COUNTER,
+                    observedHoldPercent = 70,
+                    finalizing = true,
+                    finalization = FinalizationIntent.of(RunTerminal.Passed, 1_700_000_000_000L),
+                    provenance = WorkProvenance(
+                        token = "a-dead-process",
+                        pid = 2,
+                        bootCount = 1,
+                        createdAtMillis = 1_000L,
+                    ),
+                ),
+            )
+
+            runCatching { runner.onTick(RawQualificationTick(sessionActive = false)) }
+
+            runner.lastResult.value?.terminal shouldBe RunTerminal.Passed
+            runStore.currentRun() shouldBe null
+            val state = deps.qualificationEvidenceStore().currentState()
+            // Stamped from the decision, not from this process's clock, so a replay is byte-identical.
+            (state as QualificationEvidenceState.Present).evidence.completedAtWallMillis shouldBe
+                1_700_000_000_000L
         }
     }
 

@@ -31,6 +31,85 @@ data class PhaseRecord(
     @SerialName("ratePerHour") val ratePerHour: Long = 0L,
 )
 
+/** Which of [RunTerminal]'s four shapes a claimed finalization decided on. */
+@Serializable
+enum class TerminalKind {
+    @SerialName("PASSED")
+    PASSED,
+
+    @SerialName("REFUTED")
+    REFUTED,
+
+    @SerialName("INCONCLUSIVE")
+    INCONCLUSIVE,
+
+    @SerialName("ABORTED")
+    ABORTED,
+}
+
+/**
+ * The terminal a finalization already decided on, persisted with the claim that decided it.
+ *
+ * Finalization is four durable steps — restore, evidence, publish, clear — and any of them can fail
+ * halfway. Without this the only thing on disk is "a finalization started", so recovery has to invent
+ * a substitute outcome: the user is told nothing was recorded while the evidence that licenses (or
+ * permanently withholds) charge control is already written. Recorded here, every recovery path
+ * *replays* the outcome the run actually decided instead of contradicting it.
+ *
+ * A terminal is decided once and never recomputed. A later tick's readings describe a different
+ * instant, and the measurement that produced this verdict is over.
+ */
+@Serializable
+data class FinalizationIntent(
+    /** Defaults to the one kind that can never claim more than was proven. */
+    @SerialName("kind") val kind: TerminalKind = TerminalKind.ABORTED,
+    @SerialName("inconclusiveReason") val inconclusiveReason: InconclusiveReason? = null,
+    @SerialName("abortReason") val abortReason: AbortReason? = null,
+    /** When the terminal was decided, so a replay writes the same evidence rather than a later one. */
+    @SerialName("decidedAtWallMillis") val decidedAtWallMillis: Long = 0L,
+) {
+
+    /**
+     * The terminal this intent stands for, or null when it carries none — a truncated or hand-edited
+     * record whose reason went missing. Null deliberately means "no usable intent" rather than a
+     * substitute reason: every caller already has the fallback that belongs to its own situation, and
+     * inventing one here would put a reason on the record that nothing ever decided. [TerminalKind.PASSED]
+     * and [TerminalKind.REFUTED] carry no reason and so can never malform.
+     */
+    fun toTerminal(): RunTerminal? = when (kind) {
+        TerminalKind.PASSED -> RunTerminal.Passed
+        TerminalKind.REFUTED -> RunTerminal.Refuted
+        TerminalKind.INCONCLUSIVE -> inconclusiveReason?.let { RunTerminal.Inconclusive(it) }
+        TerminalKind.ABORTED -> abortReason?.let { RunTerminal.Aborted(it) }
+    }
+
+    companion object {
+        fun of(terminal: RunTerminal, decidedAtWallMillis: Long): FinalizationIntent = when (terminal) {
+            is RunTerminal.Passed -> FinalizationIntent(
+                kind = TerminalKind.PASSED,
+                decidedAtWallMillis = decidedAtWallMillis,
+            )
+
+            is RunTerminal.Refuted -> FinalizationIntent(
+                kind = TerminalKind.REFUTED,
+                decidedAtWallMillis = decidedAtWallMillis,
+            )
+
+            is RunTerminal.Inconclusive -> FinalizationIntent(
+                kind = TerminalKind.INCONCLUSIVE,
+                inconclusiveReason = terminal.reason,
+                decidedAtWallMillis = decidedAtWallMillis,
+            )
+
+            is RunTerminal.Aborted -> FinalizationIntent(
+                kind = TerminalKind.ABORTED,
+                abortReason = terminal.reason,
+                decidedAtWallMillis = decidedAtWallMillis,
+            )
+        }
+    }
+}
+
 /**
  * The run Amply is in the middle of, held as one record so its baseline, phase and provenance can
  * never be read as a mismatched set — the same reasoning as
@@ -100,6 +179,17 @@ data class QualificationRunRecord(
      * cannot change under a finalization that has already read it.
      */
     @SerialName("finalizing") val finalizing: Boolean = false,
+    /**
+     * The outcome the claim above decided on, so an interrupted finalization is replayed rather than
+     * replaced by an invented abort.
+     *
+     * Deliberately **not** what [finalizing] is derived from. A record written by a build without this
+     * field is claimed with no intent, and reading that as unclaimed would hand a half-finalized run
+     * back to the engine to measure — the one thing the claim exists to prevent. The invariant is the
+     * other way round: a claimed record has `finalizing = true`, and its intent is null only when an
+     * older build wrote it.
+     */
+    @SerialName("finalization") val finalization: FinalizationIntent? = null,
     @SerialName("phaseLog") val phaseLog: List<PhaseRecord> = emptyList(),
     @SerialName("provenance") val provenance: WorkProvenance? = null,
 )
@@ -162,13 +252,29 @@ class QualificationRunStore @Inject constructor(
     }
 
     /**
-     * Claim the record for finalization, returning it as it was at that instant, or null when there
-     * is nothing to claim — no run, or a finalization another caller already claimed.
+     * Claim the record for finalization and write the outcome down with the claim, returning the
+     * claimed record, or null when there is nothing to claim — no run, or a finalization another
+     * caller already claimed.
      *
      * One transaction, because a re-read at the top of the terminal path only narrows the window: the
      * restore that follows is slow, and a cancel committing during it would otherwise be neither
      * honoured (the terminal was already decided) nor preserved (the record is cleared at the end).
      * After this, [requestCancel] cannot commit, so what this returns is what the run ended as.
+     *
+     * **An intent already on the record is never overwritten.** It is what that run decided, possibly
+     * in a process that has since died; [proposed] is used only when there is none. That is what makes
+     * an interrupted finalization replayable rather than a fresh guess made from a later tick's
+     * readings.
+     *
+     * A *fresh* intent is resolved here, inside the same transaction that persists it: a committed
+     * cancel downgrades it to [AbortReason.USER_CANCELLED], a failed write to
+     * [AbortReason.WRITE_FAILED]. Resolving it anywhere else would let the persisted intent disagree
+     * with the downgrade actually applied. A *stored* intent was already downgraded at its own claim
+     * time and must not be downgraded twice.
+     *
+     * [merge] folds the closing measurement into the record, and runs **only for a fresh intent** —
+     * the outcome and the readings it was decided from are written down together. A record whose
+     * intent was already stored keeps the measurement stored with it.
      *
      * The claim is durable, so on its own it is a one-way latch: a process death between the claim and
      * the [clear] at the end of finalization — a window that spans a policy write, slow on a Shizuku
@@ -177,17 +283,41 @@ class QualificationRunStore @Inject constructor(
      * claims the stored record when its [QualificationRunRecord.runId] matches, **even if the record
      * is already claimed**, and refuses anything else — including an unclaimed record belonging to a
      * different run, which would be a newer run stolen rather than an abandoned one recovered. Only
-     * the startup repair may use it, and only for a record whose provenance is not this process's.
+     * the close-out paths may use it, and only for a record this process is not still finalizing.
      */
-    suspend fun claimForFinalization(reclaimRunId: String? = null): QualificationRunRecord? {
+    suspend fun claimForFinalization(
+        proposed: FinalizationIntent,
+        reclaimRunId: String? = null,
+        merge: (QualificationRunRecord) -> QualificationRunRecord = { it },
+    ): QualificationRunRecord? {
         var claimed: QualificationRunRecord? = null
         runValue.update { current ->
-            claimed = when {
+            val target = when {
                 current == null -> null
                 reclaimRunId != null -> current.takeIf { it.runId == reclaimRunId }
                 else -> current.takeIf { !it.finalizing }
             }
-            claimed?.copy(finalizing = true) ?: current
+            claimed = target?.let {
+                if (it.finalization != null) {
+                    it.copy(finalizing = true)
+                } else {
+                    val resolved = when {
+                        it.cancelled -> FinalizationIntent.of(
+                            RunTerminal.Aborted(AbortReason.USER_CANCELLED),
+                            proposed.decidedAtWallMillis,
+                        )
+
+                        it.writeFailed -> FinalizationIntent.of(
+                            RunTerminal.Aborted(AbortReason.WRITE_FAILED),
+                            proposed.decidedAtWallMillis,
+                        )
+
+                        else -> proposed
+                    }
+                    merge(it).copy(finalizing = true, finalization = resolved)
+                }
+            }
+            claimed ?: current
         }
         return claimed
     }
@@ -195,6 +325,11 @@ class QualificationRunStore @Inject constructor(
     /**
      * Give a finalization claim back after it failed, so the record can be finalized again instead of
      * being stuck claimed forever.
+     *
+     * It clears [QualificationRunRecord.finalizing] and **keeps the intent**: the release says "this
+     * attempt did not finish", not "the outcome was never decided". The outcome *was* decided, from a
+     * measurement that is over, and the next attempt has to replay it rather than recompute one from a
+     * later tick's readings.
      *
      * Guarded by [runId] inside the transaction, because the two things that legitimately happen while
      * a finalization is failing must not be undone by it: the record may already have been cleared (a
@@ -211,16 +346,19 @@ class QualificationRunStore @Inject constructor(
     /**
      * Mark the run cancelled; the runner turns that into an abort on its next tick.
      *
-     * Refused once finalization is claimed: the outcome is already being written out, and flagging a
-     * record that is about to be cleared would only lose the cancel silently.
+     * Refused once finalization is claimed *or* an outcome is written down: the outcome is already
+     * decided, and flagging a record whose terminal is only waiting to be replayed would lose the
+     * cancel silently.
      */
     suspend fun requestCancel() {
-        runValue.update { if (it == null || it.finalizing) it else it.copy(cancelled = true) }
+        runValue.update { if (it == null || it.finalizing || it.finalization != null) it else it.copy(cancelled = true) }
     }
 
     /** Record that the last commanded write failed, so the next tick aborts rather than measuring. */
     suspend fun markWriteFailed() {
-        runValue.update { if (it == null || it.finalizing) it else it.copy(writeFailed = true) }
+        runValue.update {
+            if (it == null || it.finalizing || it.finalization != null) it else it.copy(writeFailed = true)
+        }
     }
 
     private companion object {
