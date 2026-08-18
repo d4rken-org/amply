@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -24,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -44,14 +46,21 @@ import eu.darken.amply.common.compose.chart.Sparkline
  * recorded to open. The chevron is therefore never decorative — it appears exactly where a tap does
  * something.
  *
+ * The value area is a floor, not a fixed height: a value too long for one line wraps to a second
+ * rather than being clipped ("Plugged in, n…" on a Pixel 7a), with ellipsis left as the last resort.
+ * Numbers never wrap, so the ordinary tile is unchanged. [valueStyle] exists for the values that are
+ * state labels rather than measurements — they are legitimately secondary to the numbers, and a
+ * smaller style buys the wrapped label room.
+ *
  * Tiles are laid out by [BatteryStatTileRow], which sizes both tiles in a row to the taller one so a
- * wrapped label can't stagger the grid.
+ * wrapped label or value can't stagger the grid.
  */
 @Composable
 fun BatteryStatTile(
     label: String,
     value: String,
     modifier: Modifier = Modifier,
+    valueStyle: TextStyle = MaterialTheme.typography.headlineSmall,
     icon: ImageVector? = null,
     sparkline: List<ChartPoint> = emptyList(),
     accentColor: Color = MaterialTheme.colorScheme.primary,
@@ -90,7 +99,7 @@ fun BatteryStatTile(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(VALUE_HEIGHT),
+                .heightIn(min = VALUE_HEIGHT),
             contentAlignment = Alignment.CenterStart,
         ) {
             // Behind the value, and dimmed: the number is the point of the tile, the shape is context.
@@ -102,8 +111,8 @@ fun BatteryStatTile(
             )
             Text(
                 value,
-                style = MaterialTheme.typography.headlineSmall,
-                maxLines = 1,
+                style = valueStyle,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
         }

@@ -234,6 +234,10 @@ private fun StatTileGrid(
                 label = stringResource(R.string.battery_detail_status),
                 value = stringResource(batteryStatusLabel(readout.status, readout.plugged)),
                 modifier = tile,
+                // A state label, not a measurement: it is the one tile whose value is a sentence
+                // ("Plugged in, not charging"), so it reads a step smaller than the numbers and wraps
+                // into the room that buys instead of being clipped.
+                valueStyle = MaterialTheme.typography.titleMedium,
             )
         }
     }

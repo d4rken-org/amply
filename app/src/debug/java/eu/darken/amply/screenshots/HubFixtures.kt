@@ -50,9 +50,12 @@ internal fun HubTileGridContent() = PreviewWrapper {
 }
 
 // Recording on but nothing recorded yet: the same six tiles, live values only, none navigable.
+// Held at a limit while plugged in, so this shot also carries the longest status value there is —
+// it has to wrap inside its tile rather than end in an ellipsis.
 @Composable
 internal fun HubTileGridEmptyContent() = PreviewWrapper {
     HubShot(
+        readout = hubHeldReadout,
         curve = emptyList(),
         teaser = ChargeTeaserState.None,
         chargeTime = ChargeTimeState.NotEnoughData(sessions = 0),
@@ -132,10 +135,11 @@ internal val chargeTimeEstimate = ChargeTimeEstimate(
 @Composable
 private fun HubShot(
     curve: List<ChargeCurvePoint>,
+    readout: BatteryReadout = hubReadout,
     teaser: ChargeTeaserState = ChargeTeaserState.Last(hubLastSession),
     chargeTime: ChargeTimeState = ChargeTimeState.Loading,
 ) = BatteryHubScreen(
-    readout = hubReadout,
+    readout = readout,
     captureEnabled = true,
     teaser = teaser,
     showProBadge = false,
@@ -162,6 +166,12 @@ internal val hubReadout = BatteryReadout(
     cycleCount = 142,
     maxChargingCurrentMicroamps = 2_000_000,
     maxChargingVoltageMicrovolts = 9_000_000,
+)
+
+/** The same battery, plugged in but not taking charge: the status tile's longest value. */
+internal val hubHeldReadout = hubReadout.copy(
+    status = BatteryManager.BATTERY_STATUS_NOT_CHARGING,
+    currentNowMicroamps = 0,
 )
 
 /** A rising level with a tapering current, a warming battery, and a deliberately flat voltage. */
