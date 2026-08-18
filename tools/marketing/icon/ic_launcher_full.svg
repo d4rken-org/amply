@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><defs>
+  <linearGradient id="charge" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#D6F94B"/>
+    <stop offset="1" stop-color="#1FD1C4"/>
+  </linearGradient>
+  <clipPath id="bodyClip"><path d="M120 262 H392 Q414 262 414 284 V326 Q414 436 304 436 H208 Q98 436 98 326 V284 Q98 262 120 262 Z"/></clipPath>
+</defs><rect width="512" height="512" fill="#F2F3F6"/><g transform="translate(256 256) scale(0.92) translate(-256 -256)">
+  <line x1="172" y1="116" x2="132" y2="60" stroke="#3DDC84" stroke-width="21" stroke-linecap="round"/>
+  <line x1="340" y1="116" x2="380" y2="60" stroke="#3DDC84" stroke-width="21" stroke-linecap="round"/>
+  <path d="M96 250 C96 150 164 96 256 96 C348 96 416 150 416 250 Z" fill="#3DDC84"/>
+  <circle cx="196" cy="182" r="23" fill="#FFFFFF"/>
+  <circle cx="316" cy="182" r="23" fill="#FFFFFF"/>
+  <rect x="226" y="248" width="60" height="18" rx="7" fill="#33406E"/>
+  <path d="M120 262 H392 Q414 262 414 284 V326 Q414 436 304 436 H208 Q98 436 98 326 V284 Q98 262 120 262 Z" fill="#1E2B58"/>
+  <g clip-path="url(#bodyClip)"><path d="M98 378 C136 364 176 364 218 378 C260 392 300 392 342 378 C376 367 398 368 414 376 V436 H98 Z" fill="url(#charge)"/></g>
+  <path d="M272 282 L220 352 H252 L238 402 L296 330 H258 L284 282 Z" fill="#FFFFFF"/>
+<g fill="#F6D344">
+  <path d="M414 40 Q417 57 434 60 Q417 63 414 80 Q411 63 394 60 Q411 57 414 40 Z"/>
+  <path d="M442 92 Q444 102 454 104 Q444 106 442 116 Q440 106 430 104 Q440 102 442 92 Z" fill="#F9E48B"/>
+</g></g></svg>
