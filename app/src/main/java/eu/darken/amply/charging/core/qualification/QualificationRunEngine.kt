@@ -288,6 +288,12 @@ object QualificationRunEngine {
     /**
      * Measure the control over a bounded window: how fast charge goes in with the cap lifted, and how
      * often this device is willing to say so.
+     *
+     * The window **is** the budget here, unlike every other measured phase: at
+     * [BASELINE_WINDOW_MILLIS] the measurement is either usable or it is not, so a device that never
+     * produces a control ends [InconclusiveReason.NO_BASELINE] (or
+     * [InconclusiveReason.SIGNAL_TOO_COARSE]) at ten minutes. There is no separate
+     * [PHASE_BUDGET_MILLIS] escape to reach.
      */
     private fun baseline(progress: QualificationProgress, sample: QualificationSample): QualificationOutcome {
         val elapsed = sample.nowMillis - progress.windowAnchoredAt
@@ -310,12 +316,6 @@ object QualificationRunEngine {
             }
             val measured = progress.copy(baselineRatePerHour = rate)
             return enterPhase(measured, sample, RunPhase.CUT_1, ChargePolicy.FixedLimit(progress.lowCap))
-        }
-        if (elapsed >= PHASE_BUDGET_MILLIS) {
-            return QualificationOutcome(
-                progress,
-                terminal = RunTerminal.Inconclusive(InconclusiveReason.NO_BASELINE),
-            )
         }
         return QualificationOutcome(progress)
     }
