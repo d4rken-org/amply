@@ -316,6 +316,12 @@ class QualificationRunner @Inject constructor(
      * It also publishes the first accurate [runActiveNow], under the same lock a start takes, so the
      * flag's pessimistic initial `true` cannot be replaced by a `false` computed before a start that
      * has since committed.
+     *
+     * The close-out **reclaims** the record even when the dead process had already claimed it for
+     * finalization: dying mid-finalization is precisely the case this repair exists for, and without
+     * the forced claim the record would be permanently unfinalizable — a run that never ends, so no
+     * rule ever evaluates, no session ever starts, and the user's own policy is never restored. The
+     * provenance filter above is what keeps this from stealing a finalization still in flight *here*.
      */
     internal suspend fun startupRepair() {
         val stale = stateMutex.withLock {
@@ -324,7 +330,7 @@ class QualificationRunner @Inject constructor(
             record?.takeIf { it.provenance?.token != processIdentity.token }
         } ?: return
         log(TAG, Logging.Priority.WARN) { "Qualification run ${stale.runId} survived its process; closing it out" }
-        finish(RunTerminal.Aborted(AbortReason.PROCESS_DEATH))
+        finish(RunTerminal.Aborted(AbortReason.PROCESS_DEATH), reclaimRunId = stale.runId)
     }
 
     private suspend fun onTick(tick: RawQualificationTick) {
@@ -392,6 +398,15 @@ class QualificationRunner @Inject constructor(
      * decides the outcome. A cancel (or a failed write) that committed before the claim downgrades
      * the terminal, even one already computed as a pass; one arriving after cannot commit at all. The
      * direction is safe by construction: a downgrade never turns an abort into a pass.
+     *
+     * A failure inside [finalize] **gives the claim back**. The claim is durable, so leaving it held
+     * after a throw would make the record unfinalizable for the rest of this process's life while
+     * still reading as a live run — the run would never end and the user's own policy would never be
+     * restored. The release is guarded by the run id, so it can neither resurrect a record
+     * finalization already cleared nor unclaim a later run.
+     *
+     * [reclaimRunId] is for the startup repair alone: a record abandoned mid-finalization by a dead
+     * process is claimed already, and closing it out is the only way it ever ends.
      */
     internal suspend fun finish(
         terminal: RunTerminal,
@@ -399,8 +414,9 @@ class QualificationRunner @Inject constructor(
         phaseRatePerHour: Long = 0L,
         exitPercent: Int = -1,
         exitCounter: Int? = null,
+        reclaimRunId: String? = null,
     ) {
-        val record = runStore.claimForFinalization()
+        val record = runStore.claimForFinalization(reclaimRunId)
         if (record == null) {
             log(TAG, Logging.Priority.WARN) { "Nothing to finalize for $terminal; the run is already being closed out" }
             return
@@ -413,7 +429,14 @@ class QualificationRunner @Inject constructor(
         if (effective != terminal) {
             log(TAG, Logging.Priority.INFO) { "Run ${record.runId} outcome downgraded from $terminal to $effective" }
         }
-        finalize(record, effective, progress, phaseRatePerHour, exitPercent, exitCounter)
+        try {
+            finalize(record, effective, progress, phaseRatePerHour, exitPercent, exitCounter)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log(TAG, Logging.Priority.ERROR) { "Run ${record.runId} finalization failed: ${e.message}" }
+            runStore.releaseFinalizationClaim(record.runId)
+        }
     }
 
     private suspend fun finalize(

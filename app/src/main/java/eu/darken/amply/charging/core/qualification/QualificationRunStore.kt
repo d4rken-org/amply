@@ -169,14 +169,43 @@ class QualificationRunStore @Inject constructor(
      * restore that follows is slow, and a cancel committing during it would otherwise be neither
      * honoured (the terminal was already decided) nor preserved (the record is cleared at the end).
      * After this, [requestCancel] cannot commit, so what this returns is what the run ended as.
+     *
+     * The claim is durable, so on its own it is a one-way latch: a process death between the claim and
+     * the [clear] at the end of finalization — a window that spans a policy write, slow on a Shizuku
+     * adapter — would leave a record nothing could ever finalize again, and a permanently claimed
+     * record is a permanently "running" run. [reclaimRunId] is the way back out: passed non-null it
+     * claims the stored record when its [QualificationRunRecord.runId] matches, **even if the record
+     * is already claimed**, and refuses anything else — including an unclaimed record belonging to a
+     * different run, which would be a newer run stolen rather than an abandoned one recovered. Only
+     * the startup repair may use it, and only for a record whose provenance is not this process's.
      */
-    suspend fun claimForFinalization(): QualificationRunRecord? {
+    suspend fun claimForFinalization(reclaimRunId: String? = null): QualificationRunRecord? {
         var claimed: QualificationRunRecord? = null
         runValue.update { current ->
-            claimed = current?.takeIf { !it.finalizing }
+            claimed = when {
+                current == null -> null
+                reclaimRunId != null -> current.takeIf { it.runId == reclaimRunId }
+                else -> current.takeIf { !it.finalizing }
+            }
             claimed?.copy(finalizing = true) ?: current
         }
         return claimed
+    }
+
+    /**
+     * Give a finalization claim back after it failed, so the record can be finalized again instead of
+     * being stuck claimed forever.
+     *
+     * Guarded by [runId] inside the transaction, because the two things that legitimately happen while
+     * a finalization is failing must not be undone by it: the record may already have been cleared (a
+     * throw *after* [clear], the surface refresh being the obvious one) — there is then no record to
+     * resurrect — or a later run may already occupy the slot, whose own claim is not this caller's to
+     * release.
+     */
+    suspend fun releaseFinalizationClaim(runId: String) {
+        runValue.update { current ->
+            if (current?.runId == runId) current.copy(finalizing = false) else current
+        }
     }
 
     /**
