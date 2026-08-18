@@ -4,6 +4,9 @@ import android.app.Notification
 import android.content.Context
 import android.content.Intent
 import android.os.BatteryManager
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.Preferences
 import androidx.test.core.app.ApplicationProvider
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
@@ -18,7 +21,9 @@ import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingRepository
 import eu.darken.amply.charging.core.enforcement.BuildIdentitySource
 import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceStore
+import eu.darken.amply.common.AppDataStore
 import eu.darken.amply.common.debug.logging.Logging
+import eu.darken.amply.common.serialization.SerializationModule
 import eu.darken.amply.fullcharge.core.BootCountProvider
 import eu.darken.amply.fullcharge.core.ChargeSessionService
 import eu.darken.amply.fullcharge.core.FullChargeStore
@@ -30,20 +35,27 @@ import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.withTimeoutOrNull
+import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.io.File
+import java.io.IOException
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
@@ -64,6 +76,8 @@ class QualificationRunnerContractTest {
 
     @get:Rule val hiltRule = HiltAndroidRule(this)
 
+    @get:Rule val tempFolder = TemporaryFolder()
+
     @EntryPoint
     @InstallIn(SingletonComponent::class)
     interface Deps {
@@ -81,6 +95,14 @@ class QualificationRunnerContractTest {
 
     private val context: Context = ApplicationProvider.getApplicationContext()
     private lateinit var deps: Deps
+
+    /** Only for the flaky-store case below; the rest run on the injected stores. */
+    private val storeScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    @After
+    fun teardown() {
+        storeScope.cancel()
+    }
 
     @Before
     fun setup() {
@@ -320,6 +342,72 @@ class QualificationRunnerContractTest {
         }
     }
 
+    /**
+     * The same permanent wedge again, this time with nothing cancelled and nobody dead. Finalization
+     * clears the record and the `finally` gives the claim back — **both are store writes**, so a store
+     * that cannot be written loses them together. The record is then claimed with this process's own
+     * provenance: startup repair skips it (not foreign), every ordinary terminal path refuses it
+     * (already claimed), and nothing retries once the store recovers. The app would read a run as live
+     * for the rest of the process's life — rules suspended, no session, no further run, and the
+     * baseline this run owes never restored.
+     *
+     * So a claimed record is close-out-only on the next tick, which is the retry the store recovery has
+     * no other way of reaching.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `a claim left behind by a failed release is closed out by the next tick`() {
+        val flaky = FlakyStore(
+            PreferenceDataStoreFactory.create(scope = storeScope) {
+                File(tempFolder.newFolder(), "run.preferences_pb")
+            },
+        )
+        val runStore = QualificationRunStore(AppDataStore(flaky), SerializationModule.json())
+        // Never advanced, so the runner's own startup repair cannot be what closes the record out —
+        // and it would not anyway: the record carries this process's provenance.
+        val runner = runner(StandardTestDispatcher(TestCoroutineScheduler()), runStore = runStore)
+        runBlocking {
+            runStore.put(record(runId = "run-6", token = "token-6").copy(phase = RunPhase.BASELINE))
+
+            // One write left, then the store is full: the claim commits, and everything finalization
+            // wants to write after it — clearing the record, and the `finally` handing the claim back —
+            // fails.
+            flaky.writeBudget = 1
+            runCatching { runner.finish(RunTerminal.Aborted(AbortReason.RUN_CEILING)) }
+
+            flaky.writeBudget = FlakyStore.UNLIMITED
+            runStore.currentRun()?.finalizing shouldBe true
+            // A recovered store changes nothing on its own: the ordinary terminal path is still refused.
+            runStore.claimForFinalization() shouldBe null
+
+            // Contained like the cases above: the surface push at the very end of finalization cannot
+            // complete in this environment, and everything asserted here is decided before it.
+            runCatching { runner.onTick(RawQualificationTick(sessionActive = false)) }
+
+            runner.lastResult.value?.terminal shouldBe RunTerminal.Aborted(AbortReason.FINALIZATION_INTERRUPTED)
+            // Closed out as it was found: the engine was never asked to judge a half-finalized record.
+            runner.lastResult.value?.record?.phase shouldBe RunPhase.BASELINE
+            runStore.currentRun() shouldBe null
+        }
+    }
+
+    /** A store that stops accepting writes once its [writeBudget] runs out, the way a full one does. */
+    private class FlakyStore(private val delegate: DataStore<Preferences>) : DataStore<Preferences> {
+        @Volatile var writeBudget: Int = UNLIMITED
+
+        override val data: Flow<Preferences> get() = delegate.data
+
+        override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences {
+            if (writeBudget == 0) throw IOException("No space left on device")
+            if (writeBudget > 0) writeBudget--
+            return delegate.updateData(transform)
+        }
+
+        companion object {
+            const val UNLIMITED = -1
+        }
+    }
+
     /** Runs one dispatched continuation at a time, so a cancellation can be placed exactly. */
     private class StepDispatcher : kotlinx.coroutines.CoroutineDispatcher() {
         private val queued = LinkedBlockingQueue<Runnable>()
@@ -353,10 +441,13 @@ class QualificationRunnerContractTest {
         return condition()
     }
 
-    private fun runner(dispatcher: kotlinx.coroutines.CoroutineDispatcher) = QualificationRunner(
+    private fun runner(
+        dispatcher: kotlinx.coroutines.CoroutineDispatcher,
+        runStore: QualificationRunStore = deps.runStore(),
+    ) = QualificationRunner(
         context = context,
         repository = deps.repository(),
-        runStore = deps.runStore(),
+        runStore = runStore,
         evidenceStore = deps.qualificationEvidenceStore(),
         enforcementStore = deps.enforcementEvidenceStore(),
         fullChargeStore = deps.fullChargeStore(),

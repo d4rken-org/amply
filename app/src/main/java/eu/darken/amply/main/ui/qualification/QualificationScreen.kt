@@ -323,6 +323,7 @@ internal fun RunTerminal?.bodyRes(): Int = when (this) {
         AbortReason.RUN_CEILING -> R.string.qualification_result_ceiling_body
         AbortReason.PROCESS_DEATH -> R.string.qualification_result_process_death_body
         AbortReason.SERVICE_UNAVAILABLE -> R.string.qualification_result_service_unavailable_body
+        AbortReason.FINALIZATION_INTERRUPTED -> R.string.qualification_result_finalization_body
     }
 
     null -> R.string.qualification_result_inconclusive_title

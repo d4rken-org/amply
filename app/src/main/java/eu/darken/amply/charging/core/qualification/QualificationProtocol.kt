@@ -188,6 +188,14 @@ enum class AbortReason {
      */
     @SerialName("SERVICE_UNAVAILABLE")
     SERVICE_UNAVAILABLE,
+
+    /**
+     * A finalization did not get to clear the run, and could not give its claim back either — both are
+     * store writes, and a full or failing store takes them together. The record is closed out by the
+     * next tick rather than left claimed, which would read as a run that never ends.
+     */
+    @SerialName("FINALIZATION_INTERRUPTED")
+    FINALIZATION_INTERRUPTED,
 }
 
 /** How the run ended. */
