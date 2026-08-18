@@ -203,6 +203,40 @@ class QualificationRunnerContractTest {
         runStore.currentRun() shouldBe null
     }
 
+    /**
+     * The finalization claim is durable, and a process can die between taking it and clearing the
+     * record — a window that spans a policy write, slow on a Shizuku adapter. Left alone, that record
+     * is permanent: every terminal path finds it already claimed and returns, so the run reads as
+     * running forever, charge rules never evaluate again, no session or further run can start, and the
+     * baseline the run owes is never restored. Startup repair therefore reclaims it by run id.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `a run abandoned mid-finalization by a dead process is reclaimed and closed out`() {
+        val runStore = deps.runStore()
+        // The scheduler is deliberately never advanced: the runner's own startup repair stays queued,
+        // so what this asserts is one repair, invoked here, rather than a race between two.
+        val runner = runner(StandardTestDispatcher(TestCoroutineScheduler()))
+        runBlocking {
+            runStore.put(
+                record(runId = "run-3", token = "token-3").copy(
+                    finalizing = true,
+                    provenance = WorkProvenance(
+                        token = "a-dead-process",
+                        pid = 2,
+                        bootCount = 1,
+                        createdAtMillis = 1_000L,
+                    ),
+                ),
+            )
+
+            runner.startupRepair()
+
+            runStore.currentRun() shouldBe null
+            runner.isRunning() shouldBe false
+        }
+    }
+
     private fun runner(dispatcher: kotlinx.coroutines.CoroutineDispatcher) = QualificationRunner(
         context = context,
         repository = deps.repository(),

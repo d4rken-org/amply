@@ -155,6 +155,78 @@ class QualificationRunStoreTest {
         store.claimForFinalization() shouldBe null
     }
 
+    /**
+     * The claim is durable, so a process that dies mid-finalization leaves one behind. Without a way
+     * to take it back the record could never be finalized again — and a record that never finalizes
+     * is a run that never ends: rules stay suspended, sessions are refused, the baseline is never
+     * restored. Only the startup repair asks for this, and only for another process's record.
+     */
+    @Test
+    fun `a forced reclaim takes back a claim left behind by a dead process`() = runTest {
+        store.put(record())
+        store.claimForFinalization() shouldNotBe null
+
+        val reclaimed = store.claimForFinalization(reclaimRunId = "run-1")!!
+
+        reclaimed.runId shouldBe "run-1"
+        reclaimed.baseline shouldBe ChargePolicy.FixedLimit(80)
+        store.currentRun()!!.finalizing shouldBe true
+    }
+
+    @Test
+    fun `an unforced claim still refuses an already-claimed record`() = runTest {
+        store.put(record())
+        store.claimForFinalization() shouldNotBe null
+
+        store.claimForFinalization() shouldBe null
+    }
+
+    /**
+     * The force is scoped to the one record it was asked for: a run that started after the stale one
+     * was read is a live run, not an abandoned claim, and finalizing it would abort it.
+     */
+    @Test
+    fun `a forced reclaim refuses a different run`() = runTest {
+        store.put(record())
+
+        store.claimForFinalization(reclaimRunId = "run-other") shouldBe null
+
+        store.currentRun()!!.finalizing shouldBe false
+    }
+
+    @Test
+    fun `releasing a failed claim lets the record be finalized again`() = runTest {
+        store.put(record())
+        store.claimForFinalization() shouldNotBe null
+
+        store.releaseFinalizationClaim("run-1")
+
+        store.currentRun()!!.finalizing shouldBe false
+        store.claimForFinalization() shouldNotBe null
+    }
+
+    @Test
+    fun `releasing a claim does not touch a different run's record`() = runTest {
+        store.put(record())
+        store.claimForFinalization() shouldNotBe null
+
+        store.releaseFinalizationClaim("run-other")
+
+        store.currentRun()!!.finalizing shouldBe true
+    }
+
+    /** A throw after the record was cleared must not put the finished run back. */
+    @Test
+    fun `releasing a claim on a cleared record resurrects nothing`() = runTest {
+        store.put(record())
+        store.claimForFinalization() shouldNotBe null
+        store.clear()
+
+        store.releaseFinalizationClaim("run-1")
+
+        store.currentRun() shouldBe null
+    }
+
     @Test
     fun `an acknowledged write is stamped on the record`() = runTest {
         store.put(record())
