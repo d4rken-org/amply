@@ -6,8 +6,13 @@
 package eu.darken.amply.screenshots
 
 import android.os.BatteryManager
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
 import eu.darken.amply.battery.core.BatteryReadout
 import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.main.ui.battery.BatteryHubScreen
@@ -15,11 +20,16 @@ import eu.darken.amply.main.ui.battery.BatteryMetric
 import eu.darken.amply.main.ui.battery.BatteryMetricDetailScreen
 import eu.darken.amply.main.ui.battery.BatteryMetricDetailState
 import eu.darken.amply.main.ui.battery.ChargeTeaserState
+import eu.darken.amply.main.ui.battery.ChargeTimeCard
+import eu.darken.amply.stats.core.ChargeBandSplit
 import eu.darken.amply.stats.core.ChargeCurvePoint
 import eu.darken.amply.stats.core.ChargeSessionSummary
+import eu.darken.amply.stats.core.ChargeTimeBasis
+import eu.darken.amply.stats.core.ChargeTimeEstimate
 import eu.darken.amply.stats.core.ChargingType
 import eu.darken.amply.stats.core.MetricStats
 import eu.darken.amply.stats.core.StatsSealReason
+import eu.darken.amply.stats.ui.ChargeTimeState
 
 // -- Content composables (one per screenshot) --------------------------------------------------
 
@@ -27,13 +37,25 @@ import eu.darken.amply.stats.core.StatsSealReason
 // voltage — recorded but flat — deliberately carries none while still being tappable.
 @Composable
 internal fun HubTileGridContent() = PreviewWrapper {
-    HubShot(curve = hubCurve())
+    HubShot(
+        curve = hubCurve(),
+        chargeTime = ChargeTimeState.Ready(
+            estimate = chargeTimeEstimate,
+            basis = ChargeTimeBasis.SAME_TYPE,
+            charging = true,
+            currentPercent = 82,
+        ),
+    )
 }
 
 // Recording on but nothing recorded yet: the same six tiles, live values only, none navigable.
 @Composable
 internal fun HubTileGridEmptyContent() = PreviewWrapper {
-    HubShot(curve = emptyList(), teaser = ChargeTeaserState.None)
+    HubShot(
+        curve = emptyList(),
+        teaser = ChargeTeaserState.None,
+        chargeTime = ChargeTimeState.NotEnoughData(sessions = 0),
+    )
 }
 
 // One metric of one session: its latest value, its curve on a real axis, and the statistics taken
@@ -51,12 +73,66 @@ internal fun MetricDetailContent() = PreviewWrapper {
     )
 }
 
+// The charge-time card with a full projection: a countdown while charging, the three figures, the
+// where-the-time-goes bar, and the taper note.
+@Composable
+internal fun ChargeTimeReadyContent() = PreviewWrapper {
+    Column(
+        modifier = Modifier.padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        ChargeTimeCard(
+            state = ChargeTimeState.Ready(
+                estimate = chargeTimeEstimate,
+                basis = ChargeTimeBasis.SAME_TYPE,
+                charging = true,
+                currentPercent = 42,
+            ),
+        )
+        // The same figures off the charger: a reference, never a countdown.
+        ChargeTimeCard(
+            state = ChargeTimeState.Ready(
+                estimate = chargeTimeEstimate,
+                basis = ChargeTimeBasis.POOLED,
+                charging = false,
+                currentPercent = 42,
+            ),
+        )
+    }
+}
+
+// Recording is on but too little has been observed to project anything yet.
+@Composable
+internal fun ChargeTimeNotEnoughContent() = PreviewWrapper {
+    Column(
+        modifier = Modifier.padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        ChargeTimeCard(state = ChargeTimeState.NotEnoughData(sessions = 1))
+        ChargeTimeCard(state = ChargeTimeState.Loading)
+        ChargeTimeCard(state = ChargeTimeState.Unavailable)
+    }
+}
+
 // -- Shared renderer + fixtures ----------------------------------------------------------------
+
+internal val chargeTimeEstimate = ChargeTimeEstimate(
+    toEightyMillis = 2_040_000,
+    toFullMillis = 4_740_000,
+    avgSpeedMilliwatts = 11_500,
+    split = ChargeBandSplit(
+        toFiftyMillis = 2_700_000,
+        fiftyToEightyMillis = 1_800_000,
+        eightyToHundredMillis = 3_600_000,
+    ),
+    basedOnSessions = 6,
+)
 
 @Composable
 private fun HubShot(
     curve: List<ChargeCurvePoint>,
     teaser: ChargeTeaserState = ChargeTeaserState.Last(hubLastSession),
+    chargeTime: ChargeTimeState = ChargeTimeState.Loading,
 ) = BatteryHubScreen(
     readout = hubReadout,
     captureEnabled = true,
@@ -68,6 +144,7 @@ private fun HubShot(
     onOpenSession = {},
     onOpenMetric = {},
     curve = curve,
+    chargeTime = chargeTime,
 )
 
 internal val hubReadout = BatteryReadout(
@@ -129,3 +206,11 @@ private fun PreviewHubTileGridEmpty() = HubTileGridEmptyContent()
 @Preview(name = "Metric detail", showBackground = true, device = DS)
 @Composable
 private fun PreviewMetricDetail() = MetricDetailContent()
+
+@Preview(name = "Charge time · ready", showBackground = true, device = DS)
+@Composable
+private fun PreviewChargeTimeReady() = ChargeTimeReadyContent()
+
+@Preview(name = "Charge time · not enough data", showBackground = true, device = DS)
+@Composable
+private fun PreviewChargeTimeNotEnough() = ChargeTimeNotEnoughContent()

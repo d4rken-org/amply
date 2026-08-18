@@ -2,7 +2,9 @@ package eu.darken.amply.main.ui.dashboard
 
 import android.app.Application
 import android.os.BatteryManager
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -10,10 +12,14 @@ import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import eu.darken.amply.R
 import eu.darken.amply.battery.core.BatteryReadout
+import eu.darken.amply.stats.core.ChargeBandSplit
 import eu.darken.amply.stats.core.ChargeCurvePoint
 import eu.darken.amply.stats.core.ChargeSessionSummary
+import eu.darken.amply.stats.core.ChargeTimeBasis
+import eu.darken.amply.stats.core.ChargeTimeEstimate
 import eu.darken.amply.stats.core.ChargingType
 import eu.darken.amply.stats.core.StatsLiveSession
+import eu.darken.amply.stats.ui.ChargeTimeState
 import io.kotest.matchers.shouldBe
 import org.junit.Rule
 import org.junit.Test
@@ -93,12 +99,31 @@ class ChargingCardTest {
         )
     }
 
+    private val chargeTimeEstimate = ChargeTimeEstimate(
+        toEightyMillis = 600_000,
+        toFullMillis = 4_740_000,
+        avgSpeedMilliwatts = 11_500,
+        split = ChargeBandSplit(),
+        basedOnSessions = 4,
+    )
+
+    private fun chargeTimeReady(
+        charging: Boolean = true,
+        estimate: ChargeTimeEstimate = chargeTimeEstimate,
+    ) = ChargeTimeState.Ready(
+        estimate = estimate,
+        basis = ChargeTimeBasis.SAME_TYPE,
+        charging = charging,
+        currentPercent = 78,
+    )
+
     private fun render(
         presentation: ChargingCardPresentation,
         readout: BatteryReadout? = charging,
         onOpenHub: () -> Unit = {},
         onRetryCapture: () -> Unit = {},
         nowElapsedRealtimeMillis: Long = 4_320_000L,
+        chargeTime: ChargeTimeState = ChargeTimeState.Loading,
     ) {
         compose.setContent {
             ChargingCard(
@@ -107,6 +132,7 @@ class ChargingCardTest {
                 onOpenHub = onOpenHub,
                 onRetryCapture = onRetryCapture,
                 nowElapsedRealtimeMillis = nowElapsedRealtimeMillis,
+                chargeTime = chargeTime,
             )
         }
     }
@@ -416,6 +442,47 @@ class ChargingCardTest {
         compose.mainClock.advanceTimeBy(61_000)
 
         compose.onNodeWithText("1m").assertExists()
+    }
+
+    @Test
+    fun `a live charge carries the remaining-time line`() {
+        render(ChargingCardPresentation.Live(session = liveSession), chargeTime = chargeTimeReady())
+        compose.onNodeWithText(string(R.string.charge_time_headline_full_countdown, "1h 19m")).assertExists()
+    }
+
+    @Test
+    fun `the remaining-time line is absent while the battery is not taking charge`() {
+        // Held at a limit: the session is live and the device is connected, but nothing is moving
+        // toward the target, so a countdown would be a false claim.
+        render(
+            ChargingCardPresentation.Live(session = liveSession),
+            readout = holding,
+            chargeTime = chargeTimeReady(charging = false),
+        )
+        compose.onAllNodesWithText(string(R.string.charge_time_headline_full_countdown, "1h 19m"))
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun `no target means no line rather than an empty one`() {
+        render(
+            ChargingCardPresentation.Live(session = liveSession),
+            chargeTime = chargeTimeReady(
+                estimate = chargeTimeEstimate.copy(toEightyMillis = null, toFullMillis = null),
+            ),
+        )
+        compose.onAllNodesWithText(string(R.string.charge_time_value_missing)).assertCountEquals(0)
+    }
+
+    @Test
+    fun `an idle card never carries a remaining-time line`() {
+        render(
+            ChargingCardPresentation.Idle(lastSession = lastSession, sessionCount = 3),
+            readout = unplugged,
+            chargeTime = chargeTimeReady(charging = false),
+        )
+        compose.onAllNodesWithText(string(R.string.charge_time_headline_full_countdown, "1h 19m"))
+            .assertCountEquals(0)
     }
 
     @Test

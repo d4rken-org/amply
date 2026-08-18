@@ -8,6 +8,7 @@ import eu.darken.amply.stats.core.db.StatsDatabase
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -97,6 +98,38 @@ class ChargeStatsRepository @Inject constructor(
         database.get().statsDao().recentSamplesForSession(id, LIVE_SAMPLE_WINDOW).map { samples ->
             StatsDownsampler.decimate(samples.toCurve(), maxPoints)
         }
+
+    /**
+     * The step samples of the most recent finished sessions, already reduced to what
+     * [ChargeBandExtractor] needs, plus each session's recorded average power (the estimator's
+     * "speed" figure is a median across these, not a recomputation).
+     *
+     * Suspending and one-shot on purpose: the charge-time model is an expensive fold that must run
+     * off the main thread, and nothing here may touch Room until it is actually called.
+     */
+    suspend fun bandObservations(sessionLimit: Int = DEFAULT_BAND_SESSION_LIMIT): BandObservationBatch {
+        val dao = database.get().statsDao()
+        val sessions = dao.finishedSessions(sessionLimit).first()
+        val observations = mutableListOf<BandObservation>()
+        val power = mutableMapOf<Long, Int>()
+        sessions.forEach { row ->
+            val steps = dao.samplesForSessionNow(row.id).map { sample ->
+                ChargeStepSample(
+                    elapsedMillis = sample.elapsedRealtimeMillis,
+                    percent = sample.percent,
+                    batteryStatus = sample.batteryStatus,
+                )
+            }
+            observations += ChargeBandExtractor.extract(
+                sessionId = row.id,
+                chargingType = ChargingTypes.fromPluggedRaw(row.pluggedRaw),
+                samples = steps,
+            )
+            row.avgPowerMilliwatts?.let { power[row.id] = it }
+        }
+        return BandObservationBatch(observations = observations, sessionPowerMilliwatts = power)
+    }
+
 
     /**
      * Raw samples → curve points, timed from the first sample. Voltage and current ride along

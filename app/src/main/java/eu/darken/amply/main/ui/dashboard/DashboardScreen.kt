@@ -210,6 +210,7 @@ fun DashboardScreen(
                             onOpenHub = onOpenBatteryHub,
                             onRetryCapture = onRetryCapture,
                             nowElapsedRealtimeMillis = nowElapsedRealtimeMillis,
+                            chargeTime = state.chargeTime,
                         )
                     }
                 }
