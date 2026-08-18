@@ -104,6 +104,9 @@ class ChargeStatsRepositoryLiveTest {
         elapsed: Long,
         percent: Int,
         batteryStatus: Int? = BatteryManager.BATTERY_STATUS_CHARGING,
+        voltageMillivolts: Int? = 4_000,
+        currentNowMicroamps: Int? = 2_000_000,
+        temperatureTenthsC: Int? = 300,
     ) = BatterySampleEntity(
         sessionId = sessionId,
         wallMillis = elapsed,
@@ -112,7 +115,9 @@ class ChargeStatsRepositoryLiveTest {
         percent = percent,
         batteryStatus = batteryStatus,
         powerMilliwatts = 9_000,
-        temperatureTenthsC = 300,
+        temperatureTenthsC = temperatureTenthsC,
+        voltageMillivolts = voltageMillivolts,
+        currentNowMicroamps = currentNowMicroamps,
     )
 
     @Test
@@ -154,6 +159,63 @@ class ChargeStatsRepositoryLiveTest {
         curve.map { it.percent } shouldBe listOf(40, 41, 42)
         // Only the charging sample keeps its power; the other two report none rather than a wrong one.
         curve.map { it.powerMilliwatts } shouldBe listOf(9_000, null, null)
+    }
+
+    @Test
+    fun `voltage and current survive a sample that was not charging`() = runTest {
+        // Unlike power these are directional raw readings, valid in either direction, so the
+        // charging gate that withholds power must not touch them.
+        val id = insertOpenSession()
+        val dao = database.statsDao()
+        dao.insertSample(sample(id, elapsed = 1_000L, percent = 40))
+        dao.insertSample(
+            sample(
+                id,
+                elapsed = 2_000L,
+                percent = 40,
+                batteryStatus = BatteryManager.BATTERY_STATUS_DISCHARGING,
+                currentNowMicroamps = -450_000,
+            ),
+        )
+
+        val curve = repository.curveFlow(id).first()
+        curve.map { it.powerMilliwatts } shouldBe listOf(9_000, null)
+        curve.map { it.voltageMillivolts } shouldBe listOf(4_000, 4_000)
+        // The recorded sign is kept: a discharge reads negative rather than being made absolute.
+        curve.map { it.currentNowMicroamps } shouldBe listOf(2_000_000, -450_000)
+    }
+
+    @Test
+    fun `the live session curve carries voltage and current too`() = runTest {
+        Settings.Global.putInt(
+            ApplicationProvider.getApplicationContext<Context>().contentResolver,
+            Settings.Global.BOOT_COUNT,
+            7,
+        )
+        val id = insertOpenSession()
+        database.statsDao().insertSample(sample(id, elapsed = 1_000L, percent = 40))
+
+        val live = repository.currentSession().first()!!
+        live.curve.map { it.voltageMillivolts } shouldBe listOf(4_000)
+        live.curve.map { it.currentNowMicroamps } shouldBe listOf(2_000_000)
+    }
+
+    @Test
+    fun `session metrics aggregate the raw samples, not the decimated curve`() = runTest {
+        val id = insertOpenSession()
+        val dao = database.statsDao()
+        // A single-sample temperature spike between two pinned endpoints: decimating to two points
+        // drops it, so a max taken off the returned curve would be wrong.
+        dao.insertSample(sample(id, elapsed = 1_000L, percent = 40, temperatureTenthsC = 300))
+        dao.insertSample(sample(id, elapsed = 2_000L, percent = 41, temperatureTenthsC = 480))
+        dao.insertSample(sample(id, elapsed = 3_000L, percent = 42, temperatureTenthsC = 300))
+
+        val metrics = repository.sessionMetrics(id, maxPoints = 2).first()
+        metrics.curve.size shouldBe 2
+        metrics.curve.mapNotNull { it.temperatureTenthsC }.max() shouldBe 300
+        metrics.aggregates.temperature!!.max shouldBe 480
+        metrics.aggregates.level!!.min shouldBe 40
+        metrics.aggregates.current!!.sampleCount shouldBe 3
     }
 
     private suspend fun awaitEmission(channel: Channel<List<Int?>>, expected: List<Int?>) {
