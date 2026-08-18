@@ -204,6 +204,7 @@ tasks.withType<KotlinCompile>().configureEach {
 dependencies {
     addBaseKotlin()
     addBaseAndroid()
+    addWorkManager()
 
     addDagger()
 

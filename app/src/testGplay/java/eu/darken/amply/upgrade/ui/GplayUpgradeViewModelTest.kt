@@ -22,6 +22,7 @@ import eu.darken.amply.upgrade.core.billing.TestPurchases
 import eu.darken.amply.upgrade.core.billing.client.BillingConnection
 import eu.darken.amply.upgrade.core.billing.client.BillingConnectionProvider
 import eu.darken.amply.upgrade.core.billing.toBillingData
+import eu.darken.amply.upgrade.core.billing.work.FakePurchaseAckScheduler
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import kotlinx.coroutines.CoroutineScope
@@ -78,6 +79,7 @@ class GplayUpgradeViewModelTest {
         object : BillingConnectionProvider(ApplicationProvider.getApplicationContext()) {
             override val connection: Flow<BillingConnection> = emptyFlow()
         },
+        FakePurchaseAckScheduler(),
     ) {
         override val isFailureSettled: Flow<Boolean> = MutableStateFlow(false)
         override val freshBillingData: Flow<FreshData> = emptyFlow()
@@ -134,7 +136,7 @@ class GplayUpgradeViewModelTest {
         manager: FakeBillingManager,
         cache: BillingCache = cache(),
     ): UpgradeViewModel = UpgradeViewModel(
-        upgradeRepo = UpgradeRepoGplay(manager, cache),
+        upgradeRepo = UpgradeRepoGplay(manager, cache, FakePurchaseAckScheduler()),
         webpageTool = WebpageTool(ApplicationProvider.getApplicationContext<Context>()),
     )
 

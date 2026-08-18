@@ -38,7 +38,20 @@ fun DependencyHandlerScope.addBaseAndroid() {
     implementation("androidx.activity:activity-compose:1.12.3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:${Versions.AndroidX.lifecycle}")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:${Versions.AndroidX.lifecycle}")
-    implementation("androidx.work:work-runtime-ktx:2.10.0")
+}
+
+fun DependencyHandlerScope.addWorkManager() {
+    val version = "2.10.0"
+    implementation("androidx.work:work-runtime-ktx:$version")
+    // Drives a REAL WorkManager (in-memory DB, synchronous executor) in the scheduler tests instead
+    // of asserting against a hand-written imitation of its unique-work bookkeeping.
+    testImplementation("androidx.work:work-testing:$version")
+
+    // @HiltWorker support: the purchase-acknowledgement safety net needs constructor injection in a
+    // CoroutineWorker. HiltWorkerFactory delegates workers it doesn't know to WorkManager's default
+    // factory, so the plain @EntryPoint workers keep working unchanged.
+    implementation("androidx.hilt:hilt-work:1.2.0")
+    ksp("androidx.hilt:hilt-compiler:1.2.0")
 }
 
 fun DependencyHandlerScope.addDagger() {

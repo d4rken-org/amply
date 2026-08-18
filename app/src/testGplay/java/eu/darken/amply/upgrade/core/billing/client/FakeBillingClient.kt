@@ -55,6 +55,12 @@ internal class FakeBillingClient : BillingClient() {
     var acknowledgeResponseCode: Int = BillingResponseCode.OK
 
     /**
+     * Runs with the purchase token just before Play answers an acknowledgement. Lets a test order
+     * the ack round-trips against events recorded elsewhere (the safety-net arming, for instance).
+     */
+    var onAcknowledge: ((String) -> Unit)? = null
+
+    /**
      * Runs with the queried product type just before Play answers it. The seam for the races that
      * decide the reducer's ordering rules: a purchase event delivered from here lands AFTER the query
      * started, which is the only way it survives that query's commit.
@@ -75,6 +81,7 @@ internal class FakeBillingClient : BillingClient() {
         params: AcknowledgePurchaseParams,
         listener: AcknowledgePurchaseResponseListener,
     ) {
+        onAcknowledge?.invoke(params.purchaseToken)
         acknowledged.add(params.purchaseToken)
         listener.onAcknowledgePurchaseResponse(result(acknowledgeResponseCode))
     }
