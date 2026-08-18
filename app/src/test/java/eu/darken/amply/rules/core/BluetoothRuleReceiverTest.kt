@@ -50,6 +50,7 @@ class BluetoothRuleReceiverTest {
                 upgradeRepo = FakeUpgradeRepo(),
                 bluetooth = FakeBluetoothSource(),
                 bootCountProvider = bootCount(3),
+                qualificationRunStore = testQualificationRunStore(dataStore),
             )
         }
     }

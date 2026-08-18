@@ -4,6 +4,8 @@ import eu.darken.amply.charging.core.BackendKind
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingPreferences
+import eu.darken.amply.charging.core.qualification.QualificationRunRecord
+import eu.darken.amply.charging.core.qualification.QualificationRunStore
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.longs.shouldBeGreaterThan
@@ -39,6 +41,7 @@ class RuleApplierTest {
         val bluetooth: FakeBluetoothSource,
         val upgrade: FakeUpgradeRepo,
         val preferences: ChargingPreferences,
+        val qualificationRunStore: QualificationRunStore,
         val scope: CoroutineScope,
     )
 
@@ -53,6 +56,7 @@ class RuleApplierTest {
         val gateway = FakeChargeGateway()
         val bluetooth = FakeBluetoothSource()
         val upgrade = FakeUpgradeRepo()
+        val runStore = testQualificationRunStore(dataStore)
         val applier = RuleApplier(
             store = store,
             gateway = gateway,
@@ -60,9 +64,10 @@ class RuleApplierTest {
             upgradeRepo = upgrade,
             bluetooth = bluetooth,
             bootCountProvider = bootCount(bootCountValue),
+            qualificationRunStore = runStore,
         )
         try {
-            Fixture(applier, store, gateway, bluetooth, upgrade, preferences, scope).block()
+            Fixture(applier, store, gateway, bluetooth, upgrade, preferences, runStore, scope).block()
         } finally {
             scope.cancel()
         }
@@ -142,6 +147,40 @@ class RuleApplierTest {
         applier.evaluate(plugged = false, plugKind = null, sessionActive = false)
         store.runtimeNow().phase shouldBe RulePhase.ACTIVE
         store.runtimeNow().suspendedRuleIds.shouldBeEmpty()
+    }
+
+    /**
+     * A rule activating mid-run would capture the run's temporary policy as the baseline it owes the
+     * user back, and restore that when it stops matching — the user's real setting gone with nothing
+     * left that remembers it. The guard is at this entry point rather than at a call site because
+     * `ACTION_EVALUATE_RULES` (a Bluetooth event, a rule edit) reaches it directly.
+     */
+    @Test
+    fun `no rule activates while a qualification run owns the charge policy`() = fixture {
+        applier.addRule(btRule())
+        connect()
+        qualificationRunStore.put(
+            QualificationRunRecord(
+                baseline = limit80,
+                runId = "run-1",
+                runToken = "token-1",
+                adapterId = "lineageos-chargingcontrol-v1",
+                lowCap = 70,
+                releasePolicy = ChargePolicy.Unrestricted,
+            ),
+        )
+
+        applier.evaluate(plugged = true, plugKind = PlugKind.AC, sessionActive = false)
+
+        gateway.writes.shouldBeEmpty()
+        store.runtimeNow().phase shouldBe RulePhase.IDLE
+
+        // And it resumes normally once the run is over.
+        qualificationRunStore.clear()
+        applier.evaluate(plugged = true, plugKind = PlugKind.AC, sessionActive = false)
+
+        gateway.writes shouldContainExactly listOf(adaptive)
+        store.runtimeNow().phase shouldBe RulePhase.ACTIVE
     }
 
     @Test

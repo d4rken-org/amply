@@ -3,6 +3,7 @@ package eu.darken.amply.rules.core
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingPreferences
+import eu.darken.amply.charging.core.qualification.QualificationRunStore
 import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
@@ -39,6 +40,7 @@ class RuleApplier @Inject constructor(
     private val upgradeRepo: UpgradeRepo,
     private val bluetooth: BluetoothConnectionSource,
     private val bootCountProvider: BootCountProvider,
+    private val qualificationRunStore: QualificationRunStore,
 ) {
     private val mutex = Mutex()
 
@@ -95,6 +97,16 @@ class RuleApplier @Inject constructor(
         sessionActive: Boolean,
         reconcileBluetooth: Boolean = false,
     ) = mutex.withLock {
+        // A guided qualification run owns the charge policy while it lasts. A rule activating under
+        // it would capture the run's temporary policy as the baseline it owes the user back, and
+        // restore THAT when it stops matching — the user's real setting gone, with nothing left that
+        // remembers it. The guard sits here, at the one entry point every evaluation goes through,
+        // not at a call site: ACTION_EVALUATE_RULES reaches this directly from the command path, so a
+        // Bluetooth event or a rule edit would otherwise still activate mid-run.
+        if (qualificationRunStore.currentRun() != null) {
+            log(TAG) { "Skipping rule evaluation: a qualification run owns the charge policy" }
+            return@withLock
+        }
         val ruleList = store.rulesNow()
         val runtimeState = store.runtimeNow()
         if (ruleList.none { it.enabled } && runtimeState.phase == RulePhase.IDLE &&

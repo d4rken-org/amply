@@ -5,6 +5,7 @@ import eu.darken.amply.charging.core.BackendKind
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingPreferences
+import eu.darken.amply.charging.core.qualification.QualificationRunStore
 import eu.darken.amply.common.AppDataStore
 import eu.darken.amply.common.serialization.SerializationModule
 import eu.darken.amply.fullcharge.core.BootCountProvider
@@ -29,6 +30,13 @@ internal fun testDataStore(scope: CoroutineScope, dir: File) = AppDataStore(
 internal fun testPreferences(store: AppDataStore) = ChargingPreferences(store, SerializationModule.json())
 
 internal fun testRulesStore(store: AppDataStore) = ChargeRulesStore(store, SerializationModule.json())
+
+/**
+ * Real too, and for the same reason: the applier refuses to evaluate while a guided qualification run
+ * owns the charge policy, and that refusal is decided by what this store actually decodes.
+ */
+internal fun testQualificationRunStore(store: AppDataStore) =
+    QualificationRunStore(store, SerializationModule.json())
 
 /**
  * Records every write in order and lets a test observe the persisted runtime *at the moment of the
