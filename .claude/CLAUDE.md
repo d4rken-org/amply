@@ -56,8 +56,10 @@ Under `app/src/main/java/eu/darken/amply/`:
 
 - `charging/core` — policies, device capability checks, OEM adapters, WSS, Shizuku access (`access/shizuku`, `adapter`)
 - `charging/core/enforcement` — the observed-enforcement gate: verdict engine, durable evidence, monitor watcher
+- `charging/core/qualification` — the guided qualification run: an *active* cut → resume → cut challenge that
+  proves the charging hardware obeys a cap, where the enforcement gate can only ever refute one
 - `fullcharge/core` — temporary sessions, boot recovery, reconnect gesture
-- `main/ui` — activity, onboarding, dashboard, settings, setup guide, `tile`, `widget`
+- `main/ui` — activity, onboarding, dashboard, settings, setup guide, `qualification`, `tile`, `widget`
 - `diagnostics/core` + `diagnostics/ui` — "Help add support" contribution wizard: read-only multi-mode setting
   discovery + on-device privacy review
 - `common` — shared DataStore owner (`AppDataStore`) and cross-feature primitives

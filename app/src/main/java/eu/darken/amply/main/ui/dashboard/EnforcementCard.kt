@@ -9,6 +9,7 @@ import androidx.compose.material.icons.twotone.Shield
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,6 +48,13 @@ fun EnforcementCard(
     status: EnforcementStatus,
     onStartVerification: () -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * Opens the guided qualification run. Defaulted so the dashboard's many preview fixtures need no
+     * change; the composition root passes the real one.
+     */
+    onProveLimit: () -> Unit = {},
+    /** Whether the guided run is available in this build (`BuildConfig.ENABLE_QUALIFICATION_RUN`). */
+    proveLimitAvailable: Boolean = false,
 ) {
     when (status) {
         EnforcementStatus.CONFIRMED -> Unit
@@ -82,8 +90,22 @@ fun EnforcementCard(
                 stringResource(R.string.dashboard_enforcement_candidate_body),
                 style = MaterialTheme.typography.bodySmall,
             )
-            Button(onClick = onStartVerification, modifier = Modifier.align(Alignment.End)) {
-                Text(stringResource(R.string.dashboard_enforcement_candidate_action))
+            // Where the guided run exists it is the primary action: it can actually answer the
+            // question this card is about, while the opt-in only accepts not knowing. So the opt-in
+            // demotes to a text button rather than disappearing — the run needs the charger connected
+            // for up to an hour and a half, and someone who just wants their limit back now should
+            // not be forced through it.
+            if (proveLimitAvailable) {
+                Button(onClick = onProveLimit, modifier = Modifier.align(Alignment.End)) {
+                    Text(stringResource(R.string.dashboard_enforcement_prove_action))
+                }
+                TextButton(onClick = onStartVerification, modifier = Modifier.align(Alignment.End)) {
+                    Text(stringResource(R.string.dashboard_enforcement_candidate_action))
+                }
+            } else {
+                Button(onClick = onStartVerification, modifier = Modifier.align(Alignment.End)) {
+                    Text(stringResource(R.string.dashboard_enforcement_candidate_action))
+                }
             }
         }
         EnforcementStatus.UNVERIFIED -> AmplyCard(

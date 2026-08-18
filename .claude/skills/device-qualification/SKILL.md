@@ -39,6 +39,23 @@ commit device serials or user data. Requalify after a relevant OS / OEM-componen
 row). *Shizuku-only* if control needs an extra safe op invokable through the typed service. *No-go* → keep the device
 diagnostics-only.
 
+## The in-app guided run is not a ledger row
+
+`charging/core/qualification/` lets a user run the cut → resume → cut challenge on their own device. A pass
+records `EnforcementStatus.SELF_QUALIFIED`, which enables control **for that user, on that exact build**, and
+produces a report (`qualification_schema=1`) carrying `Build.DEVICE` — the codename an allowlist entry needs and
+the field the contribution wizard omits.
+
+**A self-qualified pass never becomes a "Verified devices" row on its own, and never writes into a
+`QUALIFIED_CODENAMES` allowlist.** It is one run, on one unit, usually unattended, with no wireless leg, no
+access-tier matrix, no session/boot-recovery coverage and no R8 build — i.e. step 2 of the protocol partially, and
+none of steps 3-5. What it *is* good for is the thing that used to take days of email: it settles the
+does-the-hardware-obey question with a machine-collected, timestamped result instead of contributor prose, so a
+maintainer row becomes a matter of covering the remaining steps rather than starting from nothing.
+
+Treat an incoming qualification report the way the `tanzanite` enforcement evidence was treated: strong evidence
+for one question, explicitly scoped, recorded with its gaps named.
+
 ## Verified devices (physically tested)
 
 The gate's supported *scope* (see Capability Gates) is broader than what has been physically tested below. Widen a gate

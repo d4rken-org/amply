@@ -3,415 +3,462 @@ package eu.darken.amply.charging.core.qualification
 import eu.darken.amply.charging.core.BackendKind
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
-import eu.darken.amply.charging.core.qualification.QualificationProtocol.CHARGE_UP_BUDGET_MILLIS
-import eu.darken.amply.charging.core.qualification.QualificationProtocol.HOLD_CONFIRM_MILLIS
 import eu.darken.amply.charging.core.qualification.QualificationProtocol.PHASE_BUDGET_MILLIS
 import eu.darken.amply.charging.core.qualification.QualificationProtocol.PREFLIGHT_BUDGET_MILLIS
 import eu.darken.amply.charging.core.qualification.QualificationProtocol.RUN_CEILING_MILLIS
+import eu.darken.amply.charging.core.qualification.QualificationProtocol.WRITE_SETTLE_MILLIS
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.types.shouldBeInstanceOf
 import org.junit.jupiter.api.Test
 
+/**
+ * The protocol's whole claim rests on comparing every phase to the run's own baseline rate, so most
+ * of these tests drive a simulated charge current rather than asserting on individual samples.
+ */
 class QualificationRunEngineTest {
 
-    /** A 4000 mAh battery reporting microamp-hours, the correct case. */
-    private fun counterAt(percent: Int, fullMicroAmpHours: Long = 4_000_000L): Int =
-        (fullMicroAmpHours * percent / 100).toInt()
+    private val fullCapacity = 4_000_000L // µAh, a 4 Ah battery
+    private val tickMillis = 30_000L
 
-    private fun sample(
-        now: Long,
-        percent: Int,
-        counter: Int? = counterAt(percent),
-        plugged: Boolean = true,
-        configured: ChargeObservation? = null,
-        sessionActive: Boolean = false,
-        writeFailed: Boolean = false,
-        cancelled: Boolean = false,
-    ) = QualificationSample(
-        nowMillis = now,
-        plugged = plugged,
-        percent = percent,
-        chargeCounter = counter,
-        configured = configured,
-        sessionActive = sessionActive,
-        writeFailed = writeFailed,
-        cancelled = cancelled,
-    )
-
-    private fun variableRun(now: Long = 0L, candidate: Boolean = false) = QualificationRunEngine.start(
-        shape = RunShape.VARIABLE_CAP,
-        lowCap = 70,
-        releasePolicy = ChargePolicy.FixedLimit(85),
-        nowMillis = now,
-        candidate = candidate,
-    )
-
-    private fun fixedRun(now: Long = 0L, candidate: Boolean = false) = QualificationRunEngine.start(
-        shape = RunShape.FIXED_CAP,
-        lowCap = 80,
-        releasePolicy = ChargePolicy.Unrestricted,
-        nowMillis = now,
-        candidate = candidate,
-    )
+    /** Milliamp-hours per hour, i.e. an average current in mA, expressed in counter units. */
+    private fun mA(value: Long) = value * 1_000L
 
     /**
-     * Drive a phase forward with samples that never accumulate, i.e. a device holding. Stops at the
-     * first terminal *or* phase change, so the returned outcome is the transition itself — otherwise
-     * the command that the transition emitted would be lost to the following no-op ticks.
+     * Feeds the engine a stream of ticks at a given charge current until it produces a terminal or a
+     * phase change, so a test can assert on the transition rather than on whichever tick happened to
+     * come last.
      */
-    private fun holdThrough(
-        start: QualificationProgress,
-        from: Long,
-        to: Long,
-        percent: Int,
-        stepMillis: Long = 30_000L,
-    ): QualificationOutcome {
-        var progress = start
-        var now = from
-        var outcome = QualificationOutcome(start)
-        while (now <= to) {
-            outcome = QualificationRunEngine.evaluate(progress, sample(now, percent))
-            if (outcome.terminal != null || outcome.progress.phase != progress.phase) return outcome
-            progress = outcome.progress
-            now += stepMillis
+    private class Sim(
+        var progress: QualificationProgress,
+        val fullCapacity: Long,
+        val tickMillis: Long,
+    ) {
+        var now = 0L
+        var counter = 0L
+        var percent = 50
+        var lastOutcome = QualificationOutcome(progress)
+
+        fun seed(now: Long, percent: Int) {
+            this.now = now
+            this.percent = percent
+            this.counter = fullCapacity * percent / 100
         }
-        return outcome
-    }
 
-    @Test
-    fun `preflight on a variable-cap adapter writes the low cap immediately`() {
-        val outcome = QualificationRunEngine.evaluate(variableRun(), sample(now = 1_000, percent = 80))
-
-        outcome.progress.phase shouldBe RunPhase.CUT_1
-        outcome.progress.signal shouldBe FlowSignal.COUNTER
-        outcome.command shouldBe RunCommand.Apply(ChargePolicy.FixedLimit(70))
-        outcome.terminal shouldBe null
-    }
-
-    @Test
-    fun `preflight on a fixed-cap adapter charges up first when the battery is too low`() {
-        val outcome = QualificationRunEngine.evaluate(fixedRun(), sample(now = 1_000, percent = 55))
-
-        outcome.progress.phase shouldBe RunPhase.CHARGE_UP
-        outcome.command shouldBe RunCommand.Apply(ChargePolicy.Unrestricted)
-    }
-
-    @Test
-    fun `preflight on a fixed-cap adapter starts measuring within the entry margin`() {
-        val outcome = QualificationRunEngine.evaluate(fixedRun(), sample(now = 1_000, percent = 78))
-
-        outcome.progress.phase shouldBe RunPhase.CUT_1
-        outcome.command shouldBe RunCommand.Apply(ChargePolicy.FixedLimit(80))
-    }
-
-    @Test
-    fun `preflight without any usable signal ends inconclusive rather than passing`() {
-        val outcome = QualificationRunEngine.evaluate(
-            variableRun(),
-            sample(now = 1_000, percent = -1, counter = null),
-        )
-        // An unknown level alone only waits; it is the timeout that ends it.
-        outcome.terminal shouldBe null
-
-        val timedOut = QualificationRunEngine.evaluate(
-            variableRun(),
-            sample(now = PREFLIGHT_BUDGET_MILLIS, percent = -1, counter = null),
-        )
-        timedOut.terminal shouldBe RunTerminal.Inconclusive(InconclusiveReason.PRECONDITION_TIMEOUT)
-    }
-
-    @Test
-    fun `a milli-reporting counter falls back to level rather than being trusted`() {
-        // MagicOS: charge counter 6978 on a ~7100 mAh cell, i.e. scaled by 1000.
-        QualificationRunEngine.resolveSignal(sample(now = 0, percent = 100, counter = 6978)) shouldBe
-            FlowSignal.LEVEL
-        QualificationRunEngine.resolveSignal(sample(now = 0, percent = 80, counter = counterAt(80))) shouldBe
-            FlowSignal.COUNTER
-        QualificationRunEngine.resolveSignal(sample(now = 0, percent = -1, counter = null)) shouldBe
-            FlowSignal.NONE
-    }
-
-    @Test
-    fun `implied capacity normalizes out the charge level`() {
-        QualificationRunEngine.impliedFullCapacity(counterAt(20), 20) shouldBe 4_000_000L
-        QualificationRunEngine.impliedFullCapacity(counterAt(90), 90) shouldBe 4_000_000L
-        QualificationRunEngine.impliedFullCapacity(null, 50) shouldBe null
-        QualificationRunEngine.impliedFullCapacity(1_000, 0) shouldBe null
-    }
-
-    @Test
-    fun `a sustained hold in the first cut moves to the resume phase`() {
-        val armed = QualificationRunEngine.evaluate(variableRun(), sample(1_000, 80)).progress
-
-        val outcome = holdThrough(armed, from = 31_000, to = 1_000 + HOLD_CONFIRM_MILLIS + 60_000, percent = 80)
-
-        outcome.progress.phase shouldBe RunPhase.RESUME
-        outcome.command shouldBe RunCommand.Apply(ChargePolicy.FixedLimit(85))
-        outcome.progress.observedHoldPercent shouldBe 80
-    }
-
-    @Test
-    fun `charging past the commanded cap refutes`() {
-        val armed = QualificationRunEngine.evaluate(fixedRun(), sample(1_000, 78)).progress
-
-        val outcome = QualificationRunEngine.evaluate(armed, sample(60_000, 83))
-
-        outcome.terminal shouldBe RunTerminal.Refuted
-    }
-
-    @Test
-    fun `a rise that stays under the overshoot allowance does not refute`() {
-        val armed = QualificationRunEngine.evaluate(fixedRun(), sample(1_000, 78)).progress
-
-        val outcome = QualificationRunEngine.evaluate(armed, sample(60_000, 82))
-
-        outcome.terminal shouldBe null
-    }
-
-    @Test
-    fun `a variable-cap run starting above its cap does not refute just for sitting there`() {
-        // lowCap 70 with the battery at 80: every sample is already above cap + overshoot.
-        val armed = QualificationRunEngine.evaluate(variableRun(), sample(1_000, 80)).progress
-
-        QualificationRunEngine.evaluate(armed, sample(60_000, 80)).terminal shouldBe null
-        QualificationRunEngine.evaluate(armed, sample(60_000, 79)).terminal shouldBe null
-    }
-
-    @Test
-    fun `a variable-cap run still refutes when the level climbs further`() {
-        val armed = QualificationRunEngine.evaluate(variableRun(), sample(1_000, 80)).progress
-
-        QualificationRunEngine.evaluate(armed, sample(60_000, 81)).terminal shouldBe RunTerminal.Refuted
-    }
-
-    @Test
-    fun `charging that keeps accumulating never confirms a cut and times out inconclusive`() {
-        var progress = QualificationRunEngine.evaluate(variableRun(), sample(1_000, 60)).progress
-        var now = 31_000L
-        var outcome = QualificationOutcome(progress)
-        var counter = counterAt(60)
-
-        // A steady ~1 A charge: the counter climbs every tick, so the hold clock keeps resetting.
-        while (now <= PHASE_BUDGET_MILLIS + 60_000) {
-            counter += 8_000
-            outcome = QualificationRunEngine.evaluate(progress, sample(now, 60, counter = counter))
-            outcome.terminal?.let { break }
-            progress = outcome.progress
-            now += 30_000
+        /**
+         * Advance up to [forMillis] at [currentPerHour] counter units per hour. Stops early on a
+         * terminal or a phase change. [levelTracks] moves the reported percent with the counter, as a
+         * real gauge does; tests that need the level to lie set it false and drive [percent] directly.
+         */
+        fun run(
+            forMillis: Long,
+            currentPerHour: Long,
+            levelTracks: Boolean = true,
+            configured: ChargeObservation? = null,
+        ): QualificationOutcome {
+            val until = now + forMillis
+            val startPhase = progress.phase
+            while (now <= until) {
+                now += tickMillis
+                counter += currentPerHour * tickMillis / 3_600_000L
+                if (levelTracks) percent = (counter * 100 / fullCapacity).toInt().coerceIn(0, 100)
+                lastOutcome = QualificationRunEngine.evaluate(
+                    progress,
+                    QualificationSample(
+                        nowMillis = now,
+                        plugged = true,
+                        percent = percent,
+                        chargeCounter = counter.toInt(),
+                        configured = configured,
+                        sessionActive = false,
+                    ),
+                )
+                if (lastOutcome.terminal != null) return lastOutcome
+                progress = lastOutcome.progress
+                if (progress.phase != startPhase) return lastOutcome
+            }
+            return lastOutcome
         }
+    }
+
+    private fun variableSim(startPercent: Int = 50): Sim {
+        val progress = QualificationRunEngine.start(
+            shape = RunShape.VARIABLE_CAP,
+            lowCap = 50,
+            releasePolicy = ChargePolicy.FixedLimit(70),
+            nowMillis = 0L,
+        )
+        val sim = Sim(progress, fullCapacity, tickMillis)
+        sim.seed(now = 0L, percent = startPercent)
+        // Preflight: one sample arms the run and opens the baseline phase.
+        sim.lastOutcome = QualificationRunEngine.evaluate(
+            progress,
+            QualificationSample(
+                nowMillis = 0L,
+                plugged = true,
+                percent = startPercent,
+                chargeCounter = sim.counter.toInt(),
+                configured = null,
+                sessionActive = false,
+            ),
+        )
+        sim.progress = sim.lastOutcome.progress
+        return sim
+    }
+
+    /** Drive a whole healthy run: strong baseline, hard cut, real resume, hard cut again. */
+    private fun healthyRun(startPercent: Int = 50): Sim {
+        val sim = variableSim(startPercent)
+        sim.progress.phase shouldBe RunPhase.BASELINE
+        sim.run(forMillis = 20 * 60_000L, currentPerHour = mA(1_500))
+        sim.progress.phase shouldBe RunPhase.CUT_1
+        sim.run(forMillis = 20 * 60_000L, currentPerHour = 0)
+        sim.progress.phase shouldBe RunPhase.RESUME
+        sim.run(forMillis = 15 * 60_000L, currentPerHour = mA(1_500))
+        sim.progress.phase shouldBe RunPhase.CUT_2
+        return sim
+    }
+
+    @Test
+    fun `a healthy device passes the full sequence`() {
+        val sim = healthyRun()
+
+        val outcome = sim.run(forMillis = 20 * 60_000L, currentPerHour = 0)
+
+        outcome.terminal shouldBe RunTerminal.Passed
+    }
+
+    @Test
+    fun `preflight lifts the cap first so the baseline measures real charging`() {
+        val sim = variableSim()
+
+        sim.progress.phase shouldBe RunPhase.BASELINE
+        sim.lastOutcome.command shouldBe RunCommand.Apply(ChargePolicy.FixedLimit(70))
+        sim.progress.signal shouldBe FlowSignal.COUNTER
+    }
+
+    /**
+     * The defect this whole redesign exists for. A phone charging steadily at 100 mA under a cap that
+     * does nothing sits below any fixed "charging has stopped" bar forever. Measured against its own
+     * baseline it cannot drop tenfold, so it can never be mistaken for a device that stopped.
+     */
+    @Test
+    fun `a weak charger that never stops cannot pass`() {
+        val sim = variableSim()
+        sim.run(forMillis = 20 * 60_000L, currentPerHour = mA(100))
+        sim.progress.phase shouldBe RunPhase.CUT_1
+        // Discretized ticks and an integer counter make the measured rate approximate; what matters
+        // is that it landed near the real current rather than at some absolute default.
+        (sim.progress.baselineRatePerHour in mA(90)..mA(130)) shouldBe true
+
+        val outcome = sim.run(
+            forMillis = PHASE_BUDGET_MILLIS + 60_000L,
+            currentPerHour = mA(100),
+            levelTracks = false,
+        )
 
         outcome.terminal shouldBe RunTerminal.Inconclusive(InconclusiveReason.NO_CUT)
     }
 
     @Test
-    fun `a resume that never arrives is inconclusive and never a refutation`() {
-        val armed = QualificationRunEngine.evaluate(variableRun(), sample(1_000, 80)).progress
-        val resuming = holdThrough(armed, 31_000, 1_000 + HOLD_CONFIRM_MILLIS + 60_000, 80).progress
-        resuming.phase shouldBe RunPhase.RESUME
+    fun `a real cut is measured against the baseline, not an absolute threshold`() {
+        val sim = variableSim()
+        sim.run(forMillis = 20 * 60_000L, currentPerHour = mA(100))
+        sim.progress.phase shouldBe RunPhase.CUT_1
 
-        val outcome = holdThrough(
-            resuming,
-            from = resuming.phaseStartedAt + 30_000,
-            to = resuming.phaseStartedAt + PHASE_BUDGET_MILLIS + 60_000,
-            percent = 80,
-        )
+        // A tenth of a weak baseline is still a cut.
+        sim.run(forMillis = 20 * 60_000L, currentPerHour = mA(5))
+
+        sim.progress.phase shouldBe RunPhase.RESUME
+    }
+
+    @Test
+    fun `a charger too weak to measure anything against yields no baseline`() {
+        val sim = variableSim()
+
+        val outcome = sim.run(forMillis = 25 * 60_000L, currentPerHour = mA(5))
+
+        outcome.terminal shouldBe RunTerminal.Inconclusive(InconclusiveReason.NO_BASELINE)
+    }
+
+    @Test
+    fun `a frozen charge counter yields no baseline rather than a pass`() {
+        val sim = variableSim()
+
+        val outcome = sim.run(forMillis = 25 * 60_000L, currentPerHour = 0)
+
+        outcome.terminal shouldBe RunTerminal.Inconclusive(InconclusiveReason.NO_BASELINE)
+    }
+
+    @Test
+    fun `a resume that never recovers is inconclusive and never a refutation`() {
+        val sim = variableSim()
+        sim.run(forMillis = 20 * 60_000L, currentPerHour = mA(1_500))
+        sim.run(forMillis = 20 * 60_000L, currentPerHour = 0)
+        sim.progress.phase shouldBe RunPhase.RESUME
+
+        val outcome = sim.run(forMillis = PHASE_BUDGET_MILLIS + 60_000L, currentPerHour = 0)
 
         outcome.terminal shouldBe RunTerminal.Inconclusive(InconclusiveReason.NO_RESUME)
     }
 
     @Test
-    fun `the full cut resume cut sequence passes`() {
-        val armed = QualificationRunEngine.evaluate(variableRun(), sample(1_000, 80)).progress
-        val resuming = holdThrough(armed, 31_000, 1_000 + HOLD_CONFIRM_MILLIS + 60_000, 80).progress
+    fun `a second cut that never arrives is inconclusive`() {
+        val sim = healthyRun()
 
-        // Charging resumes: enough accumulation to clear the rise threshold.
-        val recut = QualificationRunEngine.evaluate(
-            resuming,
-            sample(resuming.phaseStartedAt + 120_000, 80, counter = counterAt(80) + 30_000),
-        )
-        recut.progress.phase shouldBe RunPhase.CUT_2
-        recut.command shouldBe RunCommand.Apply(ChargePolicy.FixedLimit(70))
-
-        val done = holdThrough(
-            recut.progress,
-            from = recut.progress.phaseStartedAt + 30_000,
-            to = recut.progress.phaseStartedAt + HOLD_CONFIRM_MILLIS + 60_000,
-            percent = 80,
+        val outcome = sim.run(
+            forMillis = PHASE_BUDGET_MILLIS + 60_000L,
+            currentPerHour = mA(1_500),
+            levelTracks = false,
         )
 
-        done.terminal shouldBe RunTerminal.Passed
-    }
-
-    @Test
-    fun `a second cut that never holds is inconclusive`() {
-        val armed = QualificationRunEngine.evaluate(variableRun(), sample(1_000, 80)).progress
-        val resuming = holdThrough(armed, 31_000, 1_000 + HOLD_CONFIRM_MILLIS + 60_000, 80).progress
-        val recut = QualificationRunEngine.evaluate(
-            resuming,
-            sample(resuming.phaseStartedAt + 120_000, 80, counter = counterAt(80) + 30_000),
-        ).progress
-
-        var progress = recut
-        var now = recut.phaseStartedAt + 30_000
-        var counter = counterAt(80) + 30_000
-        var outcome = QualificationOutcome(progress)
-        while (now <= recut.phaseStartedAt + PHASE_BUDGET_MILLIS + 60_000) {
-            counter += 8_000
-            outcome = QualificationRunEngine.evaluate(progress, sample(now, 80, counter = counter))
-            outcome.terminal?.let { break }
-            progress = outcome.progress
-            now += 30_000
-        }
-
-        // The level never moves, so this is a stalled counter climb rather than a refutation.
         outcome.terminal shouldBe RunTerminal.Inconclusive(InconclusiveReason.NO_RECUT)
     }
 
+    /**
+     * Charging past the cap is the one thing that refutes, and it is terminal — so it needs the rate
+     * to agree that charge is really going in, not just a moving gauge.
+     */
     @Test
-    fun `charge-up gives up after its own budget`() {
-        val charging = QualificationRunEngine.evaluate(fixedRun(), sample(1_000, 55)).progress
+    fun `charging past the cap refutes`() {
+        val sim = variableSim(startPercent = 60)
+        sim.run(forMillis = 20 * 60_000L, currentPerHour = mA(1_500))
+        sim.progress.phase shouldBe RunPhase.CUT_1
 
-        QualificationRunEngine.evaluate(charging, sample(30_000, 60)).terminal shouldBe null
-        QualificationRunEngine.evaluate(
-            charging,
-            sample(1_000 + CHARGE_UP_BUDGET_MILLIS, 60),
-        ).terminal shouldBe RunTerminal.Inconclusive(InconclusiveReason.CHARGE_UP_TIMEOUT)
+        val outcome = sim.run(forMillis = 30 * 60_000L, currentPerHour = mA(1_500))
+
+        outcome.terminal shouldBe RunTerminal.Refuted
     }
 
     @Test
-    fun `charge-up hands over once the battery reaches the entry margin`() {
-        val charging = QualificationRunEngine.evaluate(fixedRun(), sample(1_000, 55)).progress
+    fun `a gauge that jumps past the cap without charge going in does not refute`() {
+        val sim = variableSim(startPercent = 60)
+        sim.run(forMillis = 20 * 60_000L, currentPerHour = mA(1_500))
+        sim.progress.phase shouldBe RunPhase.CUT_1
 
-        val outcome = QualificationRunEngine.evaluate(charging, sample(600_000, 78))
+        // The level walks up past the cap while the counter stands still: a recalibrating gauge, not
+        // charging. Refuting here would permanently disable a device whose cap works, and a
+        // refutation is terminal, so this must never happen however far the level drifts.
+        val terminals = mutableListOf<RunTerminal>()
+        repeat(30) {
+            sim.now += tickMillis
+            sim.percent = (sim.percent + 1).coerceAtMost(90)
+            val outcome = QualificationRunEngine.evaluate(
+                sim.progress,
+                QualificationSample(
+                    nowMillis = sim.now,
+                    plugged = true,
+                    percent = sim.percent,
+                    chargeCounter = sim.counter.toInt(),
+                    configured = null,
+                    sessionActive = false,
+                ),
+            )
+            outcome.terminal?.let { terminals += it }
+            sim.progress = outcome.progress
+        }
 
-        outcome.progress.phase shouldBe RunPhase.CUT_1
-        outcome.command shouldBe RunCommand.Apply(ChargePolicy.FixedLimit(80))
+        terminals.none { it is RunTerminal.Refuted } shouldBe true
+        // It reads as a device that stopped charging, which on a known mapping is the cut it was
+        // waiting for — the honest reading of a flat counter.
+        sim.progress.phase shouldBe RunPhase.RESUME
     }
 
     @Test
-    fun `unplugging aborts wherever the run is`() {
-        val armed = QualificationRunEngine.evaluate(variableRun(), sample(1_000, 80)).progress
+    fun `nothing is judged until the write has had time to land`() {
+        val sim = variableSim(startPercent = 60)
+        sim.run(forMillis = 20 * 60_000L, currentPerHour = mA(1_500))
+        val armed = sim.progress
+        armed.phase shouldBe RunPhase.CUT_1
 
-        val outcome = QualificationRunEngine.evaluate(armed, sample(60_000, 80, plugged = false))
+        // A tick captured inside the settle window describes the previous configuration, so even a
+        // level well past the cap must not refute.
+        val outcome = QualificationRunEngine.evaluate(
+            armed,
+            QualificationSample(
+                nowMillis = armed.commandedAt + WRITE_SETTLE_MILLIS - 1,
+                plugged = true,
+                percent = 90,
+                chargeCounter = (fullCapacity * 90 / 100).toInt(),
+                configured = null,
+                sessionActive = false,
+            ),
+        )
 
-        outcome.terminal shouldBe RunTerminal.Aborted(AbortReason.UNPLUGGED)
+        outcome.terminal shouldBe null
+    }
+
+    /**
+     * The false-pass path the near-full guard closes: a run near full stages a textbook
+     * cut → resume → cut out of an ordinary end-of-charge, on a device whose cap does nothing.
+     */
+    @Test
+    fun `a hold at a nearly full battery proves nothing and never passes`() {
+        val sim = variableSim(startPercent = 90)
+        sim.run(forMillis = 20 * 60_000L, currentPerHour = mA(1_500))
+        sim.progress.phase shouldBe RunPhase.CUT_1
+
+        val outcome = sim.run(forMillis = 30 * 60_000L, currentPerHour = mA(1_200))
+
+        outcome.terminal shouldBe RunTerminal.Inconclusive(InconclusiveReason.NEAR_FULL)
     }
 
     @Test
-    fun `a failed write aborts instead of being read as a hold`() {
-        val armed = QualificationRunEngine.evaluate(variableRun(), sample(1_000, 80)).progress
+    fun `a milli-reporting counter falls back to level rather than being trusted`() {
+        fun sample(percent: Int, counter: Int?) = QualificationSample(
+            nowMillis = 0,
+            plugged = true,
+            percent = percent,
+            chargeCounter = counter,
+            configured = null,
+            sessionActive = false,
+        )
 
-        QualificationRunEngine.evaluate(armed, sample(60_000, 80, writeFailed = true)).terminal shouldBe
-            RunTerminal.Aborted(AbortReason.WRITE_FAILED)
+        // MagicOS: charge counter 6978 on a ~7100 mAh cell, i.e. scaled by 1000.
+        QualificationRunEngine.resolveSignal(sample(100, 6978)) shouldBe FlowSignal.LEVEL
+        QualificationRunEngine.resolveSignal(sample(80, 3_200_000)) shouldBe FlowSignal.COUNTER
+        QualificationRunEngine.resolveSignal(sample(-1, null)) shouldBe FlowSignal.NONE
     }
 
     @Test
-    fun `a full-charge session starting aborts the run`() {
-        val armed = QualificationRunEngine.evaluate(variableRun(), sample(1_000, 80)).progress
+    fun `implied capacity normalizes out the charge level`() {
+        QualificationRunEngine.impliedFullCapacity(800_000, 20) shouldBe 4_000_000L
+        QualificationRunEngine.impliedFullCapacity(3_600_000, 90) shouldBe 4_000_000L
+        QualificationRunEngine.impliedFullCapacity(null, 50) shouldBe null
+        QualificationRunEngine.impliedFullCapacity(1_000, 0) shouldBe null
+    }
 
-        QualificationRunEngine.evaluate(armed, sample(60_000, 80, sessionActive = true)).terminal shouldBe
+    @Test
+    fun `a run with no usable signal at all ends inconclusive`() {
+        val progress = QualificationRunEngine.start(
+            shape = RunShape.VARIABLE_CAP,
+            lowCap = 50,
+            releasePolicy = ChargePolicy.FixedLimit(70),
+            nowMillis = 0L,
+        )
+
+        val outcome = QualificationRunEngine.evaluate(
+            progress,
+            QualificationSample(0, plugged = true, percent = 50, chargeCounter = null, configured = null, sessionActive = false),
+        )
+        // No counter, but a usable level: the run proceeds on the coarser signal.
+        outcome.progress.signal shouldBe FlowSignal.LEVEL
+    }
+
+    @Test
+    fun `preflight without a level waits and then gives up`() {
+        val progress = QualificationRunEngine.start(RunShape.VARIABLE_CAP, 50, ChargePolicy.FixedLimit(70), 0L)
+        fun blind(now: Long) = QualificationSample(now, true, -1, null, null, false)
+
+        QualificationRunEngine.evaluate(progress, blind(1_000)).terminal shouldBe null
+        QualificationRunEngine.evaluate(progress, blind(PREFLIGHT_BUDGET_MILLIS)).terminal shouldBe
+            RunTerminal.Inconclusive(InconclusiveReason.PRECONDITION_TIMEOUT)
+    }
+
+    @Test
+    fun `every abort condition ends the run wherever it is`() {
+        val armed = variableSim().progress
+        fun sample(
+            plugged: Boolean = true,
+            sessionActive: Boolean = false,
+            writeFailed: Boolean = false,
+            cancelled: Boolean = false,
+            now: Long = 60_000,
+        ) = QualificationSample(now, plugged, 50, 2_000_000, null, sessionActive, writeFailed, cancelled)
+
+        QualificationRunEngine.evaluate(armed, sample(plugged = false)).terminal shouldBe
+            RunTerminal.Aborted(AbortReason.UNPLUGGED)
+        QualificationRunEngine.evaluate(armed, sample(sessionActive = true)).terminal shouldBe
             RunTerminal.Aborted(AbortReason.SESSION_STARTED)
-    }
-
-    @Test
-    fun `cancelling aborts the run`() {
-        val armed = QualificationRunEngine.evaluate(variableRun(), sample(1_000, 80)).progress
-
-        QualificationRunEngine.evaluate(armed, sample(60_000, 80, cancelled = true)).terminal shouldBe
+        QualificationRunEngine.evaluate(armed, sample(writeFailed = true)).terminal shouldBe
+            RunTerminal.Aborted(AbortReason.WRITE_FAILED)
+        QualificationRunEngine.evaluate(armed, sample(cancelled = true)).terminal shouldBe
             RunTerminal.Aborted(AbortReason.USER_CANCELLED)
-    }
-
-    @Test
-    fun `the run ceiling aborts even mid-phase`() {
-        val armed = QualificationRunEngine.evaluate(variableRun(), sample(1_000, 80)).progress
-
-        QualificationRunEngine.evaluate(armed, sample(RUN_CEILING_MILLIS, 80)).terminal shouldBe
+        QualificationRunEngine.evaluate(armed, sample(now = RUN_CEILING_MILLIS)).terminal shouldBe
             RunTerminal.Aborted(AbortReason.RUN_CEILING)
     }
 
     @Test
-    fun `a native change away from the commanded policy aborts once the grace window passes`() {
-        val armed = QualificationRunEngine.evaluate(variableRun(), sample(1_000, 80)).progress
+    fun `a native change away from the commanded policy aborts once the write has settled`() {
+        val armed = variableSim().progress
         val native = ChargeObservation.Verified(ChargePolicy.Unrestricted, BackendKind.SHIZUKU)
+        fun sample(now: Long) = QualificationSample(now, true, 50, 2_000_000, native, false)
 
-        // Inside the grace window a disagreeing readback is just a write that has not settled.
-        QualificationRunEngine.evaluate(armed, sample(30_000, 80, configured = native)).terminal shouldBe null
-
-        QualificationRunEngine.evaluate(armed, sample(120_000, 80, configured = native)).terminal shouldBe
+        QualificationRunEngine.evaluate(armed, sample(armed.commandedAt + 1_000)).terminal shouldBe null
+        QualificationRunEngine.evaluate(armed, sample(armed.commandedAt + WRITE_SETTLE_MILLIS + 1)).terminal shouldBe
             RunTerminal.Aborted(AbortReason.CONFIGURATION_DRIFT)
     }
 
     @Test
-    fun `a readback that agrees with the commanded policy never aborts`() {
-        val armed = QualificationRunEngine.evaluate(variableRun(), sample(1_000, 80)).progress
+    fun `a readback agreeing with the commanded policy never aborts`() {
+        val armed = variableSim().progress
         val agreeing = ChargeObservation.Verified(ChargePolicy.FixedLimit(70), BackendKind.SHIZUKU)
 
-        QualificationRunEngine.evaluate(armed, sample(600_000, 80, configured = agreeing)).terminal shouldBe null
+        QualificationRunEngine.evaluate(
+            armed,
+            QualificationSample(600_000, true, 50, 2_000_000, agreeing, false),
+        ).terminal shouldBe null
     }
 
     @Test
     fun `an unverified readback is not treated as drift`() {
-        val armed = QualificationRunEngine.evaluate(variableRun(), sample(1_000, 80)).progress
+        val armed = variableSim().progress
         val requested = ChargeObservation.LastRequested(ChargePolicy.Unrestricted)
 
-        QualificationRunEngine.evaluate(armed, sample(600_000, 80, configured = requested)).terminal shouldBe null
+        QualificationRunEngine.evaluate(
+            armed,
+            QualificationSample(600_000, true, 50, 2_000_000, requested, false),
+        ).terminal shouldBe null
     }
 
     @Test
-    fun `a candidate device that charges past the commanded cap reports a mapping mismatch, not a refutation`() {
-        val armed = QualificationRunEngine.evaluate(fixedRun(candidate = true), sample(1_000, 78)).progress
+    fun `a candidate device that charges past the cap reports a mapping mismatch, not a refutation`() {
+        val progress = QualificationRunEngine.start(
+            shape = RunShape.VARIABLE_CAP,
+            lowCap = 50,
+            releasePolicy = ChargePolicy.FixedLimit(70),
+            nowMillis = 0L,
+            candidate = true,
+        )
+        val sim = Sim(progress, fullCapacity, tickMillis)
+        sim.seed(0L, 60)
+        sim.lastOutcome = QualificationRunEngine.evaluate(
+            progress,
+            QualificationSample(0, true, 60, sim.counter.toInt(), null, false),
+        )
+        sim.progress = sim.lastOutcome.progress
+        sim.run(forMillis = 20 * 60_000L, currentPerHour = mA(1_500))
+        sim.progress.phase shouldBe RunPhase.CUT_1
 
-        // Commanded 80, but this One UI 6/7 device's value means "cap at 85", so it charges past 80
-        // while enforcing perfectly. Refuting here would permanently disable control on a good device.
-        val outcome = QualificationRunEngine.evaluate(armed, sample(600_000, 85))
+        val outcome = sim.run(forMillis = 30 * 60_000L, currentPerHour = mA(1_500))
 
         outcome.terminal shouldBe RunTerminal.Inconclusive(InconclusiveReason.CAP_MISMATCH)
-        outcome.progress.observedHoldPercent shouldBe 85
     }
 
     @Test
-    fun `the same climb on a known mapping is a refutation`() {
-        val armed = QualificationRunEngine.evaluate(fixedRun(candidate = false), sample(1_000, 78)).progress
+    fun `a rate below the measurement window is not computed at all`() {
+        val armed = variableSim().progress
 
-        QualificationRunEngine.evaluate(armed, sample(600_000, 85)).terminal shouldBe RunTerminal.Refuted
+        QualificationRunEngine.ratePerHour(
+            armed,
+            QualificationSample(armed.windowStartAt + 1_000, true, 50, 2_000_000, null, false),
+        ) shouldBe null
     }
 
     @Test
-    fun `a candidate device holding below the commanded cap also reports a mapping mismatch`() {
-        val armed = QualificationRunEngine.evaluate(fixedRun(candidate = true), sample(1_000, 78)).progress
+    fun `a falling reading clamps to a zero rate rather than going negative`() {
+        val armed = variableSim().progress
 
-        // Never climbs, so the refutation path is untouched — but it settles at 74 under a
-        // commanded 80, which the cap-match check catches.
-        val outcome = holdThrough(armed, 31_000, 1_000 + HOLD_CONFIRM_MILLIS + 60_000, percent = 74)
+        val rate = QualificationRunEngine.ratePerHour(
+            armed,
+            QualificationSample(
+                armed.windowStartAt + 10 * 60_000L,
+                true,
+                40,
+                (armed.windowStartCounter ?: 0) - 500_000,
+                null,
+                false,
+            ),
+        )
 
-        outcome.terminal shouldBe RunTerminal.Inconclusive(InconclusiveReason.CAP_MISMATCH)
-        outcome.progress.observedHoldPercent shouldBe 74
-    }
-
-    @Test
-    fun `a candidate device holding at the commanded cap proceeds normally`() {
-        val armed = QualificationRunEngine.evaluate(fixedRun(candidate = true), sample(1_000, 78)).progress
-
-        val outcome = holdThrough(armed, 31_000, 1_000 + HOLD_CONFIRM_MILLIS + 60_000, percent = 79)
-
-        outcome.terminal shouldBe null
-        outcome.progress.phase shouldBe RunPhase.RESUME
-    }
-
-    @Test
-    fun `a hold confirmed exactly at the boundary counts`() {
-        val armed = QualificationRunEngine.evaluate(variableRun(), sample(0, 80)).progress
-        armed.holdSince shouldBe 0
-
-        QualificationRunEngine.evaluate(armed, sample(HOLD_CONFIRM_MILLIS - 1, 80)).terminal shouldBe null
-        QualificationRunEngine.evaluate(armed, sample(HOLD_CONFIRM_MILLIS, 80)).progress.phase shouldBe
-            RunPhase.RESUME
-    }
-
-    @Test
-    fun `terminal outcomes are distinguishable types`() {
-        RunTerminal.Passed.shouldBeInstanceOf<RunTerminal>()
-        RunTerminal.Inconclusive(InconclusiveReason.NO_CUT).reason shouldBe InconclusiveReason.NO_CUT
-        RunTerminal.Aborted(AbortReason.UNPLUGGED).reason shouldBe AbortReason.UNPLUGGED
+        rate shouldBe 0L
     }
 }

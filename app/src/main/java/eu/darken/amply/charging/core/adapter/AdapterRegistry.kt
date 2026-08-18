@@ -3,6 +3,7 @@ package eu.darken.amply.charging.core.adapter
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
 import eu.darken.amply.R
+import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.DeviceInfo
 import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceState
 import eu.darken.amply.charging.core.enforcement.EnforcementStatus
@@ -138,7 +139,13 @@ internal fun resolveEnforcement(
                 enforcement = EnforcementStatus.REFUTED,
             )
         adapter.maintainerQualified(device) -> support.copy(enforcement = EnforcementStatus.CONFIRMED)
-        qualification.passedFor(adapter.id) -> support.copy(enforcement = EnforcementStatus.SELF_QUALIFIED)
+        qualification.passedFor(adapter.id) -> support.copy(
+            enforcement = EnforcementStatus.SELF_QUALIFIED,
+            // A run exercises two policies and proves nothing about the rest, so the pass licenses
+            // exactly those. Without this the tier would quietly unlock every value the adapter
+            // knows, including ones whose OEM meaning is still an assumption.
+            licensedPolicies = qualification.licensedPolicies(adapter),
+        )
         verificationStarted -> support.copy(enforcement = EnforcementStatus.UNVERIFIED)
         else -> support.copy(
             controlEnabled = false,
@@ -157,4 +164,16 @@ internal fun resolveEnforcement(
 private fun QualificationEvidenceState.passedFor(adapterId: String): Boolean {
     val evidence = (this as? QualificationEvidenceState.Present)?.evidence ?: return false
     return evidence.outcome == QualificationOutcomeRecord.PASSED && evidence.adapterId == adapterId
+}
+
+/**
+ * The policies a pass licenses: those the run actually wrote and observed, intersected with what the
+ * adapter still supports. The intersection matters across an app update — a stored policy the adapter
+ * no longer offers must not come back through this door.
+ */
+private fun QualificationEvidenceState.licensedPolicies(adapter: ChargingAdapter): List<ChargePolicy>? {
+    val evidence = (this as? QualificationEvidenceState.Present)?.evidence ?: return null
+    val exercised = evidence.exercisedPolicies.mapNotNull { ChargePolicy.fromStableId(it) }.toSet()
+    if (exercised.isEmpty()) return null
+    return adapter.supportedPolicies.filter { it in exercised }
 }

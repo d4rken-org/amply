@@ -73,6 +73,16 @@ class RuleApplier @Inject constructor(
     }
 
     /**
+     * Whether a rule currently owns the charging policy, i.e. the configured policy is a rule's doing
+     * and [RuleRuntimeState.baselinePolicyId] is owed back to the user.
+     *
+     * Read by the qualification run, which must refuse to start here rather than measure a policy
+     * somebody else owns: it would capture the rule's temporary policy as "the user's setting",
+     * restore it persistently at the end, and leave nothing remembering the real baseline.
+     */
+    suspend fun ruleOwnsPolicy(): Boolean = store.runtimeNow().phase != RulePhase.IDLE
+
+    /**
      * One evaluation pass: reconcile owed work, decide, act.
      *
      * [reconcileBluetooth] asks for the (bounded, best-effort) profile-proxy sweep instead of

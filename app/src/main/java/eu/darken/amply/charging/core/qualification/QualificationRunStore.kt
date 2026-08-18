@@ -27,6 +27,8 @@ data class PhaseRecord(
     @SerialName("exitAtWallMillis") val exitAtWallMillis: Long = 0L,
     @SerialName("exitPercent") val exitPercent: Int = -1,
     @SerialName("exitCounter") val exitCounter: Int? = null,
+    /** The accumulation rate measured across this phase, against which the verdict was decided. */
+    @SerialName("ratePerHour") val ratePerHour: Long = 0L,
 )
 
 /**
@@ -71,9 +73,12 @@ data class QualificationRunRecord(
     val releasePolicy: ChargePolicy = ChargePolicy.Unrestricted,
     @SerialName("commanded") val commanded: String? = null,
     @SerialName("commandedAtWallMillis") val commandedAtWallMillis: Long = 0L,
-    @SerialName("anchorPercent") val anchorPercent: Int = -1,
-    @SerialName("anchorCounter") val anchorCounter: Int? = null,
-    @SerialName("holdSinceWallMillis") val holdSinceWallMillis: Long = 0L,
+    @SerialName("windowStartAtWallMillis") val windowStartAtWallMillis: Long = 0L,
+    @SerialName("windowStartPercent") val windowStartPercent: Int = -1,
+    @SerialName("windowStartCounter") val windowStartCounter: Int? = null,
+    /** The within-run control: accumulation per hour measured in the baseline phase. */
+    @SerialName("baselineRatePerHour") val baselineRatePerHour: Long = 0L,
+    @SerialName("impliedFullCapacity") val impliedFullCapacity: Long = 0L,
     @SerialName("signal") val signal: FlowSignal = FlowSignal.NONE,
     @SerialName("observedHoldPercent") val observedHoldPercent: Int? = null,
     @SerialName("writeFailed") val writeFailed: Boolean = false,
@@ -108,6 +113,20 @@ class QualificationRunStore @Inject constructor(
     suspend fun put(record: QualificationRunRecord) {
         runValue.update { record }
     }
+
+    /**
+     * Advance the stored run inside a single read-modify-write transaction, returning the result.
+     *
+     * The tick loop must not write back a record it read earlier: [requestCancel] and
+     * [markWriteFailed] run on other coroutines, and a plain `put` of the older copy would silently
+     * drop the flag they just set — losing the user's cancel. Returns null when no run is stored,
+     * which means the run ended while the tick was being processed.
+     */
+    suspend fun mergeProgress(
+        transform: (QualificationRunRecord) -> QualificationRunRecord,
+    ): QualificationRunRecord? = runValue.update { current ->
+        current?.let(transform)
+    }.new
 
     suspend fun clear() {
         log(TAG, Logging.Priority.INFO) { "Clearing qualification run record" }

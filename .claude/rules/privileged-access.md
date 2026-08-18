@@ -229,6 +229,61 @@ ticks, persisted by `EnforcementEvidenceStore`. Three properties are load-bearin
 - A refutation is **terminal** for its scope, and a corrupt record is treated as a refutation. Both are fail-closed
   on purpose — the one error this gate exists to prevent is claiming protection that isn't there.
 
+## Guided Qualification Run
+
+`charging/core/qualification/` is the **active** counterpart to the passive gate above: instead of watching, it
+drives the cap and watches the hardware answer. Behind `BuildConfig.ENABLE_QUALIFICATION_RUN` (debug/beta only
+until a real device pass). `QualificationRunEngine`'s cut → resume → cut sequence is the "guided two-cap
+challenge" `EnforcementVerdictEngine`'s KDoc names as the only way to earn a real confirmation.
+
+Rules that must not be relaxed:
+
+- **A phase timeout is `INCONCLUSIVE`, never `REFUTED`.** Refutation stays reachable only from an observed climb
+  past the cap, with the same `OVERSHOOT_ALLOWANCE` the passive engine uses. A cold room or a weak charger must
+  never permanently disable control on a working device.
+- **A run may not refute a mapping it guessed.** On a candidate adapter (PR 2; the engine already implements it)
+  the commanded value is an assumption — a One UI 6/7 device whose `protect_battery` means "cap at 85" charges
+  past a commanded 80 while enforcing perfectly. That is `CAP_MISMATCH` plus the observed hold level, never a
+  refutation.
+- **A pass is stored in its own record**, `qualification.result.v1`, never as a constant in `EnforcementVerdict`.
+  The two record different things — passive observation versus a driven experiment with a protocol version, a run
+  shape and a measurement signal — and only one of them can ever be positive. (An earlier version of this note
+  claimed a positive constant there would be outright fail-open via a record that lost `algorithmVersion`; that
+  was overstated, since such a record decodes as version 0 and is then scoped out by the algorithm-version check.
+  The separation stands on the domain difference, not on that argument.) Bumping `ALGORITHM_VERSION` instead
+  would be actively unsafe: `scope()` would read every existing version-2 record as `Absent`, silently
+  un-refuting every already-refuted device.
+  The new record's fail-closed guard is an explicit `protocolVersion` **plus a credibility check** — a one-constant
+  *positive* enum has no safe default, so a record carrying only a matching build and protocol version would
+  otherwise decode as a pass with no adapter, cap, signal or exercised policies. Its `Corrupt` state means **not
+  qualified** — the opposite direction from the enforcement store's, and the same principle: the unreadable state
+  is the restrictive one.
+- **A pass licenses only the policies the run exercised** (`AdapterSupport.licensedPolicies`), enforced at both
+  the display and the write path. A run writes two policies and proves nothing about the adapter's others, which
+  matters most on a candidate device where the value mapping is itself a guess.
+- **Every phase is judged against the run's own baseline rate**, never an absolute threshold. A fixed
+  "charging has stopped" bar is simultaneously too high for a weak supply — a phone charging steadily at 100 mA
+  sits under it forever and reads as held, which is a false pass — and meaningless on a battery whose capacity or
+  reporting units are unknown. Do not reintroduce one.
+- **`EnforcementStatus.SELF_QUALIFIED`, not `CONFIRMED`.** `CONFIRMED` means a maintainer physically qualified the
+  device and earned a ledger row; a local pass is one user's device, one build, reset by an OTA. A refutation
+  still outranks it.
+- **`ChargingRepository.applyForQualification` requires a run token** matching a live `QualificationRunStore`
+  record. It is ungated for the same reason `restorePersistent` is, and the token is what stops that from
+  becoming a general bypass. Its writes are non-persistent, so the user's protective baseline and the reconnect
+  gesture's arming basis survive the run.
+- **The restore is registered before the first write**, as a `FullChargeStore` recovery target with
+  `RecoveryOrigin.SESSION_RESTORE`, so process death and reboot are covered by the shipped boot recovery rather
+  than anything new.
+- **No write-allowlist change, ever, for this feature.** Every key and value a run writes is already in
+  `SettingWritePolicy` / `LineageSettingWritePolicy`. If a future adapter needs a new one, that is a boundary
+  change reviewed on its own merits, not a qualification-run change.
+
+Excluded adapters and why: `policyLatchesAtPlug` (GrapheneOS, a future HONOR adapter) — mid-run writes have no
+hardware effect until a replug, so the sequence is structurally impossible; Adaptive-only adapters (Xiaomi
+HyperOS 2) — `enforcementIsConditional`, nothing to challenge on demand; Pixel — already maintainer-qualified with
+a real hardware signal.
+
 ## Foreground Service Requirement
 
 The temporary override uses a `specialUse` foreground service because dormant apps cannot reliably receive

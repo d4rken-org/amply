@@ -7,6 +7,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import androidx.annotation.StringRes
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -107,6 +108,45 @@ object SessionNotifications {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .build()
+    }
+
+    /**
+     * The guided qualification run. It takes 30-90 minutes with the screen off and the user has been
+     * told they can walk away, so the generic monitoring notification would leave the one thing they
+     * are waiting on invisible: this names the phase and offers a way to stop it without reopening
+     * the app.
+     */
+    fun qualification(context: Context, @StringRes phaseRes: Int, lowCap: Int): Notification {
+        ensureChannels(context)
+        val cancelPendingIntent = PendingIntent.getService(
+            context,
+            8,
+            Intent(context, ChargeSessionService::class.java).apply {
+                action = ChargeSessionService.ACTION_QUALIFICATION_CANCEL
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val openPendingIntent = PendingIntent.getActivity(
+            context,
+            9,
+            Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        return NotificationCompat.Builder(context, MONITOR_CHANNEL)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
+            .setContentTitle(context.getString(R.string.qualification_notification_title))
+            .setContentText(context.getString(phaseRes, lowCap))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(context.getString(phaseRes, lowCap)))
+            .setContentIntent(openPendingIntent)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .addAction(
+                R.drawable.ic_launcher_monochrome,
+                context.getString(R.string.qualification_notification_stop),
+                cancelPendingIntent,
+            )
             .build()
     }
 

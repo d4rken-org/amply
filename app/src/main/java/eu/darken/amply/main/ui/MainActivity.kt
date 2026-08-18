@@ -43,6 +43,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import dagger.hilt.android.AndroidEntryPoint
+import eu.darken.amply.BuildConfig
 import eu.darken.amply.R
 import eu.darken.amply.common.AmplyLinks
 import eu.darken.amply.common.theming.AmplyTheme
@@ -58,6 +59,8 @@ import eu.darken.amply.main.ui.dashboard.DashboardViewModel
 import eu.darken.amply.main.ui.dashboard.shouldMonitorAccess
 import eu.darken.amply.main.ui.dashboard.shouldShowUpgradePromo
 import eu.darken.amply.main.ui.onboarding.OnboardingScreen
+import eu.darken.amply.main.ui.qualification.QualificationScreen
+import eu.darken.amply.main.ui.qualification.QualificationViewModel
 import eu.darken.amply.main.ui.settings.AcknowledgementsScreen
 import eu.darken.amply.main.ui.settings.ChargingHistorySettingsScreen
 import eu.darken.amply.main.ui.settings.ChargingSettingsScreen
@@ -83,6 +86,7 @@ class MainActivity : ComponentActivity() {
     private val contributionViewModel: ContributionWizardViewModel by viewModels()
     private val statsViewModel: StatsViewModel by viewModels()
     private val rulesViewModel: ChargeRulesViewModel by viewModels()
+    private val qualificationViewModel: QualificationViewModel by viewModels()
 
     // Compose-observable so a widget launch that reuses an already-running activity (SINGLE_TOP →
     // onNewIntent, which does not re-run LaunchedEffect(Unit)) still triggers the permission flow.
@@ -137,6 +141,7 @@ class MainActivity : ComponentActivity() {
                     val state by viewModel.state.collectAsState()
                     val debugState by settingsViewModel.debugState.collectAsState()
                     val contributionState by contributionViewModel.state.collectAsState()
+                    val qualificationState by qualificationViewModel.state.collectAsState()
                     var destination by rememberSaveable { mutableStateOf(SettingsDestination.DASHBOARD) }
                     // Where a back-out of the contribution wizard returns to (set on each entry).
                     var wizardOrigin by rememberSaveable { mutableStateOf(SettingsDestination.DASHBOARD) }
@@ -465,6 +470,8 @@ class MainActivity : ComponentActivity() {
                             // Re-dispatch the charge service after a failed start (charging card retry).
                             onRetryCapture = { viewModel.nudgeChargeService() },
                             onStartVerification = { viewModel.startEnforcementVerification() },
+                            onProveLimit = { destination = SettingsDestination.QUALIFICATION },
+                            proveLimitAvailable = BuildConfig.ENABLE_QUALIFICATION_RUN,
                             onPinWidget = viewModel::requestPinWidget,
                             onAddTile = viewModel::requestAddTile,
                             onDismissQuickAccess = viewModel::dismissQuickAccess,
@@ -556,6 +563,32 @@ class MainActivity : ComponentActivity() {
                             },
                             onCopyReport = { copyContribution(contributionState.reportText) },
                             onEmail = { emailContribution(contributionState.reportText) },
+                        )
+                        // Guarded at the destination as well as at the entry point: this can be
+                        // restored from saved state after a process death, and a release build must
+                        // never resurrect a screen its own flag says does not exist.
+                        SettingsDestination.QUALIFICATION -> if (!BuildConfig.ENABLE_QUALIFICATION_RUN) {
+                            LaunchedEffect(Unit) { destination = SettingsDestination.DASHBOARD }
+                        } else QualificationScreen(
+                            state = qualificationState,
+                            onExit = { destination = SettingsDestination.DASHBOARD },
+                            onRefresh = qualificationViewModel::refreshEligibility,
+                            onStart = qualificationViewModel::start,
+                            onCancel = qualificationViewModel::cancel,
+                            onNext = qualificationViewModel::goNext,
+                            onBack = qualificationViewModel::goBack,
+                            onDismissResult = {
+                                qualificationViewModel.dismissResult()
+                                destination = SettingsDestination.DASHBOARD
+                            },
+                            onOpenIssue = {
+                                openContributionIssue(
+                                    qualificationState.issueUrl.takeIf { it.isNotBlank() },
+                                    qualificationState.reportText,
+                                )
+                            },
+                            onCopyReport = { copyContribution(qualificationState.reportText) },
+                            onEmail = { emailContribution(qualificationState.reportText) },
                         )
                         SettingsDestination.SUPPORT -> SupportScreen(
                             state = debugState,

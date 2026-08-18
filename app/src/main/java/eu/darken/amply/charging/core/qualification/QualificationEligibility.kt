@@ -55,11 +55,31 @@ enum class IneligibleReason {
     /** A restore is still owed from an earlier session or boot; it must land before a run starts. */
     RECOVERY_PENDING,
 
+    /**
+     * A conditional charge rule currently owns the charging policy. The run must not start: it would
+     * read the rule's temporary policy as the user's own setting, restore that persistently at the
+     * end, and leave nothing remembering the real baseline the rule still owed back.
+     */
+    RULE_ACTIVE,
+
+    /**
+     * The currently configured policy could not be read, so the run does not know what it would owe
+     * the user afterwards. Guessing the adapter's protective default would silently replace an
+     * unrecognized native mode with 80%.
+     */
+    BASELINE_UNREADABLE,
+
     /** Not plugged in. */
     NOT_CHARGING,
 
     /** The battery is outside the band this adapter's run shape can work in. */
     BATTERY_LEVEL,
+
+    /**
+     * The battery is too close to full to measure anything: up there it stops charging whether or not
+     * the cap works, so a hold proves nothing. See [QualificationProtocol.NEAR_FULL_PERCENT].
+     */
+    BATTERY_TOO_FULL,
 }
 
 /** The concrete caps a run will drive, resolved from the adapter and the current battery level. */
@@ -89,6 +109,8 @@ fun qualificationEligibility(
     accessReady: Boolean,
     sessionActive: Boolean,
     pendingRecovery: Boolean,
+    ruleOwnsPolicy: Boolean,
+    baselineReadable: Boolean,
 ): RunEligibility {
     if (adapter == null || support == null || adapter.supportedPolicies.isEmpty()) {
         return RunEligibility.Ineligible(IneligibleReason.NO_ADAPTER)
@@ -108,7 +130,13 @@ fun qualificationEligibility(
     if (!accessReady) return RunEligibility.Ineligible(IneligibleReason.ACCESS_NOT_READY)
     if (sessionActive) return RunEligibility.Ineligible(IneligibleReason.SESSION_ACTIVE)
     if (pendingRecovery) return RunEligibility.Ineligible(IneligibleReason.RECOVERY_PENDING)
+    if (ruleOwnsPolicy) return RunEligibility.Ineligible(IneligibleReason.RULE_ACTIVE)
+    if (!baselineReadable) return RunEligibility.Ineligible(IneligibleReason.BASELINE_UNREADABLE)
     if (!plugged) return RunEligibility.Ineligible(IneligibleReason.NOT_CHARGING)
+
+    if (percent >= QualificationProtocol.NEAR_FULL_PERCENT) {
+        return RunEligibility.Ineligible(IneligibleReason.BATTERY_TOO_FULL)
+    }
 
     val caps = adapter.supportedPolicies.filterIsInstance<ChargePolicy.FixedLimit>()
         .map { it.percent }

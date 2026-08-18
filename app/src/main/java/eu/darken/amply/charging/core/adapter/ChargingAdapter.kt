@@ -41,6 +41,16 @@ data class AdapterSupport(
      * while this depends on stored evidence and an opt-in.
      */
     val enforcement: EnforcementStatus? = null,
+    /**
+     * When non-null, the only policies this device may be offered — an intersection applied on top of
+     * [ChargingAdapter.supportedPolicies], never a widening of it.
+     *
+     * Set by a [EnforcementStatus.SELF_QUALIFIED] tier: a guided run exercises exactly two policies,
+     * and a pass says nothing about the adapter's others. That matters most on a candidate device,
+     * where the value mapping itself is a guess — proving `protect_battery = 1` caps charging says
+     * nothing about what `3` does. Null means no restriction, which is every other tier.
+     */
+    val licensedPolicies: List<ChargePolicy>? = null,
 )
 
 /** How an adapter's applied configuration can be confirmed. */

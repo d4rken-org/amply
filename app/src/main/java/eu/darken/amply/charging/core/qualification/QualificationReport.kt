@@ -43,6 +43,12 @@ data class QualificationReport(
     val lowCap: Int,
     val releasePolicy: String,
     val observedHoldPercent: Int?,
+    /**
+     * False when the run could not read the user's configured policy and fell back to the adapter's
+     * protective default. The restore then put back a guess rather than what was there, which a reader
+     * of this report needs to know before drawing conclusions from it.
+     */
+    val baselineVerified: Boolean,
     val outcome: String,
     val runStartedAtWallMillis: Long,
     val runEndedAtWallMillis: Long,
@@ -95,6 +101,7 @@ fun buildQualificationReport(
     lowCap = record.lowCap,
     releasePolicy = record.releasePolicy.stableId,
     observedHoldPercent = record.observedHoldPercent,
+    baselineVerified = record.baselineVerified,
     outcome = terminal.reportId(),
     runStartedAtWallMillis = record.runStartedAtWallMillis,
     runEndedAtWallMillis = createdAtEpochMs,
@@ -129,6 +136,7 @@ fun formatQualificationReport(report: QualificationReport): String = buildString
     appendLine("cap_percent=${report.lowCap}")
     appendLine("release_policy=${sanitizeReportValue(report.releasePolicy)}")
     appendLine("observed_hold_percent=${report.observedHoldPercent ?: "none"}")
+    appendLine("baseline_verified=${report.baselineVerified}")
     appendLine("outcome=${report.outcome}")
     appendLine("run_started_epoch_ms=${report.runStartedAtWallMillis}")
     appendLine("run_ended_epoch_ms=${report.runEndedAtWallMillis}")

@@ -23,6 +23,15 @@ data class ChargeMonitorTick(
     val batteryStatus: Int,
     /** Whether a temporary full-charge session is currently active. */
     val sessionActive: Boolean,
+    /**
+     * Whether a guided qualification run was in flight when this state was observed.
+     *
+     * Stamped here, at capture time, rather than looked up by each watcher when it gets round to the
+     * tick: watchers drain their own queues, so "is a run happening" answered later is a different
+     * question than the one the tick is evidence about. The enforcement recorder depends on this
+     * distinction to avoid recording a terminal refutation for charging a run itself commanded.
+     */
+    val runActive: Boolean = false,
     /** The exact battery intent this evaluation used, or null when none was available. */
     val batteryIntent: Intent? = null,
     /** [android.os.SystemClock.elapsedRealtime] when this state was observed. */
