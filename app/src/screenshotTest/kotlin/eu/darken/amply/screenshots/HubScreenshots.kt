@@ -22,3 +22,13 @@ fun HubTileGridEmpty() = HubTileGridEmptyContent()
 @Preview(showBackground = true, device = DS)
 @Composable
 fun MetricDetail() = MetricDetailContent()
+
+@PreviewTest
+@Preview(showBackground = true, device = DS)
+@Composable
+fun ChargeTimeReady() = ChargeTimeReadyContent()
+
+@PreviewTest
+@Preview(showBackground = true, device = DS)
+@Composable
+fun ChargeTimeNotEnough() = ChargeTimeNotEnoughContent()

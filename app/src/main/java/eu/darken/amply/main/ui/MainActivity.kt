@@ -688,6 +688,9 @@ class MainActivity : ComponentActivity() {
                                     statsViewModel.requestEnableCapture()
                                 },
                                 onOpenSession = { id -> openSession(id, SettingsDestination.BATTERY) },
+                                // The same fold the dashboard's charging card reads, so the two
+                                // surfaces can never quote different charge times.
+                                chargeTime = state.chargeTime,
                                 // A tile only offers the tap when that metric has samples in the
                                 // shown charge, so there is always a session id to pair it with.
                                 onOpenMetric = { metric ->

@@ -65,8 +65,11 @@ import eu.darken.amply.rules.core.RuleRuntimeState
 import eu.darken.amply.stats.core.CaptureServiceHealth
 import eu.darken.amply.stats.core.ChargeSessionSummary
 import eu.darken.amply.stats.core.ChargeStatsRepository
+import eu.darken.amply.stats.core.ChargeTimeModelSource
 import eu.darken.amply.stats.core.StatsLiveSession
 import eu.darken.amply.stats.core.StatsPreferences
+import eu.darken.amply.stats.ui.ChargeTimeState
+import eu.darken.amply.stats.ui.chargeTimeStates
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -117,6 +120,11 @@ data class DashboardUiState(
     val notificationsBlocked: Boolean = false,
     /** Everything the stats card needs: capture switch, pipeline health, and the Room teaser data. */
     val stats: StatsDashboardState = StatsDashboardState(),
+    /**
+     * Charge-time estimates from recorded history, shared with the battery hub's card so both
+     * surfaces read one fold rather than each loading and re-extracting ten sessions.
+     */
+    val chargeTime: ChargeTimeState = ChargeTimeState.Loading,
     /** A pending "Amply was interrupted while owing a restore" warning, or null when there is none. */
     val interruption: InterruptionEvent? = null,
     /** The conditional charge rules and which one, if any, currently owns the policy. */
@@ -173,6 +181,7 @@ class DashboardViewModel @Inject constructor(
     private val chargeAlarmStore: ChargeAlarmStore,
     private val statsPreferences: StatsPreferences,
     private val statsRepository: ChargeStatsRepository,
+    private val chargeTimeModelSource: ChargeTimeModelSource,
     private val captureServiceHealth: CaptureServiceHealth,
     private val interruptionStore: InterruptionStore,
     private val upgradeRepo: UpgradeRepo,
@@ -254,6 +263,18 @@ class DashboardViewModel @Inject constructor(
         currentSession = { statsRepository.currentSession() },
     )
 
+    // Paired with the stats slice rather than taking a combine slot of its own (the flat helper
+    // stops at six), and gated on the same capture flag: with recording off the model provider is
+    // never invoked, so this can't be what creates stats.db either.
+    private val statsAndChargeTime = combine(
+        statsDashboard,
+        chargeTimeStates(
+            captureEnabled = statsPreferences.captureEnabled.flow,
+            readouts = batteryReadoutSource.readouts(),
+            model = { chargeTimeModelSource.states },
+        ),
+    ) { stats, chargeTime -> stats to chargeTime }
+
     val state = combine6(
         combine(
             repository.state,
@@ -289,8 +310,8 @@ class DashboardViewModel @Inject constructor(
         quickAccessChecked,
         tileRequestPending,
         unprivilegedExtras,
-        statsDashboard,
-    ) { base, quickAccess, checked, tilePending, extras, stats ->
+        statsAndChargeTime,
+    ) { base, quickAccess, checked, tilePending, extras, (stats, chargeTime) ->
         base.copy(
             quickAccess = quickAccess,
             quickAccessChecked = checked,
@@ -302,6 +323,7 @@ class DashboardViewModel @Inject constructor(
             upgrade = extras.upgrade,
             conditions = extras.conditions,
             stats = stats,
+            chargeTime = chargeTime,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
 

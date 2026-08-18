@@ -14,6 +14,7 @@ import eu.darken.amply.R
 import eu.darken.amply.battery.core.BatteryReadout
 import eu.darken.amply.common.compose.chart.SPARKLINE_TEST_TAG
 import eu.darken.amply.stats.core.ChargeCurvePoint
+import eu.darken.amply.stats.ui.ChargeTimeState
 import io.kotest.matchers.shouldBe
 import org.junit.Rule
 import org.junit.Test
@@ -68,12 +69,13 @@ class BatteryHubScreenTest {
     private fun render(
         readout: BatteryReadout?,
         curve: List<ChargeCurvePoint> = emptyList(),
+        captureEnabled: Boolean = true,
         onOpenMetric: (BatteryMetric) -> Unit = {},
     ) {
         compose.setContent {
             BatteryHubScreen(
                 readout = readout,
-                captureEnabled = true,
+                captureEnabled = captureEnabled,
                 teaser = ChargeTeaserState.None,
                 // Recording is on, so the badged opt-in card never renders — these cases are about
                 // the readout itself.
@@ -84,8 +86,25 @@ class BatteryHubScreenTest {
                 onOpenSession = {},
                 onOpenMetric = onOpenMetric,
                 curve = curve,
+                chargeTime = ChargeTimeState.NotEnoughData(sessions = 1),
             )
         }
+    }
+
+    @Test
+    fun `with recording off there is no charge-time card at all`() {
+        // The estimates come entirely from recorded history, so with nothing being recorded there is
+        // no card rather than an empty one.
+        render(charging, captureEnabled = false)
+        compose.onAllNodesWithText(string(R.string.charge_time_title)).assertCountEquals(0)
+        compose.onAllNodesWithText(string(R.string.charge_time_not_enough)).assertCountEquals(0)
+    }
+
+    @Test
+    fun `with recording on the charge-time card is present`() {
+        render(charging)
+        compose.onNodeWithText(string(R.string.charge_time_title)).assertExists()
+        compose.onNodeWithText(string(R.string.charge_time_not_enough)).assertExists()
     }
 
     @Test

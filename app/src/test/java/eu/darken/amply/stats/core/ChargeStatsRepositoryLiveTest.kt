@@ -13,8 +13,9 @@ import eu.darken.amply.stats.core.db.BatterySampleEntity
 import eu.darken.amply.stats.core.db.ChargeSessionEntity
 import eu.darken.amply.stats.core.db.StatsDatabase
 import io.kotest.matchers.nulls.shouldBeNull
-import io.kotest.matchers.shouldBe
 import io.kotest.matchers.nulls.shouldNotBeNull
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -51,6 +52,7 @@ class ChargeStatsRepositoryLiveTest {
 
     private lateinit var database: StatsDatabase
     private lateinit var repository: ChargeStatsRepository
+    private lateinit var recorder: ChargeStatsRecorder
     private lateinit var dataStoreScope: CoroutineScope
 
     @Before
@@ -63,7 +65,7 @@ class ChargeStatsRepositoryLiveTest {
         // app's real path would be shared with every other Robolectric class in the same JVM.
         dataStoreScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         val bootIdSource = BootIdSource(context)
-        val recorder = ChargeStatsRecorder(
+        recorder = ChargeStatsRecorder(
             context = context,
             database = { database },
             preferences = StatsPreferences(
@@ -216,6 +218,42 @@ class ChargeStatsRepositoryLiveTest {
         metrics.aggregates.temperature!!.max shouldBe 480
         metrics.aggregates.level!!.min shouldBe 40
         metrics.aggregates.current!!.sampleCount shouldBe 3
+    }
+
+    @Test
+    fun `band observations read the recent finished sessions and nothing before they are asked for`() = runTest {
+        // Constructing the repository must not touch Room: nothing here has run a query yet, and a
+        // user who never enabled capture must not get stats.db created by the model source existing.
+        val untouched = ChargeStatsRepository(
+            database = { error("stats database must not be opened before bandObservations is called") },
+            recorder = recorder,
+            bootIdSource = BootIdSource(ApplicationProvider.getApplicationContext()),
+        )
+        untouched shouldNotBe null
+
+        val dao = database.statsDao()
+        val sessionId = dao.insertSession(
+            ChargeSessionEntity(
+                startedAtWallMillis = 1_000L,
+                startedElapsedRealtimeMillis = 0L,
+                endedAtWallMillis = 500_000L,
+                endedElapsedRealtimeMillis = 500_000L,
+                bootId = 7,
+                startPercent = 40,
+                endPercent = 44,
+                pluggedRaw = 1,
+                avgPowerMilliwatts = 11_000,
+            ),
+        )
+        // 40 → 44 in even minutes: the first step is dropped as usual, leaving three observations.
+        (0..4).forEach { i ->
+            dao.insertSample(sample(sessionId, elapsed = i * 60_000L, percent = 40 + i))
+        }
+
+        val batch = repository.bandObservations()
+        batch.observations.map { it.percentFrom } shouldBe listOf(41, 42, 43)
+        batch.observations.map { it.chargingType }.distinct() shouldBe listOf(ChargingType.AC)
+        batch.sessionPowerMilliwatts shouldBe mapOf(sessionId to 11_000)
     }
 
     private suspend fun awaitEmission(channel: Channel<List<Int?>>, expected: List<Int?>) {

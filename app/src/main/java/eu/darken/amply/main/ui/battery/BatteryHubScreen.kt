@@ -44,8 +44,12 @@ import eu.darken.amply.common.compose.AmplyCardDefaults
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.common.compose.chart.ChartPoint
+import eu.darken.amply.stats.core.ChargeBandSplit
 import eu.darken.amply.stats.core.ChargeCurvePoint
+import eu.darken.amply.stats.core.ChargeTimeBasis
+import eu.darken.amply.stats.core.ChargeTimeEstimate
 import eu.darken.amply.stats.core.StatsPowerCalculator
+import eu.darken.amply.stats.ui.ChargeTimeState
 import eu.darken.amply.stats.ui.StatsFormat
 
 /**
@@ -75,6 +79,9 @@ fun BatteryHubScreen(
     // The charge being shown by the teaser, for the tiles' sparklines and their tappability. Empty
     // until something has been recorded — every tile still renders its live value.
     curve: List<ChargeCurvePoint> = emptyList(),
+    // Charge-time estimates. Only rendered while recording is on: they come entirely from recorded
+    // history, so with recording off there is no card rather than an empty one.
+    chargeTime: ChargeTimeState = ChargeTimeState.Loading,
 ) {
     Scaffold(
         topBar = {
@@ -125,6 +132,9 @@ fun BatteryHubScreen(
                         currentPercent = data.levelPercent,
                     )
                 }
+            }
+            if (captureEnabled) {
+                item { ChargeTimeCard(state = chargeTime) }
             }
             item { SectionHeader(stringResource(R.string.battery_hub_section_now)) }
             // A Column of Rows, not a LazyVerticalGrid: this screen is itself a LazyColumn, and
@@ -327,6 +337,23 @@ private val previewCharging = BatteryReadout(
     maxChargingVoltageMicrovolts = 9_000_000,
 )
 
+private val previewChargeTime = ChargeTimeState.Ready(
+    estimate = ChargeTimeEstimate(
+        toEightyMillis = null,
+        toFullMillis = 1_080_000,
+        avgSpeedMilliwatts = 11_500,
+        split = ChargeBandSplit(
+            toFiftyMillis = 2_700_000,
+            fiftyToEightyMillis = 1_800_000,
+            eightyToHundredMillis = 3_600_000,
+        ),
+        basedOnSessions = 6,
+    ),
+    basis = ChargeTimeBasis.SAME_TYPE,
+    charging = true,
+    currentPercent = 82,
+)
+
 @AmplyPreview
 @Composable
 private fun BatteryHubScreenLivePreview() = PreviewWrapper {
@@ -342,6 +369,7 @@ private fun BatteryHubScreenLivePreview() = PreviewWrapper {
         onOpenSession = {},
         onOpenMetric = {},
         curve = previewCurve,
+        chargeTime = previewChargeTime,
     )
 }
 

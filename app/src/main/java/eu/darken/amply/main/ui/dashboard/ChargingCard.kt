@@ -33,6 +33,7 @@ import eu.darken.amply.stats.core.ChargeSessionSummary
 import eu.darken.amply.stats.core.ChargingType
 import eu.darken.amply.stats.core.StatsLiveSession
 import eu.darken.amply.stats.core.StatsSealReason
+import eu.darken.amply.stats.ui.ChargeTimeState
 import eu.darken.amply.stats.ui.StatsCurveChart
 import eu.darken.amply.stats.ui.StatsFormat
 import eu.darken.amply.stats.ui.rememberLiveElapsedMillis
@@ -64,6 +65,9 @@ fun ChargingCard(
     onOpenHub: () -> Unit,
     onRetryCapture: () -> Unit,
     modifier: Modifier = Modifier,
+    // Only ever a single remaining-time line, and only while a charge is actually running — the full
+    // breakdown lives on the battery hub's own card.
+    chargeTime: ChargeTimeState = ChargeTimeState.Loading,
     // Monotonic (never negative, immune to clock changes) and shares the curve's clock; re-evaluated
     // on each recomposition and backstopped by a minute tick while live (see rememberLiveElapsedMillis).
     nowElapsedRealtimeMillis: Long = SystemClock.elapsedRealtime(),
@@ -109,7 +113,7 @@ fun ChargingCard(
             ChargingCardPresentation.Unavailable -> BodyText(stringResource(R.string.dashboard_stats_unavailable))
             ChargingCardPresentation.Indeterminate ->
                 BodyText(stringResource(R.string.dashboard_charging_indeterminate))
-            is ChargingCardPresentation.Live -> LiveBody(presentation, battery, elapsedMillis ?: 0L)
+            is ChargingCardPresentation.Live -> LiveBody(presentation, battery, elapsedMillis ?: 0L, chargeTime)
             is ChargingCardPresentation.ConnectedWithoutSession -> ConnectedBody(presentation, onRetryCapture)
             is ChargingCardPresentation.Idle -> IdleBody(presentation)
         }
@@ -162,7 +166,10 @@ private fun ColumnScope.LiveBody(
     live: ChargingCardPresentation.Live,
     battery: BatteryReadout,
     elapsedMillis: Long,
+    chargeTime: ChargeTimeState,
 ) {
+    RemainingTimeLine(chargeTime)
+
     if (shouldShowLiveCurve(live.session.curve, elapsedMillis)) {
         StatsCurveChart(
             curve = live.session.curve,
@@ -185,6 +192,32 @@ private fun ColumnScope.LiveBody(
             modifier = Modifier.align(Alignment.End),
         )
     }
+}
+
+/**
+ * The one line of charge-time estimate this card carries.
+ *
+ * Three conditions, all of them refusals rather than fallbacks: the estimate must be [Ready], the
+ * battery must actually be taking charge (a device held at an OEM limit is not counting down toward
+ * anything), and there must be a real target to name. Anything else renders no line at all —
+ * "Not enough data yet" belongs on the hub's card, which is about charge times; this card is about
+ * the charge that is happening.
+ */
+@Composable
+private fun RemainingTimeLine(chargeTime: ChargeTimeState) {
+    val ready = chargeTime as? ChargeTimeState.Ready ?: return
+    if (!ready.charging) return
+    val toFull = StatsFormat.duration(ready.estimate.toFullMillis)
+    val text = when {
+        toFull != null -> stringResource(R.string.charge_time_headline_full_countdown, toFull)
+        else -> StatsFormat.duration(ready.estimate.toEightyMillis)
+            ?.let { stringResource(R.string.charge_time_headline_eighty_countdown, it) }
+    } ?: return
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.primary,
+    )
 }
 
 @Composable

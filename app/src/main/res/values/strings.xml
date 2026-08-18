@@ -533,6 +533,33 @@
     <string name="battery_metric_min">Minimum</string>
     <string name="battery_metric_avg">Average</string>
     <string name="battery_metric_max">Maximum</string>
+
+    <!-- Charge-time estimates (hub card + dashboard line) -->
+    <string name="charge_time_title">Charge time</string>
+    <string name="charge_time_headline_full_countdown">Full in about %1$s</string>
+    <string name="charge_time_headline_full_reference">Typically about %1$s to full from here</string>
+    <string name="charge_time_headline_eighty_countdown">80%% in about %1$s</string>
+    <string name="charge_time_headline_eighty_reference">Typically about %1$s to 80%% from here</string>
+    <string name="charge_time_to_eighty" formatted="false">To 80%</string>
+    <string name="charge_time_to_full" formatted="false">To 100%</string>
+    <string name="charge_time_avg_speed">Avg speed</string>
+    <string name="charge_time_value_missing">Not enough data yet</string>
+    <string name="charge_time_split_title">Where the time goes</string>
+    <string name="charge_time_split_to_fifty" formatted="false">To 50%</string>
+    <string name="charge_time_split_fifty_eighty" formatted="false">50–80%</string>
+    <string name="charge_time_split_eighty_hundred" formatted="false">80–100%</string>
+    <string name="charge_time_trickle_note" formatted="false">The last stretch takes the longest: your device deliberately slows down near 100% to be easier on the battery.</string>
+    <plurals name="charge_time_provenance_same_type">
+        <item quantity="one">From %1$d charge on this kind of charger</item>
+        <item quantity="other">From %1$d charges on this kind of charger</item>
+    </plurals>
+    <plurals name="charge_time_provenance_pooled">
+        <item quantity="one">From %1$d charge, across all charger types</item>
+        <item quantity="other">From %1$d charges, across all charger types</item>
+    </plurals>
+    <string name="charge_time_loading">Working out your charge times…</string>
+    <string name="charge_time_unavailable">Statistics are unavailable right now</string>
+    <string name="charge_time_not_enough">Amply needs to record a few more charges before it can estimate how long yours take.</string>
     <string name="battery_status_charging">Charging</string>
     <string name="battery_status_discharging">Discharging</string>
     <string name="battery_status_not_charging">Not charging</string>
