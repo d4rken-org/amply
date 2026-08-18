@@ -22,6 +22,7 @@ import eu.darken.amply.charging.core.ChargingRepository
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
 import eu.darken.amply.charging.core.adapter.ChargingAdapter
 import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceState
+import eu.darken.amply.charging.core.qualification.QualificationEvidenceState
 import eu.darken.amply.common.datastore.value
 import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
@@ -980,7 +981,10 @@ class ChargeSessionService : Service() {
      * real gate.
      */
     private fun capabilityAdapter(): ChargingAdapter? =
-        adapterRegistry.select(evidenceState = EnforcementEvidenceState.Loading).adapter
+        adapterRegistry.select(
+            evidenceState = EnforcementEvidenceState.Loading,
+            qualification = QualificationEvidenceState.Loading,
+        ).adapter
 
     // The gesture's arming preconditions (hardware charging-state 4) are Pixel-specific; on
     // adapters without that signal the monitor would never arm and must not run.

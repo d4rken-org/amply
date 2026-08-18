@@ -6,6 +6,7 @@ import android.content.Intent
 import androidx.core.content.ContextCompat
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
 import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceState
+import eu.darken.amply.charging.core.qualification.QualificationEvidenceState
 import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
@@ -43,8 +44,10 @@ class BootReceiver : BroadcastReceiver() {
                 val sessionExists = sessionStore.currentSession() != null
                 val pendingRecovery = sessionStore.pendingRecoveryTarget() != null
                 val gestureEnabled = sessionStore.isQuickFullChargeEnabled() &&
-                    adapterRegistry.select(evidenceState = EnforcementEvidenceState.Loading)
-                        .adapter?.reconnectGestureSupported == true
+                    adapterRegistry.select(
+                        evidenceState = EnforcementEvidenceState.Loading,
+                        qualification = QualificationEvidenceState.Loading,
+                    ).adapter?.reconnectGestureSupported == true
                 val mandatory = sessionExists || pendingRecovery || gestureEnabled
                 val action = ServiceDispatch.startAction(
                     trigger = trigger,

@@ -375,7 +375,11 @@ internal fun statusLine(
         EnforcementStatus.REFUTED -> context.getString(R.string.widget_status_enforcement_refuted)
         // The setting is real, but nothing observable can show the hardware acting on it.
         EnforcementStatus.UNVERIFIED -> context.getString(R.string.widget_status_unverified_suffix, label)
-        EnforcementStatus.CONFIRMED, null -> label
+        // SELF_QUALIFIED earns the bare label alongside CONFIRMED: a guided run drove this exact
+        // build's charging to stop, restart and stop again, which is a direct observation of the
+        // hardware obeying — the very thing UNVERIFIED lacks. The scoping caveat (one build, reset by
+        // an OTA) belongs on the dashboard card, not on a home-screen label with no room for it.
+        EnforcementStatus.CONFIRMED, EnforcementStatus.SELF_QUALIFIED, null -> label
     }
 }
 

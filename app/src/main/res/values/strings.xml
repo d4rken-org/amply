@@ -98,6 +98,7 @@
     <string name="charging_reason_loading">Loading</string>
     <string name="charging_reason_state_unavailable">State unavailable</string>
     <string name="charging_reason_write_failed">The settings write failed</string>
+    <string name="charging_reason_qualification_not_running">No qualification run is in progress</string>
     <string name="charging_reason_needs_setup">Grant charge-control access or connect Shizuku</string>
     <string name="charging_reason_policy_unsupported">%1$s is not supported by %2$s</string>
     <string name="charging_reason_settings_unreadable">Settings are not readable</string>
@@ -391,6 +392,8 @@
     <string name="dashboard_enforcement_unverified_title">Charge limit not confirmed</string>
     <string name="dashboard_enforcement_unverified_body">The controls are available, but nothing Amply can see proves the limit works on this build. It keeps watching for the opposite: if the battery is observed charging past the limit, Amply switches its charging controls back off.</string>
     <string name="dashboard_enforcement_unverified_note">Set, but not confirmed to work on this build</string>
+    <string name="dashboard_enforcement_self_qualified_title">You proved the charge limit here</string>
+    <string name="dashboard_enforcement_self_qualified_body">The guided check stopped your charging at the limit, started it again, and stopped it a second time, so the charging hardware really is honouring the limit on this build. That result applies to this build only: a system update replaces it, and you can run the check again afterwards.</string>
     <string name="dashboard_enforcement_refuted_title">Charge limiting does not work on this build</string>
     <string name="dashboard_enforcement_refuted_body">Your build accepted the limit and then charged past it, so the charging hardware is ignoring it. Amply has switched its charging controls off here rather than show a protection that isn\'t real. A report helps get this build looked at.</string>
     <!-- Hero wording for the tiers that keep the controls off: the device is matched, so the generic

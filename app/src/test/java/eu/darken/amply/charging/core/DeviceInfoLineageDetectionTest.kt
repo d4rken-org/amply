@@ -18,6 +18,7 @@ import eu.darken.amply.charging.core.adapter.XiaomiChargingAdapter
 import eu.darken.amply.charging.core.adapter.XiaomiHyperOs3ChargingAdapter
 import eu.darken.amply.charging.core.adapter.XiaomiLabAdapter
 import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceState
+import eu.darken.amply.charging.core.qualification.QualificationEvidenceState
 import eu.darken.amply.common.ca.toCaString
 import io.kotest.matchers.shouldBe
 import org.junit.Test
@@ -87,7 +88,7 @@ class DeviceInfoLineageDetectionTest {
         // The whole chain the bug broke: PackageManager → DeviceInfo.current → AdapterRegistry.
         shadowOf(context.packageManager).setSystemFeature(DeviceInfo.FEATURE_LINEAGE_OS, true)
 
-        val selection = registry.select(DeviceInfo.current(context), EnforcementEvidenceState.Absent)
+        val selection = registry.select(DeviceInfo.current(context), EnforcementEvidenceState.Absent, QualificationEvidenceState.Absent)
 
         selection.adapter?.id shouldBe "lineageos-lab"
         selection.support.contributionWanted shouldBe true
@@ -97,7 +98,7 @@ class DeviceInfoLineageDetectionTest {
     fun `without the feature the same device is not routed to a lineage adapter`() {
         shadowOf(context.packageManager).setSystemFeature(DeviceInfo.FEATURE_LINEAGE_OS, false)
 
-        val selection = registry.select(DeviceInfo.current(context), EnforcementEvidenceState.Absent)
+        val selection = registry.select(DeviceInfo.current(context), EnforcementEvidenceState.Absent, QualificationEvidenceState.Absent)
 
         selection.adapter?.id shouldBe null
     }

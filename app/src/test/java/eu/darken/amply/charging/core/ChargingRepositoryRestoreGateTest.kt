@@ -32,6 +32,8 @@ import eu.darken.amply.charging.core.enforcement.EnforcementEvidence
 import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceStore
 import eu.darken.amply.charging.core.enforcement.EnforcementVerdict
 import eu.darken.amply.charging.core.enforcement.EnforcementVerdictEngine
+import eu.darken.amply.charging.core.qualification.QualificationEvidenceStore
+import eu.darken.amply.charging.core.qualification.QualificationRunStore
 import eu.darken.amply.common.AppDataStore
 import eu.darken.amply.common.serialization.SerializationModule
 import eu.darken.amply.fullcharge.core.RecoveryOrigin
@@ -133,6 +135,8 @@ class ChargingRepositoryRestoreGateTest {
             },
             batteryReader = BatteryReader(context, BatteryUnitCalibration(context)),
             evidenceStore = evidenceStore,
+            qualificationStore = QualificationEvidenceStore(appDataStore, buildIdentity, json),
+            runStore = QualificationRunStore(appDataStore, json),
             buildIdentity = buildIdentity,
         )
     }

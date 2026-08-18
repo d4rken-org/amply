@@ -81,8 +81,13 @@ android {
     }
 
     buildTypes {
+        // ENABLE_QUALIFICATION_RUN gates the guided qualification run (charging/core/qualification).
+        // It is the first feature that deliberately writes charge settings on a build whose hardware
+        // Amply has never seen honour a cap, so it rides the debug/beta channels until a real device
+        // pass. Flip the release value to true once that has happened.
         debug {
             isMinifyEnabled = false
+            buildConfigField("boolean", "ENABLE_QUALIFICATION_RUN", "true")
         }
         create("beta") {
             lint {
@@ -91,6 +96,7 @@ android {
             }
             isMinifyEnabled = true
             isShrinkResources = true
+            buildConfigField("boolean", "ENABLE_QUALIFICATION_RUN", "true")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -103,6 +109,7 @@ android {
             }
             isMinifyEnabled = true
             isShrinkResources = true
+            buildConfigField("boolean", "ENABLE_QUALIFICATION_RUN", "false")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

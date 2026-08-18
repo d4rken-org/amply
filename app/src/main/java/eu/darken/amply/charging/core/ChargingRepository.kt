@@ -22,6 +22,9 @@ import eu.darken.amply.charging.core.enforcement.BuildIdentitySource
 import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceState
 import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceStore
 import eu.darken.amply.charging.core.enforcement.EnforcementStatus
+import eu.darken.amply.charging.core.qualification.QualificationEvidenceState
+import eu.darken.amply.charging.core.qualification.QualificationEvidenceStore
+import eu.darken.amply.charging.core.qualification.QualificationRunStore
 import eu.darken.amply.common.ca.CaString
 import eu.darken.amply.common.ca.caString
 import eu.darken.amply.common.ca.toCaString
@@ -171,6 +174,8 @@ class ChargingRepository @Inject constructor(
     private val settleScheduler: SettleScheduler,
     private val batteryReader: BatteryReader,
     private val evidenceStore: EnforcementEvidenceStore,
+    private val qualificationStore: QualificationEvidenceStore,
+    private val runStore: QualificationRunStore,
     private val buildIdentity: BuildIdentitySource,
 ) {
     private val operationMutex = Mutex()
@@ -242,6 +247,36 @@ class ChargingRepository @Inject constructor(
             applyLocked(policy, persistent = true, forceNotify = forceNotify, evidenceGated = false)
         }
 
+    /**
+     * A write commanded by a guided qualification run. Ungated for the same reason as
+     * [restorePersistent] — the tier is exactly the question the run exists to answer, so requiring it
+     * first would make the run unable to run on any device that needs it — but with two extra guards
+     * that [restorePersistent] does not need:
+     *
+     * - **[runToken] must match a live run record.** Without a run in flight this path does not exist,
+     *   which is what keeps an ungated write from becoming a general bypass of the enforcement gate.
+     *   The token is generated per run and never leaves the process except into that record.
+     * - **`persistent = false`.** `ChargingPreferences.recordRequested` only writes `protective` and
+     *   `lastPersistent` for persistent requests, so a run cycling through policies never disturbs the
+     *   user's protective baseline or the reconnect gesture's any-level arming basis. Only the final
+     *   restore, which goes through [restorePersistent], touches those.
+     *
+     * `forceNotify` routes through `ChargingAdapter.reapply`: the second cut writes a value that may
+     * already be configured, and a same-value write does not re-trigger every OEM's observer.
+     */
+    internal suspend fun applyForQualification(policy: ChargePolicy, runToken: String): ApplyResult =
+        operationMutex.withLock {
+            val live = runStore.currentRun()
+            if (live == null || live.runToken.isBlank() || live.runToken != runToken) {
+                log(TAG, Logging.Priority.WARN) { "applyForQualification refused: no live run for this token" }
+                val observation = ChargeObservation.Unsupported(
+                    R.string.charging_reason_qualification_not_running.toCaString(),
+                )
+                return@withLock ApplyResult(false, observation, "No qualification run in progress")
+            }
+            applyLocked(policy, persistent = false, forceNotify = true, evidenceGated = false)
+        }
+
     suspend fun requestShizukuPermission(): Boolean {
         val result = runCatching { shizukuController.requestPermission() }.getOrDefault(false)
         refresh(
@@ -301,7 +336,10 @@ class ChargingRepository @Inject constructor(
      * produce is `controlEnabled = false`, which none of them reads.
      */
     private fun capabilityAdapter(): ChargingAdapter? =
-        registry.select(evidenceState = EnforcementEvidenceState.Loading).adapter
+        registry.select(
+            evidenceState = EnforcementEvidenceState.Loading,
+            qualification = QualificationEvidenceState.Loading,
+        ).adapter
 
     /**
      * Never null: a device with no adapter still gets the generic battery-settings chain. Returning null here made
@@ -537,6 +575,7 @@ class ChargingRepository @Inject constructor(
         registry.select(
             device = device,
             evidenceState = evidenceStore.currentState(),
+            qualification = qualificationStore.currentState(),
             verificationStarted = preferences.verificationStartedForNow() == buildIdentity.current(),
         )
 
@@ -547,7 +586,7 @@ class ChargingRepository @Inject constructor(
      * the tier decides.
      */
     private fun selectForRestore(device: DeviceInfo = DeviceInfo.current(context)): AdapterSelection {
-        val adapter = registry.select(device, EnforcementEvidenceState.Loading).adapter
+        val adapter = registry.select(device, EnforcementEvidenceState.Loading, QualificationEvidenceState.Loading).adapter
             ?: return AdapterSelection(
                 adapter = null,
                 support = AdapterSupport(

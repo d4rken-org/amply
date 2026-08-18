@@ -33,6 +33,8 @@ import eu.darken.amply.charging.core.adapter.SamsungModernChargingAdapter
 import eu.darken.amply.charging.core.adapter.XiaomiChargingAdapter
 import eu.darken.amply.charging.core.adapter.XiaomiHyperOs3ChargingAdapter
 import eu.darken.amply.charging.core.adapter.XiaomiLabAdapter
+import eu.darken.amply.charging.core.qualification.QualificationEvidenceStore
+import eu.darken.amply.charging.core.qualification.QualificationRunStore
 import eu.darken.amply.common.AppDataStore
 import eu.darken.amply.common.serialization.SerializationModule
 import io.kotest.matchers.shouldBe
@@ -137,6 +139,8 @@ class ChargingRepositoryPersistenceTest {
             },
             batteryReader = BatteryReader(context, BatteryUnitCalibration(context)),
             evidenceStore = EnforcementEvidenceStore(appDataStore, buildIdentity, SerializationModule.json()),
+            qualificationStore = QualificationEvidenceStore(appDataStore, buildIdentity, SerializationModule.json()),
+            runStore = QualificationRunStore(appDataStore, SerializationModule.json()),
             buildIdentity = buildIdentity,
         )
     }

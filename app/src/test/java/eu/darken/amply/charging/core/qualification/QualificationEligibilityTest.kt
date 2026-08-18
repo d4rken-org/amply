@@ -1,0 +1,219 @@
+package eu.darken.amply.charging.core.qualification
+
+import android.content.Context
+import android.content.Intent
+import eu.darken.amply.charging.core.ChargeObservation
+import eu.darken.amply.charging.core.ChargePolicy
+import eu.darken.amply.charging.core.DeviceInfo
+import eu.darken.amply.charging.core.access.AccessBackend
+import eu.darken.amply.charging.core.adapter.AdapterSupport
+import eu.darken.amply.charging.core.adapter.ChargingAdapter
+import eu.darken.amply.charging.core.enforcement.EnforcementEvidence
+import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceState
+import eu.darken.amply.charging.core.enforcement.EnforcementStatus
+import eu.darken.amply.charging.core.enforcement.EnforcementVerdict
+import eu.darken.amply.charging.core.enforcement.EnforcementVerdictEngine
+import eu.darken.amply.common.ca.toCaString
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.types.shouldBeInstanceOf
+import org.junit.jupiter.api.Test
+
+class QualificationEligibilityTest {
+
+    private class FakeAdapter(
+        override val id: String = "fake",
+        override val supportedPolicies: List<ChargePolicy> = listOf(
+            ChargePolicy.FixedLimit(70),
+            ChargePolicy.FixedLimit(80),
+            ChargePolicy.FixedLimit(90),
+            ChargePolicy.Unrestricted,
+        ),
+        override val enforcementEvidenceRequired: Boolean = true,
+        override val policyLatchesAtPlug: Boolean = false,
+    ) : ChargingAdapter {
+        override val displayName = "Fake".toCaString()
+        override fun probe(device: DeviceInfo) = AdapterSupport(true, true, 0)
+        override suspend fun read(backend: AccessBackend): ChargeObservation =
+            ChargeObservation.Unknown("".toCaString())
+
+        override suspend fun apply(policy: ChargePolicy, backend: AccessBackend) = true
+        override fun nativeSettingsIntent(context: Context) = Intent()
+    }
+
+    private fun support(
+        controlEnabled: Boolean = true,
+        enforcement: EnforcementStatus? = EnforcementStatus.CANDIDATE,
+    ) = AdapterSupport(
+        matched = true,
+        controlEnabled = controlEnabled,
+        detail = 0,
+        enforcement = enforcement,
+    )
+
+    private fun eligibility(
+        adapter: ChargingAdapter? = FakeAdapter(),
+        support: AdapterSupport? = support(),
+        evidence: EnforcementEvidenceState = EnforcementEvidenceState.Absent,
+        plugged: Boolean = true,
+        percent: Int = 80,
+        accessReady: Boolean = true,
+        sessionActive: Boolean = false,
+        pendingRecovery: Boolean = false,
+    ) = qualificationEligibility(
+        adapter = adapter,
+        support = support,
+        evidence = evidence,
+        plugged = plugged,
+        percent = percent,
+        accessReady = accessReady,
+        sessionActive = sessionActive,
+        pendingRecovery = pendingRecovery,
+    )
+
+    private fun refuted() = EnforcementEvidenceState.Present(
+        EnforcementEvidence(
+            adapterId = "fake",
+            buildIdentity = "build-a",
+            algorithmVersion = EnforcementVerdictEngine.ALGORITHM_VERSION,
+            verdict = EnforcementVerdict.REFUTED,
+        ),
+    )
+
+    @Test
+    fun `a gated adapter on a plugged device is eligible`() {
+        val result = eligibility()
+
+        result.shouldBeInstanceOf<RunEligibility.Eligible>()
+        result.plan.shape shouldBe RunShape.VARIABLE_CAP
+    }
+
+    @Test
+    fun `no adapter means nothing to drive`() {
+        eligibility(adapter = null) shouldBe RunEligibility.Ineligible(IneligibleReason.NO_ADAPTER)
+    }
+
+    @Test
+    fun `an adapter with no policies is a lab adapter and cannot be driven`() {
+        eligibility(adapter = FakeAdapter(supportedPolicies = emptyList())) shouldBe
+            RunEligibility.Ineligible(IneligibleReason.NO_ADAPTER)
+    }
+
+    @Test
+    fun `an adapter whose gate never asked about enforcement has nothing to prove`() {
+        eligibility(adapter = FakeAdapter(enforcementEvidenceRequired = false)) shouldBe
+            RunEligibility.Ineligible(IneligibleReason.NOTHING_TO_PROVE)
+    }
+
+    @Test
+    fun `a maintainer-qualified device has nothing to prove`() {
+        eligibility(support = support(enforcement = EnforcementStatus.CONFIRMED)) shouldBe
+            RunEligibility.Ineligible(IneligibleReason.NOTHING_TO_PROVE)
+    }
+
+    /**
+     * GrapheneOS. The ROM samples the setting only at plug-session start, so the cut/resume/cut
+     * sequence has no hardware effect at all without unplugging between every phase.
+     */
+    @Test
+    fun `a plug-latched adapter is excluded`() {
+        eligibility(adapter = FakeAdapter(policyLatchesAtPlug = true)) shouldBe
+            RunEligibility.Ineligible(IneligibleReason.LATCHES_AT_PLUG)
+    }
+
+    @Test
+    fun `a refuted build has nothing left to measure`() {
+        eligibility(evidence = refuted()) shouldBe RunEligibility.Ineligible(IneligibleReason.REFUTED)
+    }
+
+    @Test
+    fun `a corrupt evidence record is treated as a refutation`() {
+        eligibility(evidence = EnforcementEvidenceState.Corrupt) shouldBe
+            RunEligibility.Ineligible(IneligibleReason.REFUTED)
+    }
+
+    /** A secondary user or a missing provider: the probe refused for a reason a run cannot lift. */
+    @Test
+    fun `a probe refusal is not something a run can fix`() {
+        eligibility(support = support(controlEnabled = false, enforcement = null)) shouldBe
+            RunEligibility.Ineligible(IneligibleReason.CONTROL_UNAVAILABLE)
+    }
+
+    @Test
+    fun `an adaptive-only adapter has no testable cap`() {
+        eligibility(
+            adapter = FakeAdapter(
+                supportedPolicies = listOf(ChargePolicy.Adaptive, ChargePolicy.Unrestricted),
+            ),
+        ) shouldBe RunEligibility.Ineligible(IneligibleReason.NO_TESTABLE_CAP)
+    }
+
+    @Test
+    fun `a 100 percent cap limits nothing and does not count`() {
+        eligibility(
+            adapter = FakeAdapter(
+                supportedPolicies = listOf(ChargePolicy.FixedLimit(100), ChargePolicy.Unrestricted),
+            ),
+        ) shouldBe RunEligibility.Ineligible(IneligibleReason.NO_TESTABLE_CAP)
+    }
+
+    @Test
+    fun `the preconditions each have their own reason`() {
+        eligibility(accessReady = false) shouldBe RunEligibility.Ineligible(IneligibleReason.ACCESS_NOT_READY)
+        eligibility(sessionActive = true) shouldBe RunEligibility.Ineligible(IneligibleReason.SESSION_ACTIVE)
+        eligibility(pendingRecovery = true) shouldBe RunEligibility.Ineligible(IneligibleReason.RECOVERY_PENDING)
+        eligibility(plugged = false) shouldBe RunEligibility.Ineligible(IneligibleReason.NOT_CHARGING)
+    }
+
+    @Test
+    fun `a battery below the lowest cap cannot host a variable-cap run yet`() {
+        eligibility(percent = 60) shouldBe RunEligibility.Ineligible(IneligibleReason.BATTERY_LEVEL)
+    }
+
+    @Test
+    fun `a variable-cap plan caps below the current level and releases above it`() {
+        val plan = resolvePlan(
+            caps = listOf(70, 75, 80, 85, 90, 95),
+            policies = listOf(ChargePolicy.Unrestricted),
+            percent = 80,
+        )!!
+
+        plan.shape shouldBe RunShape.VARIABLE_CAP
+        plan.lowCap shouldBe 75
+        plan.releasePolicy shouldBe ChargePolicy.FixedLimit(85)
+    }
+
+    @Test
+    fun `near the top of the range the release step removes the cap instead`() {
+        val plan = resolvePlan(
+            caps = listOf(70, 75, 80, 85, 90, 95),
+            policies = listOf(ChargePolicy.Unrestricted),
+            percent = 95,
+        )!!
+
+        plan.lowCap shouldBe 90
+        plan.releasePolicy shouldBe ChargePolicy.Unrestricted
+    }
+
+    @Test
+    fun `a single-tick adapter releases by removing the cap`() {
+        val plan = resolvePlan(
+            caps = listOf(80),
+            policies = listOf(ChargePolicy.Unrestricted),
+            percent = 50,
+        )!!
+
+        plan.shape shouldBe RunShape.FIXED_CAP
+        plan.lowCap shouldBe 80
+        plan.releasePolicy shouldBe ChargePolicy.Unrestricted
+    }
+
+    @Test
+    fun `an adapter that cannot remove its only cap cannot be released`() {
+        resolvePlan(caps = listOf(80), policies = emptyList(), percent = 50) shouldBe null
+    }
+
+    @Test
+    fun `an unknown battery level has no plan`() {
+        resolvePlan(caps = listOf(70, 80), policies = listOf(ChargePolicy.Unrestricted), percent = -1) shouldBe null
+    }
+}
