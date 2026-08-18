@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.test.core.app.ApplicationProvider
 import eu.darken.amply.R
+import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.DeviceInfo
 import eu.darken.amply.charging.core.SettingProbe
 import eu.darken.amply.charging.core.access.LineageChargeReadout
@@ -79,6 +80,10 @@ class AdapterRegistrySelectionTest {
 
     private fun qualificationPass(
         adapterId: String = "lineageos-chargingcontrol-v1",
+        exercisedPolicies: List<String> = listOf(
+            ChargePolicy.FixedLimit(70).stableId,
+            ChargePolicy.FixedLimit(85).stableId,
+        ),
     ) = QualificationEvidenceState.Present(
         QualificationEvidence(
             adapterId = adapterId,
@@ -86,6 +91,7 @@ class AdapterRegistrySelectionTest {
             protocolVersion = QualificationProtocol.PROTOCOL_VERSION,
             outcome = QualificationOutcomeRecord.PASSED,
             capPercent = 70,
+            exercisedPolicies = exercisedPolicies,
         ),
     )
 
@@ -377,6 +383,47 @@ class AdapterRegistrySelectionTest {
         select(lineage(codename = "raven"), verificationStarted = true).support.enforcement shouldBe
             EnforcementStatus.UNVERIFIED
         select(lineage(codename = "oriole")).support.enforcement shouldBe EnforcementStatus.CONFIRMED
+    }
+
+    @Test
+    fun `a passed run enables control and licenses only what it exercised`() {
+        val selection = select(lineage(codename = "raven"), qualification = qualificationPass())
+
+        selection.support.controlEnabled shouldBe true
+        selection.support.enforcement shouldBe EnforcementStatus.SELF_QUALIFIED
+        selection.support.licensedPolicies shouldBe listOf(
+            ChargePolicy.FixedLimit(70),
+            ChargePolicy.FixedLimit(85),
+        )
+    }
+
+    /**
+     * A licence naming nothing must not read as "no restriction". An app update that changes a stable
+     * id's format without a protocol-version bump leaves a pass whose exercised policies no longer
+     * resolve — and granting the tier there would hand back every policy the adapter can write, which
+     * is the opposite of what the pass claims.
+     */
+    @Test
+    fun `a pass whose exercised policies no longer parse licenses nothing and grants no tier`() {
+        val selection = select(
+            lineage(codename = "raven"),
+            qualification = qualificationPass(exercisedPolicies = listOf("limit_seventy", "")),
+        )
+
+        selection.support.enforcement shouldBe EnforcementStatus.CANDIDATE
+        selection.support.controlEnabled shouldBe false
+        selection.support.licensedPolicies shouldBe null
+    }
+
+    @Test
+    fun `a pass on another adapter licenses nothing here`() {
+        val selection = select(
+            lineage(codename = "raven"),
+            qualification = qualificationPass(adapterId = "samsung-oneui8-v1"),
+        )
+
+        selection.support.enforcement shouldBe EnforcementStatus.CANDIDATE
+        selection.support.licensedPolicies shouldBe null
     }
 
     @Test

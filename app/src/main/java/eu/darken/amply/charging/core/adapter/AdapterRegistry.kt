@@ -95,11 +95,13 @@ class AdapterRegistry @Inject constructor(
  *     route to CONFIRMED: physical qualification, never observation (see [EnforcementVerdictEngine]).
  *     This step MUST precede step 5, or "no stored evidence" would override the maintainer fast path
  *     and turn every qualified device into a candidate;
- *  3. a guided qualification run that passed on THIS adapter and THIS build enables control as
- *     SELF_QUALIFIED. It sits below the maintainer fast path (a ledger row is the stronger claim and
- *     should win the label) and above the opt-in (a device that proved itself must not be described
- *     as merely unverified). It sits below the refutation for the reason refutations are terminal:
- *     a device seen charging past its cap loses control however it earned it;
+ *  3. a guided qualification run that passed on THIS adapter and THIS build, **and licenses at least
+ *     one policy**, enables control as SELF_QUALIFIED. It sits below the maintainer fast path (a
+ *     ledger row is the stronger claim and should win the label) and above the opt-in (a device that
+ *     proved itself must not be described as merely unverified). It sits below the refutation for the
+ *     reason refutations are terminal: a device seen charging past its cap loses control however it
+ *     earned it. A pass whose exercised policies no longer resolve licenses nothing, and a tier that
+ *     licenses nothing is not a pass — it falls through rather than widening to the whole adapter;
  *  4. a user who accepted the unconfirmed build gets control as probed, but the surfaces must not
  *     claim the cap holds;
  *  5. otherwise the device is a candidate: control off until the user accepts it unconfirmed.
@@ -128,6 +130,10 @@ internal fun resolveEnforcement(
     val evidence = (evidenceState as? EnforcementEvidenceState.Present)
         ?.evidence
         ?.takeIf { it.adapterId == adapter.id }
+    // Resolved before the tier, because an empty licence disqualifies the tier itself: a pass that
+    // licenses no policy at all is not a pass, and granting it would hand back the adapter's whole
+    // policy list — the exact opposite of what the pass claims.
+    val licensed = qualification.licensedPolicies(adapter)
     return when {
         evidence?.verdict == EnforcementVerdict.REFUTED || evidenceState is EnforcementEvidenceState.Corrupt ->
             support.copy(
@@ -139,12 +145,12 @@ internal fun resolveEnforcement(
                 enforcement = EnforcementStatus.REFUTED,
             )
         adapter.maintainerQualified(device) -> support.copy(enforcement = EnforcementStatus.CONFIRMED)
-        qualification.passedFor(adapter.id) -> support.copy(
+        qualification.passedFor(adapter.id) && !licensed.isNullOrEmpty() -> support.copy(
             enforcement = EnforcementStatus.SELF_QUALIFIED,
             // A run exercises two policies and proves nothing about the rest, so the pass licenses
             // exactly those. Without this the tier would quietly unlock every value the adapter
             // knows, including ones whose OEM meaning is still an assumption.
-            licensedPolicies = qualification.licensedPolicies(adapter),
+            licensedPolicies = licensed,
         )
         verificationStarted -> support.copy(enforcement = EnforcementStatus.UNVERIFIED)
         else -> support.copy(
@@ -170,10 +176,16 @@ private fun QualificationEvidenceState.passedFor(adapterId: String): Boolean {
  * The policies a pass licenses: those the run actually wrote and observed, intersected with what the
  * adapter still supports. The intersection matters across an app update — a stored policy the adapter
  * no longer offers must not come back through this door.
+ *
+ * Null means **no evidence at all**, which downstream reads as "no restriction". An empty list means
+ * there was evidence and none of it resolved to a usable policy — a stable-id format that changed
+ * without a protocol-version bump, or an intersection that came out empty. Those two must not share a
+ * value: returning null for the second would turn a licence naming nothing into a licence for
+ * everything the adapter can write, which is how a pass on two policies becomes a pass on all of
+ * them. The caller drops the tier on an empty list rather than widening it.
  */
 private fun QualificationEvidenceState.licensedPolicies(adapter: ChargingAdapter): List<ChargePolicy>? {
     val evidence = (this as? QualificationEvidenceState.Present)?.evidence ?: return null
     val exercised = evidence.exercisedPolicies.mapNotNull { ChargePolicy.fromStableId(it) }.toSet()
-    if (exercised.isEmpty()) return null
     return adapter.supportedPolicies.filter { it in exercised }
 }
