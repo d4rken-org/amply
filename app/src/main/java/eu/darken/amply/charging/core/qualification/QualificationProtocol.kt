@@ -232,8 +232,14 @@ object QualificationProtocol {
      * Bumped whenever the protocol materially changes. Stored on every result and checked on read:
      * unlike the passive evidence record there is no safe default for a *positive* verdict, so this
      * field — not an enum default — is what makes a partially-decoded record fail closed.
+     *
+     * Version 2 is what the algorithm below now means, and version-1 passes are deliberately dropped
+     * rather than migrated: a pass then could be produced without the within-run baseline control, on
+     * a device whose gauge reports too coarsely for a quiet cut window to mean anything, and by a run
+     * that licensed nothing. Those are exactly the false passes this protocol exists to prevent, so a
+     * record from the superseded algorithm is no evidence at all.
      */
-    const val PROTOCOL_VERSION = 1
+    const val PROTOCOL_VERSION = 2
 
     /** How long accumulation must stay stopped before a cut counts as observed. */
     const val HOLD_CONFIRM_MILLIS = 12 * 60 * 1000L
