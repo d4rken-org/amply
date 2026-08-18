@@ -184,6 +184,10 @@ internal val previewCurve = (0..12).map { i ->
         percent = (42 + i * 3).coerceAtMost(100),
         powerMilliwatts = (18_000 - i * 700).coerceAtLeast(2_000),
         temperatureTenthsC = 300 + i,
+        // Voltage is deliberately flat: a real device holds it steady over a few points, and it is
+        // the fixture for a metric that has samples (so its tile opens) but no sparkline to draw.
+        voltageMillivolts = 4_185,
+        currentNowMicroamps = (2_400_000 - i * 120_000).coerceAtLeast(300_000),
     )
 }
 

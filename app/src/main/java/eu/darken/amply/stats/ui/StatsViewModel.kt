@@ -26,6 +26,7 @@ import eu.darken.amply.upgrade.core.isProForUi
 import eu.darken.amply.upgrade.core.isProSettled
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
@@ -150,6 +151,43 @@ class StatsViewModel @Inject constructor(
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), null)
+
+    /**
+     * The session whose curve the battery hub's tiles are drawing, set by the composition root from
+     * the hub's charge teaser. Not saved state: the hub derives it from the teaser on every entry,
+     * so a restored process re-supplies it rather than restoring a stale id.
+     */
+    private val hubSessionId = MutableStateFlow<Long?>(null)
+
+    fun setHubSession(id: Long?) {
+        hubSessionId.value = id
+    }
+
+    /**
+     * The hub's sparkline curve for a **finished** session. A live session needs nothing from here:
+     * the teaser already carries `StatsLiveSession.curve`, which `currentSession()` bounds on
+     * purpose — opening the unbounded curve for that same session would reload the whole thing on
+     * every appended sample, which is exactly what the bounded window exists to avoid. This read is
+     * bounded for the same reason.
+     *
+     * The repository flow is built **inside** the [flatMapLatest] block, like [detailState]:
+     * `ChargeStatsRepository` calls `database.get()` eagerly, so constructing it up front would open
+     * `stats.db` for a user who never enabled capture and merely opened the battery hub.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val hubCurve: StateFlow<List<ChargeCurvePoint>> = hubSessionId
+        .flatMapLatest { id ->
+            if (id == null) {
+                flowOf(emptyList())
+            } else {
+                flow { emitAll(repository.recentCurveFlow(id)) }
+                    .catch { e ->
+                        log(TAG, Logging.Priority.ERROR) { "Hub curve flow failed for $id: ${e.message}" }
+                        emit(emptyList())
+                    }
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), emptyList())
 
     fun openSession(id: Long) {
         savedStateHandle[KEY_SELECTED_SESSION] = id
