@@ -241,6 +241,10 @@ class QualificationViewModel @Inject constructor(
                 // Charging up to the cap is bounded by the charger rather than by the protocol, and
                 // is much the longest phase, so its progress bar is scaled to its own budget.
                 RunPhase.CHARGE_UP -> QualificationProtocol.CHARGE_UP_BUDGET_MILLIS
+                // The baseline's bounded window IS its budget — it never reaches the general phase
+                // budget — so scaling the bar to the latter would fill it to about 40% and then jump,
+                // in the one phase the user is explicitly asked to wait through.
+                RunPhase.BASELINE -> QualificationProtocol.BASELINE_WINDOW_MILLIS
                 else -> QualificationProtocol.PHASE_BUDGET_MILLIS
             },
             percent = readout.levelPercent,
