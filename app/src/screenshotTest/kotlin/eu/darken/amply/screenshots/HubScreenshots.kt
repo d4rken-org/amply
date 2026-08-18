@@ -17,3 +17,8 @@ fun HubTileGrid() = HubTileGridContent()
 @Preview(showBackground = true, device = DS)
 @Composable
 fun HubTileGridEmpty() = HubTileGridEmptyContent()
+
+@PreviewTest
+@Preview(showBackground = true, device = DS)
+@Composable
+fun MetricDetail() = MetricDetailContent()

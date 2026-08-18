@@ -11,10 +11,14 @@ import androidx.compose.ui.tooling.preview.Preview
 import eu.darken.amply.battery.core.BatteryReadout
 import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.main.ui.battery.BatteryHubScreen
+import eu.darken.amply.main.ui.battery.BatteryMetric
+import eu.darken.amply.main.ui.battery.BatteryMetricDetailScreen
+import eu.darken.amply.main.ui.battery.BatteryMetricDetailState
 import eu.darken.amply.main.ui.battery.ChargeTeaserState
 import eu.darken.amply.stats.core.ChargeCurvePoint
 import eu.darken.amply.stats.core.ChargeSessionSummary
 import eu.darken.amply.stats.core.ChargingType
+import eu.darken.amply.stats.core.MetricStats
 import eu.darken.amply.stats.core.StatsSealReason
 
 // -- Content composables (one per screenshot) --------------------------------------------------
@@ -30,6 +34,21 @@ internal fun HubTileGridContent() = PreviewWrapper {
 @Composable
 internal fun HubTileGridEmptyContent() = PreviewWrapper {
     HubShot(curve = emptyList(), teaser = ChargeTeaserState.None)
+}
+
+// One metric of one session: its latest value, its curve on a real axis, and the statistics taken
+// from the raw samples (deliberately wider than the plotted curve).
+@Composable
+internal fun MetricDetailContent() = PreviewWrapper {
+    BatteryMetricDetailScreen(
+        state = BatteryMetricDetailState(
+            metric = BatteryMetric.POWER,
+            sessionMissing = false,
+            curve = hubCurve(),
+            stats = MetricStats(min = 1_850, avg = 9_400, max = 19_200, sampleCount = 214),
+        ),
+        onBack = {},
+    )
 }
 
 // -- Shared renderer + fixtures ----------------------------------------------------------------
@@ -106,3 +125,7 @@ private fun PreviewHubTileGrid() = HubTileGridContent()
 @Preview(name = "Hub tile grid · nothing recorded", showBackground = true, device = DS)
 @Composable
 private fun PreviewHubTileGridEmpty() = HubTileGridEmptyContent()
+
+@Preview(name = "Metric detail", showBackground = true, device = DS)
+@Composable
+private fun PreviewMetricDetail() = MetricDetailContent()
