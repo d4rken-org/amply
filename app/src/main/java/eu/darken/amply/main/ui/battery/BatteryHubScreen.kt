@@ -249,6 +249,10 @@ private fun StatTileGrid(
                 // ("Plugged in, not charging"), so it reads a step smaller than the numbers and wraps
                 // into the room that buys instead of being clipped.
                 valueStyle = MaterialTheme.typography.titleMedium,
+                // The third line is for accessibility font scales, not for normal rendering: at 2x
+                // the sentence needs 24 characters where two lines of this style hold 22. The box is
+                // a minimum height, so at normal scale the value still takes the lines it needs.
+                valueMaxLines = 3,
             )
         }
     }

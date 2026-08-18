@@ -52,7 +52,10 @@ import eu.darken.amply.common.compose.chart.Sparkline
  * rather than being clipped ("Plugged in, n…" on a Pixel 7a), with ellipsis left as the last resort.
  * Numbers never wrap, so the ordinary tile is unchanged. [valueStyle] exists for the values that are
  * state labels rather than measurements — they are legitimately secondary to the numbers, and a
- * smaller style buys the wrapped label room.
+ * smaller style buys the wrapped label room. [valueMaxLines] raises that ceiling for the values that
+ * need it: two lines hold the longest status sentence at normal font scale but not at 2x, where the
+ * same string needs a third. Since the box is a minimum height, an unused line costs nothing — the
+ * text occupies only the lines it fills.
  *
  * Tiles are laid out by [BatteryStatTileRow], which sizes both tiles in a row to the taller one so a
  * wrapped label or value can't stagger the grid.
@@ -69,6 +72,7 @@ fun BatteryStatTile(
     modifier: Modifier = Modifier,
     valueStyle: TextStyle = MaterialTheme.typography.headlineSmall,
     valueColor: Color = Color.Unspecified,
+    valueMaxLines: Int = 2,
     valueDescription: String? = null,
     icon: ImageVector? = null,
     sparkline: List<ChartPoint> = emptyList(),
@@ -122,7 +126,7 @@ fun BatteryStatTile(
                 value,
                 style = valueStyle,
                 color = valueColor,
-                maxLines = 2,
+                maxLines = valueMaxLines,
                 overflow = TextOverflow.Ellipsis,
                 modifier = if (valueDescription != null) {
                     Modifier.semantics { contentDescription = valueDescription }

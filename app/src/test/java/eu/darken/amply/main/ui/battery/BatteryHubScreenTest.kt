@@ -2,6 +2,8 @@ package eu.darken.amply.main.ui.battery
 
 import android.app.Application
 import android.os.BatteryManager
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -12,6 +14,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.unit.Density
 import androidx.test.core.app.ApplicationProvider
 import eu.darken.amply.R
 import eu.darken.amply.battery.core.BatteryReadout
@@ -76,25 +79,32 @@ class BatteryHubScreenTest {
         // Defaults to what the drawn curve holds; a case that needs them to disagree passes its own.
         availability: CurveMetricAvailability = CurveMetricAvailability.of(curve),
         captureEnabled: Boolean = true,
+        // The accessibility font scale to render at; the platform's own scale is unaffected by the
+        // qualifiers, so a large-font case has to provide it.
+        fontScale: Float = 1f,
         onOpenMetric: (BatteryMetric) -> Unit = {},
     ) {
         compose.setContent {
-            BatteryHubScreen(
-                readout = readout,
-                captureEnabled = captureEnabled,
-                teaser = ChargeTeaserState.None,
-                // Recording is on, so the badged opt-in card never renders — these cases are about
-                // the readout itself.
-                showProBadge = false,
-                onBack = {},
-                onOpenHistory = {},
-                onEnableCapture = {},
-                onOpenSession = {},
-                onOpenMetric = onOpenMetric,
-                curve = curve,
-                availability = availability,
-                chargeTime = ChargeTimeState.NotEnoughData(sessions = 1),
-            )
+            CompositionLocalProvider(
+                LocalDensity provides Density(LocalDensity.current.density, fontScale),
+            ) {
+                BatteryHubScreen(
+                    readout = readout,
+                    captureEnabled = captureEnabled,
+                    teaser = ChargeTeaserState.None,
+                    // Recording is on, so the badged opt-in card never renders — these cases are about
+                    // the readout itself.
+                    showProBadge = false,
+                    onBack = {},
+                    onOpenHistory = {},
+                    onEnableCapture = {},
+                    onOpenSession = {},
+                    onOpenMetric = onOpenMetric,
+                    curve = curve,
+                    availability = availability,
+                    chargeTime = ChargeTimeState.NotEnoughData(sessions = 1),
+                )
+            }
         }
     }
 
@@ -204,6 +214,20 @@ class BatteryHubScreenTest {
         compose.onNodeWithText(string(R.string.battery_value_not_reported)).assertExists()
     }
 
+    /**
+     * The status tile's laid-out value. Semantics carry the full string even when it is visually
+     * truncated, so only the layout result can tell a whole rendering from a clipped one.
+     */
+    private fun statusValueLayout(): TextLayoutResult {
+        val status = string(R.string.battery_status_plugged_not_charging)
+        val node = compose.onNodeWithText(status).fetchSemanticsNode()
+        val layouts = mutableListOf<TextLayoutResult>()
+        node.config[SemanticsActions.GetTextLayoutResult].action?.invoke(layouts)
+        val layout = layouts.single()
+        layout.layoutInput.text.text shouldBe status
+        return layout
+    }
+
     @Test
     @Config(qualifiers = "+w411dp")
     fun `the longest status value renders whole at phone width`() {
@@ -211,13 +235,18 @@ class BatteryHubScreenTest {
         // width qualifier is the geometry under test — half of a 411dp screen, minus the tile's own
         // padding — so a regression to a single fixed-height line fails here rather than on a device.
         render(charging.copy(status = BatteryManager.BATTERY_STATUS_NOT_CHARGING))
-        val status = string(R.string.battery_status_plugged_not_charging)
-        val node = compose.onNodeWithText(status).fetchSemanticsNode()
-        val layouts = mutableListOf<TextLayoutResult>()
-        node.config[SemanticsActions.GetTextLayoutResult].action?.invoke(layouts)
-        val layout = layouts.single()
-        layout.layoutInput.text.text shouldBe status
-        layout.hasVisualOverflow shouldBe false
+        statusValueLayout().hasVisualOverflow shouldBe false
+    }
+
+    @Test
+    @Config(qualifiers = "+w411dp")
+    fun `the longest status value renders whole at twice the font scale`() {
+        // The same tile at the largest accessibility font scale, where the wrap alone is not enough:
+        // two lines of this style hold 22 of the 24 characters, which is what the third line is for.
+        // Nothing here changes the normal-scale rendering — the value box is a minimum height, so an
+        // unneeded line is never drawn.
+        render(charging.copy(status = BatteryManager.BATTERY_STATUS_NOT_CHARGING), fontScale = 2f)
+        statusValueLayout().hasVisualOverflow shouldBe false
     }
 
     @Test
