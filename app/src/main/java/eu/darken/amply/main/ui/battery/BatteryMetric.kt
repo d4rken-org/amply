@@ -8,6 +8,7 @@ import eu.darken.amply.battery.ui.formatTemperature
 import eu.darken.amply.battery.ui.formatVoltage
 import eu.darken.amply.stats.core.ChargeCurvePoint
 import eu.darken.amply.stats.core.CurveAggregates
+import eu.darken.amply.stats.core.CurveMetricAvailability
 import eu.darken.amply.stats.core.MetricStats
 import eu.darken.amply.stats.core.StatsPowerCalculator
 import eu.darken.amply.stats.ui.StatsFormat
@@ -78,12 +79,22 @@ enum class BatteryMetric(
     fun formatAxis(value: Float): String = format(value.toInt()) ?: ""
 
     /**
-     * True when the recorded curve holds at least one reading for this metric.
+     * True when the shown charge recorded at least one reading for this metric.
+     *
+     * Reads the availability flags rather than the drawn curve, because that curve is decimated: a
+     * metric reported only intermittently can lose every one of its readings to the stride and would
+     * then look absent although the detail screen (which reads the raw samples) has data to show.
      *
      * Deliberately *presence*, not variation: a constant metric is still worth opening — the chart
      * renders a zero-range series as a flat line on a real axis, and a min == avg == max reading is
      * a meaningful answer. Only the sparkline needs variation, because a self-normalized series
      * without a range would draw a fake midline.
      */
-    fun hasSamples(curve: List<ChargeCurvePoint>): Boolean = curve.any { select(it) != null }
+    fun hasSamples(availability: CurveMetricAvailability): Boolean = when (this) {
+        LEVEL -> availability.level
+        POWER -> availability.power
+        VOLTAGE -> availability.voltage
+        CURRENT -> availability.current
+        TEMPERATURE -> availability.temperature
+    }
 }

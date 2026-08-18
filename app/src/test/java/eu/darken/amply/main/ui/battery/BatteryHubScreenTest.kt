@@ -14,6 +14,7 @@ import eu.darken.amply.R
 import eu.darken.amply.battery.core.BatteryReadout
 import eu.darken.amply.common.compose.chart.SPARKLINE_TEST_TAG
 import eu.darken.amply.stats.core.ChargeCurvePoint
+import eu.darken.amply.stats.core.CurveMetricAvailability
 import eu.darken.amply.stats.ui.ChargeTimeState
 import io.kotest.matchers.shouldBe
 import org.junit.Rule
@@ -69,6 +70,8 @@ class BatteryHubScreenTest {
     private fun render(
         readout: BatteryReadout?,
         curve: List<ChargeCurvePoint> = emptyList(),
+        // Defaults to what the drawn curve holds; a case that needs them to disagree passes its own.
+        availability: CurveMetricAvailability = CurveMetricAvailability.of(curve),
         captureEnabled: Boolean = true,
         onOpenMetric: (BatteryMetric) -> Unit = {},
     ) {
@@ -86,6 +89,7 @@ class BatteryHubScreenTest {
                 onOpenSession = {},
                 onOpenMetric = onOpenMetric,
                 curve = curve,
+                availability = availability,
                 chargeTime = ChargeTimeState.NotEnoughData(sessions = 1),
             )
         }
@@ -211,6 +215,21 @@ class BatteryHubScreenTest {
         render(charging, curve) { opened = it }
         compose.onNodeWithText(string(R.string.battery_metric_power_title).uppercase()).performClick()
         opened shouldBe null
+    }
+
+    @Test
+    fun `a metric the decimated curve dropped is still tappable`() {
+        // The drawn curve is decimated, so an intermittently reported metric can lose every one of
+        // its readings to the stride. Availability is taken from the raw samples, and it is what
+        // decides the tap — the detail screen reads those same raw samples.
+        var opened: BatteryMetric? = null
+        render(
+            charging,
+            curve,
+            availability = CurveMetricAvailability.of(curve).copy(power = true),
+        ) { opened = it }
+        compose.onNodeWithText(string(R.string.battery_metric_power_title).uppercase()).performClick()
+        opened shouldBe BatteryMetric.POWER
     }
 
     @Test
