@@ -510,19 +510,29 @@
     <string name="battery_detail_section_charging">Charging</string>
     <string name="battery_detail_section_health">Health</string>
     <string name="battery_detail_section_electrical">Electrical</string>
-    <string name="battery_detail_section_thermal">Thermal</string>
-    <string name="battery_detail_level">Level</string>
     <string name="battery_detail_status">Status</string>
     <string name="battery_detail_power_source">Power source</string>
     <string name="battery_detail_technology">Technology</string>
     <string name="battery_detail_health">Health</string>
     <string name="battery_detail_cycle_count">Charge cycles</string>
-    <string name="battery_detail_voltage">Voltage</string>
-    <string name="battery_detail_current">Current now</string>
-    <string name="battery_detail_power">Charge power</string>
     <string name="battery_detail_charger_max">Charger max</string>
     <string name="battery_detail_charge_counter">Charge counter</string>
-    <string name="battery_detail_temperature">Temperature</string>
+
+    <!-- Per-metric tiles and their detail screen -->
+    <string name="battery_metric_open_action">Open metric details</string>
+    <string name="battery_metric_level_title">Level</string>
+    <string name="battery_metric_level_explainer">How full the battery is, as a percentage. It is the phone\'s own estimate rather than a direct measurement, so it can move in jumps when the estimate is corrected.</string>
+    <string name="battery_metric_power_title">Charge power</string>
+    <string name="battery_metric_power_explainer">How fast energy is going into the battery, measured at the battery itself (voltage x current). It is normally highest early in a charge and tapers off near the top. It is only recorded while the battery is actually taking charge.</string>
+    <string name="battery_metric_voltage_title">Voltage</string>
+    <string name="battery_metric_voltage_explainer">The battery cell voltage. It rises as the battery fills and drops under load, so it tracks the charge level rather than the charging speed.</string>
+    <string name="battery_metric_current_title">Current now</string>
+    <string name="battery_metric_current_explainer">The current flowing in or out of the battery. Positive normally means charging and negative means discharging, but the sign is up to the manufacturer, so some devices report it the other way round.</string>
+    <string name="battery_metric_temperature_title">Temperature</string>
+    <string name="battery_metric_temperature_explainer">The battery temperature reported by the phone. Sustained heat is what ages a battery fastest, so a charge that stays cool is easier on it than a fast one that runs hot.</string>
+    <string name="battery_metric_min">Minimum</string>
+    <string name="battery_metric_avg">Average</string>
+    <string name="battery_metric_max">Maximum</string>
     <string name="battery_status_charging">Charging</string>
     <string name="battery_status_discharging">Discharging</string>
     <string name="battery_status_not_charging">Not charging</string>

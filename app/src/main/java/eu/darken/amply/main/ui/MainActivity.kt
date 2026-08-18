@@ -659,20 +659,31 @@ class MainActivity : ComponentActivity() {
                         // state (already collected and resolved, so the opt-in card can't flash on for
                         // a frame beside a teaser saying a charge is being recorded) — deliberately not
                         // the stats ViewModel's history flow, which is what would open stats.db.
-                        SettingsDestination.BATTERY -> BatteryHubScreen(
-                            readout = state.batteryReadout,
-                            captureEnabled = state.stats.enabled,
-                            teaser = ChargeTeaserState.from(state.stats, state.batteryReadout),
-                            showProBadge = shouldShowUpgradePromo(state.upgrade),
-                            onBack = { destination = SettingsDestination.DASHBOARD },
-                            onOpenHistory = { destination = SettingsDestination.CHARGE_HISTORY },
-                            // Enable-only: turning recording back off lives in Settings › Charging history.
-                            onEnableCapture = {
-                                captureGateOrigin = SettingsDestination.BATTERY
-                                statsViewModel.requestEnableCapture()
-                            },
-                            onOpenSession = { id -> openSession(id, SettingsDestination.BATTERY) },
-                        )
+                        SettingsDestination.BATTERY -> {
+                            val teaser = ChargeTeaserState.from(state.stats, state.batteryReadout)
+                            // A live charge already carries its (bounded) curve in the teaser; only a
+                            // finished one has to be read, and only while the hub is on screen.
+                            val liveCurve = (teaser as? ChargeTeaserState.Live)?.session?.curve
+                            val lastSessionId = (teaser as? ChargeTeaserState.Last)?.summary?.id
+                            LaunchedEffect(lastSessionId) { statsViewModel.setHubSession(lastSessionId) }
+                            val lastCurve by statsViewModel.hubCurve.collectAsState()
+                            BatteryHubScreen(
+                                readout = state.batteryReadout,
+                                captureEnabled = state.stats.enabled,
+                                teaser = teaser,
+                                showProBadge = shouldShowUpgradePromo(state.upgrade),
+                                onBack = { destination = SettingsDestination.DASHBOARD },
+                                onOpenHistory = { destination = SettingsDestination.CHARGE_HISTORY },
+                                // Enable-only: turning recording back off lives in Settings › Charging history.
+                                onEnableCapture = {
+                                    captureGateOrigin = SettingsDestination.BATTERY
+                                    statsViewModel.requestEnableCapture()
+                                },
+                                onOpenSession = { id -> openSession(id, SettingsDestination.BATTERY) },
+                                onOpenMetric = {},
+                                curve = liveCurve ?: if (lastSessionId != null) lastCurve else emptyList(),
+                            )
+                        }
                         // The Room-backed session list is collected only here, so the stats DB isn't
                         // opened just by visiting the hub — a user who never enables statistics never
                         // creates stats.db by looking at their battery.

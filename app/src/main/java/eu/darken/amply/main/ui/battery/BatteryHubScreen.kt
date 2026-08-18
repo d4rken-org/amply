@@ -1,6 +1,7 @@
 package eu.darken.amply.main.ui.battery
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,6 +11,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ShowChart
+import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -20,6 +24,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -33,13 +39,12 @@ import eu.darken.amply.battery.ui.batteryPlugLabel
 import eu.darken.amply.battery.ui.batteryStatusLabel
 import eu.darken.amply.battery.ui.chargePowerFallbackRes
 import eu.darken.amply.battery.ui.formatChargeCounter
-import eu.darken.amply.battery.ui.formatCurrent
-import eu.darken.amply.battery.ui.formatTemperature
-import eu.darken.amply.battery.ui.formatVoltage
 import eu.darken.amply.common.compose.AmplyCard
 import eu.darken.amply.common.compose.AmplyCardDefaults
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
+import eu.darken.amply.common.compose.chart.ChartPoint
+import eu.darken.amply.stats.core.ChargeCurvePoint
 import eu.darken.amply.stats.core.StatsPowerCalculator
 import eu.darken.amply.stats.ui.StatsFormat
 
@@ -66,6 +71,10 @@ fun BatteryHubScreen(
     onOpenHistory: () -> Unit,
     onEnableCapture: () -> Unit,
     onOpenSession: (Long) -> Unit,
+    onOpenMetric: (BatteryMetric) -> Unit,
+    // The charge being shown by the teaser, for the tiles' sparklines and their tappability. Empty
+    // until something has been recorded — every tile still renders its live value.
+    curve: List<ChargeCurvePoint> = emptyList(),
 ) {
     Scaffold(
         topBar = {
@@ -118,10 +127,12 @@ fun BatteryHubScreen(
                 }
             }
             item { SectionHeader(stringResource(R.string.battery_hub_section_now)) }
+            // A Column of Rows, not a LazyVerticalGrid: this screen is itself a LazyColumn, and
+            // nesting a lazy grid in a lazy column throws at runtime.
+            item { StatTileGrid(readout = data, curve = curve, onOpenMetric = onOpenMetric) }
             item { ChargingSection(data) }
             item { HealthSection(data) }
             item { ElectricalSection(data) }
-            item { ThermalSection(data) }
         }
     }
 }
@@ -142,18 +153,80 @@ private fun SectionHeader(title: String) = Text(
     modifier = Modifier.padding(start = 4.dp, top = 4.dp),
 )
 
+/**
+ * The six live readings as a 2-column tile grid.
+ *
+ * A tile is tappable when the shown charge recorded **any** sample for that metric — not when the
+ * samples vary. A constant reading is still worth opening (min == avg == max is an answer, and the
+ * detail chart plots a zero-range series on a real axis); only the sparkline needs variation,
+ * which it decides for itself. Status is a label, not a series, so it never navigates.
+ */
+@Composable
+private fun StatTileGrid(
+    readout: BatteryReadout,
+    curve: List<ChargeCurvePoint>,
+    onOpenMetric: (BatteryMetric) -> Unit,
+) {
+    val openLabel = stringResource(R.string.battery_metric_open_action)
+    val notReported = stringResource(R.string.battery_value_not_reported)
+    // Charge power is the one reading with a meaningful "not charging" state, and it is the same
+    // rule the electrical rows used before the tiles existed.
+    val powerFallback = stringResource(chargePowerFallbackRes(BatteryEffect.from(readout)))
+
+    @Composable
+    fun metricTile(metric: BatteryMetric, modifier: Modifier, icon: ImageVector? = null) {
+        val fallback = if (metric == BatteryMetric.POWER) powerFallback else notReported
+        BatteryStatTile(
+            label = stringResource(metric.titleRes),
+            value = metric.format(metric.select(readout)) ?: fallback,
+            modifier = modifier,
+            icon = icon,
+            sparkline = curve.map {
+                ChartPoint(it.elapsedFromStartMillis.toFloat(), metric.select(it)?.toFloat())
+            },
+            accentColor = metric.accentColor(),
+            onClick = if (metric.hasSamples(curve)) {
+                { onOpenMetric(metric) }
+            } else {
+                null
+            },
+            onClickLabel = openLabel,
+        )
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        BatteryStatTileRow { tile ->
+            metricTile(BatteryMetric.LEVEL, tile, Icons.Filled.BatteryChargingFull)
+            metricTile(BatteryMetric.POWER, tile, Icons.Filled.Bolt)
+        }
+        BatteryStatTileRow { tile ->
+            metricTile(BatteryMetric.VOLTAGE, tile)
+            metricTile(BatteryMetric.CURRENT, tile)
+        }
+        BatteryStatTileRow { tile ->
+            metricTile(BatteryMetric.TEMPERATURE, tile, Icons.Filled.Thermostat)
+            BatteryStatTile(
+                label = stringResource(R.string.battery_detail_status),
+                value = stringResource(batteryStatusLabel(readout.status, readout.plugged)),
+                modifier = tile,
+            )
+        }
+    }
+}
+
+/** Matches the charge curve's series colours, so a tile and the chart it opens read as one metric. */
+@Composable
+private fun BatteryMetric.accentColor(): Color = when (this) {
+    BatteryMetric.LEVEL -> MaterialTheme.colorScheme.primary
+    BatteryMetric.POWER -> MaterialTheme.colorScheme.tertiary
+    BatteryMetric.TEMPERATURE -> MaterialTheme.colorScheme.error
+    BatteryMetric.VOLTAGE, BatteryMetric.CURRENT -> MaterialTheme.colorScheme.secondary
+}
+
 @Composable
 private fun ChargingSection(readout: BatteryReadout) {
     val notReported = stringResource(R.string.battery_value_not_reported)
     DetailSection(stringResource(R.string.battery_detail_section_charging)) {
-        DetailRow(
-            stringResource(R.string.battery_detail_level),
-            readout.levelPercent?.let { "$it%" } ?: notReported,
-        )
-        DetailRow(
-            stringResource(R.string.battery_detail_status),
-            stringResource(batteryStatusLabel(readout.status, readout.plugged)),
-        )
         DetailRow(
             stringResource(R.string.battery_detail_power_source),
             batteryPlugLabel(readout.plugged)?.let { stringResource(it) } ?: notReported,
@@ -183,22 +256,9 @@ private fun HealthSection(readout: BatteryReadout) {
 @Composable
 private fun ElectricalSection(readout: BatteryReadout) {
     val notReported = stringResource(R.string.battery_value_not_reported)
+    // Voltage, current and charge power moved up into the tile grid; what stays here is the pair
+    // that has no live series to chart.
     DetailSection(stringResource(R.string.battery_detail_section_electrical)) {
-        DetailRow(
-            stringResource(R.string.battery_detail_voltage),
-            formatVoltage(readout.voltageMillivolts) ?: notReported,
-        )
-        DetailRow(
-            stringResource(R.string.battery_detail_current),
-            formatCurrent(readout.currentNowMicroamps) ?: notReported,
-        )
-        // Voltage × current above is a magnitude in either direction; this row is the gated charge
-        // power, so a discharge draw can never be read here as charge power.
-        DetailRow(
-            stringResource(R.string.battery_detail_power),
-            StatsFormat.power(StatsPowerCalculator.chargeMilliwatts(readout))
-                ?: stringResource(chargePowerFallbackRes(BatteryEffect.from(readout))),
-        )
         // Advertised, not measured: what the connected supply claims. Nothing connected means nothing
         // to claim, so the extras are only read through while on a charger.
         DetailRow(
@@ -210,17 +270,6 @@ private fun ElectricalSection(readout: BatteryReadout) {
         DetailRow(
             stringResource(R.string.battery_detail_charge_counter),
             formatChargeCounter(readout.chargeCounterMicroampHours) ?: notReported,
-        )
-    }
-}
-
-@Composable
-private fun ThermalSection(readout: BatteryReadout) {
-    val notReported = stringResource(R.string.battery_value_not_reported)
-    DetailSection(stringResource(R.string.battery_detail_section_thermal)) {
-        DetailRow(
-            stringResource(R.string.battery_detail_temperature),
-            formatTemperature(readout.temperatureTenthsC) ?: notReported,
         )
     }
 }
@@ -291,6 +340,8 @@ private fun BatteryHubScreenLivePreview() = PreviewWrapper {
         onOpenHistory = {},
         onEnableCapture = {},
         onOpenSession = {},
+        onOpenMetric = {},
+        curve = previewCurve,
     )
 }
 
@@ -309,6 +360,8 @@ private fun BatteryHubScreenLastPreview() = PreviewWrapper {
         onOpenHistory = {},
         onEnableCapture = {},
         onOpenSession = {},
+        onOpenMetric = {},
+        curve = previewCurve,
     )
 }
 
@@ -326,6 +379,7 @@ private fun BatteryHubScreenCaptureOffPreview() = PreviewWrapper {
         onOpenHistory = {},
         onEnableCapture = {},
         onOpenSession = {},
+        onOpenMetric = {},
     )
 }
 
@@ -343,6 +397,7 @@ private fun BatteryHubScreenCaptureOffProPreview() = PreviewWrapper {
         onOpenHistory = {},
         onEnableCapture = {},
         onOpenSession = {},
+        onOpenMetric = {},
     )
 }
 
@@ -367,6 +422,7 @@ private fun BatteryHubScreenSparsePreview() = PreviewWrapper {
         onOpenHistory = {},
         onEnableCapture = {},
         onOpenSession = {},
+        onOpenMetric = {},
     )
 }
 
@@ -384,5 +440,7 @@ private fun BatteryHubScreenLargeFontPreview() = PreviewWrapper {
         onOpenHistory = {},
         onEnableCapture = {},
         onOpenSession = {},
+        onOpenMetric = {},
+        curve = previewCurve,
     )
 }
