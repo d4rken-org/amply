@@ -335,6 +335,7 @@
 
     <string name="qualification_running_title">Checking</string>
     <string name="qualification_phase_preflight">Getting ready to check the %1$d%% limit.</string>
+    <string name="qualification_phase_charge_up">Charging up to just under %1$d%%, because the limit can only be checked near the level it sets. This part takes as long as your charger needs.</string>
     <string name="qualification_phase_baseline">Measuring how fast your phone normally charges, so the %1$d%% limit has something to be compared against.</string>
     <string name="qualification_phase_cut_1">The limit is set to %1$d%%. Waiting to see charging stop and stay stopped.</string>
     <string name="qualification_phase_resume">The limit is now above %1$d%%. Waiting to see charging start again — this is the part nothing else can fake.</string>
@@ -357,6 +358,7 @@
     <string name="qualification_result_charge_up_body">The battery didn\'t reach the limit in time. Nothing was recorded. A faster charger would help.</string>
     <string name="qualification_result_no_baseline_body">Too little charge was going into your phone for the check to have anything to compare against — a weak charger, a nearly full battery, or a phone that doesn\'t report its charge accurately. Nothing was recorded. Try again with a different charger from a lower battery level.</string>
     <string name="qualification_result_precondition_body">The check never got started. Nothing was recorded.</string>
+    <string name="qualification_result_signal_too_coarse_body">Your phone reports how much charge is going in too rarely for this check. With updates that far apart, charging that never stopped and charging that stopped on command look the same, so Amply won\'t call it either way. Nothing was recorded.</string>
     <string name="qualification_result_unplugged_body">The charger was disconnected, so there was nothing to measure. Your charge setting has been put back. You can start again with the charger connected.</string>
     <string name="qualification_result_drift_body">The charge setting was changed while the check was running, so the result wouldn\'t mean anything. Your setting has been put back.</string>
     <string name="qualification_result_write_failed_body">Amply couldn\'t change the charge setting. Your setting has been put back.</string>

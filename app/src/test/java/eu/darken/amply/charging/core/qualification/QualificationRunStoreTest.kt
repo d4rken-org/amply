@@ -7,6 +7,7 @@ import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.common.AppDataStore
 import eu.darken.amply.common.serialization.SerializationModule
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -95,6 +96,72 @@ class QualificationRunStoreTest {
         store.requestCancel()
 
         store.currentRun() shouldBe null
+    }
+
+    /**
+     * The tick loop reads a record, evaluates it, and merges the result back. A cancel committed in
+     * that gap must survive the merge — losing it means the user pressed stop and the run carried on.
+     */
+    @Test
+    fun `a cancel committed between a read and a merge survives`() = runTest {
+        store.put(record())
+        val read = store.currentRun()!!
+
+        store.requestCancel()
+        val merged = store.mergeProgress { it.copy(phase = RunPhase.CUT_1, lowCap = read.lowCap) }!!
+
+        merged.cancelled shouldBe true
+        merged.phase shouldBe RunPhase.CUT_1
+    }
+
+    /**
+     * Finalization is slow — a policy restore, then evidence — so the record has to be claimed for it
+     * in one transaction. A cancel either wins that transaction and downgrades the outcome, or finds
+     * it claimed and does not commit; what it must never do is commit into a record whose outcome has
+     * already been read and is about to be written out.
+     */
+    @Test
+    fun `a cancel that loses the finalization claim does not commit`() = runTest {
+        store.put(record())
+
+        val claimed = store.claimForFinalization()!!
+        claimed.cancelled shouldBe false
+        store.requestCancel()
+
+        store.currentRun()!!.cancelled shouldBe false
+        store.currentRun()!!.finalizing shouldBe true
+    }
+
+    @Test
+    fun `a cancel that wins the claim is what the claim reports`() = runTest {
+        store.put(record())
+
+        store.requestCancel()
+        val claimed = store.claimForFinalization()!!
+
+        claimed.cancelled shouldBe true
+    }
+
+    @Test
+    fun `only one finalization can claim a record`() = runTest {
+        store.put(record())
+
+        store.claimForFinalization() shouldNotBe null
+        store.claimForFinalization() shouldBe null
+    }
+
+    @Test
+    fun `claiming with no run in flight claims nothing`() = runTest {
+        store.claimForFinalization() shouldBe null
+    }
+
+    @Test
+    fun `an acknowledged write is stamped on the record`() = runTest {
+        store.put(record())
+
+        store.markApplied(1_234_000L)
+
+        store.currentRun()!!.commandAckedAtWallMillis shouldBe 1_234_000L
     }
 
     @Test

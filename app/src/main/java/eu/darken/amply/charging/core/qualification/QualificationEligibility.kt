@@ -90,7 +90,19 @@ data class RunPlan(
 )
 
 sealed interface RunEligibility {
-    data class Eligible(val adapter: ChargingAdapter, val plan: RunPlan) : RunEligibility
+    /**
+     * [isCandidate] is whether the values this run would command are a **guess** rather than a mapping
+     * a maintainer verified. It travels with the plan because it decides what the run is allowed to
+     * conclude: a device that charges past a guessed cap has told you the mapping is wrong, not that
+     * the hardware ignores it, so on a candidate run that observation is `CAP_MISMATCH` and never the
+     * terminal `Refuted`. Resolved once, here, so no caller can re-answer it with a literal.
+     */
+    data class Eligible(
+        val adapter: ChargingAdapter,
+        val plan: RunPlan,
+        val isCandidate: Boolean,
+    ) : RunEligibility
+
     data class Ineligible(val reason: IneligibleReason) : RunEligibility
 }
 
@@ -147,8 +159,19 @@ fun qualificationEligibility(
 
     val plan = resolvePlan(caps, adapter.supportedPolicies, percent)
         ?: return RunEligibility.Ineligible(IneligibleReason.BATTERY_LEVEL)
-    return RunEligibility.Eligible(adapter, plan)
+    return RunEligibility.Eligible(adapter, plan, isCandidate = candidateMapping())
 }
+
+/**
+ * Whether the values a run would command are a guess rather than a verified mapping.
+ *
+ * Always false today: every adapter a run can reach drives values a maintainer verified on hardware,
+ * and no path exists yet that offers a run on a *guessed* mapping (an unverified One UI generation,
+ * say) — that candidate-selection path is deliberately a follow-up. It resolves here rather than at
+ * the call site so that path has one place to change, and so the engine's cap-mismatch protection
+ * cannot be re-answered by a literal wherever a run happens to be started.
+ */
+private fun candidateMapping(): Boolean = false
 
 private fun isRefuted(evidence: EnforcementEvidenceState): Boolean = when (evidence) {
     is EnforcementEvidenceState.Corrupt -> true

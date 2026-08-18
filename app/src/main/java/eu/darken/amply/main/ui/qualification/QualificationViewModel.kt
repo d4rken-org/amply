@@ -2,6 +2,7 @@ package eu.darken.amply.main.ui.qualification
 
 import android.content.Context
 import android.os.Build
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -25,6 +26,8 @@ import eu.darken.amply.charging.core.qualification.buildQualificationReport
 import eu.darken.amply.charging.core.qualification.formatQualificationReport
 import eu.darken.amply.charging.core.qualification.qualificationIssueUrl
 import eu.darken.amply.diagnostics.core.MAX_ISSUE_URL_BYTES
+import eu.darken.amply.fullcharge.core.ChargeSessionService
+import eu.darken.amply.fullcharge.core.ServiceDispatch
 import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
@@ -121,6 +124,16 @@ class QualificationViewModel @Inject constructor(
 
     init {
         refreshEligibility()
+        // A start is a service command now, so its refusal comes back as an event rather than a
+        // return value. Without this the screen would sit on a running step for a run that never
+        // opened.
+        viewModelScope.launch {
+            runner.startFailed.collect {
+                log(TAG, Logging.Priority.WARN) { "Qualification run did not start" }
+                if (step.value == QualificationStep.RUNNING) step.value = QualificationStep.PRECHECK
+                eligibility.value = runner.eligibility()
+            }
+        }
     }
 
     fun refreshEligibility() = viewModelScope.launch {
@@ -129,6 +142,9 @@ class QualificationViewModel @Inject constructor(
 
     fun start() = viewModelScope.launch {
         if (!BuildConfig.ENABLE_QUALIFICATION_RUN) return@launch
+        // A local pre-check for immediate feedback only; the run is opened by the service command
+        // below, which resolves eligibility again under the dispatch lock. Deciding here and acting
+        // there is exactly the check-then-act this routing exists to remove.
         val eligible = runner.eligibility()
         eligibility.value = eligible
         if (eligible !is RunEligibility.Eligible) return@launch
@@ -137,9 +153,17 @@ class QualificationViewModel @Inject constructor(
         // when the requested step was already RUNNING, so leaving it at PRECHECK would drop the user
         // back onto the pre-check list when their run completed, with no result anywhere.
         step.value = QualificationStep.RUNNING
-        val started = runner.start(eligible.adapter, eligible.plan)
-        log(TAG, Logging.Priority.INFO) { "Qualification run start requested: $started" }
-        if (!started) {
+        // Through the charge service's command queue, never straight into the runner: run start and
+        // full-charge session start both claim the charge policy, and that queue is the one place
+        // where the two are serialized against each other.
+        val dispatched = runCatching {
+            ContextCompat.startForegroundService(
+                context,
+                ServiceDispatch.startIntent(context, ChargeSessionService.ACTION_QUALIFICATION_START),
+            )
+        }.isSuccess
+        log(TAG, Logging.Priority.INFO) { "Qualification run start dispatched: $dispatched" }
+        if (!dispatched) {
             step.value = QualificationStep.PRECHECK
             eligibility.value = runner.eligibility()
         }
@@ -212,13 +236,11 @@ class QualificationViewModel @Inject constructor(
             lowCap = lowCap,
             elapsedMillis = (now - runStartedAtWallMillis).coerceAtLeast(0),
             phaseElapsedMillis = (now - phaseStartedAtWallMillis).coerceAtLeast(0),
-            phaseBudgetMillis = when {
-                phase == RunPhase.PREFLIGHT -> QualificationProtocol.PREFLIGHT_BUDGET_MILLIS
-                // The baseline doubles as the charge-up on a fixed-cap run, which is much the longer
-                // of the two, so its progress bar has to be scaled to that.
-                phase == RunPhase.BASELINE && shape == RunShape.FIXED_CAP ->
-                    QualificationProtocol.CHARGE_UP_BUDGET_MILLIS
-
+            phaseBudgetMillis = when (phase) {
+                RunPhase.PREFLIGHT -> QualificationProtocol.PREFLIGHT_BUDGET_MILLIS
+                // Charging up to the cap is bounded by the charger rather than by the protocol, and
+                // is much the longest phase, so its progress bar is scaled to its own budget.
+                RunPhase.CHARGE_UP -> QualificationProtocol.CHARGE_UP_BUDGET_MILLIS
                 else -> QualificationProtocol.PHASE_BUDGET_MILLIS
             },
             percent = readout.levelPercent,
