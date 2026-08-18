@@ -23,6 +23,8 @@ import eu.darken.amply.charging.core.adapter.AdapterRegistry
 import eu.darken.amply.charging.core.adapter.ChargingAdapter
 import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceState
 import eu.darken.amply.charging.core.qualification.QualificationEvidenceState
+import eu.darken.amply.charging.core.qualification.QualificationRunStore
+import eu.darken.amply.charging.core.qualification.QualificationRunner
 import eu.darken.amply.common.datastore.value
 import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
@@ -56,6 +58,8 @@ class ChargeSessionService : Service() {
     @Inject lateinit var processIdentity: ProcessIdentity
     @Inject lateinit var bootCountProvider: BootCountProvider
     @Inject lateinit var ruleApplier: RuleApplier
+    @Inject lateinit var qualificationRunStore: QualificationRunStore
+    @Inject lateinit var qualificationRunner: QualificationRunner
 
     // Optional, permission-free battery observers (charge alarm, …), contributed via @IntoSet.
     @Inject lateinit var watchers: Set<@JvmSuppressWildcards ChargeMonitorWatcher>
@@ -289,7 +293,7 @@ class ChargeSessionService : Service() {
         coordinator.open()
         // A watcher-only monitor gets the quiet notification; the gesture path re-posts its own in
         // evaluateBattery. Post here so an alarm-only start replaces the bootstrap notification.
-        if (!gestureActive) startAsForeground(SessionNotifications.monitoring(this))
+        if (!gestureActive) startAsForeground(watcherNotification())
         evaluateBattery()
         SurfaceUpdater.updateNow(this)
     }
@@ -374,6 +378,10 @@ class ChargeSessionService : Service() {
             percent = percent,
             batteryStatus = status,
             sessionActive = sessionOwned,
+            // Read here so every watcher sees the same answer for this observation. Free to read (a
+            // volatile flag on the runner), unlike the store, which must not be touched under the
+            // dispatch lock.
+            runActive = qualificationRunner.runActiveNow,
             batteryIntent = battery,
             observedElapsedRealtimeMillis = observedAtElapsed,
             wallClockMillis = System.currentTimeMillis(),
@@ -554,7 +562,7 @@ class ChargeSessionService : Service() {
                 // across a disable/re-enable cycle would otherwise resume on stale gesture state
                 // (a latched basis or an open reconnect window from before the disable).
                 quickGesture.reset()
-                startAsForeground(SessionNotifications.monitoring(this))
+                startAsForeground(watcherNotification())
             } else {
                 stopMonitoring()
             }
@@ -692,6 +700,10 @@ class ChargeSessionService : Service() {
                 )
                 continueGestureOrStop()
             }
+            // The run's own notification action. Only flags the record; the runner turns that into an
+            // abort and the restore on its next tick, so cancellation takes the same path as every
+            // other terminal outcome rather than a second one that could skip the restore.
+            ACTION_QUALIFICATION_CANCEL -> qualificationRunStore.requestCancel()
             ACTION_START -> {
                 // A user-initiated session supersedes boot recovery; the new session
                 // overwrites the policy anyway. Join so a cancelled re-write cannot
@@ -1014,6 +1026,21 @@ class ChargeSessionService : Service() {
         stopSelf()
     }
 
+    /**
+     * The notification for a watcher-only monitor. A qualification run gets its own, naming the phase
+     * and offering a way to stop: it runs for up to 90 minutes with the screen off, on the explicit
+     * promise that the user can walk away, and the generic monitoring text would make the one thing
+     * they are waiting on invisible.
+     */
+    private suspend fun watcherNotification(): android.app.Notification {
+        val run = runCatching { qualificationRunStore.currentRun() }.getOrNull()
+        return if (run != null) {
+            SessionNotifications.qualification(this, run.phase.messageRes, run.lowCap)
+        } else {
+            SessionNotifications.monitoring(this)
+        }
+    }
+
     private fun startAsForeground(notification: android.app.Notification) {
         ServiceCompat.startForeground(
             this,
@@ -1060,6 +1087,7 @@ class ChargeSessionService : Service() {
         const val ACTION_CHECK = "eu.darken.amply.action.CHECK_CHARGE_STATE"
         const val ACTION_SET_PERSISTENT_POLICY = "eu.darken.amply.action.SET_PERSISTENT_POLICY"
         const val ACTION_EVALUATE_RULES = "eu.darken.amply.action.EVALUATE_CHARGE_RULES"
+        const val ACTION_QUALIFICATION_CANCEL = "eu.darken.amply.action.CANCEL_QUALIFICATION_RUN"
         const val EXTRA_TARGET_POLICY = "eu.darken.amply.extra.TARGET_POLICY"
     }
 }

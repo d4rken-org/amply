@@ -400,7 +400,11 @@ class ChargingRepository @Inject constructor(
             )
             return ApplyResult(false, observation, context.getString(selection.support.detail))
         }
-        if (policy !in adapter.supportedPolicies) {
+        // The licensed set, not the adapter's raw one: a self-qualified tier proves only the policies
+        // its run exercised, and the display narrowing above would be cosmetic if a write could still
+        // reach the others.
+        val writable = selection.support.licensedPolicies ?: adapter.supportedPolicies
+        if (policy !in writable) {
             val observation = ChargeObservation.Unsupported(
                 caString {
                     it.getString(
@@ -689,7 +693,10 @@ class ChargingRepository @Inject constructor(
             device = DeviceInfo.current(context),
             adapterName = adapter?.displayName ?: R.string.adapter_name_unsupported.toCaString(),
             adapterId = adapter?.id,
-            supportedPolicies = adapter?.supportedPolicies.orEmpty(),
+            // Narrowed by the support decision where a tier licenses only some of them (a guided-run
+            // pass covers the two policies it exercised, not the adapter's whole set).
+            supportedPolicies = selection.support.licensedPolicies
+                ?: adapter?.supportedPolicies.orEmpty(),
             defaultProtectivePolicy = adapter?.defaultProtectivePolicy,
             reconnectSupported = adapter?.reconnectGestureSupported == true,
             syncVerification = adapter?.verification == VerificationStrategy.SYNC_READBACK,

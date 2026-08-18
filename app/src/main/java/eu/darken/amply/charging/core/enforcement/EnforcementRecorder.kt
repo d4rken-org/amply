@@ -36,6 +36,16 @@ data class RawEnforcementTick(
     /** Only read for the level fallback below; the verdict needs nothing else from the broadcast. */
     val batteryIntent: Intent?,
     val wallMillis: Long,
+    /**
+     * Whether a guided qualification run was in flight **when this tick was captured**, not when it
+     * is processed.
+     *
+     * The distinction is load-bearing. This recorder drains its own queue independently, so a tick
+     * taken during a run can be handled after that run finished and restored the protective policy.
+     * Read at processing time it would present as "no run, cap configured, level climbing" — the
+     * exact shape of a refutation, which is terminal — from charging the run itself commanded.
+     */
+    val runActive: Boolean = false,
 )
 
 /**
@@ -133,7 +143,7 @@ class EnforcementRecorder @Inject constructor(
             // synchronously, which the engine then declines to evaluate.
             configured = repository.syncReadback(),
             sessionActive = tick.sessionActive,
-            runActive = runStore.currentRun() != null,
+            runActive = tick.runActive,
             plugged = tick.plugged,
             // The level is the whole observation, so a tick without one falls back to the broadcast
             // this tick was taken from rather than dropping the sample.

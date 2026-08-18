@@ -296,6 +296,85 @@
     <string name="setup_access_copy_adb">Copy ADB command</string>
     <string name="setup_access_adb_refresh_note">Amply detects the permission automatically once it runs, or tap Refresh in the top bar.</string>
 
+    <!-- Guided qualification run: proves the charging hardware obeys a limit, rather than only
+         accepting the setting. Copy avoids "test" as a verb for the user's action, because what is
+         being tested is the phone, not them. -->
+    <string name="qualification_title">Check the charge limit</string>
+    <string name="qualification_back">Back</string>
+    <string name="qualification_continue">Continue</string>
+    <string name="qualification_start">Start the check</string>
+    <string name="qualification_cancel">Stop the check</string>
+    <string name="qualification_done">Done</string>
+    <string name="qualification_share_result">Share the result</string>
+
+    <string name="qualification_intro_title">Does the limit actually work here?</string>
+    <string name="qualification_intro_body">Your phone accepts a charge limit, but on some builds nothing behind it ever stops the charging. Amply can\'t tell the difference just by watching: a battery resting below the limit looks exactly like one paused by heat or a weak charger.</string>
+    <string name="qualification_intro_what_happens">This check settles it. Amply sets a limit below your current level and waits for charging to stop, raises the limit and waits for it to start again, then lowers it once more. Nothing but a real, working limit does that on command. Leave the charger connected throughout. It usually takes 30 to 90 minutes.</string>
+    <string name="qualification_intro_restore">Your own charge setting is put back at the end, and also if you stop the check, unplug, or the phone restarts partway through.</string>
+
+    <string name="qualification_precheck_title">Before starting</string>
+    <string name="qualification_precheck_checking">Checking…</string>
+    <string name="qualification_precheck_ready">Everything is ready.</string>
+    <string name="qualification_precheck_plan_variable">Amply will set the limit to %1$d%% first, which is below where your battery is now, so charging should stop almost immediately.</string>
+    <string name="qualification_precheck_plan_fixed">Your phone offers a single %1$d%% limit, so Amply will charge up to just under it first. That part can take a while.</string>
+
+    <string name="qualification_blocked_no_adapter">Amply doesn\'t know how to set a charge limit on this device, so there is nothing to check.</string>
+    <string name="qualification_blocked_nothing_to_prove">The charge limit on this device is already known to work, so there is nothing to check.</string>
+    <string name="qualification_blocked_control_unavailable">Charge control isn\'t available on this device, so a check can\'t change anything.</string>
+    <string name="qualification_blocked_refuted">This build was already seen charging past its limit, so there is nothing left to check.</string>
+    <string name="qualification_blocked_latches_at_plug">This system only applies a new charge setting when you reconnect the charger, so a check that changes the setting while plugged in can\'t measure anything.</string>
+    <string name="qualification_blocked_no_testable_cap">This device only offers an automatic charging mode, which the system turns on when it decides to. There is no fixed limit to check.</string>
+    <string name="qualification_blocked_access">Amply doesn\'t have the access it needs to change the charge setting yet.</string>
+    <string name="qualification_blocked_session">A temporary full charge is running. Let it finish first.</string>
+    <string name="qualification_blocked_recovery">Amply still owes your phone a charge setting from earlier. That has to finish first.</string>
+    <string name="qualification_blocked_not_charging">Connect the charger and leave it connected.</string>
+    <string name="qualification_blocked_battery_level">Your battery is too low for this check right now. Charge it a little and come back.</string>
+    <string name="qualification_blocked_rule_active">One of your charge conditions is controlling the limit right now. The check would overwrite what that condition still owes you, so it can\'t run until the condition stops matching.</string>
+    <string name="qualification_blocked_baseline_unreadable">Amply can\'t read your current charge setting, so it doesn\'t know what to put back afterwards. It won\'t guess.</string>
+    <string name="qualification_blocked_battery_too_full">Your battery is nearly full. Up here it stops charging by itself, so the check couldn\'t tell that apart from a working limit. Use some battery first and come back.</string>
+
+    <string name="qualification_running_title">Checking</string>
+    <string name="qualification_phase_preflight">Getting ready to check the %1$d%% limit.</string>
+    <string name="qualification_phase_baseline">Measuring how fast your phone normally charges, so the %1$d%% limit has something to be compared against.</string>
+    <string name="qualification_phase_cut_1">The limit is set to %1$d%%. Waiting to see charging stop and stay stopped.</string>
+    <string name="qualification_phase_resume">The limit is now above %1$d%%. Waiting to see charging start again — this is the part nothing else can fake.</string>
+    <string name="qualification_phase_cut_2">The limit is back at %1$d%%. Waiting to see charging stop a second time.</string>
+    <string name="qualification_running_readings">Battery %1$s%%, charge counter %2$s</string>
+    <string name="qualification_running_leave_hint">You can leave this screen and lock your phone. The check keeps running, and you\'ll find it here when you come back.</string>
+
+    <string name="qualification_result_passed_title">The limit works on this build</string>
+    <string name="qualification_result_passed_body">Charging stopped at the limit, started again when the limit was raised, and stopped a second time. Amply has switched its charging controls on for this build. A system update replaces the build, and you can run this check again afterwards.</string>
+    <string name="qualification_result_refuted_title">The limit does not work here</string>
+    <string name="qualification_result_refuted_body">Your phone accepted the limit and charged straight past it, so nothing behind the setting is stopping the charging. Amply has switched its charging controls off here rather than show a protection that isn\'t real. Sending the result helps get this build looked at.</string>
+    <string name="qualification_result_inconclusive_title">No clear answer</string>
+    <string name="qualification_result_aborted_title">The check stopped early</string>
+    <string name="qualification_result_no_cut_body">Charging never stopped after the limit was set, but it also never went past the limit, so this isn\'t proof either way — a slow charger can look the same. Nothing was recorded. You can try again.</string>
+    <string name="qualification_result_no_resume_body">Charging stopped, but it didn\'t start again when the limit was raised. That can mean a full battery, a weak charger, or a warm phone rather than a broken limit, so nothing was recorded. Try again with a different charger or a cooler phone.</string>
+    <string name="qualification_result_no_recut_body">Charging stopped and started again, but didn\'t stop the second time. Nothing was recorded. You can try again.</string>
+    <string name="qualification_result_cap_mismatch_body">Your phone did stop charging, but at a different level than Amply asked for, which means the setting means something else on this build. Nothing was recorded. Sending the result is genuinely useful — it says exactly what the setting does here.</string>
+    <string name="qualification_result_no_signal_body">Amply couldn\'t read anything reliable about how much charge was going in on this phone, so it can\'t judge the result. Nothing was recorded.</string>
+    <string name="qualification_result_near_full_body">Your battery filled up during the check. A full battery stops charging on its own, so from here on Amply can\'t tell that apart from the limit working. Nothing was recorded. Try again from a lower battery level.</string>
+    <string name="qualification_result_charge_up_body">The battery didn\'t reach the limit in time. Nothing was recorded. A faster charger would help.</string>
+    <string name="qualification_result_no_baseline_body">Too little charge was going into your phone for the check to have anything to compare against — a weak charger, a nearly full battery, or a phone that doesn\'t report its charge accurately. Nothing was recorded. Try again with a different charger from a lower battery level.</string>
+    <string name="qualification_result_precondition_body">The check never got started. Nothing was recorded.</string>
+    <string name="qualification_result_unplugged_body">The charger was disconnected, so there was nothing to measure. Your charge setting has been put back. You can start again with the charger connected.</string>
+    <string name="qualification_result_drift_body">The charge setting was changed while the check was running, so the result wouldn\'t mean anything. Your setting has been put back.</string>
+    <string name="qualification_result_write_failed_body">Amply couldn\'t change the charge setting. Your setting has been put back.</string>
+    <string name="qualification_result_session_body">A temporary full charge started, which takes the limit off. Your setting has been put back.</string>
+    <string name="qualification_result_cancelled_body">You stopped the check. Your charge setting has been put back.</string>
+    <string name="qualification_result_ceiling_body">The check ran out of time. Nothing was recorded, and your charge setting has been put back.</string>
+    <string name="qualification_result_process_death_body">Amply was stopped while the check was running, so it couldn\'t finish. Your charge setting has been put back.</string>
+    <string name="qualification_result_service_unavailable_body">Amply couldn\'t start the background service the check needs, so it never got going. Nothing was changed. Check that Amply is allowed to run in the background and try again.</string>
+
+    <string name="qualification_notification_title">Checking the charge limit</string>
+    <string name="qualification_notification_stop">Stop</string>
+
+    <string name="qualification_deliver_title">Send the result</string>
+    <string name="qualification_deliver_body">This says what your phone did, which build it did it on, and its model name. It contains no personal data.</string>
+    <string name="qualification_open_issue">Open a report on GitHub</string>
+    <string name="qualification_copy_report">Copy the result</string>
+    <string name="qualification_email">Send by email</string>
+
     <!-- Contribution wizard ("Help add support") -->
     <string name="contribution_title">Help add support</string>
     <string name="contribution_share_subject">Amply device-support discovery</string>
@@ -389,6 +468,7 @@
     <string name="dashboard_enforcement_candidate_title">Charge limiting is not confirmed here</string>
     <string name="dashboard_enforcement_candidate_body">Your build accepts a charge limit, but whether the charging hardware actually honours it differs from build to build, and Amply can\'t tell from the outside: a battery resting below the limit looks the same as one paused by heat or a weak charger. You can switch the controls on anyway. Amply won\'t claim the limit is working, and it turns the controls off again if it ever sees the battery charge past the limit.</string>
     <string name="dashboard_enforcement_candidate_action">Enable anyway</string>
+    <string name="dashboard_enforcement_prove_action">Check whether it works</string>
     <string name="dashboard_enforcement_unverified_title">Charge limit not confirmed</string>
     <string name="dashboard_enforcement_unverified_body">The controls are available, but nothing Amply can see proves the limit works on this build. It keeps watching for the opposite: if the battery is observed charging past the limit, Amply switches its charging controls back off.</string>
     <string name="dashboard_enforcement_unverified_note">Set, but not confirmed to work on this build</string>

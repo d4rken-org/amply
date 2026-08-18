@@ -124,6 +124,10 @@ fun DashboardScreen(
     onOpenBatteryHub: () -> Unit,
     onRetryCapture: () -> Unit,
     onStartVerification: () -> Unit,
+    // Defaulted so the preview fixtures below stay as they are; the composition root passes the real
+    // callback and the real availability flag.
+    onProveLimit: () -> Unit = {},
+    proveLimitAvailable: Boolean = false,
     onPinWidget: () -> Unit,
     onAddTile: () -> Unit,
     onDismissQuickAccess: () -> Unit,
@@ -223,7 +227,12 @@ fun DashboardScreen(
                 // would still cost the list's 12.dp inter-item spacing.
                 state.charging.enforcement?.takeIf { it != EnforcementStatus.CONFIRMED }?.let { enforcement ->
                     item(key = "dashboard.enforcement") {
-                        EnforcementCard(status = enforcement, onStartVerification = onStartVerification)
+                        EnforcementCard(
+                            status = enforcement,
+                            onStartVerification = onStartVerification,
+                            onProveLimit = onProveLimit,
+                            proveLimitAvailable = proveLimitAvailable,
+                        )
                     }
                 }
 

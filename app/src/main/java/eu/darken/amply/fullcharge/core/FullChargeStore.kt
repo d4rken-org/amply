@@ -251,6 +251,33 @@ class FullChargeStore @Inject constructor(
         recoveryValue.update { null }
     }
 
+    /**
+     * Clear the pending recovery target **only if it is still the one [workId] registered**.
+     *
+     * There is a single recovery slot shared by every producer — the session restore, boot recovery,
+     * an explicit widget/tile policy choice, a qualification run. A producer that finishes its own
+     * work and clears the slot unconditionally can therefore erase an obligation somebody else stored
+     * in the meantime, and nothing would ever repay it: the newer write may still fail, land
+     * partially, or die with its process. Whoever owns the slot now is the one entitled to clear it.
+     *
+     * @return true when the slot was cleared or was already empty; false when it belongs to someone
+     *   else and was deliberately left alone.
+     */
+    suspend fun clearPendingRecoveryTargetIfOwnedBy(workId: String): Boolean {
+        var cleared = true
+        recoveryValue.update { current ->
+            when {
+                current == null -> null
+                current.workId == workId -> null
+                else -> {
+                    cleared = false
+                    current
+                }
+            }
+        }
+        return cleared
+    }
+
     /** The boot count during which Amply last ran — used to spot re-delivered BOOT_COMPLETED broadcasts. */
     suspend fun lastSeenBootCount(): Int? = lastSeenBootCountValue.value()
 

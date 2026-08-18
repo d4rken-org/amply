@@ -33,6 +33,8 @@ import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceStore
 import eu.darken.amply.charging.core.enforcement.EnforcementVerdict
 import eu.darken.amply.charging.core.enforcement.EnforcementVerdictEngine
 import eu.darken.amply.charging.core.qualification.QualificationEvidenceStore
+import eu.darken.amply.charging.core.qualification.QualificationProtocol
+import eu.darken.amply.charging.core.qualification.QualificationRunRecord
 import eu.darken.amply.charging.core.qualification.QualificationRunStore
 import eu.darken.amply.common.AppDataStore
 import eu.darken.amply.common.serialization.SerializationModule
@@ -81,6 +83,8 @@ class ChargingRepositoryRestoreGateTest {
     }
 
     private lateinit var evidenceStore: EnforcementEvidenceStore
+    private lateinit var runStore: QualificationRunStore
+    private lateinit var preferences: ChargingPreferences
     private lateinit var repository: ChargingRepository
 
     @Before
@@ -106,6 +110,8 @@ class ChargingRepositoryRestoreGateTest {
         )
         val json = SerializationModule.json()
         evidenceStore = EnforcementEvidenceStore(appDataStore, buildIdentity, json)
+        runStore = QualificationRunStore(appDataStore, json)
+        preferences = ChargingPreferences(appDataStore, json)
         val shizukuController = ShizukuController(context, ShizukuInstallationDetector(context))
         repository = ChargingRepository(
             context = context,
@@ -128,7 +134,7 @@ class ChargingRepositoryRestoreGateTest {
                 direct = DirectSettingsBackend(context),
                 shizuku = ShizukuSettingsBackend(shizukuController),
             ),
-            preferences = ChargingPreferences(appDataStore, json),
+            preferences = preferences,
             shizukuController = shizukuController,
             settleScheduler = object : SettleScheduler {
                 override fun schedule(requestedAtMillis: Long) = Unit
@@ -136,7 +142,7 @@ class ChargingRepositoryRestoreGateTest {
             batteryReader = BatteryReader(context, BatteryUnitCalibration(context)),
             evidenceStore = evidenceStore,
             qualificationStore = QualificationEvidenceStore(appDataStore, buildIdentity, json),
-            runStore = QualificationRunStore(appDataStore, json),
+            runStore = runStore,
             buildIdentity = buildIdentity,
         )
     }
@@ -219,5 +225,78 @@ class ChargingRepositoryRestoreGateTest {
             it.success shouldBe false
             it.observation.shouldBeInstanceOf<ChargeObservation.Unsupported>()
         }
+    }
+
+    private suspend fun openRun(token: String) = runStore.put(
+        QualificationRunRecord(
+            baseline = ChargePolicy.FixedLimit(80),
+            runId = "run-1",
+            runToken = token,
+            adapterId = "lineageos-chargingcontrol-v1",
+            buildIdentity = buildIdentity.current(),
+            protocolVersion = QualificationProtocol.PROTOCOL_VERSION,
+            lowCap = 70,
+            releasePolicy = ChargePolicy.FixedLimit(85),
+        ),
+    )
+
+    /**
+     * `applyForQualification` bypasses the enforcement tier the same way a restore does, so the token
+     * is the only thing standing between it and a general gate bypass. Without a live run it must
+     * refuse before it reaches the adapter at all.
+     */
+    @Test
+    fun `a qualification write without a live run is refused`() = runTest {
+        repository.applyForQualification(ChargePolicy.FixedLimit(70), "token-1").let {
+            it.success shouldBe false
+            it.observation.shouldBeInstanceOf<ChargeObservation.Unsupported>()
+        }
+    }
+
+    @Test
+    fun `a qualification write with the wrong token is refused`() = runTest {
+        openRun("token-1")
+
+        repository.applyForQualification(ChargePolicy.FixedLimit(70), "token-2").let {
+            it.success shouldBe false
+            it.observation.shouldBeInstanceOf<ChargeObservation.Unsupported>()
+        }
+    }
+
+    /**
+     * A blank token must not act as a wildcard. A record written by an older build — or a partially
+     * decoded one — carries the empty-string default, and that must never authorize a write.
+     */
+    @Test
+    fun `a blank token never authorizes a qualification write`() = runTest {
+        openRun("")
+
+        repository.applyForQualification(ChargePolicy.FixedLimit(70), "").let {
+            it.success shouldBe false
+            it.observation.shouldBeInstanceOf<ChargeObservation.Unsupported>()
+        }
+    }
+
+    /**
+     * With a matching token the tier no longer refuses, so the call reaches the adapter and fails
+     * where a real write fails here (WRITE_SECURE_SETTINGS cannot write the Lineage provider) —
+     * Unknown, not Unsupported. Same distinction the restore tests above rest on.
+     */
+    @Test
+    fun `a qualification write with a live token gets past the tier to the adapter`() = runTest {
+        openRun("token-1")
+
+        repository.applyForQualification(ChargePolicy.FixedLimit(70), "token-1")
+            .observation.shouldBeInstanceOf<ChargeObservation.Unknown>()
+    }
+
+    /** The run's writes are temporary, so the user's protective baseline survives them. */
+    @Test
+    fun `a qualification write never becomes the persistent policy`() = runTest {
+        openRun("token-1")
+
+        repository.applyForQualification(ChargePolicy.Unrestricted, "token-1")
+
+        preferences.lastPersistentPolicyNow() shouldBe null
     }
 }

@@ -110,6 +110,42 @@ class QualificationEvidenceStoreTest {
         store.currentState() shouldBe QualificationEvidenceState.Absent
     }
 
+    /**
+     * The protocol-version guard alone is not enough: `outcome` defaults to the only constant it has,
+     * which is the positive one. A record carrying nothing but a matching build and protocol version
+     * would otherwise decode as a pass with no adapter, no cap, no signal and no exercised policies —
+     * none of which a real run ever omits.
+     */
+    @Test
+    fun `a record that matches the scope but carries no measurement is not a pass`() = runTest {
+        writeRaw(
+            """{"buildIdentity":"build-a","protocolVersion":${QualificationProtocol.PROTOCOL_VERSION}}""",
+        )
+
+        store.currentState() shouldBe QualificationEvidenceState.Absent
+    }
+
+    @Test
+    fun `a pass missing its exercised policies is not credible`() = runTest {
+        store.record(evidence(exercised = emptyList()))
+
+        store.currentState() shouldBe QualificationEvidenceState.Absent
+    }
+
+    @Test
+    fun `a pass with no measurement signal is not credible`() = runTest {
+        store.record(evidence().copy(signal = FlowSignal.NONE))
+
+        store.currentState() shouldBe QualificationEvidenceState.Absent
+    }
+
+    @Test
+    fun `a pass with a nonsensical cap is not credible`() = runTest {
+        store.record(evidence().copy(capPercent = 0))
+
+        store.currentState() shouldBe QualificationEvidenceState.Absent
+    }
+
     @Test
     fun `an undecodable record is not a pass`() = runTest {
         writeRaw("this is not json")

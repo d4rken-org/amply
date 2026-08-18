@@ -88,12 +88,28 @@ class QualificationEvidenceStore @Inject constructor(
         is QualificationEvidenceState.Present -> {
             val evidence = state.evidence
             val applies = evidence.buildIdentity == buildIdentity.current() &&
-                evidence.protocolVersion == QualificationProtocol.PROTOCOL_VERSION
+                evidence.protocolVersion == QualificationProtocol.PROTOCOL_VERSION &&
+                evidence.isCredible()
             if (applies) state else QualificationEvidenceState.Absent
         }
 
         else -> state
     }
+
+    /**
+     * A pass has to look like something a run actually produced.
+     *
+     * The protocol-version guard alone is not fail-closed: `outcome` defaults to the only constant it
+     * has, which is the positive one, so a record carrying nothing but a matching `buildIdentity` and
+     * `protocolVersion` would decode as a pass with no adapter, no cap, no measurement signal and no
+     * policies. Every one of those is written by a real run, so requiring them turns a truncated or
+     * hand-written record back into "no evidence" instead of a licence.
+     */
+    private fun QualificationEvidence.isCredible(): Boolean =
+        adapterId.isNotBlank() &&
+            capPercent in 1..99 &&
+            signal != FlowSignal.NONE &&
+            exercisedPolicies.isNotEmpty()
 
     private fun decode(raw: String?): QualificationEvidenceState {
         if (raw == null) return QualificationEvidenceState.Absent

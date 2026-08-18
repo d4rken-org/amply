@@ -2,8 +2,10 @@ package eu.darken.amply.charging.core.qualification
 
 import android.content.Context
 import android.content.Intent
+import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import eu.darken.amply.battery.core.BatteryReader
+import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingRepository
 import eu.darken.amply.charging.core.DeviceInfo
@@ -17,18 +19,21 @@ import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
 import eu.darken.amply.fullcharge.core.BootCountProvider
+import eu.darken.amply.fullcharge.core.ChargeSessionService
 import eu.darken.amply.fullcharge.core.FullChargeStore
 import eu.darken.amply.fullcharge.core.ProcessIdentity
 import eu.darken.amply.fullcharge.core.RecoveryOrigin
+import eu.darken.amply.fullcharge.core.ServiceDispatch
 import eu.darken.amply.fullcharge.core.WorkProvenance
 import eu.darken.amply.main.core.SurfaceUpdater
-import eu.darken.amply.rules.core.PlugKind
 import eu.darken.amply.rules.core.RuleApplier
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.util.UUID
 import javax.inject.Inject
@@ -81,9 +86,19 @@ class QualificationRunner @Inject constructor(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val ticks = Channel<RawQualificationTick>(Channel.UNLIMITED)
+    private val resultFlow = MutableStateFlow<QualificationResult?>(null)
 
     init {
         scope.launch {
+            // Before any tick, exactly as ChargeStatsRecorder does: a record left behind by a dead
+            // process must be closed out rather than measured against.
+            try {
+                startupRepair()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log(TAG, Logging.Priority.ERROR) { "Qualification startup repair failed: ${e.message}" }
+            }
             for (tick in ticks) {
                 try {
                     onTick(tick)
@@ -105,6 +120,51 @@ class QualificationRunner @Inject constructor(
     suspend fun isRunning(): Boolean = runStore.currentRun() != null
 
     /**
+     * The same answer without suspending, for callers on a latency-critical path — the charge
+     * service's watcher dispatch, which stamps it onto each battery tick at capture time.
+     *
+     * Maintained by this runner's own lifecycle rather than read from the store, because the point is
+     * to be free to read. It can only lag a run started by another process until the first tick, and
+     * lagging *false* is the harmless direction: it lets the passive recorder observe normally.
+     */
+    @Volatile
+    var runActiveNow: Boolean = false
+        private set
+
+    /**
+     * Whether this device can be offered a run right now, and with what caps.
+     *
+     * Composed here rather than in the ViewModel so the pre-check list, the entry-point visibility
+     * and [start] all consult one answer instead of three approximations of it.
+     *
+     * Access readiness deliberately does **not** use `ChargingState.canApply`: that folds in
+     * `controlEnabled`, which is false for precisely the CANDIDATE devices a run exists to serve. It
+     * asks the same question minus the tier — is there a backend that could carry the write.
+     */
+    suspend fun eligibility(): RunEligibility {
+        val selection = repository.currentSelection()
+        val state = repository.state.value
+        val readout = batteryReader.read()
+        val accessReady = if (state.writeRequiresShizuku) {
+            state.access?.shizuku?.ready == true
+        } else {
+            state.access?.canControl == true
+        }
+        return qualificationEligibility(
+            adapter = selection.adapter,
+            support = selection.support,
+            evidence = enforcementStore.currentState(),
+            plugged = readout.onCharger,
+            percent = readout.levelPercent ?: -1,
+            accessReady = accessReady,
+            sessionActive = fullChargeStore.currentSession() != null,
+            pendingRecovery = fullChargeStore.pendingRecoveryTarget() != null,
+            ruleOwnsPolicy = runCatching { ruleApplier.ruleOwnsPolicy() }.getOrDefault(true),
+            baselineReadable = repository.syncReadback() is ChargeObservation.Verified,
+        )
+    }
+
+    /**
      * Begin a run against [adapter] with the caps in [plan].
      *
      * Ordering is deliberate and matches `ChargeSessionService.setPersistentPolicy`: suspend the rule
@@ -114,22 +174,20 @@ class QualificationRunner @Inject constructor(
      */
     suspend fun start(adapter: ChargingAdapter, plan: RunPlan): Boolean {
         if (runStore.currentRun() != null) return false
-        val baseline = repository.syncReadback()
-        val baselinePolicy = (baseline as? eu.darken.amply.charging.core.ChargeObservation.Verified)?.policy
-        val restoreTarget = baselinePolicy ?: adapter.defaultProtectivePolicy
+        // Refuse rather than guess. Falling back to the adapter's protective default would overwrite
+        // a setting the run could not read — an unrecognized native mode, or a transient readback
+        // failure — and then persistently restore the guess, permanently replacing the user's real
+        // choice with 80%. A run is never worth that: not knowing what to put back means not touching
+        // it in the first place.
+        val baselinePolicy =
+            (repository.syncReadback() as? ChargeObservation.Verified)?.policy
+        if (baselinePolicy == null) {
+            log(TAG, Logging.Priority.WARN) { "Refusing to start: the current charge policy is unreadable" }
+            return false
+        }
+        val restoreTarget = baselinePolicy
         val now = System.currentTimeMillis()
         val runId = UUID.randomUUID().toString()
-
-        // Rules first: a matching rule would otherwise rewrite the policy mid-experiment and the run
-        // would measure Amply arguing with itself.
-        val (pluggedNow, plugKindNow) = currentPlug()
-        try {
-            ruleApplier.suspendMatchingCohort(pluggedNow, plugKindNow)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log(TAG, Logging.Priority.WARN) { "Rule suspension failed: ${e.message}" }
-        }
 
         fullChargeStore.setPendingRecoveryTarget(
             policy = restoreTarget,
@@ -147,7 +205,7 @@ class QualificationRunner @Inject constructor(
                 protocolVersion = QualificationProtocol.PROTOCOL_VERSION,
                 shape = plan.shape,
                 candidate = false,
-                baselineVerified = baselinePolicy != null,
+                baselineVerified = true,
                 phase = RunPhase.PREFLIGHT,
                 runStartedAtWallMillis = now,
                 phaseStartedAtWallMillis = now,
@@ -156,12 +214,36 @@ class QualificationRunner @Inject constructor(
                 provenance = provenance(now),
             ),
         )
+        runActiveNow = true
+        // Nothing observes a run on its own: the record is what makes QualificationWatcher.isEnabled
+        // true, but the service that fans out battery ticks may not be running at all — no session, no
+        // gesture, no other watcher. Written first, nudged second, so the service's isEnabled query
+        // already sees the run and keeps itself alive.
+        val record = runStore.currentRun()
+        if (record != null && !nudgeService()) {
+            log(TAG, Logging.Priority.ERROR) { "Qualification run $runId could not start its service" }
+            finish(record, RunTerminal.Aborted(AbortReason.SERVICE_UNAVAILABLE))
+            return false
+        }
         log(TAG, Logging.Priority.INFO) {
             "Qualification run $runId started on ${adapter.id}: ${plan.shape} cap=${plan.lowCap}"
         }
         SurfaceUpdater.updateNow(context)
         return true
     }
+
+    /**
+     * Start (or wake) the charge-session service so its battery ticks reach this run. Same dispatch
+     * the statistics recorder uses when its capture toggle turns on.
+     */
+    private fun nudgeService(): Boolean = runCatching {
+        ContextCompat.startForegroundService(
+            context,
+            ServiceDispatch.startIntent(context, ChargeSessionService.ACTION_MONITOR),
+        )
+    }.onFailure {
+        log(TAG, Logging.Priority.WARN) { "Charge service nudge failed: ${it.message}" }
+    }.isSuccess
 
     suspend fun cancel() {
         runStore.requestCancel()
@@ -173,7 +255,7 @@ class QualificationRunner @Inject constructor(
      * baseline restored. The recovery target registered at start means the restore is owed either
      * way; this only makes it happen now rather than at the next boot.
      */
-    suspend fun startupRepair() {
+    internal suspend fun startupRepair() {
         val record = runStore.currentRun() ?: return
         val ours = record.provenance?.token == processIdentity.token
         if (ours) return
@@ -182,7 +264,9 @@ class QualificationRunner @Inject constructor(
     }
 
     private suspend fun onTick(tick: RawQualificationTick) {
-        val record = runStore.currentRun() ?: return
+        val record = runStore.currentRun()
+        runActiveNow = record != null
+        if (record == null) return
         val readout = tick.batteryIntent?.let { batteryReader.read(it) } ?: batteryReader.read()
         val sample = QualificationSample(
             nowMillis = tick.wallMillis.takeIf { it > 0 } ?: System.currentTimeMillis(),
@@ -194,13 +278,18 @@ class QualificationRunner @Inject constructor(
             writeFailed = record.writeFailed,
             cancelled = record.cancelled,
         )
-        val outcome = QualificationRunEngine.evaluate(record.toProgress(), sample)
+        val progress = record.toProgress()
+        val outcome = QualificationRunEngine.evaluate(progress, sample)
+        // Captured before the phase advances: it is the rate the phase that just ended was judged on.
+        val phaseRate = QualificationRunEngine.ratePerHour(progress, sample) ?: 0L
         outcome.terminal?.let {
-            finish(record, it, outcome.progress)
+            finish(record, it, outcome.progress, phaseRate)
             return
         }
-        val advanced = record.merge(outcome.progress)
-        runStore.put(advanced)
+        // Merge into the CURRENT stored record rather than the copy this tick started from: a cancel
+        // or a write failure flagged from another coroutine in between would otherwise be overwritten
+        // with the stale `false` and silently lost.
+        val advanced = runStore.mergeProgress { it.merge(outcome.progress, phaseRate) } ?: return
         outcome.command?.let { command ->
             when (command) {
                 is RunCommand.Apply -> executeApply(advanced, command.policy)
@@ -227,16 +316,33 @@ class QualificationRunner @Inject constructor(
         record: QualificationRunRecord,
         terminal: RunTerminal,
         progress: QualificationProgress? = null,
+        phaseRatePerHour: Long = 0L,
     ) {
         log(TAG, Logging.Priority.INFO) { "Run ${record.runId} finished: $terminal" }
-        val restored = runCatching {
-            repository.restorePersistent(record.baseline, forceNotify = true).success
-        }.getOrElse {
-            log(TAG, Logging.Priority.ERROR) { "Run ${record.runId} restore threw: ${it.message}" }
-            false
+        // CONFIGURATION_DRIFT means the user made a NEWER choice than the baseline this run captured.
+        // Restoring here would overwrite it with a stale value, which is the one thing worse than not
+        // restoring at all. The same holds for a full-charge session that started mid-run: it owns
+        // the policy now and has its own restore obligation.
+        val supersededByUser = terminal is RunTerminal.Aborted &&
+            (terminal.reason == AbortReason.CONFIGURATION_DRIFT || terminal.reason == AbortReason.SESSION_STARTED)
+        val restored = if (supersededByUser) {
+            log(TAG, Logging.Priority.INFO) {
+                "Run ${record.runId} superseded by a newer choice; leaving the current policy alone"
+            }
+            true
+        } else {
+            runCatching {
+                repository.restorePersistent(record.baseline, forceNotify = true).success
+            }.getOrElse {
+                log(TAG, Logging.Priority.ERROR) { "Run ${record.runId} restore threw: ${it.message}" }
+                false
+            }
         }
         if (restored) {
-            fullChargeStore.clearPendingRecoveryTarget()
+            // Owner-scoped: between this run registering its target and clearing it, a widget or tile
+            // write can have stored a NEWER one in the same single slot. Clearing unconditionally
+            // would drop that newer obligation on the floor, and nothing would ever repay it.
+            fullChargeStore.clearPendingRecoveryTargetIfOwnedBy(record.runId)
         } else {
             log(TAG, Logging.Priority.ERROR) {
                 "Run ${record.runId} could not restore ${record.baseline.stableId}; leaving the recovery target"
@@ -277,22 +383,29 @@ class QualificationRunner @Inject constructor(
             // record must never be readable as a pass.
             is RunTerminal.Inconclusive, is RunTerminal.Aborted -> Unit
         }
-        lastResult = QualificationResult(terminal, progress?.let { record.merge(it) } ?: record)
+        resultFlow.value = QualificationResult(
+            terminal,
+            progress?.let { record.merge(it, phaseRatePerHour) } ?: record,
+        )
         runStore.clear()
+        runActiveNow = false
         repository.refresh()
         SurfaceUpdater.updateNow(context)
     }
 
     /**
-     * The outcome of the most recent run in this process, for the result screen. Deliberately not
-     * persisted: it is a presentation detail, and everything that must survive a restart — the
-     * verdict, the restore — already is.
+     * The outcome of the most recent run in this process.
+     *
+     * A flow rather than a value, because a run usually finishes while the screen is open and often
+     * while the phone is locked: the result has to arrive at whatever is watching, not sit waiting to
+     * be polled. Deliberately not persisted — it is presentation only, and everything that must
+     * survive a restart (the verdict, the restore) already does.
      */
-    @Volatile
-    var lastResult: QualificationResult? = null
-        private set
+    val lastResult: StateFlow<QualificationResult?> = resultFlow
 
-    fun consumeResult(): QualificationResult? = lastResult.also { lastResult = null }
+    fun clearResult() {
+        resultFlow.value = null
+    }
 
     private fun provenance(now: Long) = WorkProvenance(
         token = processIdentity.token,
@@ -300,14 +413,6 @@ class QualificationRunner @Inject constructor(
         bootCount = bootCountProvider.current(),
         createdAtMillis = now,
     )
-
-    private fun currentPlug(): Pair<Boolean, PlugKind?> {
-        val raw = runCatching {
-            context.registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-                ?.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0)
-        }.getOrNull() ?: 0
-        return (raw != 0) to PlugKind.fromExtraPlugged(raw)
-    }
 
     private companion object {
         val TAG = logTag("Charging", "Qualification", "Runner")
@@ -324,37 +429,51 @@ internal fun QualificationRunRecord.toProgress() = QualificationProgress(
     releasePolicy = releasePolicy,
     commanded = commanded?.let { ChargePolicy.fromStableId(it) },
     commandedAt = commandedAtWallMillis,
-    anchorPercent = anchorPercent,
-    anchorCounter = anchorCounter,
-    holdSince = holdSinceWallMillis,
+    windowStartAt = windowStartAtWallMillis,
+    windowStartPercent = windowStartPercent,
+    windowStartCounter = windowStartCounter,
     signal = signal,
+    baselineRatePerHour = baselineRatePerHour,
+    impliedFullCapacity = impliedFullCapacity,
     candidate = candidate,
     observedHoldPercent = observedHoldPercent,
 )
 
-/** Fold the engine's advanced state back into the persisted record, appending to the phase log. */
-internal fun QualificationRunRecord.merge(progress: QualificationProgress): QualificationRunRecord {
+/**
+ * Fold the engine's advanced state back into the persisted record, appending to the phase log.
+ *
+ * [phaseRatePerHour] is the rate the closing phase was judged on, which only the caller can compute —
+ * it needs the sample that ended the phase, not the state that followed it.
+ */
+internal fun QualificationRunRecord.merge(
+    progress: QualificationProgress,
+    phaseRatePerHour: Long = 0L,
+): QualificationRunRecord {
     val phaseChanged = progress.phase != phase
     return copy(
         phase = progress.phase,
         phaseStartedAtWallMillis = progress.phaseStartedAt,
         commanded = progress.commanded?.stableId,
         commandedAtWallMillis = progress.commandedAt,
-        anchorPercent = progress.anchorPercent,
-        anchorCounter = progress.anchorCounter,
-        holdSinceWallMillis = progress.holdSince,
+        windowStartAtWallMillis = progress.windowStartAt,
+        windowStartPercent = progress.windowStartPercent,
+        windowStartCounter = progress.windowStartCounter,
         signal = progress.signal,
+        baselineRatePerHour = progress.baselineRatePerHour,
+        impliedFullCapacity = progress.impliedFullCapacity,
         observedHoldPercent = progress.observedHoldPercent,
         phaseLog = if (phaseChanged) {
             phaseLog + PhaseRecord(
                 phase = phase,
                 commanded = commanded.orEmpty(),
                 enteredAtWallMillis = phaseStartedAtWallMillis,
-                entryPercent = anchorPercent,
-                entryCounter = anchorCounter,
+                entryPercent = windowStartPercent,
+                entryCounter = windowStartCounter,
                 exitAtWallMillis = progress.phaseStartedAt,
-                exitPercent = progress.anchorPercent,
-                exitCounter = progress.anchorCounter,
+                exitPercent = progress.windowStartPercent,
+                exitCounter = progress.windowStartCounter,
+                // The rate this phase was actually judged on, so a report says why, not just what.
+                ratePerHour = phaseRatePerHour,
             )
         } else {
             phaseLog

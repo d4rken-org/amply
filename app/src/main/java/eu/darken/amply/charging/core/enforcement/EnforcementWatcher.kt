@@ -31,6 +31,7 @@ class EnforcementWatcher @Inject constructor(
                 sessionActive = tick.sessionActive,
                 batteryIntent = tick.batteryIntent,
                 wallMillis = tick.wallClockMillis,
+                runActive = tick.runActive,
             ),
         )
     }

@@ -33,6 +33,13 @@ enum class SettingsDestination {
     STATS_SESSION_DETAIL,
 
     /**
+     * The guided qualification run, which drives the charge limit and watches whether the charging
+     * hardware obeys it. Reached from the dashboard's enforcement card on builds where control is
+     * held back pending exactly that evidence.
+     */
+    QUALIFICATION,
+
+    /**
      * The upgrade screen. Reached from several places (the settings entry, a gated affordance, the
      * dashboard promo, the tile/widget), so it records where to return to rather than assuming one
      * parent — see `upgradeOrigin` at the composition root.

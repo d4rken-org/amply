@@ -2,23 +2,32 @@ package eu.darken.amply.charging.core.qualification
 
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
+import eu.darken.amply.charging.core.qualification.QualificationProtocol.BASELINE_WINDOW_MILLIS
 import eu.darken.amply.charging.core.qualification.QualificationProtocol.CHARGE_UP_BUDGET_MILLIS
+import eu.darken.amply.charging.core.qualification.QualificationProtocol.CUT_RATE_DROP_FACTOR
 import eu.darken.amply.charging.core.qualification.QualificationProtocol.FIXED_CAP_ENTRY_MARGIN
 import eu.darken.amply.charging.core.qualification.QualificationProtocol.HOLD_CONFIRM_MILLIS
+import eu.darken.amply.charging.core.qualification.QualificationProtocol.MIN_BASELINE_RATE_CAPACITY_FRACTION_PER_HOUR_DENOMINATOR
+import eu.darken.amply.charging.core.qualification.QualificationProtocol.MIN_MEASURE_WINDOW_MILLIS
 import eu.darken.amply.charging.core.qualification.QualificationProtocol.MIN_PLAUSIBLE_FULL_MICROAMP_HOURS
+import eu.darken.amply.charging.core.qualification.QualificationProtocol.NEAR_FULL_PERCENT
 import eu.darken.amply.charging.core.qualification.QualificationProtocol.OVERSHOOT_ALLOWANCE
 import eu.darken.amply.charging.core.qualification.QualificationProtocol.PHASE_BUDGET_MILLIS
 import eu.darken.amply.charging.core.qualification.QualificationProtocol.PREFLIGHT_BUDGET_MILLIS
-import eu.darken.amply.charging.core.qualification.QualificationProtocol.RISE_FRACTION_DENOMINATOR
+import eu.darken.amply.charging.core.qualification.QualificationProtocol.RESUME_RATE_RECOVERY_DIVISOR
 import eu.darken.amply.charging.core.qualification.QualificationProtocol.RUN_CEILING_MILLIS
+import eu.darken.amply.charging.core.qualification.QualificationProtocol.WRITE_SETTLE_MILLIS
 
 /**
  * One evaluation tick. Everything the protocol depends on, and nothing Android-specific.
  *
- * [configured] is the adapter's *configured-state* readback and is only meaningful on a
- * `SYNC_READBACK` adapter; it exists to catch the user changing the setting natively mid-run. A null
- * value disables drift detection rather than failing the run, so an adapter without synchronous
- * readback simply does not get that check.
+ * [configured] is the adapter's configured-state readback, only meaningful on a `SYNC_READBACK`
+ * adapter; it exists to catch the user changing the setting natively mid-run. Null disables that
+ * check rather than failing the run.
+ *
+ * [nowMillis] and [chargeCounter] must describe the **same instant**. A tick whose level was captured
+ * minutes ago but whose counter is read fresh at processing time produces a rate over the wrong
+ * window, which is exactly the kind of arithmetic this engine has to be able to trust.
  */
 data class QualificationSample(
     val nowMillis: Long,
@@ -29,38 +38,39 @@ data class QualificationSample(
     val chargeCounter: Int?,
     val configured: ChargeObservation?,
     val sessionActive: Boolean,
-    /** The host's last commanded write failed. */
     val writeFailed: Boolean = false,
     val cancelled: Boolean = false,
 )
 
 /**
- * Rolling run state. Threaded by the caller and persisted between ticks, exactly as
- * `EnforcementProgress` is — the engine itself holds nothing.
+ * Rolling run state, threaded by the caller and persisted between ticks.
  *
- * [anchorPercent]/[anchorCounter] are the baseline the current phase measures accumulation against.
- * They are **reset whenever a rise is confirmed**, which is what lets a slow charge accumulate past
- * the rise threshold over minutes instead of needing to clear it within a single 30 s tick.
+ * The measurement window ([windowStartAt] and its readings) opens when a phase begins and is never
+ * reset mid-phase: a rate is only meaningful over a known span, and re-anchoring on activity would
+ * reintroduce the "long enough without a big enough jump" logic that made a slow charge look like a
+ * stopped one.
  */
 data class QualificationProgress(
     val shape: RunShape,
     val phase: RunPhase,
     val runStartedAt: Long,
     val phaseStartedAt: Long,
-    /** The protective cap this run commands, as a percent. */
     val lowCap: Int,
-    /** What the resume phase writes: a higher cap on a variable adapter, Unrestricted on a fixed one. */
     val releasePolicy: ChargePolicy,
     val commanded: ChargePolicy? = null,
     val commandedAt: Long = 0L,
-    val anchorPercent: Int = -1,
-    val anchorCounter: Int? = null,
-    /** When accumulation was last seen rising; a cut is confirmed once this is old enough. */
-    val holdSince: Long = 0L,
+    val windowStartAt: Long = 0L,
+    val windowStartPercent: Int = -1,
+    val windowStartCounter: Int? = null,
     val signal: FlowSignal = FlowSignal.NONE,
-    /** True when the adapter's value mapping is a guess (a candidate device), enabling the cap check. */
+    /**
+     * The control: accumulation per hour measured in [RunPhase.BASELINE], in whichever unit [signal]
+     * selected. Zero until measured, and a run cannot leave the baseline phase without it.
+     */
+    val baselineRatePerHour: Long = 0L,
+    /** The battery's implied full capacity at baseline, used to bound what counts as a usable rate. */
+    val impliedFullCapacity: Long = 0L,
     val candidate: Boolean = false,
-    /** The level at which the first cut was observed, for the report and the cap-mismatch check. */
     val observedHoldPercent: Int? = null,
 )
 
@@ -70,29 +80,25 @@ data class QualificationOutcome(
     val terminal: RunTerminal? = null,
 )
 
-/** What the accumulation measurement says about the current phase. */
-internal enum class Flow { RISING, STALLED, UNKNOWN }
-
 /**
- * Drives the cut → resume → cut challenge. Pure and JVM-testable: no clock, no Android, the caller
- * threads [QualificationProgress] and executes the emitted [RunCommand].
+ * Drives the baseline → cut → resume → cut challenge. Pure and JVM-testable: no clock, no Android;
+ * the caller threads [QualificationProgress] and executes the emitted [RunCommand].
  *
- * **A phase timeout is never a refutation.** [RunTerminal.Refuted] is reachable only from an observed
- * climb past the commanded cap — the same signal, and the same [OVERSHOOT_ALLOWANCE], the passive
- * `EnforcementVerdictEngine` uses. A cold room, a 500 mA charger or a device that simply never
- * reaches the cap all end [RunTerminal.Inconclusive], because a run that could not measure must never
- * be able to permanently disable control on a working device.
+ * **Everything is judged against the run's own baseline rate, never an absolute threshold.** That is
+ * the difference between this and a plausible-looking measurement that quietly passes bad devices: a
+ * phone charging steadily at 100 mA under a cap that does nothing sits below any fixed "stopped" bar
+ * forever, but it cannot drop tenfold below *its own* 100 mA.
  *
- * **Nor may a run refute a mapping it guessed.** A refutation claims something about the hardware, so
- * it is only available where the adapter's value semantics are known. On a candidate device the same
- * observation ends [InconclusiveReason.CAP_MISMATCH] — see [cut].
+ * **A phase timeout is never a refutation.** [RunTerminal.Refuted] needs an observed climb past the
+ * cap that is corroborated by the measured rate, taken after the write has had time to land. A cold
+ * room, a weak charger, or a device that never reaches the cap all end [RunTerminal.Inconclusive],
+ * because a run that could not measure must never permanently disable control on a working device.
+ *
+ * **Nor may a run refute a mapping it guessed**: on a candidate adapter the same observation ends
+ * [InconclusiveReason.CAP_MISMATCH] — see [cut].
  */
 object QualificationRunEngine {
 
-    /**
-     * Open a run. The caller resolves [shape], [lowCap] and [releasePolicy] from the adapter's
-     * `supportedPolicies` and the battery's current level, because only it knows the adapter.
-     */
     fun start(
         shape: RunShape,
         lowCap: Int,
@@ -115,17 +121,12 @@ object QualificationRunEngine {
         }
         return when (previous.phase) {
             RunPhase.PREFLIGHT -> preflight(previous, sample)
-            RunPhase.CHARGE_UP -> chargeUp(previous, sample)
+            RunPhase.BASELINE -> baseline(previous, sample)
             RunPhase.CUT_1, RunPhase.CUT_2 -> cut(previous, sample)
             RunPhase.RESUME -> resume(previous, sample)
         }
     }
 
-    /**
-     * Conditions that end a run wherever it is. Unplugging is an abort rather than an inconclusive
-     * result because the protocol's one instruction to the user is to leave the cable in: it is a
-     * run that did not happen, not a run that failed to measure.
-     */
     private fun abortReasonFor(progress: QualificationProgress, sample: QualificationSample): AbortReason? = when {
         sample.cancelled -> AbortReason.USER_CANCELLED
         sample.writeFailed -> AbortReason.WRITE_FAILED
@@ -137,95 +138,121 @@ object QualificationRunEngine {
     }
 
     /**
-     * The configured state disagrees with what the run commanded. Only consulted after a grace
-     * window, because a settings write and its readback are not simultaneous on every adapter, and
-     * only for a *verified* observation — a merely last-requested or unreadable state proves nothing.
+     * The configured state disagrees with what the run commanded, i.e. the user changed it natively.
+     * Consulted only after [WRITE_SETTLE_MILLIS] and only for a *verified* observation — a merely
+     * last-requested or unreadable state proves nothing.
      */
     private fun driftedAway(progress: QualificationProgress, sample: QualificationSample): Boolean {
         val commanded = progress.commanded ?: return false
-        if (sample.nowMillis - progress.commandedAt < DRIFT_GRACE_MILLIS) return false
+        if (sample.nowMillis - progress.commandedAt < WRITE_SETTLE_MILLIS) return false
         val verified = sample.configured as? ChargeObservation.Verified ?: return false
         return verified.policy != commanded
     }
 
     private fun preflight(progress: QualificationProgress, sample: QualificationSample): QualificationOutcome {
-        if (sample.percent !in 0..100) return waitOrTimeout(progress, sample)
+        if (sample.percent !in 0..100) {
+            return if (sample.nowMillis - progress.phaseStartedAt >= PREFLIGHT_BUDGET_MILLIS) {
+                QualificationOutcome(
+                    progress,
+                    terminal = RunTerminal.Inconclusive(InconclusiveReason.PRECONDITION_TIMEOUT),
+                )
+            } else {
+                QualificationOutcome(progress)
+            }
+        }
         val signal = resolveSignal(sample)
         if (signal == FlowSignal.NONE) {
             return QualificationOutcome(progress, terminal = RunTerminal.Inconclusive(InconclusiveReason.NO_SIGNAL))
         }
-        val ready = progress.shape == RunShape.VARIABLE_CAP ||
-            sample.percent >= progress.lowCap - FIXED_CAP_ENTRY_MARGIN
-        val started = progress.copy(signal = signal)
-        return if (ready) {
-            enterPhase(started, sample, RunPhase.CUT_1, ChargePolicy.FixedLimit(progress.lowCap))
-        } else {
-            enterPhase(started, sample, RunPhase.CHARGE_UP, ChargePolicy.Unrestricted)
-        }
+        val capacity = impliedFullCapacity(sample.chargeCounter, sample.percent) ?: 0L
+        val armed = progress.copy(signal = signal, impliedFullCapacity = capacity)
+        // The cap comes off first: the control has to measure this charger against this battery, and
+        // it cannot do that through whatever limit the user already had configured.
+        return enterPhase(armed, sample, RunPhase.BASELINE, progress.releasePolicy)
     }
 
-    private fun waitOrTimeout(
-        progress: QualificationProgress,
-        sample: QualificationSample,
-    ): QualificationOutcome = if (sample.nowMillis - progress.phaseStartedAt >= PREFLIGHT_BUDGET_MILLIS) {
-        QualificationOutcome(progress, terminal = RunTerminal.Inconclusive(InconclusiveReason.PRECONDITION_TIMEOUT))
-    } else {
-        QualificationOutcome(progress)
-    }
+    /**
+     * Measure the control. Ends when the window is long enough *and*, on a fixed-cap run, the battery
+     * has climbed to just under the cap — that shape has nothing to observe anywhere else, so its
+     * charge-up and its control are the same stretch of charging.
+     */
+    private fun baseline(progress: QualificationProgress, sample: QualificationSample): QualificationOutcome {
+        val elapsed = sample.nowMillis - progress.windowStartAt
+        val nearCap = sample.percent in 0..100 && sample.percent >= progress.lowCap - FIXED_CAP_ENTRY_MARGIN
+        val positioned = progress.shape == RunShape.VARIABLE_CAP || nearCap
+        val budget = if (progress.shape == RunShape.FIXED_CAP) CHARGE_UP_BUDGET_MILLIS else PHASE_BUDGET_MILLIS
 
-    private fun chargeUp(progress: QualificationProgress, sample: QualificationSample): QualificationOutcome = when {
-        sample.percent in 0..100 && sample.percent >= progress.lowCap - FIXED_CAP_ENTRY_MARGIN ->
-            enterPhase(progress, sample, RunPhase.CUT_1, ChargePolicy.FixedLimit(progress.lowCap))
-
-        sample.nowMillis - progress.phaseStartedAt >= CHARGE_UP_BUDGET_MILLIS ->
-            QualificationOutcome(
+        if (elapsed >= BASELINE_WINDOW_MILLIS && positioned) {
+            val rate = ratePerHour(progress, sample) ?: return QualificationOutcome(
                 progress,
-                terminal = RunTerminal.Inconclusive(InconclusiveReason.CHARGE_UP_TIMEOUT),
+                terminal = RunTerminal.Inconclusive(InconclusiveReason.NO_BASELINE),
             )
-
-        else -> QualificationOutcome(progress)
+            if (rate < minimumBaselineRate(progress)) {
+                return QualificationOutcome(
+                    progress,
+                    terminal = RunTerminal.Inconclusive(InconclusiveReason.NO_BASELINE),
+                )
+            }
+            val measured = progress.copy(baselineRatePerHour = rate)
+            return enterPhase(measured, sample, RunPhase.CUT_1, ChargePolicy.FixedLimit(progress.lowCap))
+        }
+        if (sample.nowMillis - progress.phaseStartedAt >= budget) {
+            val reason = if (progress.shape == RunShape.FIXED_CAP && !nearCap) {
+                InconclusiveReason.CHARGE_UP_TIMEOUT
+            } else {
+                InconclusiveReason.NO_BASELINE
+            }
+            return QualificationOutcome(progress, terminal = RunTerminal.Inconclusive(reason))
+        }
+        return QualificationOutcome(progress)
     }
 
     private fun cut(progress: QualificationProgress, sample: QualificationSample): QualificationOutcome {
+        // Near full first: up here a stopped battery is not evidence of a cap, and neither is a
+        // moving one evidence against it. Ordering matters — checking the climb first would refute a
+        // run whose battery simply topped off.
+        if (sample.percent >= NEAR_FULL_PERCENT) {
+            return QualificationOutcome(
+                progress.copy(observedHoldPercent = sample.percent),
+                terminal = RunTerminal.Inconclusive(InconclusiveReason.NEAR_FULL),
+            )
+        }
         if (climbedPastCap(progress, sample)) {
-            // A refutation is a claim about the *hardware*, so it may only be made where the value
-            // mapping is known. On a candidate device the commanded value is a guess: a One UI 6/7
-            // phone whose `protect_battery = 1` means "cap at 85" charges straight past a commanded
-            // 80 while enforcing perfectly. Recording that as a refutation would permanently disable
-            // control on a device that works. It is a mapping result, and the report carries the
-            // level so the mapping can be corrected.
+            // A refutation claims something about the hardware, so it is only available where the
+            // value mapping is known. On a candidate adapter the commanded value is an assumption: a
+            // One UI 6/7 phone whose `protect_battery` means "cap at 85" charges past a commanded 80
+            // while enforcing perfectly, and refuting there would disable a device that works.
             val terminal = if (progress.candidate) {
                 RunTerminal.Inconclusive(InconclusiveReason.CAP_MISMATCH)
             } else {
                 RunTerminal.Refuted
             }
-            val observed = if (sample.percent in 0..100) sample.percent else progress.observedHoldPercent
-            return QualificationOutcome(progress.copy(observedHoldPercent = observed), terminal = terminal)
+            return QualificationOutcome(progress.copy(observedHoldPercent = sample.percent), terminal = terminal)
         }
-        val advanced = advanceFlow(progress, sample)
-        val held = sample.nowMillis - advanced.holdSince >= HOLD_CONFIRM_MILLIS
-        if (held) {
-            // Same reasoning from the other side: a candidate device that stops *below* the commanded
-            // cap never triggers the climb check above, but its mapping is just as wrong.
-            if (progress.candidate &&
-                progress.shape == RunShape.FIXED_CAP &&
-                sample.percent in 0..100 &&
-                kotlin.math.abs(sample.percent - progress.lowCap) > OVERSHOOT_ALLOWANCE
-            ) {
-                return QualificationOutcome(
-                    advanced.copy(observedHoldPercent = sample.percent),
-                    terminal = RunTerminal.Inconclusive(InconclusiveReason.CAP_MISMATCH),
+
+        val elapsed = sample.nowMillis - progress.windowStartAt
+        if (elapsed >= HOLD_CONFIRM_MILLIS) {
+            val rate = ratePerHour(progress, sample)
+            if (rate != null && rate <= progress.baselineRatePerHour / CUT_RATE_DROP_FACTOR) {
+                if (progress.candidate &&
+                    progress.shape == RunShape.FIXED_CAP &&
+                    sample.percent in 0..100 &&
+                    kotlin.math.abs(sample.percent - progress.lowCap) > OVERSHOOT_ALLOWANCE
+                ) {
+                    return QualificationOutcome(
+                        progress.copy(observedHoldPercent = sample.percent),
+                        terminal = RunTerminal.Inconclusive(InconclusiveReason.CAP_MISMATCH),
+                    )
+                }
+                val recorded = progress.copy(
+                    observedHoldPercent = progress.observedHoldPercent
+                        ?: sample.percent.takeIf { it in 0..100 },
                 )
-            }
-            val recorded = if (advanced.observedHoldPercent == null && sample.percent in 0..100) {
-                advanced.copy(observedHoldPercent = sample.percent)
-            } else {
-                advanced
-            }
-            return if (progress.phase == RunPhase.CUT_1) {
-                enterPhase(recorded, sample, RunPhase.RESUME, progress.releasePolicy)
-            } else {
-                QualificationOutcome(recorded, terminal = RunTerminal.Passed)
+                return if (progress.phase == RunPhase.CUT_1) {
+                    enterPhase(recorded, sample, RunPhase.RESUME, progress.releasePolicy)
+                } else {
+                    QualificationOutcome(recorded, terminal = RunTerminal.Passed)
+                }
             }
         }
         if (sample.nowMillis - progress.phaseStartedAt >= PHASE_BUDGET_MILLIS) {
@@ -234,48 +261,43 @@ object QualificationRunEngine {
             } else {
                 InconclusiveReason.NO_RECUT
             }
-            return QualificationOutcome(advanced, terminal = RunTerminal.Inconclusive(reason))
+            return QualificationOutcome(progress, terminal = RunTerminal.Inconclusive(reason))
         }
-        return QualificationOutcome(advanced)
+        return QualificationOutcome(progress)
     }
 
     private fun resume(progress: QualificationProgress, sample: QualificationSample): QualificationOutcome {
-        val flow = measureFlow(progress, sample)
-        if (flow == Flow.RISING) {
-            return enterPhase(progress, sample, RunPhase.CUT_2, ChargePolicy.FixedLimit(progress.lowCap))
+        val elapsed = sample.nowMillis - progress.windowStartAt
+        if (elapsed >= MIN_MEASURE_WINDOW_MILLIS) {
+            val rate = ratePerHour(progress, sample)
+            if (rate != null && rate >= progress.baselineRatePerHour / RESUME_RATE_RECOVERY_DIVISOR) {
+                return enterPhase(progress, sample, RunPhase.CUT_2, ChargePolicy.FixedLimit(progress.lowCap))
+            }
         }
         if (sample.nowMillis - progress.phaseStartedAt >= PHASE_BUDGET_MILLIS) {
-            return QualificationOutcome(
-                progress,
-                terminal = RunTerminal.Inconclusive(InconclusiveReason.NO_RESUME),
-            )
+            return QualificationOutcome(progress, terminal = RunTerminal.Inconclusive(InconclusiveReason.NO_RESUME))
         }
         return QualificationOutcome(progress)
     }
 
     /**
-     * A rise that carries the level past the commanded cap. Keyed on a rise from the phase anchor
-     * rather than an absolute level, because a variable-cap run deliberately starts *above* its cap
-     * — the device is expected to stop where it stands, and only further climbing refutes.
+     * A rise that carries the level past the commanded cap, corroborated by the rate.
+     *
+     * Three guards, each closing a way a good device could be permanently disabled: the rise is keyed
+     * on the window's starting level rather than an absolute level, because a variable-cap run
+     * deliberately begins *above* its cap and is expected to stop where it stands; the measured rate
+     * must agree that charge is actually going in, so a gauge recalibration cannot refute on its own;
+     * and nothing counts until the write has had [WRITE_SETTLE_MILLIS] to take effect, because a tick
+     * captured before that describes the previous configuration.
      */
     private fun climbedPastCap(progress: QualificationProgress, sample: QualificationSample): Boolean {
-        if (sample.percent !in 0..100 || progress.anchorPercent !in 0..100) return false
-        return sample.percent > progress.anchorPercent &&
+        if (sample.nowMillis - progress.commandedAt < WRITE_SETTLE_MILLIS) return false
+        if (sample.percent !in 0..100 || progress.windowStartPercent !in 0..100) return false
+        val climbed = sample.percent > progress.windowStartPercent &&
             sample.percent >= progress.lowCap + OVERSHOOT_ALLOWANCE
-    }
-
-    /** Re-anchor and restart the hold clock when charging is seen accumulating. */
-    private fun advanceFlow(
-        progress: QualificationProgress,
-        sample: QualificationSample,
-    ): QualificationProgress = when (measureFlow(progress, sample)) {
-        Flow.RISING -> progress.copy(
-            anchorPercent = sample.percent,
-            anchorCounter = sample.chargeCounter,
-            holdSince = sample.nowMillis,
-        )
-
-        Flow.STALLED, Flow.UNKNOWN -> progress
+        if (!climbed) return false
+        val rate = ratePerHour(progress, sample) ?: return false
+        return rate > progress.baselineRatePerHour / CUT_RATE_DROP_FACTOR
     }
 
     private fun enterPhase(
@@ -289,11 +311,57 @@ object QualificationRunEngine {
             phaseStartedAt = sample.nowMillis,
             commanded = policy,
             commandedAt = sample.nowMillis,
-            anchorPercent = sample.percent,
-            anchorCounter = sample.chargeCounter,
-            holdSince = sample.nowMillis,
+            // The measurement window opens only once the write has settled, so no phase is ever
+            // judged on charging that happened under the previous configuration.
+            windowStartAt = sample.nowMillis + WRITE_SETTLE_MILLIS,
+            windowStartPercent = sample.percent,
+            windowStartCounter = sample.chargeCounter,
         )
         return QualificationOutcome(next, command = RunCommand.Apply(policy))
+    }
+
+    /**
+     * Accumulation since the window opened, per hour, in [FlowSignal] units. Null when the window has
+     * not opened yet, is too short to divide by, or the readings needed are missing.
+     *
+     * A falling reading clamps to zero rather than going negative: discharging is not evidence of
+     * charging, and a negative rate would sail under every "is it charging" bar as if it were a hold —
+     * which it is, but the caller should not have to reason about signs to get that right.
+     */
+    internal fun ratePerHour(progress: QualificationProgress, sample: QualificationSample): Long? {
+        val elapsed = sample.nowMillis - progress.windowStartAt
+        if (elapsed < MIN_MEASURE_WINDOW_MILLIS) return null
+        val delta = when (progress.signal) {
+            FlowSignal.COUNTER -> {
+                val start = progress.windowStartCounter ?: return null
+                val now = sample.chargeCounter ?: return null
+                now.toLong() - start.toLong()
+            }
+
+            FlowSignal.LEVEL -> {
+                if (sample.percent !in 0..100 || progress.windowStartPercent !in 0..100) return null
+                // Scaled so integer division against the drop factor keeps meaningful resolution:
+                // a single percent point would otherwise round to nothing.
+                (sample.percent.toLong() - progress.windowStartPercent.toLong()) * LEVEL_RATE_SCALE
+            }
+
+            FlowSignal.NONE -> return null
+        }
+        return (delta.coerceAtLeast(0) * MILLIS_PER_HOUR / elapsed)
+    }
+
+    /**
+     * The slowest control the run will work from. Expressed against the battery's implied full
+     * capacity so it holds for any cell size and survives a ROM that reports milli-units where
+     * Android documents micro-units — both sides of the ratio scale together.
+     */
+    internal fun minimumBaselineRate(progress: QualificationProgress): Long = when (progress.signal) {
+        FlowSignal.COUNTER ->
+            progress.impliedFullCapacity / MIN_BASELINE_RATE_CAPACITY_FRACTION_PER_HOUR_DENOMINATOR
+
+        // One percent per hour, in the same scaled units ratePerHour produces.
+        FlowSignal.LEVEL -> LEVEL_RATE_SCALE
+        FlowSignal.NONE -> Long.MAX_VALUE
     }
 
     /**
@@ -312,39 +380,16 @@ object QualificationRunEngine {
 
     /**
      * The battery's full capacity implied by a counter reading at a known level. Normalizes out the
-     * charge level so a phone at 20% and the same phone at 90% imply the same capacity, which is what
-     * separates a correctly-reporting device from a milli-reporting one by an order of magnitude.
+     * charge level, which is what separates a correctly-reporting device from a milli-reporting one
+     * by an order of magnitude at any state of charge.
      */
     internal fun impliedFullCapacity(counter: Int?, percent: Int): Long? {
         if (counter == null || counter <= 0 || percent !in 1..100) return null
         return counter.toLong() * 100 / percent
     }
 
-    internal fun measureFlow(progress: QualificationProgress, sample: QualificationSample): Flow = when (progress.signal) {
-        FlowSignal.COUNTER -> {
-            val anchor = progress.anchorCounter
-            val current = sample.chargeCounter
-            val full = impliedFullCapacity(anchor, progress.anchorPercent)
-            if (anchor == null || current == null || full == null) {
-                Flow.UNKNOWN
-            } else {
-                val threshold = full / RISE_FRACTION_DENOMINATOR
-                if (current.toLong() - anchor.toLong() >= threshold) Flow.RISING else Flow.STALLED
-            }
-        }
+    internal const val MILLIS_PER_HOUR = 3_600_000L
 
-        FlowSignal.LEVEL -> when {
-            sample.percent !in 0..100 || progress.anchorPercent !in 0..100 -> Flow.UNKNOWN
-            sample.percent > progress.anchorPercent -> Flow.RISING
-            else -> Flow.STALLED
-        }
-
-        FlowSignal.NONE -> Flow.UNKNOWN
-    }
-
-    /**
-     * How long after a commanded write the configured state is allowed to disagree before it counts
-     * as the user having changed it. Comfortably longer than a settings write plus its readback.
-     */
-    internal const val DRIFT_GRACE_MILLIS = 60_000L
+    /** Percent points are scaled before rate arithmetic so integer division keeps resolution. */
+    internal const val LEVEL_RATE_SCALE = 1_000L
 }

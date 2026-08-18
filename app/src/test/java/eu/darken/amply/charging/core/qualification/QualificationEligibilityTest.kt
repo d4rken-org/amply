@@ -59,6 +59,8 @@ class QualificationEligibilityTest {
         accessReady: Boolean = true,
         sessionActive: Boolean = false,
         pendingRecovery: Boolean = false,
+        ruleOwnsPolicy: Boolean = false,
+        baselineReadable: Boolean = true,
     ) = qualificationEligibility(
         adapter = adapter,
         support = support,
@@ -68,6 +70,8 @@ class QualificationEligibilityTest {
         accessReady = accessReady,
         sessionActive = sessionActive,
         pendingRecovery = pendingRecovery,
+        ruleOwnsPolicy = ruleOwnsPolicy,
+        baselineReadable = baselineReadable,
     )
 
     private fun refuted() = EnforcementEvidenceState.Present(
@@ -164,9 +168,46 @@ class QualificationEligibilityTest {
         eligibility(plugged = false) shouldBe RunEligibility.Ineligible(IneligibleReason.NOT_CHARGING)
     }
 
+    /**
+     * A rule's policy is not the user's setting. Measuring it would capture the rule's temporary
+     * value as the baseline, restore it persistently at the end, and leave nothing remembering what
+     * the rule still owed back.
+     */
+    @Test
+    fun `a run refuses to start while a charge rule owns the policy`() {
+        eligibility(ruleOwnsPolicy = true) shouldBe RunEligibility.Ineligible(IneligibleReason.RULE_ACTIVE)
+    }
+
+    /**
+     * Not knowing what to put back means not touching it. The alternative — falling back to the
+     * adapter's protective default — would replace an unrecognized native mode with 80% permanently.
+     */
+    @Test
+    fun `a run refuses to start when the current policy cannot be read`() {
+        eligibility(baselineReadable = false) shouldBe
+            RunEligibility.Ineligible(IneligibleReason.BASELINE_UNREADABLE)
+    }
+
     @Test
     fun `a battery below the lowest cap cannot host a variable-cap run yet`() {
         eligibility(percent = 60) shouldBe RunEligibility.Ineligible(IneligibleReason.BATTERY_LEVEL)
+    }
+
+    /**
+     * Refused before a plan is even resolved: near full, a stopped battery is not evidence of a cap,
+     * so a run up here could stage a cut → resume → cut out of an ordinary end-of-charge.
+     */
+    @Test
+    fun `a nearly full battery cannot host a run at all`() {
+        eligibility(percent = QualificationProtocol.NEAR_FULL_PERCENT) shouldBe
+            RunEligibility.Ineligible(IneligibleReason.BATTERY_TOO_FULL)
+        eligibility(percent = 100) shouldBe RunEligibility.Ineligible(IneligibleReason.BATTERY_TOO_FULL)
+    }
+
+    @Test
+    fun `just below the near-full threshold is still eligible`() {
+        eligibility(percent = QualificationProtocol.NEAR_FULL_PERCENT - 1)
+            .shouldBeInstanceOf<RunEligibility.Eligible>()
     }
 
     @Test
