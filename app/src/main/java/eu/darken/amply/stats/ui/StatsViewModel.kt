@@ -21,6 +21,7 @@ import eu.darken.amply.stats.core.ChargeCurvePoint
 import eu.darken.amply.stats.core.ChargeSessionSummary
 import eu.darken.amply.stats.core.ChargeStatsRecorder
 import eu.darken.amply.stats.core.ChargeStatsRepository
+import eu.darken.amply.stats.core.RecentCurveData
 import eu.darken.amply.stats.core.StatsPreferences
 import eu.darken.amply.stats.core.StatsRetention
 import eu.darken.amply.upgrade.core.UpgradeRepo
@@ -166,7 +167,9 @@ class StatsViewModel @Inject constructor(
     }
 
     /**
-     * The hub's sparkline curve for a **finished** session. A live session needs nothing from here:
+     * The hub's sparkline curve for a **finished** session, plus what that session's raw samples
+     * actually recorded (the curve is decimated, so it cannot answer that). A live session needs
+     * nothing from here:
      * the teaser already carries `StatsLiveSession.curve`, which `currentSession()` bounds on
      * purpose — opening the unbounded curve for that same session would reload the whole thing on
      * every appended sample, which is exactly what the bounded window exists to avoid. This read is
@@ -177,19 +180,19 @@ class StatsViewModel @Inject constructor(
      * `stats.db` for a user who never enabled capture and merely opened the battery hub.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
-    val hubCurve: StateFlow<List<ChargeCurvePoint>> = hubSessionId
+    val hubCurve: StateFlow<RecentCurveData> = hubSessionId
         .flatMapLatest { id ->
             if (id == null) {
-                flowOf(emptyList())
+                flowOf(RecentCurveData())
             } else {
                 flow { emitAll(repository.recentCurveFlow(id)) }
                     .catch { e ->
                         log(TAG, Logging.Priority.ERROR) { "Hub curve flow failed for $id: ${e.message}" }
-                        emit(emptyList())
+                        emit(RecentCurveData())
                     }
             }
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), emptyList())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), RecentCurveData())
 
     fun openSession(id: Long) {
         savedStateHandle[KEY_SELECTED_SESSION] = id

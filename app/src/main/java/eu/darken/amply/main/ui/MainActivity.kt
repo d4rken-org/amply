@@ -70,6 +70,7 @@ import eu.darken.amply.rules.core.PlugKind
 import eu.darken.amply.rules.ui.ChargeRuleEditorScreen
 import eu.darken.amply.rules.ui.ChargeRulesScreen
 import eu.darken.amply.rules.ui.ChargeRulesViewModel
+import eu.darken.amply.stats.core.CurveMetricAvailability
 import eu.darken.amply.stats.ui.ChargeHistoryScreen
 import eu.darken.amply.stats.ui.StatsSessionDetailScreen
 import eu.darken.amply.stats.ui.StatsViewModel
@@ -669,12 +670,22 @@ class MainActivity : ComponentActivity() {
                         // the stats ViewModel's history flow, which is what would open stats.db.
                         SettingsDestination.BATTERY -> {
                             val teaser = ChargeTeaserState.from(state.stats, state.batteryReadout)
-                            // A live charge already carries its (bounded) curve in the teaser; only a
-                            // finished one has to be read, and only while the hub is on screen.
-                            val liveCurve = (teaser as? ChargeTeaserState.Live)?.session?.curve
+                            // A live charge already carries its (bounded) curve — and what it
+                            // recorded — in the teaser; only a finished one has to be read, and only
+                            // while the hub is on screen.
+                            val liveSession = (teaser as? ChargeTeaserState.Live)?.session
                             val lastSessionId = (teaser as? ChargeTeaserState.Last)?.summary?.id
                             LaunchedEffect(lastSessionId) { statsViewModel.setHubSession(lastSessionId) }
                             val lastCurve by statsViewModel.hubCurve.collectAsState()
+                            val shownCurve = liveSession?.curve
+                                ?: if (lastSessionId != null) lastCurve.curve else emptyList()
+                            // Tile tappability rides on this, never on the decimated curve above.
+                            val shownAvailability = liveSession?.availability
+                                ?: if (lastSessionId != null) {
+                                    lastCurve.availability
+                                } else {
+                                    CurveMetricAvailability.NONE
+                                }
                             BatteryHubScreen(
                                 readout = state.batteryReadout,
                                 captureEnabled = state.stats.enabled,
@@ -694,14 +705,14 @@ class MainActivity : ComponentActivity() {
                                 // A tile only offers the tap when that metric has samples in the
                                 // shown charge, so there is always a session id to pair it with.
                                 onOpenMetric = { metric ->
-                                    val sessionId = (teaser as? ChargeTeaserState.Live)?.session?.id
-                                        ?: lastSessionId
+                                    val sessionId = liveSession?.id ?: lastSessionId
                                     if (sessionId != null) {
                                         statsViewModel.openMetric(sessionId, metric)
                                         destination = SettingsDestination.BATTERY_METRIC_DETAIL
                                     }
                                 },
-                                curve = liveCurve ?: if (lastSessionId != null) lastCurve else emptyList(),
+                                curve = shownCurve,
+                                availability = shownAvailability,
                             )
                         }
                         SettingsDestination.BATTERY_METRIC_DETAIL -> {

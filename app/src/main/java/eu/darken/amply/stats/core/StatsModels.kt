@@ -43,6 +43,41 @@ data class ChargeCurvePoint(
 )
 
 /**
+ * Which metrics a charge actually recorded, computed from its **raw** samples.
+ *
+ * Deliberately not derived from the curve a surface draws: [StatsDownsampler.decimate] thins with a
+ * uniform stride, so a metric reported only intermittently can lose every one of its readings to
+ * decimation. A tile deciding "nothing recorded" from the survivors would refuse to open a detail
+ * screen that has data to show — the detail screen reads the undecimated samples.
+ */
+data class CurveMetricAvailability(
+    val level: Boolean = false,
+    val power: Boolean = false,
+    val voltage: Boolean = false,
+    val current: Boolean = false,
+    val temperature: Boolean = false,
+) {
+    companion object {
+        /** Nothing recorded — the honest state before any curve has been read. */
+        val NONE = CurveMetricAvailability()
+
+        fun of(points: List<ChargeCurvePoint>) = CurveMetricAvailability(
+            level = points.any { it.percent != null },
+            power = points.any { it.powerMilliwatts != null },
+            voltage = points.any { it.voltageMillivolts != null },
+            current = points.any { it.currentNowMicroamps != null },
+            temperature = points.any { it.temperatureTenthsC != null },
+        )
+    }
+}
+
+/** A finished session's bounded recent curve paired with what its raw samples actually recorded. */
+data class RecentCurveData(
+    val curve: List<ChargeCurvePoint> = emptyList(),
+    val availability: CurveMetricAvailability = CurveMetricAvailability.NONE,
+)
+
+/**
  * The in-progress charge session for the dashboard's live card. Carries only what Room owns
  * authoritatively — the session's start, its "partial" nature, and a bounded recent curve. The live
  * "now" values (current level, temperature, power) are read from the dashboard's fresh battery
@@ -61,6 +96,8 @@ data class StatsLiveSession(
     /** True when capture began mid-charge — the card frames it as "since …", not a full history. */
     val partial: Boolean,
     val curve: List<ChargeCurvePoint>,
+    /** Taken from the raw window, so a metric decimation dropped is still known to exist. */
+    val availability: CurveMetricAvailability = CurveMetricAvailability.NONE,
 )
 
 /** Maps a raw [android.os.BatteryManager.EXTRA_PLUGGED] bitmask to a [ChargingType]. */

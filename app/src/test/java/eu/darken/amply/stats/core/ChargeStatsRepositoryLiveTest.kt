@@ -200,6 +200,10 @@ class ChargeStatsRepositoryLiveTest {
         val live = repository.currentSession().first()!!
         live.curve.map { it.voltageMillivolts } shouldBe listOf(4_000)
         live.curve.map { it.currentNowMicroamps } shouldBe listOf(2_000_000)
+        // ...and the live session states what it recorded, taken from the raw window.
+        live.availability.voltage shouldBe true
+        live.availability.current shouldBe true
+        live.availability.power shouldBe true
     }
 
     @Test
@@ -218,6 +222,25 @@ class ChargeStatsRepositoryLiveTest {
         metrics.aggregates.temperature!!.max shouldBe 480
         metrics.aggregates.level!!.min shouldBe 40
         metrics.aggregates.current!!.sampleCount shouldBe 3
+    }
+
+    @Test
+    fun `the recent curve reports a metric decimation dropped`() = runTest {
+        // Voltage is reported on the middle sample only. Decimating to two points keeps the pinned
+        // endpoints, so the drawn curve holds no voltage at all — but the session recorded one, and
+        // the hub's tile must stay tappable on that fact rather than on the survivors.
+        val id = insertOpenSession()
+        val dao = database.statsDao()
+        dao.insertSample(sample(id, elapsed = 1_000L, percent = 40, voltageMillivolts = null))
+        dao.insertSample(sample(id, elapsed = 2_000L, percent = 41, voltageMillivolts = 4_100))
+        dao.insertSample(sample(id, elapsed = 3_000L, percent = 42, voltageMillivolts = null))
+
+        val recent = repository.recentCurveFlow(id, maxPoints = 2).first()
+        recent.curve.size shouldBe 2
+        recent.curve.mapNotNull { it.voltageMillivolts } shouldBe emptyList()
+        recent.availability.voltage shouldBe true
+        recent.availability.level shouldBe true
+        recent.availability.temperature shouldBe true
     }
 
     @Test

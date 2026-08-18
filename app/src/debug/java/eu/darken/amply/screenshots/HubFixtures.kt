@@ -27,6 +27,7 @@ import eu.darken.amply.stats.core.ChargeSessionSummary
 import eu.darken.amply.stats.core.ChargeTimeBasis
 import eu.darken.amply.stats.core.ChargeTimeEstimate
 import eu.darken.amply.stats.core.ChargingType
+import eu.darken.amply.stats.core.CurveMetricAvailability
 import eu.darken.amply.stats.core.MetricStats
 import eu.darken.amply.stats.core.StatsSealReason
 import eu.darken.amply.stats.ui.ChargeTimeState
@@ -144,6 +145,7 @@ private fun HubShot(
     onOpenSession = {},
     onOpenMetric = {},
     curve = curve,
+    availability = CurveMetricAvailability.of(curve),
     chargeTime = chargeTime,
 )
 

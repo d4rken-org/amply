@@ -93,10 +93,17 @@ class ChargeStatsRepository @Inject constructor(
      * this reads only the most recent [LIVE_SAMPLE_WINDOW] samples: the hub keeps this subscribed
      * while it is open, and a session held at an OEM limit stays open for days, so an unbounded read
      * would reload the entire curve on every appended sample.
+     *
+     * The availability flags come from the raw window, **before** decimation, so a metric whose
+     * readings all fall on dropped indices is still reported as recorded (see [CurveMetricAvailability]).
      */
-    fun recentCurveFlow(id: Long, maxPoints: Int = LIVE_CURVE_POINTS): Flow<List<ChargeCurvePoint>> =
+    fun recentCurveFlow(id: Long, maxPoints: Int = LIVE_CURVE_POINTS): Flow<RecentCurveData> =
         database.get().statsDao().recentSamplesForSession(id, LIVE_SAMPLE_WINDOW).map { samples ->
-            StatsDownsampler.decimate(samples.toCurve(), maxPoints)
+            val points = samples.toCurve()
+            RecentCurveData(
+                curve = StatsDownsampler.decimate(points, maxPoints),
+                availability = CurveMetricAvailability.of(points),
+            )
         }
 
     /**
@@ -192,6 +199,8 @@ class ChargeStatsRepository @Inject constructor(
             startPercent = row.startPercent,
             partial = row.partial,
             curve = StatsDownsampler.decimate(points, LIVE_CURVE_POINTS),
+            // From the raw window, not the decimated curve: see [CurveMetricAvailability].
+            availability = CurveMetricAvailability.of(points),
         )
     }
 

@@ -48,6 +48,7 @@ import eu.darken.amply.stats.core.ChargeBandSplit
 import eu.darken.amply.stats.core.ChargeCurvePoint
 import eu.darken.amply.stats.core.ChargeTimeBasis
 import eu.darken.amply.stats.core.ChargeTimeEstimate
+import eu.darken.amply.stats.core.CurveMetricAvailability
 import eu.darken.amply.stats.core.StatsPowerCalculator
 import eu.darken.amply.stats.ui.ChargeTimeState
 import eu.darken.amply.stats.ui.StatsFormat
@@ -76,9 +77,12 @@ fun BatteryHubScreen(
     onEnableCapture: () -> Unit,
     onOpenSession: (Long) -> Unit,
     onOpenMetric: (BatteryMetric) -> Unit,
-    // The charge being shown by the teaser, for the tiles' sparklines and their tappability. Empty
-    // until something has been recorded — every tile still renders its live value.
+    // The charge being shown by the teaser, for the tiles' sparklines. Empty until something has been
+    // recorded — every tile still renders its live value.
     curve: List<ChargeCurvePoint> = emptyList(),
+    // What that charge actually recorded, taken from its raw samples: the curve above is decimated,
+    // so it cannot answer "was this metric ever reported" (see CurveMetricAvailability).
+    availability: CurveMetricAvailability = CurveMetricAvailability.NONE,
     // Charge-time estimates. Only rendered while recording is on: they come entirely from recorded
     // history, so with recording off there is no card rather than an empty one.
     chargeTime: ChargeTimeState = ChargeTimeState.Loading,
@@ -139,7 +143,14 @@ fun BatteryHubScreen(
             item { SectionHeader(stringResource(R.string.battery_hub_section_now)) }
             // A Column of Rows, not a LazyVerticalGrid: this screen is itself a LazyColumn, and
             // nesting a lazy grid in a lazy column throws at runtime.
-            item { StatTileGrid(readout = data, curve = curve, onOpenMetric = onOpenMetric) }
+            item {
+                StatTileGrid(
+                    readout = data,
+                    curve = curve,
+                    availability = availability,
+                    onOpenMetric = onOpenMetric,
+                )
+            }
             item { ChargingSection(data) }
             item { HealthSection(data) }
             item { ElectricalSection(data) }
@@ -170,11 +181,15 @@ private fun SectionHeader(title: String) = Text(
  * samples vary. A constant reading is still worth opening (min == avg == max is an answer, and the
  * detail chart plots a zero-range series on a real axis); only the sparkline needs variation,
  * which it decides for itself. Status is a label, not a series, so it never navigates.
+ *
+ * Tappability comes from [availability], never from [curve]: the curve is decimated for drawing, so
+ * an intermittently reported metric can be absent from it while the session holds readings for it.
  */
 @Composable
 private fun StatTileGrid(
     readout: BatteryReadout,
     curve: List<ChargeCurvePoint>,
+    availability: CurveMetricAvailability,
     onOpenMetric: (BatteryMetric) -> Unit,
 ) {
     val openLabel = stringResource(R.string.battery_metric_open_action)
@@ -195,7 +210,7 @@ private fun StatTileGrid(
                 ChartPoint(it.elapsedFromStartMillis.toFloat(), metric.select(it)?.toFloat())
             },
             accentColor = metric.accentColor(),
-            onClick = if (metric.hasSamples(curve)) {
+            onClick = if (metric.hasSamples(availability)) {
                 { onOpenMetric(metric) }
             } else {
                 null
@@ -369,6 +384,7 @@ private fun BatteryHubScreenLivePreview() = PreviewWrapper {
         onOpenSession = {},
         onOpenMetric = {},
         curve = previewCurve,
+        availability = CurveMetricAvailability.of(previewCurve),
         chargeTime = previewChargeTime,
     )
 }
@@ -390,6 +406,7 @@ private fun BatteryHubScreenLastPreview() = PreviewWrapper {
         onOpenSession = {},
         onOpenMetric = {},
         curve = previewCurve,
+        availability = CurveMetricAvailability.of(previewCurve),
     )
 }
 
@@ -470,5 +487,6 @@ private fun BatteryHubScreenLargeFontPreview() = PreviewWrapper {
         onOpenSession = {},
         onOpenMetric = {},
         curve = previewCurve,
+        availability = CurveMetricAvailability.of(previewCurve),
     )
 }
