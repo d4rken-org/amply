@@ -28,6 +28,9 @@ enum class SettingsDestination {
     /** "Battery & charging" — the single telemetry destination (live readout + charge teaser). */
     BATTERY,
 
+    /** One metric of one charge session, always entered from (and returning to) [BATTERY]. */
+    BATTERY_METRIC_DETAIL,
+
     /** The recorded-session list (the data), reached from [BATTERY]'s top bar. */
     CHARGE_HISTORY,
     STATS_SESSION_DETAIL,

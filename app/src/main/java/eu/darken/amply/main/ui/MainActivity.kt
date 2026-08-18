@@ -51,6 +51,7 @@ import eu.darken.amply.charging.core.adapter.OemChargingShortcuts
 import eu.darken.amply.diagnostics.ui.ContributionWizardScreen
 import eu.darken.amply.diagnostics.ui.ContributionWizardViewModel
 import eu.darken.amply.main.ui.battery.BatteryHubScreen
+import eu.darken.amply.main.ui.battery.BatteryMetricDetailScreen
 import eu.darken.amply.main.ui.battery.ChargeTeaserState
 import eu.darken.amply.main.ui.dashboard.DashboardScreen
 import eu.darken.amply.main.ui.dashboard.DashboardViewModel
@@ -405,6 +406,13 @@ class MainActivity : ComponentActivity() {
                             SettingsDestination.BATTERY -> destination = SettingsDestination.DASHBOARD
                             // The history list is only reachable from the battery hub's top bar.
                             SettingsDestination.CHARGE_HISTORY -> destination = SettingsDestination.BATTERY
+                            // The metric detail is only reachable from a hub tile. Both saved keys
+                            // are cleared together, so a restored process can't come back to a
+                            // metric without the session it belonged to.
+                            SettingsDestination.BATTERY_METRIC_DETAIL -> {
+                                statsViewModel.closeMetric()
+                                destination = SettingsDestination.BATTERY
+                            }
                             // Reached from the dashboard card or the settings hub.
                             SettingsDestination.CHARGE_RULES -> destination = rulesOrigin
                             // Asks rather than closes: an edited draft raises the discard
@@ -680,8 +688,27 @@ class MainActivity : ComponentActivity() {
                                     statsViewModel.requestEnableCapture()
                                 },
                                 onOpenSession = { id -> openSession(id, SettingsDestination.BATTERY) },
-                                onOpenMetric = {},
+                                // A tile only offers the tap when that metric has samples in the
+                                // shown charge, so there is always a session id to pair it with.
+                                onOpenMetric = { metric ->
+                                    val sessionId = (teaser as? ChargeTeaserState.Live)?.session?.id
+                                        ?: lastSessionId
+                                    if (sessionId != null) {
+                                        statsViewModel.openMetric(sessionId, metric)
+                                        destination = SettingsDestination.BATTERY_METRIC_DETAIL
+                                    }
+                                },
                                 curve = liveCurve ?: if (lastSessionId != null) lastCurve else emptyList(),
+                            )
+                        }
+                        SettingsDestination.BATTERY_METRIC_DETAIL -> {
+                            val metricDetail by statsViewModel.metricDetailState.collectAsState()
+                            BatteryMetricDetailScreen(
+                                state = metricDetail,
+                                onBack = {
+                                    statsViewModel.closeMetric()
+                                    destination = SettingsDestination.BATTERY
+                                },
                             )
                         }
                         // The Room-backed session list is collected only here, so the stats DB isn't

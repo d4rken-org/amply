@@ -14,6 +14,8 @@ import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
 import eu.darken.amply.common.flow.SingleEventFlow
 import eu.darken.amply.fullcharge.core.ChargeSessionService
+import eu.darken.amply.main.ui.battery.BatteryMetric
+import eu.darken.amply.main.ui.battery.BatteryMetricDetailState
 import eu.darken.amply.stats.core.CaptureServiceHealth
 import eu.darken.amply.stats.core.ChargeCurvePoint
 import eu.darken.amply.stats.core.ChargeSessionSummary
@@ -198,6 +200,87 @@ class StatsViewModel @Inject constructor(
     }
 
     /**
+     * The metric-detail selection, saved as the **pair** (session, metric) rather than the metric
+     * alone.
+     *
+     * Persisting only the metric and letting the session follow whatever the hub's teaser currently
+     * points at would silently swap the chart to a different charge under an unchanged title — a
+     * charge starting while the screen is open, or a process death after the teaser has moved on,
+     * would both do it. The two keys are written and cleared together for the same reason.
+     */
+    private val metricSelection: Flow<MetricSelection?> = combine(
+        savedStateHandle.getStateFlow<Long?>(KEY_METRIC_SESSION, null),
+        savedStateHandle.getStateFlow<String?>(KEY_METRIC_NAME, null),
+    ) { sessionId, metricName -> resolveMetricSelection(sessionId, metricName) }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val metricDetailState: StateFlow<BatteryMetricDetailState?> = metricSelection
+        .flatMapLatest { selection ->
+            if (selection == null) {
+                flowOf<BatteryMetricDetailState?>(null)
+            } else {
+                // Both flows stay live so an open session's chart and statistics keep updating. The
+                // summary is what answers "does this session still exist" — an empty curve alone
+                // cannot, since a session with no samples yet also has one. Built inside the
+                // collected flow so a synchronous construction failure lands in the catch below.
+                flow<BatteryMetricDetailState?> {
+                    emitAll(
+                        combine(
+                            repository.session(selection.sessionId),
+                            repository.sessionMetrics(selection.sessionId),
+                        ) { summary, data ->
+                            BatteryMetricDetailState(
+                                metric = selection.metric,
+                                sessionMissing = summary == null,
+                                curve = data.curve,
+                                stats = selection.metric.stats(data.aggregates),
+                            )
+                        },
+                    )
+                }.catch { e ->
+                    log(TAG, Logging.Priority.ERROR) { "Metric detail flow failed: ${e.message}" }
+                    emit(
+                        BatteryMetricDetailState(
+                            metric = selection.metric,
+                            sessionMissing = true,
+                            curve = emptyList(),
+                            stats = null,
+                        ),
+                    )
+                }
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), null)
+
+    fun openMetric(sessionId: Long, metric: BatteryMetric) {
+        savedStateHandle[KEY_METRIC_SESSION] = sessionId
+        savedStateHandle[KEY_METRIC_NAME] = metric.name
+    }
+
+    fun closeMetric() {
+        savedStateHandle[KEY_METRIC_SESSION] = null
+        savedStateHandle[KEY_METRIC_NAME] = null
+    }
+
+    /**
+     * A stored metric name is a wire format, so it is parsed defensively: a name this build no
+     * longer knows clears the selection rather than throwing on restore. Clearing also stops the
+     * screen resolving against a session it can't label.
+     */
+    private fun resolveMetricSelection(sessionId: Long?, metricName: String?): MetricSelection? {
+        if (sessionId == null || metricName == null) return null
+        val metric = BatteryMetric.entries.firstOrNull { it.name == metricName }
+        if (metric == null) {
+            log(TAG, Logging.Priority.WARN) { "Unknown saved battery metric '$metricName', clearing" }
+            closeMetric()
+            return null
+        }
+        return MetricSelection(sessionId = sessionId, metric = metric)
+    }
+
+    private data class MetricSelection(val sessionId: Long, val metric: BatteryMetric)
+
+    /**
      * Enable/disable capture. Enabling is routed through the activity's notification-permission flow
      * first (the always-on service shows a persistent notification). Disabling seals any open session
      * before the service is nudged to re-evaluate and stop.
@@ -250,10 +333,14 @@ class StatsViewModel @Inject constructor(
         }
     }
 
-    private companion object {
+    // Internal, not private: the saved-state keys are asserted by the metric-selection test, which
+    // exists precisely to pin that both halves of the selection are written and cleared together.
+    internal companion object {
         val TAG = logTag("Stats", "ViewModel")
         const val STOP_TIMEOUT_MILLIS = 5_000L
         const val KEY_SELECTED_SESSION = "stats.selected_session_id"
+        const val KEY_METRIC_SESSION = "stats.metric.session_id"
+        const val KEY_METRIC_NAME = "stats.metric.name"
     }
 }
 
