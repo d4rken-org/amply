@@ -37,6 +37,13 @@ enum class RunPhase {
     /** Waiting for preconditions; nothing has been written yet. */
     PREFLIGHT,
 
+    /**
+     * [RunShape.FIXED_CAP] only: the cap is lifted and the battery charges up to just under it, so a
+     * hold is observable at all. **Positioning, never measurement** — no rate and no update count is
+     * taken here, because a window that may legitimately run for hours averages away exactly the
+     * granularity the later phases are judged on.
+     */
+    CHARGE_UP,
 
     /**
      * The **within-run control**, and the reason this protocol can conclude anything. The cap is
@@ -47,8 +54,12 @@ enum class RunPhase {
      * Without it the measurement is unsound in both directions. Any fixed "charging has stopped" bar
      * is too high for a weak supply — a phone charging steadily at 100 mA sits under it and reads as
      * held indefinitely, which is a false pass — and it is meaningless on a battery whose capacity or
-     * reporting units are unknown. On [RunShape.FIXED_CAP] this phase doubles as the charge-up to
-     * just under the cap.
+     * reporting units are unknown.
+     *
+     * It is a **bounded** [QualificationProtocol.BASELINE_WINDOW_MILLIS] window in both shapes. That
+     * bound is what makes [QualificationProtocol.MIN_BASELINE_UPDATES] mean something: three observed
+     * changes inside ten minutes put the device's reporting period under five, so a twelve-minute cut
+     * window that sees nothing is evidence rather than an artifact of when the gauge happens to tick.
      */
     BASELINE,
 
@@ -72,6 +83,7 @@ enum class RunPhase {
     val messageRes: Int
         get() = when (this) {
             PREFLIGHT -> R.string.qualification_phase_preflight
+            CHARGE_UP -> R.string.qualification_phase_charge_up
             BASELINE -> R.string.qualification_phase_baseline
             CUT_1 -> R.string.qualification_phase_cut_1
             RESUME -> R.string.qualification_phase_resume
@@ -118,6 +130,19 @@ enum class InconclusiveReason {
 
     @SerialName("CHARGE_UP_TIMEOUT")
     CHARGE_UP_TIMEOUT,
+
+    /**
+     * The device reports charge too rarely for the protocol to read anything into a quiet window.
+     *
+     * A device whose level or batched charge counter updates once every ~20 minutes produces a
+     * textbook cut → resume → cut out of nothing but *when* it happened to report: one update inside
+     * the baseline, none inside the first cut, one inside the resume, none inside the second — with
+     * the cap doing nothing at all. So the control window has to observe
+     * [QualificationProtocol.MIN_BASELINE_UPDATES] real changes before any later silence is allowed
+     * to mean something.
+     */
+    @SerialName("SIGNAL_TOO_COARSE")
+    SIGNAL_TOO_COARSE,
 
     /**
      * The control phase never measured charge going in fast enough to judge anything against — a
@@ -259,6 +284,17 @@ object QualificationProtocol {
     /** How long the [RunPhase.BASELINE] control must run before its rate is trusted. */
     const val BASELINE_WINDOW_MILLIS = 10 * 60 * 1000L
 
+    /**
+     * How many times the accumulation signal must be seen *changing* inside that window before the
+     * run will read anything into a later window where it does not change.
+     *
+     * Three inside [BASELINE_WINDOW_MILLIS] puts the device's reporting period under five minutes, so
+     * a [HOLD_CONFIRM_MILLIS] window observing nothing is the device holding rather than the device
+     * not having got round to reporting. Without this a coarsely-reporting device can stage the whole
+     * cut → resume → cut sequence out of the timing of its own updates.
+     */
+    const val MIN_BASELINE_UPDATES = 3
+
     /** Shortest window any rate is computed over; below it the arithmetic is noise. */
     const val MIN_MEASURE_WINDOW_MILLIS = 5 * 60 * 1000L
 
@@ -290,10 +326,14 @@ object QualificationProtocol {
     const val MIN_BASELINE_RATE_CAPACITY_FRACTION_PER_HOUR_DENOMINATOR = 100
 
     /**
-     * How long after a commanded write the run waits before believing what it sees. A settings write
-     * and the charging hardware acting on it are not simultaneous, and a tick captured in between
-     * describes the *previous* configuration — which is how an unremarkable percent tick can look
-     * like charging past a cap that was not in force yet.
+     * How long **after the host acknowledged the write** the run waits before believing what it sees.
+     * A settings write and the charging hardware acting on it are not simultaneous, and a tick
+     * captured in between describes the *previous* configuration — which is how an unremarkable
+     * percent tick can look like charging past a cap that was not in force yet.
+     *
+     * Measured from the acknowledgement, never from the moment the engine emitted the command: the
+     * two are separated by a settings write that can take seconds (a cold Shizuku bind), and a window
+     * opened on the earlier of them would count charging that happened under the old configuration.
      */
     const val WRITE_SETTLE_MILLIS = 90_000L
 

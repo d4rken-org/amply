@@ -704,7 +704,27 @@ class ChargeSessionService : Service() {
             // abort and the restore on its next tick, so cancellation takes the same path as every
             // other terminal outcome rather than a second one that could skip the restore.
             ACTION_QUALIFICATION_CANCEL -> qualificationRunStore.requestCancel()
+            // Run start belongs in this queue for the same reason session start does: both claim the
+            // charge policy, and draining single-file is what stops the two from each observing it
+            // free and taking it. Started here, the run's own service nudge arrives as a later
+            // command rather than re-entering this one.
+            ACTION_QUALIFICATION_START -> {
+                qualificationRunner.startRequested()
+                continueGestureOrStop()
+            }
             ACTION_START -> {
+                // A qualification run owns the charge policy, and a session started under it would
+                // capture the run's temporary policy as the user's own and restore THAT at the end,
+                // losing the real setting for good. The whole branch returns: falling through reaches
+                // the pending-recovery arm below, which would see the run's own recovery target and
+                // start repaying it while the run keeps writing.
+                if (qualificationRunStore.currentRun() != null) {
+                    log(TAG, Logging.Priority.INFO) {
+                        "Ignoring a full-charge start: a qualification run owns the charge policy"
+                    }
+                    continueGestureOrStop()
+                    return
+                }
                 // A user-initiated session supersedes boot recovery; the new session
                 // overwrites the policy anyway. Join so a cancelled re-write cannot
                 // land after the session's own policy write.
@@ -1088,6 +1108,7 @@ class ChargeSessionService : Service() {
         const val ACTION_SET_PERSISTENT_POLICY = "eu.darken.amply.action.SET_PERSISTENT_POLICY"
         const val ACTION_EVALUATE_RULES = "eu.darken.amply.action.EVALUATE_CHARGE_RULES"
         const val ACTION_QUALIFICATION_CANCEL = "eu.darken.amply.action.CANCEL_QUALIFICATION_RUN"
+        const val ACTION_QUALIFICATION_START = "eu.darken.amply.action.START_QUALIFICATION_RUN"
         const val EXTRA_TARGET_POLICY = "eu.darken.amply.extra.TARGET_POLICY"
     }
 }

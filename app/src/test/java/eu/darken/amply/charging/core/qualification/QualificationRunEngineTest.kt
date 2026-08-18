@@ -3,6 +3,10 @@ package eu.darken.amply.charging.core.qualification
 import eu.darken.amply.charging.core.BackendKind
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
+import eu.darken.amply.charging.core.qualification.QualificationProtocol.BASELINE_WINDOW_MILLIS
+import eu.darken.amply.charging.core.qualification.QualificationProtocol.CHARGE_UP_BUDGET_MILLIS
+import eu.darken.amply.charging.core.qualification.QualificationProtocol.FIXED_CAP_ENTRY_MARGIN
+import eu.darken.amply.charging.core.qualification.QualificationProtocol.HOLD_CONFIRM_MILLIS
 import eu.darken.amply.charging.core.qualification.QualificationProtocol.PHASE_BUDGET_MILLIS
 import eu.darken.amply.charging.core.qualification.QualificationProtocol.PREFLIGHT_BUDGET_MILLIS
 import eu.darken.amply.charging.core.qualification.QualificationProtocol.RUN_CEILING_MILLIS
@@ -26,11 +30,17 @@ class QualificationRunEngineTest {
      * Feeds the engine a stream of ticks at a given charge current until it produces a terminal or a
      * phase change, so a test can assert on the transition rather than on whichever tick happened to
      * come last.
+     *
+     * It also plays the host: a commanded write is acknowledged straight away, which is what schedules
+     * the phase's window. Without that acknowledgement no window opens at all, exactly as on a device
+     * whose write never landed.
      */
     private class Sim(
         var progress: QualificationProgress,
         val fullCapacity: Long,
         val tickMillis: Long,
+        /** Modelled write latency: how long after the command the host reports it landed. */
+        val ackDelayMillis: Long = 0L,
     ) {
         var now = 0L
         var counter = 0L
@@ -41,6 +51,27 @@ class QualificationRunEngineTest {
             this.now = now
             this.percent = percent
             this.counter = fullCapacity * percent / 100
+        }
+
+        fun sample(configured: ChargeObservation? = null) = QualificationSample(
+            nowMillis = now,
+            plugged = true,
+            percent = percent,
+            chargeCounter = counter.toInt(),
+            configured = configured,
+            sessionActive = false,
+        )
+
+        /** Apply one tick, acknowledging any write the engine asked for. */
+        fun tick(configured: ChargeObservation? = null): QualificationOutcome {
+            lastOutcome = QualificationRunEngine.evaluate(progress, sample(configured))
+            if (lastOutcome.terminal == null) {
+                progress = lastOutcome.progress
+                if (lastOutcome.command != null) {
+                    progress = progress.copy(commandAckedAt = now + ackDelayMillis)
+                }
+            }
+            return lastOutcome
         }
 
         /**
@@ -60,47 +91,38 @@ class QualificationRunEngineTest {
                 now += tickMillis
                 counter += currentPerHour * tickMillis / 3_600_000L
                 if (levelTracks) percent = (counter * 100 / fullCapacity).toInt().coerceIn(0, 100)
-                lastOutcome = QualificationRunEngine.evaluate(
-                    progress,
-                    QualificationSample(
-                        nowMillis = now,
-                        plugged = true,
-                        percent = percent,
-                        chargeCounter = counter.toInt(),
-                        configured = configured,
-                        sessionActive = false,
-                    ),
-                )
+                tick(configured)
                 if (lastOutcome.terminal != null) return lastOutcome
-                progress = lastOutcome.progress
                 if (progress.phase != startPhase) return lastOutcome
+            }
+            return lastOutcome
+        }
+
+        /** Advance to just past the point where the current phase's window can anchor. */
+        fun anchor(currentPerHour: Long = 0L): QualificationOutcome {
+            while (!progress.anchored && lastOutcome.terminal == null) {
+                now += tickMillis
+                counter += currentPerHour * tickMillis / 3_600_000L
+                tick()
             }
             return lastOutcome
         }
     }
 
-    private fun variableSim(startPercent: Int = 50): Sim {
+    private fun variableSim(startPercent: Int = 50, candidate: Boolean = false): Sim {
         val progress = QualificationRunEngine.start(
             shape = RunShape.VARIABLE_CAP,
             lowCap = 50,
             releasePolicy = ChargePolicy.FixedLimit(70),
             nowMillis = 0L,
+            candidate = candidate,
         )
         val sim = Sim(progress, fullCapacity, tickMillis)
-        sim.seed(now = 0L, percent = startPercent)
+        // Not at the run's own start instant: an acknowledgement at time zero is indistinguishable
+        // from no acknowledgement, and a real one always lands after the run began.
+        sim.seed(now = 60_000L, percent = startPercent)
         // Preflight: one sample arms the run and opens the baseline phase.
-        sim.lastOutcome = QualificationRunEngine.evaluate(
-            progress,
-            QualificationSample(
-                nowMillis = 0L,
-                plugged = true,
-                percent = startPercent,
-                chargeCounter = sim.counter.toInt(),
-                configured = null,
-                sessionActive = false,
-            ),
-        )
-        sim.progress = sim.lastOutcome.progress
+        sim.tick()
         return sim
     }
 
@@ -274,7 +296,7 @@ class QualificationRunEngineTest {
         val outcome = QualificationRunEngine.evaluate(
             armed,
             QualificationSample(
-                nowMillis = armed.commandedAt + WRITE_SETTLE_MILLIS - 1,
+                nowMillis = armed.commandAckedAt + WRITE_SETTLE_MILLIS - 1,
                 plugged = true,
                 percent = 90,
                 chargeCounter = (fullCapacity * 90 / 100).toInt(),
@@ -284,6 +306,186 @@ class QualificationRunEngineTest {
         )
 
         outcome.terminal shouldBe null
+        outcome.progress.anchored shouldBe false
+    }
+
+    /**
+     * The settle period is excluded from the window's *time*, so its readings must be excluded too.
+     * Anchoring on the sample that opens the window is what does that: a device that gained charge
+     * while its cap was engaging must not have that charge counted against the window that follows,
+     * which is how a working cap gets refuted.
+     */
+    @Test
+    fun `the window anchors on the sample that opens it, not on the phase's start`() {
+        val sim = variableSim(startPercent = 60)
+        sim.run(forMillis = 20 * 60_000L, currentPerHour = mA(1_500))
+        sim.progress.phase shouldBe RunPhase.CUT_1
+        val entryPercent = sim.percent
+        val entryCounter = sim.counter
+
+        // Charging continues through the settle period, then stops dead.
+        sim.anchor(currentPerHour = mA(1_500))
+
+        sim.progress.anchored shouldBe true
+        sim.progress.windowAnchoredAt shouldBe sim.now
+        // Anchored at what the battery reads NOW, not at what it read when the cap was written.
+        (sim.progress.windowStartCounter!!.toLong() > entryCounter) shouldBe true
+        (sim.progress.windowStartPercent >= entryPercent) shouldBe true
+    }
+
+    /**
+     * A window is not judged before it anchors, and once it does, everything measures from the anchor.
+     * A first sample arriving late must not make an actively charging device look cut by crediting it
+     * with the minutes nobody observed.
+     */
+    @Test
+    fun `a late first sample does not make an active flow look cut`() {
+        val sim = variableSim(startPercent = 60)
+        sim.run(forMillis = 20 * 60_000L, currentPerHour = mA(1_500))
+        sim.progress.phase shouldBe RunPhase.CUT_1
+
+        // Nothing is observed for well past the hold-confirmation window, then the device reports.
+        sim.now += HOLD_CONFIRM_MILLIS + 5 * 60_000L
+        sim.tick().terminal shouldBe null
+        sim.progress.windowAnchoredAt shouldBe sim.now
+
+        // Charge is plainly still going in (the coarse level happens not to have moved), so the very
+        // next samples must not confirm a cut off time the engine never observed.
+        val outcome = sim.run(
+            forMillis = HOLD_CONFIRM_MILLIS - 60_000L,
+            currentPerHour = mA(1_500),
+            levelTracks = false,
+        )
+
+        outcome.terminal shouldBe null
+        sim.progress.phase shouldBe RunPhase.CUT_1
+    }
+
+    @Test
+    fun `a sample older than the phase's acknowledgement is rejected`() {
+        val sim = variableSim(startPercent = 60)
+        val acked = sim.progress
+        acked.commandAckedAt shouldBe 60_000L
+
+        // A queued observation from before the write landed describes the previous configuration.
+        val stale = QualificationRunEngine.evaluate(
+            acked,
+            QualificationSample(acked.commandAckedAt - 1, true, 60, 2_400_000, null, false),
+        )
+        stale.progress shouldBe acked
+        stale.terminal shouldBe null
+
+        // The acknowledgement instant itself is inside the run, not before it.
+        val boundary = QualificationRunEngine.evaluate(
+            acked.copy(commandAckedAt = 0L, windowAnchoredAt = 0L),
+            QualificationSample(acked.commandAckedAt, true, 60, 2_400_000, null, false),
+        )
+        boundary.terminal shouldBe null
+    }
+
+    @Test
+    fun `a sample older than the run cannot arm it`() {
+        val progress = QualificationRunEngine.start(
+            shape = RunShape.VARIABLE_CAP,
+            lowCap = 50,
+            releasePolicy = ChargePolicy.FixedLimit(70),
+            nowMillis = 60_000L,
+        )
+
+        val outcome = QualificationRunEngine.evaluate(
+            progress,
+            QualificationSample(59_999L, true, 60, 2_400_000, null, false),
+        )
+
+        outcome.progress shouldBe progress
+        outcome.command shouldBe null
+        outcome.progress.phase shouldBe RunPhase.PREFLIGHT
+    }
+
+    /**
+     * The false pass a granularity rule closes: a device reporting once per phase stages the whole
+     * cut → resume → cut out of *when* it reported, with the cap doing nothing.
+     */
+    @Test
+    fun `a signal that updates once per phase ends inconclusive rather than passing`() {
+        val sim = variableSim(startPercent = 60)
+        sim.progress.phase shouldBe RunPhase.BASELINE
+        sim.anchor()
+
+        // Charge really is going in at a healthy rate — the device just reports it in one lump.
+        var outcome = sim.lastOutcome
+        while (outcome.terminal == null && sim.progress.phase == RunPhase.BASELINE) {
+            sim.now += tickMillis
+            if (sim.now - sim.progress.windowAnchoredAt >= BASELINE_WINDOW_MILLIS - tickMillis) {
+                sim.counter += mA(1_500) * BASELINE_WINDOW_MILLIS / 3_600_000L
+            }
+            outcome = sim.tick()
+        }
+
+        outcome.terminal shouldBe RunTerminal.Inconclusive(InconclusiveReason.SIGNAL_TOO_COARSE)
+    }
+
+    @Test
+    fun `a frequently updating signal is not called too coarse`() {
+        val sim = variableSim(startPercent = 60)
+
+        sim.run(forMillis = 20 * 60_000L, currentPerHour = mA(1_500))
+
+        sim.progress.phase shouldBe RunPhase.CUT_1
+        (sim.progress.baselineRatePerHour > 0) shouldBe true
+    }
+
+    /**
+     * On a single-cap adapter the battery has to be brought up to the cap first, and that stretch is
+     * positioning rather than measurement: averaging a baseline over hours of charging says nothing
+     * about the minutes a cut is judged on.
+     */
+    @Test
+    fun `a fixed-cap run positions first and only then measures`() {
+        val progress = QualificationRunEngine.start(
+            shape = RunShape.FIXED_CAP,
+            lowCap = 80,
+            releasePolicy = ChargePolicy.Unrestricted,
+            nowMillis = 0L,
+        )
+        val sim = Sim(progress, fullCapacity, tickMillis)
+        sim.seed(now = 60_000L, percent = 40)
+
+        sim.tick()
+        sim.progress.phase shouldBe RunPhase.CHARGE_UP
+        sim.lastOutcome.command shouldBe RunCommand.Apply(ChargePolicy.Unrestricted)
+
+        // Charging up measures nothing at all: no rate, no baseline.
+        sim.run(forMillis = 3 * 60 * 60_000L, currentPerHour = mA(1_500))
+
+        sim.progress.phase shouldBe RunPhase.BASELINE
+        sim.progress.baselineRatePerHour shouldBe 0L
+        (sim.percent >= 80 - FIXED_CAP_ENTRY_MARGIN) shouldBe true
+
+        // The control is then a bounded window of its own, and the cap follows it.
+        sim.run(forMillis = 20 * 60_000L, currentPerHour = mA(1_500))
+
+        sim.progress.phase shouldBe RunPhase.CUT_1
+        (sim.progress.baselineRatePerHour > 0) shouldBe true
+        sim.lastOutcome.command shouldBe RunCommand.Apply(ChargePolicy.FixedLimit(80))
+    }
+
+    @Test
+    fun `a fixed-cap run that never reaches the cap times out without measuring`() {
+        val progress = QualificationRunEngine.start(
+            shape = RunShape.FIXED_CAP,
+            lowCap = 80,
+            releasePolicy = ChargePolicy.Unrestricted,
+            nowMillis = 0L,
+        )
+        val sim = Sim(progress, fullCapacity, tickMillis)
+        sim.seed(now = 60_000L, percent = 40)
+        sim.tick()
+        sim.progress.phase shouldBe RunPhase.CHARGE_UP
+
+        val outcome = sim.run(forMillis = CHARGE_UP_BUDGET_MILLIS + 60_000L, currentPerHour = 0)
+
+        outcome.terminal shouldBe RunTerminal.Inconclusive(InconclusiveReason.CHARGE_UP_TIMEOUT)
     }
 
     /**
@@ -411,20 +613,7 @@ class QualificationRunEngineTest {
 
     @Test
     fun `a candidate device that charges past the cap reports a mapping mismatch, not a refutation`() {
-        val progress = QualificationRunEngine.start(
-            shape = RunShape.VARIABLE_CAP,
-            lowCap = 50,
-            releasePolicy = ChargePolicy.FixedLimit(70),
-            nowMillis = 0L,
-            candidate = true,
-        )
-        val sim = Sim(progress, fullCapacity, tickMillis)
-        sim.seed(0L, 60)
-        sim.lastOutcome = QualificationRunEngine.evaluate(
-            progress,
-            QualificationSample(0, true, 60, sim.counter.toInt(), null, false),
-        )
-        sim.progress = sim.lastOutcome.progress
+        val sim = variableSim(startPercent = 60, candidate = true)
         sim.run(forMillis = 20 * 60_000L, currentPerHour = mA(1_500))
         sim.progress.phase shouldBe RunPhase.CUT_1
 
@@ -434,23 +623,38 @@ class QualificationRunEngineTest {
     }
 
     @Test
-    fun `a rate below the measurement window is not computed at all`() {
+    fun `an unanchored window has no rate at all`() {
         val armed = variableSim().progress
+
+        armed.anchored shouldBe false
+        QualificationRunEngine.ratePerHour(
+            armed,
+            QualificationSample(armed.commandAckedAt + 20 * 60_000L, true, 60, 2_400_000, null, false),
+        ) shouldBe null
+    }
+
+    @Test
+    fun `a rate below the measurement window is not computed at all`() {
+        val sim = variableSim()
+        sim.anchor()
+        val armed = sim.progress
 
         QualificationRunEngine.ratePerHour(
             armed,
-            QualificationSample(armed.windowStartAt + 1_000, true, 50, 2_000_000, null, false),
+            QualificationSample(armed.windowAnchoredAt + 1_000, true, 50, 2_000_000, null, false),
         ) shouldBe null
     }
 
     @Test
     fun `a falling reading clamps to a zero rate rather than going negative`() {
-        val armed = variableSim().progress
+        val sim = variableSim()
+        sim.anchor()
+        val armed = sim.progress
 
         val rate = QualificationRunEngine.ratePerHour(
             armed,
             QualificationSample(
-                armed.windowStartAt + 10 * 60_000L,
+                armed.windowAnchoredAt + 10 * 60_000L,
                 true,
                 40,
                 (armed.windowStartCounter ?: 0) - 500_000,

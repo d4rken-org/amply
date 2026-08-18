@@ -27,14 +27,9 @@ class QualificationWatcher @Inject constructor(
     override suspend fun isEnabled(): Boolean = runner.isRunning()
 
     override suspend fun onBatteryTick(tick: ChargeMonitorTick) {
-        runner.offer(
-            RawQualificationTick(
-                plugged = tick.plugged,
-                percent = tick.percent,
-                sessionActive = tick.sessionActive,
-                batteryIntent = tick.batteryIntent,
-                wallMillis = tick.wallClockMillis,
-            ),
-        )
+        // Only the fact that an evaluation is due, plus what the service knew about a live session.
+        // The battery readings come from one snapshot the runner takes on its own worker, so the
+        // level, the charge counter and the timestamp all describe the same instant.
+        runner.offer(RawQualificationTick(sessionActive = tick.sessionActive))
     }
 }

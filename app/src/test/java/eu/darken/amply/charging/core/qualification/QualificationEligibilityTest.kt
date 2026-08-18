@@ -91,6 +91,20 @@ class QualificationEligibilityTest {
         result.plan.shape shouldBe RunShape.VARIABLE_CAP
     }
 
+    /**
+     * The flag the run's cap-mismatch protection hangs off. It has to travel with the plan: a run
+     * whose commanded values are a guess may never refute, and a second copy of that answer at the
+     * start call site would eventually disagree with this one. No path produces a candidate run yet,
+     * so the answer here is false — what matters is that it comes from here.
+     */
+    @Test
+    fun `an eligible run carries whether its value mapping is a guess`() {
+        val result = eligibility()
+
+        result.shouldBeInstanceOf<RunEligibility.Eligible>()
+        result.isCandidate shouldBe false
+    }
+
     @Test
     fun `no adapter means nothing to drive`() {
         eligibility(adapter = null) shouldBe RunEligibility.Ineligible(IneligibleReason.NO_ADAPTER)

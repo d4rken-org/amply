@@ -310,6 +310,7 @@ internal fun RunTerminal?.bodyRes(): Int = when (this) {
         InconclusiveReason.NEAR_FULL -> R.string.qualification_result_near_full_body
         InconclusiveReason.CHARGE_UP_TIMEOUT -> R.string.qualification_result_charge_up_body
         InconclusiveReason.NO_BASELINE -> R.string.qualification_result_no_baseline_body
+        InconclusiveReason.SIGNAL_TOO_COARSE -> R.string.qualification_result_signal_too_coarse_body
         InconclusiveReason.PRECONDITION_TIMEOUT -> R.string.qualification_result_precondition_body
     }
 

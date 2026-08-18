@@ -73,9 +73,17 @@ data class QualificationRunRecord(
     val releasePolicy: ChargePolicy = ChargePolicy.Unrestricted,
     @SerialName("commanded") val commanded: String? = null,
     @SerialName("commandedAtWallMillis") val commandedAtWallMillis: Long = 0L,
-    @SerialName("windowStartAtWallMillis") val windowStartAtWallMillis: Long = 0L,
+    /**
+     * When the phase's commanded write was acknowledged, which is what the settle window is measured
+     * from. Zero while it is unacknowledged — the phase's window may not open, and nothing about the
+     * phase may be judged, before the write it is about has landed.
+     */
+    @SerialName("commandAckedAtWallMillis") val commandAckedAtWallMillis: Long = 0L,
+    @SerialName("windowAnchoredAtWallMillis") val windowAnchoredAtWallMillis: Long = 0L,
     @SerialName("windowStartPercent") val windowStartPercent: Int = -1,
     @SerialName("windowStartCounter") val windowStartCounter: Int? = null,
+    @SerialName("windowSignalChanges") val windowSignalChanges: Int = 0,
+    @SerialName("lastSignalValue") val lastSignalValue: Long? = null,
     /** The within-run control: accumulation per hour measured in the baseline phase. */
     @SerialName("baselineRatePerHour") val baselineRatePerHour: Long = 0L,
     @SerialName("impliedFullCapacity") val impliedFullCapacity: Long = 0L,
@@ -83,6 +91,15 @@ data class QualificationRunRecord(
     @SerialName("observedHoldPercent") val observedHoldPercent: Int? = null,
     @SerialName("writeFailed") val writeFailed: Boolean = false,
     @SerialName("cancelled") val cancelled: Boolean = false,
+    /**
+     * Claimed for finalization: a terminal outcome is being written out for this record.
+     *
+     * The claim is what makes the terminal path transactional. Finalizing means restoring the user's
+     * policy and only then recording evidence, which is slow enough for a cancel to arrive in the
+     * middle; once claimed, [QualificationRunStore.requestCancel] no longer commits, so the outcome
+     * cannot change under a finalization that has already read it.
+     */
+    @SerialName("finalizing") val finalizing: Boolean = false,
     @SerialName("phaseLog") val phaseLog: List<PhaseRecord> = emptyList(),
     @SerialName("provenance") val provenance: WorkProvenance? = null,
 )
@@ -128,19 +145,53 @@ class QualificationRunStore @Inject constructor(
         current?.let(transform)
     }.new
 
+    /**
+     * Record that the phase's commanded write landed, at [ackAtWallMillis].
+     *
+     * The settle window and therefore the phase's whole measurement hang off this timestamp rather
+     * than off when the engine emitted the command: the write in between can take seconds, and a
+     * window opened before it landed measures the previous configuration.
+     */
+    suspend fun markApplied(ackAtWallMillis: Long) {
+        runValue.update { it?.copy(commandAckedAtWallMillis = ackAtWallMillis) }
+    }
+
     suspend fun clear() {
         log(TAG, Logging.Priority.INFO) { "Clearing qualification run record" }
         runValue.update { null }
     }
 
-    /** Mark the run cancelled; the runner turns that into an abort on its next tick. */
+    /**
+     * Claim the record for finalization, returning it as it was at that instant, or null when there
+     * is nothing to claim — no run, or a finalization another caller already claimed.
+     *
+     * One transaction, because a re-read at the top of the terminal path only narrows the window: the
+     * restore that follows is slow, and a cancel committing during it would otherwise be neither
+     * honoured (the terminal was already decided) nor preserved (the record is cleared at the end).
+     * After this, [requestCancel] cannot commit, so what this returns is what the run ended as.
+     */
+    suspend fun claimForFinalization(): QualificationRunRecord? {
+        var claimed: QualificationRunRecord? = null
+        runValue.update { current ->
+            claimed = current?.takeIf { !it.finalizing }
+            claimed?.copy(finalizing = true) ?: current
+        }
+        return claimed
+    }
+
+    /**
+     * Mark the run cancelled; the runner turns that into an abort on its next tick.
+     *
+     * Refused once finalization is claimed: the outcome is already being written out, and flagging a
+     * record that is about to be cleared would only lose the cancel silently.
+     */
     suspend fun requestCancel() {
-        runValue.update { it?.copy(cancelled = true) }
+        runValue.update { if (it == null || it.finalizing) it else it.copy(cancelled = true) }
     }
 
     /** Record that the last commanded write failed, so the next tick aborts rather than measuring. */
     suspend fun markWriteFailed() {
-        runValue.update { it?.copy(writeFailed = true) }
+        runValue.update { if (it == null || it.finalizing) it else it.copy(writeFailed = true) }
     }
 
     private companion object {
