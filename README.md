@@ -13,30 +13,20 @@
 [![Crowdin](https://badges.crowdin.net/amply/localized.svg)](https://crowdin.com/project/amply)
 -->
 
-
-
 > _**Amply is experimental and pre-launch. Direct control is verified on a limited set of devices — device reports and feedback are welcome!**_
 
 [Amply](https://github.com/d4rken-org/amply) is an Android controller for OEM battery charge-protection modes. Its
-primary action temporarily allows one full charge, then restores your protective charge limit automatically — at 100%,
-on unplug, or at a safety timeout.
+primary action temporarily allows one full charge, then restores your protective charge limit automatically.
 
 Features include:
 
 * One-tap "charge to 100% once", then automatic restore of your protective limit
 * A dashboard that reports charge state honestly — verified, last-requested, or unknown
 * Optional "reconnect to charge to 100%" gesture at the active hardware limit
-* Quick Settings tile and a home-screen widget for protect / full-charge actions (upgrade)
-* A persisted temporary-session monitor that survives reboots
-* Diagnostics workflow (Shizuku) for before/after setting discovery, with redacted reports
-* Works without ADB/Shizuku too — a charge alarm to remind you to unplug at a chosen level, a live battery-info card, and an OEM battery-protection guide on unsupported devices
-* Charge history with per-charge curves — level, speed, and temperature over time (upgrade)
+* Quick Settings tile and a home-screen widget for protect / full-charge actions
+* Charge history with per-charge curves — level, speed, and temperature over time
 * Branded light/dark themes, optional Material You, and contrast choices
 * Works via `WRITE_SECURE_SETTINGS` or Shizuku
-* No ads, no tracking, open-source (`foss` and `gplay` flavors)
-
-Charge control itself — including the temporary full charge and the reconnect gesture — is free. The items marked
-(upgrade) are unlocked by the paid upgrade on Google Play, or by sponsoring development in the FOSS build.
 
 Currently supported for direct control:
 
@@ -45,9 +35,6 @@ Currently supported for direct control:
 * Samsung One UI 4 / 5 (legacy battery-protection toggle)
 * Xiaomi / Redmi / POCO on HyperOS 2 (charging protection)
 * OnePlus / Oppo / Realme on ColorOS 15 (charging protection; requires Shizuku)
-
-Other devices — other Pixels, Samsung One UI 6/7 and 9+, non-HyperOS-2 Xiaomi, and non-ColorOS-15
-OnePlus/Oppo/Realme — are diagnostics-only for now.
 
 ## Download
 
@@ -82,24 +69,6 @@ the extras above and is what funds continued development.
 ## Screenshots
 
 <img src="https://github.com/d4rken-org/amply/raw/main/fastlane/metadata/android/en-US/images/phoneScreenshots/1_dashboard_light.png" width="100"><img src="https://github.com/d4rken-org/amply/raw/main/fastlane/metadata/android/en-US/images/phoneScreenshots/2_full_charge_dark.png" width="100"><img src="https://github.com/d4rken-org/amply/raw/main/fastlane/metadata/android/en-US/images/phoneScreenshots/3_samsung_multimode.png" width="100"><img src="https://github.com/d4rken-org/amply/raw/main/fastlane/metadata/android/en-US/images/phoneScreenshots/4_setup_guide.png" width="100"><img src="https://github.com/d4rken-org/amply/raw/main/fastlane/metadata/android/en-US/images/phoneScreenshots/5_settings.png" width="100"><img src="https://github.com/d4rken-org/amply/raw/main/fastlane/metadata/android/en-US/images/phoneScreenshots/6_reconnect_gesture.png" width="100">
-
-## Setup & access
-
-Install Amply, then enable control through one access path:
-
-```shell
-adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS
-```
-
-Alternatively, start Shizuku, grant Amply access, and optionally use Amply's setup card to grant durable WSS. WSS-only
-control can write Pixel's hidden values but Android blocks direct third-party reads, so Amply also watches Android's
-public charging-hardware state; Shizuku provides exact configured-setting readback while it is running. On tested
-Pixels, Google's policy worker takes roughly 10–15 seconds to propagate a setting change to the charging HAL.
-
-The required access path is adapter-dependent: some devices (OnePlus/Oppo/Realme on ColorOS, and LineageOS) keep their
-setting in a namespace that `WRITE_SECURE_SETTINGS` cannot write, so control there **requires Shizuku** — the ADB grant
-alone won't be enough, and the dashboard surfaces this. The relevant dashboard card guides you to the option your
-device needs.
 
 ## License
 
