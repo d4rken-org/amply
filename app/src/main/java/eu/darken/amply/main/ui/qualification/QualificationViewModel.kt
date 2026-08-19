@@ -58,7 +58,13 @@ data class RunProgressUi(
     val phaseElapsedMillis: Long,
     val phaseBudgetMillis: Long,
     val percent: Int?,
-    val chargeCounter: Int?,
+    /**
+     * Tri-state, from the same derivation the pre-check block uses: null is "nothing observed yet",
+     * not "not charging". The raw charge counter the run measures against is deliberately **not**
+     * here — microamp-hours are the protocol's internal flow signal, they mean nothing to a user, and
+     * they are already in the contribution report, which is where a maintainer reads them.
+     */
+    val charging: Boolean?,
 )
 
 data class QualificationUiState(
@@ -300,7 +306,7 @@ class QualificationViewModel @Inject constructor(
                 else -> QualificationProtocol.PHASE_BUDGET_MILLIS
             },
             percent = readout?.levelPercent,
-            chargeCounter = readout?.chargeCounterMicroampHours,
+            charging = readout?.chargingOrNull(),
         )
     }
 
@@ -328,7 +334,7 @@ internal data class LiveFigures(
  * the collector's lifetime is (see how `MainActivity` collects the state).
  *
  * [QualificationStep.RUNNING] polls too, not just the pre-check: the running screen renders the same
- * percent and charge counter for the half hour to hour and a half a run takes, and a poll that stopped
+ * percent and charging state for the half hour to hour and a half a run takes, and a poll that stopped
  * at the start of the run would leave those figures frozen at the last pre-check reading while looking
  * live.
  */

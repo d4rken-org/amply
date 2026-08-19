@@ -1,7 +1,6 @@
 package eu.darken.amply.main.ui.qualification
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -190,7 +189,7 @@ private fun LazyListScope.introStep() {
 
 private fun LazyListScope.precheckStep(state: QualificationUiState) {
     item { SectionTitle(stringResource(R.string.qualification_precheck_title)) }
-    state.precheck?.let { precheck -> item { PrecheckStatusBlock(precheck) } }
+    state.precheck?.let { precheck -> item { PrecheckStatusCard(precheck) } }
     when (val eligibility = state.eligibility) {
         null -> item { BodyText(stringResource(R.string.qualification_precheck_checking)) }
         is RunEligibility.Eligible -> {
@@ -218,50 +217,65 @@ private fun LazyListScope.precheckStep(state: QualificationUiState) {
 
 /**
  * The figures behind the verdict: where the battery is, where it has to be, and whether it is moving.
- * Every line is skipped when its value is unknown, so the block can never state something unobserved.
+ * Every row is skipped when its value is unknown, so the block can never state something unobserved.
  */
 @Composable
-private fun PrecheckStatusBlock(status: PrecheckStatusUi) {
-    val lines = buildList {
-        status.currentPercent?.let { add(stringResource(R.string.qualification_precheck_status_level, it)) }
-        status.requiredPercent?.let { add(stringResource(R.string.qualification_precheck_status_required, it)) }
+private fun PrecheckStatusCard(status: PrecheckStatusUi) {
+    val rows = buildList {
+        status.currentPercent?.let {
+            add(
+                stringResource(R.string.qualification_status_label_battery) to
+                    stringResource(R.string.qualification_status_value_percent, it),
+            )
+        }
+        status.requiredPercent?.let {
+            add(
+                stringResource(R.string.qualification_status_label_required) to
+                    stringResource(R.string.qualification_status_value_percent, it),
+            )
+        }
         when (status.charging) {
-            true -> add(stringResource(R.string.qualification_precheck_status_charging))
+            true -> add(chargingRow(true))
             // Saying it plainly answers the most common cause of the block on its own; an estimate
             // would be meaningless here anyway.
-            false -> add(stringResource(R.string.qualification_precheck_status_not_charging))
+            false -> add(chargingRow(false))
             null -> Unit
         }
         when (val bucket = status.estimatedMinutes?.let { etaBucket(it) }) {
             is EtaBucket.Minutes -> add(
-                stringResource(R.string.qualification_precheck_status_eta_minutes, bucket.minutes),
+                stringResource(R.string.qualification_status_label_eta) to
+                    stringResource(R.string.qualification_status_value_eta_minutes, bucket.minutes),
             )
 
-            EtaBucket.AboutAnHour -> add(stringResource(R.string.qualification_precheck_status_eta_hour))
-            EtaBucket.OverAnHour -> add(stringResource(R.string.qualification_precheck_status_eta_over_hour))
+            EtaBucket.AboutAnHour -> add(
+                stringResource(R.string.qualification_status_label_eta) to
+                    stringResource(R.string.qualification_status_value_eta_hour),
+            )
+
+            EtaBucket.OverAnHour -> add(
+                stringResource(R.string.qualification_status_label_eta) to
+                    stringResource(R.string.qualification_status_value_eta_over_hour),
+            )
+
             null -> Unit
         }
     }
-    if (lines.isEmpty()) return
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = MaterialTheme.shapes.medium,
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            lines.forEach {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
+    if (rows.isEmpty()) return
+    QualificationCard {
+        rows.forEach { (label, value) -> LabelledValue(label = label, value = value) }
     }
 }
+
+/** The tri-state charging row, worded the same wherever it appears. */
+@Composable
+private fun chargingRow(charging: Boolean): Pair<String, String> =
+    stringResource(R.string.qualification_status_label_charging) to stringResource(
+        if (charging) {
+            R.string.qualification_status_value_charging_yes
+        } else {
+            R.string.qualification_status_value_charging_no
+        },
+    )
 
 private fun LazyListScope.runningStep(state: QualificationUiState) {
     val run = state.run
@@ -271,28 +285,58 @@ private fun LazyListScope.runningStep(state: QualificationUiState) {
         return
     }
     item { BodyText(stringResource(run.phase.messageRes, run.lowCap)) }
-    item {
+    item { RunProgressCard(run) }
+    item { BodyText(stringResource(R.string.qualification_running_leave_hint)) }
+}
+
+/**
+ * Where the run is: which of its steps is running, how far into that step's budget it is, and the two
+ * live readings a user can act on. The step caption is what makes the bar mean anything — it fills
+ * once per phase and starts over, so on its own it reads as no progress at all.
+ */
+@Composable
+private fun RunProgressCard(run: RunProgressUi) {
+    QualificationCard {
+        runStep(run.phase, run.shape)?.let { step ->
+            Text(
+                stringResource(
+                    R.string.qualification_running_step,
+                    step.index,
+                    step.total,
+                    stringResource(step.nameRes),
+                ),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
         val fraction = if (run.phaseBudgetMillis <= 0) {
             0f
         } else {
             (run.phaseElapsedMillis.toFloat() / run.phaseBudgetMillis).coerceIn(0f, 1f)
         }
         LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
+        run.percent?.let {
+            LabelledValue(
+                label = stringResource(R.string.qualification_status_label_battery),
+                value = stringResource(R.string.qualification_status_value_percent, it),
+            )
+        }
+        // Same rule as the pre-check block: an unobserved charging state is left out rather than
+        // rendered as a dash or, worse, as "not charging".
+        run.charging?.let {
+            val (label, value) = chargingRow(it)
+            LabelledValue(label = label, value = value)
+        }
     }
-    item {
-        BodyText(
-            stringResource(
-                R.string.qualification_running_readings,
-                run.percent?.toString() ?: "—",
-                run.chargeCounter?.toString() ?: "—",
-            ),
-        )
-    }
-    item { BodyText(stringResource(R.string.qualification_running_leave_hint)) }
 }
 
 private fun LazyListScope.resultStep(state: QualificationUiState) {
-    item { SectionTitle(stringResource(state.outcome.titleRes())) }
+    item {
+        QualificationCard(
+            title = stringResource(state.outcome.titleRes()),
+            titleStyle = MaterialTheme.typography.titleLarge,
+        ) {}
+    }
     item { BodyText(stringResource(state.outcome.bodyRes())) }
 }
 
@@ -304,7 +348,11 @@ private fun LazyListScope.deliverStep(
 ) {
     item { SectionTitle(stringResource(R.string.qualification_deliver_title)) }
     item { BodyText(stringResource(R.string.qualification_deliver_body)) }
-    item { AmplyCodeBlock(text = state.reportText, maxHeight = 260.dp) }
+    item {
+        QualificationCard {
+            AmplyCodeBlock(text = state.reportText, maxHeight = 260.dp)
+        }
+    }
     item {
         Button(onClick = onOpenIssue, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.qualification_open_issue))
@@ -384,6 +432,8 @@ private fun QualificationScreenIntroPreview() = PreviewWrapper {
     PreviewScreen(QualificationUiState(step = QualificationStep.INTRO))
 }
 
+// Mid-phase, mid-run: the step caption, the bar it explains, and the two readings that survived the
+// cut. This is the view a user stares at for most of an hour.
 @AmplyPreview
 @Composable
 private fun QualificationScreenRunningPreview() = PreviewWrapper {
@@ -398,7 +448,28 @@ private fun QualificationScreenRunningPreview() = PreviewWrapper {
                 phaseElapsedMillis = 5 * 60_000L,
                 phaseBudgetMillis = 25 * 60_000L,
                 percent = 80,
-                chargeCounter = 3_201_000,
+                charging = false,
+            ),
+        ),
+    )
+}
+
+// A fixed-cap run counts one step more, because it has to charge up to the cap first.
+@AmplyPreview
+@Composable
+private fun QualificationScreenChargeUpPreview() = PreviewWrapper {
+    PreviewScreen(
+        QualificationUiState(
+            step = QualificationStep.RUNNING,
+            run = RunProgressUi(
+                phase = RunPhase.CHARGE_UP,
+                shape = RunShape.FIXED_CAP,
+                lowCap = 80,
+                elapsedMillis = 22 * 60_000L,
+                phaseElapsedMillis = 22 * 60_000L,
+                phaseBudgetMillis = 120 * 60_000L,
+                percent = 68,
+                charging = true,
             ),
         ),
     )
@@ -437,6 +508,24 @@ private fun QualificationScreenBlockedOnBatteryPreview() = PreviewWrapper {
 private fun QualificationScreenResultPreview() = PreviewWrapper {
     PreviewScreen(
         QualificationUiState(step = QualificationStep.RESULT, outcome = RunTerminal.Passed),
+    )
+}
+
+@AmplyPreview
+@Composable
+private fun QualificationScreenDeliverPreview() = PreviewWrapper {
+    PreviewScreen(
+        QualificationUiState(
+            step = QualificationStep.DELIVER,
+            outcome = RunTerminal.Passed,
+            reportText = """
+                Amply qualification report
+                result: PASSED
+                adapter: lineage-charging-v1
+                cap: 70%
+                phases: BASELINE, CUT_1, RESUME, CUT_2
+            """.trimIndent(),
+        ),
     )
 }
 

@@ -32,7 +32,8 @@ internal fun precheckStatus(readout: BatteryReadout, requiredPercent: Int?): Pre
 
 /**
  * Whether the battery is actually taking charge — a genuine tri-state, because "not charging" is a
- * claim about the device and the block only makes claims it observed.
+ * claim about the device and the surfaces that render it — the pre-check block and the running
+ * card — only make claims they observed.
  *
  * `true` needs both halves to agree: something plugged in **and** [BatteryManager.BATTERY_STATUS_CHARGING].
  * `false` needs only one observed negative — nothing plugged in, or a status of discharging, not
@@ -40,7 +41,7 @@ internal fun precheckStatus(readout: BatteryReadout, requiredPercent: Int?): Pre
  * the positive pair, an unrecognised status, and [BatteryManager.BATTERY_STATUS_UNKNOWN], which is a
  * valid thing for the platform to report and says nothing either way.
  */
-private fun BatteryReadout.chargingOrNull(): Boolean? {
+internal fun BatteryReadout.chargingOrNull(): Boolean? {
     if (plugged == 0) return false
     if (status == BatteryManager.BATTERY_STATUS_DISCHARGING ||
         status == BatteryManager.BATTERY_STATUS_NOT_CHARGING ||

@@ -316,13 +316,17 @@
     <string name="qualification_precheck_checking">Checking…</string>
     <string name="qualification_precheck_ready">Everything is ready.</string>
     <string name="qualification_precheck_plan_variable">Amply will set the limit to %1$d%% first, which is below where your battery is now, so charging should stop almost immediately.</string>
-    <string name="qualification_precheck_status_level">Battery now: %1$d%%</string>
-    <string name="qualification_precheck_status_required">Needed to start: %1$d%%</string>
-    <string name="qualification_precheck_status_charging">Charging</string>
-    <string name="qualification_precheck_status_not_charging">Not charging right now</string>
-    <string name="qualification_precheck_status_eta_minutes">About %1$d minutes to go at this rate</string>
-    <string name="qualification_precheck_status_eta_hour">About an hour to go at this rate</string>
-    <string name="qualification_precheck_status_eta_over_hour">Over an hour to go at this rate</string>
+    <!-- Labelled figures, shared by the pre-check and the running step so both read the same way. -->
+    <string name="qualification_status_label_battery">Battery now</string>
+    <string name="qualification_status_label_required">Needed to start</string>
+    <string name="qualification_status_label_charging">Charging</string>
+    <string name="qualification_status_label_eta">Time to go at this rate</string>
+    <string name="qualification_status_value_percent">%1$d%%</string>
+    <string name="qualification_status_value_charging_yes">Yes</string>
+    <string name="qualification_status_value_charging_no">Not right now</string>
+    <string name="qualification_status_value_eta_minutes">About %1$d minutes</string>
+    <string name="qualification_status_value_eta_hour">About an hour</string>
+    <string name="qualification_status_value_eta_over_hour">Over an hour</string>
     <string name="qualification_precheck_plan_fixed">Your phone offers a single %1$d%% limit, so Amply will charge up to just under it first. That part can take a while.</string>
 
     <string name="qualification_blocked_no_adapter">Amply doesn\'t know how to set a charge limit on this device, so there is nothing to check.</string>
@@ -347,7 +351,12 @@
     <string name="qualification_phase_cut_1">The limit is set to %1$d%%. Waiting to see charging stop and stay stopped.</string>
     <string name="qualification_phase_resume">The limit is now above %1$d%%. Waiting to see charging start again — this is the part nothing else can fake.</string>
     <string name="qualification_phase_cut_2">The limit is back at %1$d%%. Waiting to see charging stop a second time.</string>
-    <string name="qualification_running_readings">Battery %1$s%%, charge counter %2$s</string>
+    <string name="qualification_running_step">Step %1$d of %2$d · %3$s</string>
+    <string name="qualification_phase_step_charge_up">Charging up to the limit</string>
+    <string name="qualification_phase_step_baseline">Measuring normal charge speed</string>
+    <string name="qualification_phase_step_cut_1">Waiting for charging to stop</string>
+    <string name="qualification_phase_step_resume">Waiting for charging to start again</string>
+    <string name="qualification_phase_step_cut_2">Waiting for charging to stop again</string>
     <string name="qualification_running_leave_hint">You can leave this screen and lock your phone. The check keeps running, and you\'ll find it here when you come back.</string>
 
     <string name="qualification_result_passed_title">The limit works on this build</string>
