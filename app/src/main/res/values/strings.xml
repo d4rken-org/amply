@@ -729,7 +729,8 @@
     <string name="rules_condition_bluetooth_unnamed">While a paired device is connected</string>
     <string name="rules_condition_charger">While charging via %1$s</string>
     <string name="rules_condition_charger_none">No charger type selected</string>
-    <string name="rules_condition_separator">, </string>
+    <!-- Quoted: Android strips trailing whitespace from an unquoted resource, which would join charger types as "Wireless,Dock". -->
+    <string name="rules_condition_separator">", "</string>
     <string name="rules_condition_unsupported">This device can\'t act on charger conditions.</string>
     <string name="rules_policy_unavailable">This charge mode isn\'t available on this device.</string>
     <string name="rules_failure_warning">The last change couldn\'t be applied. Amply keeps retrying.</string>
