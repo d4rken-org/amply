@@ -78,6 +78,17 @@ class QualificationPrecheckStatusTest {
         estimateMinutesToPercent(charging(current = 1_000), targetPercent = 70) shouldBe null
     }
 
+    /**
+     * A counter reported in milli- rather than micro-units, with a correctly scaled current: 50% of
+     * 2 000 µAh implies a 4 mAh pack, so the 20 remaining points come out as 0.03 minutes and round
+     * to "About 10 minutes" for what is really a long wait. The 24-hour ceiling only catches a
+     * mis-scaling in the other direction, so the implied capacity has to be judged on its own.
+     */
+    @Test
+    fun `a counter too small to be microamp-hours yields no estimate`() {
+        estimateMinutesToPercent(charging(counter = 2_000), targetPercent = 70) shouldBe null
+    }
+
     @Test
     fun `the sign of the reported current is not read as a direction`() {
         estimateMinutesToPercent(charging(current = -1_600_000), targetPercent = 70) shouldBe 30
@@ -102,6 +113,36 @@ class QualificationPrecheckStatusTest {
         ).charging shouldBe false
         // Nothing observed at all is not the same as "not charging".
         precheckStatus(BatteryReadout.UNKNOWN, requiredPercent = 70).charging shouldBe null
+    }
+
+    /**
+     * The three shapes where charging is genuinely unknown. Each one used to print "Not charging
+     * right now" as a fact — the line a waiting user is most likely to act on.
+     */
+    @Test
+    fun `an unknown charging state is reported as unknown rather than as not charging`() {
+        // A valid platform status: plugged in, and the platform declining to say what that means.
+        precheckStatus(
+            charging(status = BatteryManager.BATTERY_STATUS_UNKNOWN),
+            requiredPercent = 70,
+        ).charging shouldBe null
+        // Only the positive half of the pair is present, so nothing about charging was observed.
+        precheckStatus(charging(status = null), requiredPercent = 70).charging shouldBe null
+        precheckStatus(charging(plugged = null), requiredPercent = 70).charging shouldBe null
+    }
+
+    /** The negative side only needs one half of the pair: either one settles it. */
+    @Test
+    fun `an observed negative on either half reports not charging`() {
+        precheckStatus(charging(plugged = 0), requiredPercent = 70).charging shouldBe false
+        precheckStatus(
+            charging(plugged = null, status = BatteryManager.BATTERY_STATUS_DISCHARGING),
+            requiredPercent = 70,
+        ).charging shouldBe false
+        precheckStatus(
+            charging(status = BatteryManager.BATTERY_STATUS_FULL),
+            requiredPercent = 70,
+        ).charging shouldBe false
     }
 
     @Test
