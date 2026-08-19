@@ -1,6 +1,8 @@
 package eu.darken.amply.charging.core.qualification
 
+import android.app.Application
 import android.app.Notification
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.os.BatteryManager
@@ -305,6 +307,89 @@ class QualificationRunnerContractTest {
 
         runBlocking {
             runStore.clear()
+            fullChargeStore.clearPendingRecoveryTarget()
+        }
+    }
+
+    /**
+     * What the guard above costs when the close-out it defers to **fails**, which at boot is the
+     * ordinary case rather than the exotic one: the backend or the provider is often not ready yet.
+     *
+     * The sequence: a process death or reboot mid-run, `BootReceiver` dispatches `ACTION_RECOVER`, the
+     * guard refuses it because the stale record still owns the target, startup repair then closes that
+     * record out and its single baseline write fails. The record is cleared regardless — and with it
+     * goes `QualificationWatcher.isEnabled`, so the next `continueGestureOrStop` stops the service,
+     * and that function decides from the session, the gesture and the watchers, never from a pending
+     * recovery target. Nothing would re-dispatch recovery, and the device would sit on the run's
+     * experimental policy — its deliberately less-protective release policy included — until the next
+     * foreground launch or reboot.
+     *
+     * So the failed close-out hands the owed work back: it leaves the recovery target in place and
+     * dispatches `ACTION_RECOVER` itself, **after** clearing the record, which is exactly what makes
+     * the guard let it through this time. The second half below feeds the dispatched intent to a
+     * service and watches it reach `BootRecoveryFlow`'s bounded rewrite loop.
+     *
+     * The two cases above cannot catch this: they reinstate the run by hand and call `finish`
+     * directly, so neither ever runs the startup-repair-to-boot-recovery hand-off.
+     *
+     * What it does **not** prove: that recovery converges. It cannot here — no adapter can be driven
+     * in this environment, which is also why the restore fails without being made to. The surviving
+     * target is what stands for that failure, and convergence is `BootRecoveryFlowTest`'s question.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `a close-out whose restore fails hands the owed baseline to boot recovery`() {
+        val runStore = deps.runStore()
+        val fullChargeStore = deps.fullChargeStore()
+        val application: Application = ApplicationProvider.getApplicationContext()
+        // Never advanced, so this runner's own queued startup repair cannot be what closes the record
+        // out — the repair under test is the one invoked below.
+        val runner = runner(StandardTestDispatcher(TestCoroutineScheduler()), runStore = runStore)
+        runBlocking {
+            runStore.put(record(runId = "run-19", token = "token-19").copy(provenance = deadProcess()))
+            fullChargeStore.setPendingRecoveryTarget(
+                policy = ChargePolicy.FixedLimit(80),
+                workId = "run-19",
+                origin = RecoveryOrigin.SESSION_RESTORE,
+            )
+        }
+        shadowOf(application).clearStartedServices()
+
+        runBlocking {
+            // Contained like the other finalization cases: the surface push at the very end cannot
+            // complete in this environment, and everything asserted here is decided before it.
+            runCatching { runner.startupRepair() }
+
+            // The record is gone whether or not the restore worked, which is the whole problem.
+            runStore.currentRun() shouldBe null
+            // And the restore did not work, so the baseline is still owed and still owned by the run.
+            fullChargeStore.pendingRecoveryTarget() shouldBe ChargePolicy.FixedLimit(80)
+            fullChargeStore.currentRecovery()?.workId shouldBe "run-19"
+        }
+
+        val dispatched = shadowOf(application).nextStartedService
+        dispatched.component shouldBe ComponentName(context, ChargeSessionService::class.java)
+        dispatched.action shouldBe ChargeSessionService.ACTION_RECOVER
+
+        // The hand-off arriving where it was sent: with the record cleared the ownership guard has
+        // nothing to refuse, so this reaches the rewrite loop instead of being turned away again.
+        val refused = LogWatcher("a qualification run owns the charge policy")
+        val recovered = LogWatcher("Recovery: resuming convergence check")
+        val controller = Robolectric.buildService(ChargeSessionService::class.java).create()
+        Logging.install(refused)
+        Logging.install(recovered)
+        try {
+            controller.get().onStartCommand(dispatched, 0, 1)
+            awaitSeen(recovered) shouldBe true
+            refused.seen shouldBe false
+        } finally {
+            Logging.remove(refused)
+            Logging.remove(recovered)
+        }
+        controller.destroy()
+
+        runBlocking {
+            // The recovery slot is process-wide; the write cannot land here, so it is cleared by hand.
             fullChargeStore.clearPendingRecoveryTarget()
         }
     }
