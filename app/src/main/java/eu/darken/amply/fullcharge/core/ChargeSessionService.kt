@@ -270,6 +270,28 @@ class ChargeSessionService : Service() {
         }
         val gestureActive = fullChargeStore.isQuickFullChargeEnabled() && reconnectGestureAvailable()
         if (!gestureActive && !anyWatcherEnabled()) {
+            // Nothing wants this service any more EXCEPT an owed restore nobody else will make. A
+            // recovery target no live run owns keeps this instance alive by itself instead of relying
+            // on a dispatch that has to win a race against this very stop decision: a qualification
+            // close-out clears its run record, which is exactly what turns the last watcher off, so
+            // its ACTION_RECOVER can arrive after stopSelf and be lost.
+            //
+            // Gated on there being no recovery in flight, because this is ALSO the recovery job's own
+            // tail (see beginRecovery): BootRecoveryFlow deliberately KEEPS the pending target when a
+            // re-write fails, so the next service start retries it. Without the gate a persistently
+            // failing restore would restart itself here forever, at the flow's own 25s/75s cadence,
+            // with the service never stopping. The other two stop sites need no gate for their own
+            // reasons: evaluateBattery already returns early while a recovery job is active, and
+            // restoreAndContinue's stop after a failed restore is deliberately left alone — a pending
+            // target is exactly what is present there, and recovering from it would loop on the same
+            // failing write.
+            if (recoveryJob?.isActive != true && unownedRecoveryPending()) {
+                log(TAG, Logging.Priority.INFO) {
+                    "Nothing left to monitor, but a recovery target is still owed; recovering instead of stopping"
+                }
+                beginRecovery()
+                return
+            }
             log(TAG) { "Reconnect gesture disabled/unsupported and no watcher enabled; stopping monitor" }
             // The stop branch used to be the one terminal path through continueGestureOrStop that pushed no
             // surface update — a session/native change ending here (e.g. via the setting observer) left the
@@ -563,6 +585,14 @@ class ChargeSessionService : Service() {
                 // (a latched basis or an open reconnect window from before the disable).
                 quickGesture.reset()
                 startAsForeground(watcherNotification())
+            } else if (unownedRecoveryPending()) {
+                // The same owed-restore rule as continueGestureOrStop's stop branch, for the same
+                // reason. No recovery-in-flight gate here: this method returns early while a recovery
+                // job is active, so this branch can never be a recovery tail.
+                log(TAG, Logging.Priority.INFO) {
+                    "Nothing left to monitor, but a recovery target is still owed; recovering instead of stopping"
+                }
+                beginRecovery()
             } else {
                 stopMonitoring()
             }
@@ -794,6 +824,30 @@ class ChargeSessionService : Service() {
             continueGestureOrStop()
             return
         }
+        beginRecovery()
+    }
+
+    /**
+     * A recovery target that is owed and that no live qualification run owns.
+     *
+     * A live run's own target is not this: the run still owes it and closes it out on its own terms
+     * (that is [startRecovery]'s ownership guard), and repaying it while the run keeps writing
+     * experimental policies is exactly what that guard prevents.
+     */
+    private suspend fun unownedRecoveryPending(): Boolean {
+        val recovery = fullChargeStore.currentRecovery() ?: return false
+        val liveRun = qualificationRunStore.currentRun()
+        return liveRun == null || liveRun.runId != recovery.workId
+    }
+
+    /**
+     * Launch boot recovery. Split out of [startRecovery] so the stop decisions can start recovery for
+     * an unowned pending target without re-entering the ownership guard: they have already established
+     * that no live run owns it, and the guard's refusal branch calls back into [continueGestureOrStop],
+     * which would be mutual recursion. They keep [startRecovery]'s other precondition — no recovery job
+     * in flight — where it matters (see the gate in [continueGestureOrStop]).
+     */
+    private suspend fun beginRecovery() {
         // Quiesce monitoring before recovery writes: with ACTION_CHECK the service can already be
         // alive in gesture-monitor mode, and the monitor loop / battery receiver run outside the
         // dispatch lock — they could replace the recovering notification or begin a session that

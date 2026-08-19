@@ -31,6 +31,7 @@ import eu.darken.amply.common.AppDataStore
 import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.serialization.SerializationModule
 import eu.darken.amply.fullcharge.core.BootCountProvider
+import eu.darken.amply.fullcharge.core.BootRecoveryEngine
 import eu.darken.amply.fullcharge.core.ChargeSessionService
 import eu.darken.amply.fullcharge.core.FullChargeStore
 import eu.darken.amply.fullcharge.core.ProcessIdentity
@@ -62,8 +63,10 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowSystemClock
 import java.io.File
 import java.io.IOException
+import java.time.Duration
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
@@ -1082,6 +1085,140 @@ class QualificationRunnerContractTest {
         }
     }
 
+    /**
+     * The hand-off above, losing the race it should never have had to run.
+     *
+     * Clearing the run record is *itself* what turns the last watcher off, so the dispatch and the
+     * service's own stop decision are triggered by the same event. A stop decision that runs a moment
+     * after the clear calls `stopMonitoring`, which invalidates the queued work and calls `stopSelf`,
+     * and `START_STICKY` redelivers a **null** intent rather than the `ACTION_RECOVER` that was in
+     * flight. The device would then sit on the run's experimental policy with the baseline still owed.
+     *
+     * What separates this from the hand-off case above: there, startup repair finishes completely and
+     * its captured intent is then fed to a **fresh** service instance, so the clear and the service's
+     * processing never overlap. Here one live instance is already draining commands while the repair
+     * runs on the test thread, and the dispatched intent is deliberately **never delivered** — the
+     * shadow captures it, which is exactly the "the dispatch was lost" case. So what has to keep the
+     * device recoverable is the service's own stop decision: an owed recovery target that no live run
+     * owns starts recovery instead of stopping.
+     *
+     * The loop feeds ordinary monitor commands because a stop decision has to come from somewhere; in
+     * production it is the terminal battery tick or the 30s poll. Either order is a pass for the
+     * property: a decision that runs before the clear still sees the watcher enabled and keeps
+     * monitoring, one that runs after must recover. It stops the moment the service stops itself, so a
+     * later nudge cannot paper over a `stopSelf` that already happened.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `a stop decision racing the hand-off recovers the owed baseline instead of stopping`() {
+        val runStore = deps.runStore()
+        val fullChargeStore = deps.fullChargeStore()
+        val application: Application = ApplicationProvider.getApplicationContext()
+        // Never advanced, so this runner's own queued startup repair cannot be what closes the record
+        // out — the repair under test is the one invoked below.
+        val runner = runner(StandardTestDispatcher(TestCoroutineScheduler()), runStore = runStore)
+        runBlocking {
+            runStore.put(record(runId = "run-20", token = "token-20").copy(provenance = deadProcess()))
+            fullChargeStore.setPendingRecoveryTarget(
+                policy = ChargePolicy.FixedLimit(80),
+                workId = "run-20",
+                origin = RecoveryOrigin.SESSION_RESTORE,
+            )
+        }
+        shadowOf(application).clearStartedServices()
+
+        val recovered = LogWatcher("Recovery: resuming convergence check")
+        val controller = Robolectric.buildService(ChargeSessionService::class.java).create()
+        val service = controller.get()
+        Logging.install(recovered)
+        try {
+            // Up and monitoring for the run: the record is what keeps QualificationWatcher enabled,
+            // and this command is handled on the service's own dispatcher, not this thread.
+            service.onStartCommand(monitorIntent(), 0, 1)
+            // …so the repair below overlaps that processing. It closes the dead process's record out,
+            // fails its single baseline write (nothing can write a policy in this environment), leaves
+            // the target and dispatches ACTION_RECOVER — which the shadow captures and never delivers.
+            runBlocking { runCatching { runner.startupRepair() } }
+
+            val deadline = System.currentTimeMillis() + 20_000L
+            while (
+                !recovered.seen &&
+                !shadowOf(service).isStoppedBySelf &&
+                System.currentTimeMillis() < deadline
+            ) {
+                service.onStartCommand(monitorIntent(), 0, 1)
+                Thread.sleep(50)
+            }
+
+            shadowOf(service).isStoppedBySelf shouldBe false
+            recovered.seen shouldBe true
+        } finally {
+            Logging.remove(recovered)
+        }
+        controller.destroy()
+
+        runBlocking {
+            // The recovery slot is process-wide; the write cannot land here, so it is cleared by hand.
+            fullChargeStore.clearPendingRecoveryTarget()
+        }
+    }
+
+    /**
+     * What the stop-decision check above must NOT do, and the reason it is gated on there being no
+     * recovery in flight.
+     *
+     * A recovery job ends by calling that very same stop decision, and `BootRecoveryFlow` deliberately
+     * **keeps** the pending target when a re-write fails, so the next service start can retry it. An
+     * ungated check would therefore find an owed, unowned target in the recovery job's own tail and
+     * start the whole flow again — a persistently failing restore turning into a permanent retry loop
+     * at the flow's 25s/75s cadence, with the foreground service never stopping. The gate is invisible
+     * in the happy path, so without this case it reads as a redundant condition.
+     */
+    @Test
+    fun `a recovery whose re-write fails stops the service instead of restarting itself`() {
+        val fullChargeStore = deps.fullChargeStore()
+        runBlocking {
+            // No run: this target is a widget write's obligation, so nothing owns it and the check
+            // under test applies to it in full.
+            deps.runStore().clear()
+            fullChargeStore.setPendingRecoveryTarget(
+                policy = ChargePolicy.FixedLimit(80),
+                workId = "widget-write-3",
+                origin = RecoveryOrigin.USER_REQUEST,
+            )
+        }
+
+        val recovered = LogWatcher("Recovery: resuming convergence check")
+        val finished = LogWatcher("Boot recovery outcome:")
+        val controller = Robolectric.buildService(ChargeSessionService::class.java).create()
+        val service = controller.get()
+        Logging.install(recovered)
+        Logging.install(finished)
+        try {
+            service.onStartCommand(recoverIntent(), 0, 1)
+            awaitSeen(recovered) shouldBe true
+
+            // The convergence loop decides from elapsedRealtime, which Robolectric holds still: advance
+            // it past the verify delay so the next tick decides REWRITE rather than WAIT. One advance,
+            // deliberately — overshooting the total budget would end the flow by giving up, which
+            // clears the target and takes the looping state away.
+            ShadowSystemClock.advanceBy(Duration.ofMillis(BootRecoveryEngine.VERIFY_DELAY_MILLIS + 5_000L))
+            awaitSeen(finished, timeoutMillis = 60_000L) shouldBe true
+
+            // The state that invites the loop: the re-write failed and the target is still owed.
+            runBlocking { fullChargeStore.pendingRecoveryTarget() } shouldBe ChargePolicy.FixedLimit(80)
+            // And the tail stopped instead of recovering again.
+            awaitStoppedBySelf(service) shouldBe true
+            recovered.count shouldBe 1
+        } finally {
+            Logging.remove(recovered)
+            Logging.remove(finished)
+        }
+        controller.destroy()
+
+        runBlocking { fullChargeStore.clearPendingRecoveryTarget() }
+    }
+
     /** A store that stops accepting writes once its [writeBudget] runs out, the way a full one does. */
     private class FlakyStore(private val delegate: DataStore<Preferences>) : DataStore<Preferences> {
         @Volatile var writeBudget: Int = UNLIMITED
@@ -1113,13 +1250,19 @@ class QualificationRunnerContractTest {
     private class LogWatcher(private val marker: String) : Logging.Logger {
         @Volatile var seen: Boolean = false
 
+        /** How OFTEN the marker was logged — a repeat is how a restarted loop shows up. */
+        @Volatile var count: Int = 0
+
         override fun log(
             priority: Logging.Priority,
             tag: String,
             message: String,
             metadata: Map<String, Any>?,
         ) {
-            if (message.contains(marker)) seen = true
+            if (message.contains(marker)) {
+                seen = true
+                count++
+            }
         }
     }
 
@@ -1199,6 +1342,23 @@ class QualificationRunnerContractTest {
     private fun awaitNotification(service: ChargeSessionService, title: String): Boolean = runBlocking {
         withTimeoutOrNull(10_000L) {
             while (postedTitle(service) != title) delay(20)
+            true
+        } ?: false
+    }
+
+    private fun monitorIntent(): Intent =
+        Intent(context, ChargeSessionService::class.java).setAction(ChargeSessionService.ACTION_MONITOR)
+
+    private fun recoverIntent(): Intent =
+        Intent(context, ChargeSessionService::class.java).setAction(ChargeSessionService.ACTION_RECOVER)
+
+    /** Waits for the service to stop itself, the way [awaitSeen] waits for a log marker. */
+    private fun awaitStoppedBySelf(
+        service: ChargeSessionService,
+        timeoutMillis: Long = 20_000L,
+    ): Boolean = runBlocking {
+        withTimeoutOrNull(timeoutMillis) {
+            while (!shadowOf(service).isStoppedBySelf) delay(20)
             true
         } ?: false
     }
