@@ -73,6 +73,12 @@ data class QualificationUiState(
     val eligibility: RunEligibility? = null,
     val run: RunProgressUi? = null,
     val outcome: RunTerminal? = null,
+    /**
+     * Whether the finished run got the user's own charge setting back. Defaults to false because the
+     * one error worth avoiding here is claiming a restore that did not happen: with no result there is
+     * nothing to claim.
+     */
+    val restored: Boolean = false,
     val reportText: String = "",
     val issueUrl: String = "",
     /** Live pre-check figures; only present while the pre-check step is on screen. */
@@ -113,6 +119,7 @@ class QualificationViewModel @Inject constructor(
         val eligibility: RunEligibility?,
         val record: QualificationRunRecord?,
         val outcome: RunTerminal?,
+        val restored: Boolean,
         val delivery: Delivery,
     )
 
@@ -128,6 +135,7 @@ class QualificationViewModel @Inject constructor(
             eligibility = eligibility,
             record = record,
             outcome = result?.terminal,
+            restored = result?.restored == true,
             delivery = delivery,
         )
     }
@@ -161,6 +169,7 @@ class QualificationViewModel @Inject constructor(
                 eligibility = snapshot.eligibility,
                 run = snapshot.record?.toUi(live.readout),
                 outcome = snapshot.outcome,
+                restored = snapshot.restored,
                 reportText = snapshot.delivery.reportText,
                 issueUrl = snapshot.delivery.issueUrl,
                 // Only on the step that renders it: a stale block must never outlive the pre-check.
