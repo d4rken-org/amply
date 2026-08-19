@@ -20,17 +20,19 @@ fun FullChargeActive() = DashboardActiveContent()
 @PreviewTest
 @PlayStoreLocales
 @Composable
-fun SamsungMultiMode() = SamsungMultiModeContent()
+fun ChargeConditions() = ChargeConditionsContent()
 
 @PreviewTest
 @PlayStoreLocales
 @Composable
 fun SetupGuide() = SetupGuideContent()
 
+// Shares HubFixtures' tile-grid content with the engineering hub shots — one fixture, two capture
+// dirs, so the store shot can never drift from the regression one.
 @PreviewTest
 @PlayStoreLocales
 @Composable
-fun Settings() = SettingsContent()
+fun BatteryHub() = HubTileGridContent()
 
 @PreviewTest
 @PlayStoreLocales
