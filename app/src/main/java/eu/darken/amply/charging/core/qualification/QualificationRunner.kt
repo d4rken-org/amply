@@ -318,6 +318,40 @@ class QualificationRunner @Inject constructor(
         log(TAG, Logging.Priority.WARN) { "Charge service nudge failed: ${it.message}" }
     }.isSuccess
 
+    /**
+     * Hand a restore this run could not perform back to boot recovery.
+     *
+     * The run record is what keeps the charge service alive, so a close-out that fails its single
+     * baseline write used to be the end of the line: the record is cleared either way, the service
+     * stops at the next `continueGestureOrStop` (which looks at the session, the gesture and the
+     * watchers, never at a pending recovery target), and nothing re-dispatches recovery. A boot-time
+     * close-out is where that bites — the backend or provider is routinely not ready yet — and the
+     * device would sit on the run's experimental policy, which includes its deliberately
+     * less-protective release policy, until the next foreground launch or reboot.
+     *
+     * `BootRecoveryFlow` is the machinery for a failed restore: it re-writes until the hardware
+     * confirms or a budget expires. The recovery target is deliberately left in place above, so it is
+     * still there for that flow to find.
+     *
+     * **It cannot loop.** Recovery never calls back into [finalize] — it repays the persisted target
+     * and clears it — and the run record this method just cleared is what a second close-out would
+     * need. One dispatch, no cycle. Fire-and-forget on purpose too: a `startForegroundService` takes
+     * no lock, so this changes nothing about the lock order the finalization runs under.
+     */
+    private fun handOffToRecovery(record: QualificationRunRecord) {
+        log(TAG, Logging.Priority.INFO) {
+            "Run ${record.runId} hands its unrestored baseline back to boot recovery"
+        }
+        runCatching {
+            ContextCompat.startForegroundService(
+                context,
+                ServiceDispatch.startIntent(context, ChargeSessionService.ACTION_RECOVER),
+            )
+        }.onFailure {
+            log(TAG, Logging.Priority.WARN) { "Recovery hand-off dispatch failed: ${it.message}" }
+        }
+    }
+
     suspend fun cancel() {
         runStore.requestCancel()
     }
@@ -669,6 +703,11 @@ class QualificationRunner @Inject constructor(
             runStore.clear()
             runActiveNow = false
         }
+        // After the clear, deliberately: the recovery target this run still owes is now unowned by any
+        // live run, so `ChargeSessionService.startRecovery`'s ownership guard no longer refuses it and
+        // BootRecoveryFlow's bounded rewrite loop — which exists for exactly this kind of failure — can
+        // repay it. Before the clear this dispatch would be refused by that same guard.
+        if (!restored) handOffToRecovery(record)
         repository.refresh()
         SurfaceUpdater.updateNow(context)
     }

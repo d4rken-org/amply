@@ -774,9 +774,14 @@ class ChargeSessionService : Service() {
         // experimental policies, and the run's own finalization would find nothing owed and skip the
         // restore, stranding the device on an experimental cap.
         //
-        // Refusing is safe rather than a lost restore: the run record keeps QualificationWatcher
-        // enabled, which is what holds this foreground service up, so the run's own close-out —
-        // ordinary finalization, startup repair, or onTick's close-out — still performs it.
+        // Refusing is safe rather than a lost restore, in two steps. While the record exists it keeps
+        // QualificationWatcher enabled, which is what holds this foreground service up, so the run's
+        // own close-out — ordinary finalization, startup repair, or onTick's close-out — still
+        // performs the restore. And a close-out whose restore FAILS, the common case at boot, does not
+        // end there either: it leaves the recovery target behind and re-dispatches ACTION_RECOVER
+        // right after clearing the record, so this guard no longer refuses and BootRecoveryFlow's
+        // bounded rewrite loop repays it. Without that hand-off the clear would strand the owed
+        // baseline — the record is gone, so nothing keeps this service alive or re-asks for recovery.
         //
         // Scoped to a target this run owns. Anything else pending is somebody else's obligation and
         // must still be recovered normally, run or no run.
