@@ -154,6 +154,18 @@ enum class InconclusiveReason {
 
     @SerialName("PRECONDITION_TIMEOUT")
     PRECONDITION_TIMEOUT,
+
+    /**
+     * The device reported external power gone within
+     * [QualificationProtocol.PLUG_MASK_WINDOW_MILLIS] of a cut's write being acknowledged.
+     *
+     * Named for what was observed, not for a cause: a build that reports the charger as absent while
+     * its limit engages and a cable that genuinely came out look identical from here. Both readings
+     * leave the run with nothing to measure, so naming both is honest without having to tell them
+     * apart — which is why this is inconclusive rather than a new [AbortReason].
+     */
+    @SerialName("PLUG_SIGNAL_LOST_AT_CUT")
+    PLUG_SIGNAL_LOST_AT_CUT,
 }
 
 /** Why a run stopped before it could measure anything. */
@@ -350,6 +362,23 @@ object QualificationProtocol {
      * opened on the earlier of them would count charging that happened under the old configuration.
      */
     const val WRITE_SETTLE_MILLIS = 90_000L
+
+    /**
+     * How long after a cut's write was acknowledged a lost plug signal is reported as
+     * [InconclusiveReason.PLUG_SIGNAL_LOST_AT_CUT] rather than as a plain unplug.
+     *
+     * **This window decides wording only.** It must never be read as evidence about the hardware, and
+     * must never be reused to authorize a pass, a hold, or any measurement decision — both readings of
+     * the observation end the run with no verdict, which is exactly why naming both is safe without
+     * being able to tell them apart.
+     *
+     * It is anchored on the acknowledgement because that is the instant our own cut could have made
+     * the plug signal disappear (observed on a Pixel 6 / LineageOS build: capping below the current
+     * level made the phone report `USB powered: false` over a live cable). A plug loss well after a
+     * cut settled — with the plug present throughout the window in between — is far more likely to be
+     * a real unplug, and keeps the ordinary [AbortReason.UNPLUGGED].
+     */
+    const val PLUG_MASK_WINDOW_MILLIS = 120_000L
 
     /**
      * Below this implied full capacity the counter is not believable as microamp-hours for any phone

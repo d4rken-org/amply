@@ -8,6 +8,7 @@ import eu.darken.amply.charging.core.qualification.QualificationProtocol.CHARGE_
 import eu.darken.amply.charging.core.qualification.QualificationProtocol.FIXED_CAP_ENTRY_MARGIN
 import eu.darken.amply.charging.core.qualification.QualificationProtocol.HOLD_CONFIRM_MILLIS
 import eu.darken.amply.charging.core.qualification.QualificationProtocol.PHASE_BUDGET_MILLIS
+import eu.darken.amply.charging.core.qualification.QualificationProtocol.PLUG_MASK_WINDOW_MILLIS
 import eu.darken.amply.charging.core.qualification.QualificationProtocol.PREFLIGHT_BUDGET_MILLIS
 import eu.darken.amply.charging.core.qualification.QualificationProtocol.RUN_CEILING_MILLIS
 import eu.darken.amply.charging.core.qualification.QualificationProtocol.WRITE_SETTLE_MILLIS
@@ -576,6 +577,95 @@ class QualificationRunEngineTest {
             RunTerminal.Aborted(AbortReason.USER_CANCELLED)
         QualificationRunEngine.evaluate(armed, sample(now = RUN_CEILING_MILLIS)).terminal shouldBe
             RunTerminal.Aborted(AbortReason.RUN_CEILING)
+    }
+
+    /** A run sitting in [RunPhase.CUT_1], with its cut write already acknowledged. */
+    private fun atFirstCut(): QualificationProgress {
+        val sim = variableSim()
+        sim.run(forMillis = 20 * 60_000L, currentPerHour = mA(1_500))
+        sim.progress.phase shouldBe RunPhase.CUT_1
+        return sim.progress
+    }
+
+    private fun atResume(): QualificationProgress {
+        val sim = variableSim()
+        sim.run(forMillis = 20 * 60_000L, currentPerHour = mA(1_500))
+        sim.run(forMillis = 20 * 60_000L, currentPerHour = 0)
+        sim.progress.phase shouldBe RunPhase.RESUME
+        return sim.progress
+    }
+
+    private fun unplugged(now: Long) =
+        QualificationSample(now, plugged = false, percent = 50, chargeCounter = 2_000_000, configured = null, sessionActive = false)
+
+    /**
+     * The device-observed defect: capping below the current level made a LineageOS build report the
+     * charger as absent over a live cable, so the run told the user their charger came out.
+     */
+    @Test
+    fun `losing the plug signal right after the first cut names both possibilities`() {
+        val armed = atFirstCut()
+        (armed.commandAckedAt > 0L) shouldBe true
+
+        QualificationRunEngine.evaluate(armed, unplugged(armed.commandAckedAt + 1_000)).terminal shouldBe
+            RunTerminal.Inconclusive(InconclusiveReason.PLUG_SIGNAL_LOST_AT_CUT)
+        QualificationRunEngine.evaluate(armed, unplugged(armed.commandAckedAt + PLUG_MASK_WINDOW_MILLIS)).terminal shouldBe
+            RunTerminal.Inconclusive(InconclusiveReason.PLUG_SIGNAL_LOST_AT_CUT)
+    }
+
+    @Test
+    fun `the second cut is treated the same as the first`() {
+        val armed = healthyRun().progress
+        armed.phase shouldBe RunPhase.CUT_2
+
+        QualificationRunEngine.evaluate(armed, unplugged(armed.commandAckedAt + 1_000)).terminal shouldBe
+            RunTerminal.Inconclusive(InconclusiveReason.PLUG_SIGNAL_LOST_AT_CUT)
+    }
+
+    /**
+     * A plug loss long after the cut settled — with the plug present all through the window in
+     * between — is far more likely to be the cable, and keeps the ordinary abort.
+     */
+    @Test
+    fun `a plug signal lost well after the cut settled is still an unplug`() {
+        val armed = atFirstCut()
+
+        QualificationRunEngine.evaluate(armed, unplugged(armed.commandAckedAt + PLUG_MASK_WINDOW_MILLIS + 1)).terminal shouldBe
+            RunTerminal.Aborted(AbortReason.UNPLUGGED)
+    }
+
+    @Test
+    fun `phases that write no cut keep the ordinary unplug abort`() {
+        val baseline = variableSim().progress
+        baseline.phase shouldBe RunPhase.BASELINE
+        val resume = atResume()
+
+        QualificationRunEngine.evaluate(baseline, unplugged(baseline.commandAckedAt + 1_000)).terminal shouldBe
+            RunTerminal.Aborted(AbortReason.UNPLUGGED)
+        QualificationRunEngine.evaluate(resume, unplugged(resume.commandAckedAt + 1_000)).terminal shouldBe
+            RunTerminal.Aborted(AbortReason.UNPLUGGED)
+    }
+
+    /** With no acknowledgement there is no instant our own write could have masked the plug at. */
+    @Test
+    fun `an unacknowledged cut keeps the ordinary unplug abort`() {
+        val armed = atFirstCut().copy(commandAckedAt = 0L)
+
+        QualificationRunEngine.evaluate(armed, unplugged(armed.commandedAt + 1_000)).terminal shouldBe
+            RunTerminal.Aborted(AbortReason.UNPLUGGED)
+    }
+
+    /** The new branch must be reachable only through a lost plug signal, so a plugged run is intact. */
+    @Test
+    fun `a cut that stays plugged is unaffected`() {
+        val armed = atFirstCut()
+        QualificationRunEngine.evaluate(
+            armed,
+            QualificationSample(armed.commandAckedAt + 1_000, true, 50, 2_000_000, null, false),
+        ).terminal shouldBe null
+
+        val sim = healthyRun()
+        sim.run(forMillis = 20 * 60_000L, currentPerHour = 0).terminal shouldBe RunTerminal.Passed
     }
 
     @Test

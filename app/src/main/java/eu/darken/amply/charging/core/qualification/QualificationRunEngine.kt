@@ -14,6 +14,7 @@ import eu.darken.amply.charging.core.qualification.QualificationProtocol.MIN_PLA
 import eu.darken.amply.charging.core.qualification.QualificationProtocol.NEAR_FULL_PERCENT
 import eu.darken.amply.charging.core.qualification.QualificationProtocol.OVERSHOOT_ALLOWANCE
 import eu.darken.amply.charging.core.qualification.QualificationProtocol.PHASE_BUDGET_MILLIS
+import eu.darken.amply.charging.core.qualification.QualificationProtocol.PLUG_MASK_WINDOW_MILLIS
 import eu.darken.amply.charging.core.qualification.QualificationProtocol.PREFLIGHT_BUDGET_MILLIS
 import eu.darken.amply.charging.core.qualification.QualificationProtocol.RESUME_RATE_RECOVERY_DIVISOR
 import eu.darken.amply.charging.core.qualification.QualificationProtocol.RUN_CEILING_MILLIS
@@ -142,8 +143,15 @@ object QualificationRunEngine {
     )
 
     fun evaluate(previous: QualificationProgress, sample: QualificationSample): QualificationOutcome {
-        abortReasonFor(previous, sample)?.let {
-            return QualificationOutcome(previous, terminal = RunTerminal.Aborted(it))
+        abortReasonFor(previous, sample)?.let { reason ->
+            // The one abort that may be about our own write rather than about the user's cable. The
+            // reason itself is unchanged; only how the terminal is worded differs.
+            val terminal = if (reason == AbortReason.UNPLUGGED && plugSignalLostAtCut(previous, sample)) {
+                RunTerminal.Inconclusive(InconclusiveReason.PLUG_SIGNAL_LOST_AT_CUT)
+            } else {
+                RunTerminal.Aborted(reason)
+            }
+            return QualificationOutcome(previous, terminal = terminal)
         }
         // Ordered after the aborts on purpose: cancellation and a failed write are facts about the
         // record rather than about this observation, and a backwards clock jump must not be able to
@@ -171,6 +179,18 @@ object QualificationRunEngine {
         sample.nowMillis - progress.runStartedAt >= RUN_CEILING_MILLIS -> AbortReason.RUN_CEILING
         driftedAway(progress, sample) -> AbortReason.CONFIGURATION_DRIFT
         else -> null
+    }
+
+    /**
+     * The plug signal disappeared close enough behind a cut's acknowledged write that our own cut is
+     * as plausible an explanation as the cable. See [PLUG_MASK_WINDOW_MILLIS]: this changes the
+     * wording of a run that ends with no verdict either way, and nothing else. Outside a cut phase,
+     * outside the window, or with no acknowledged write, the ordinary unplug abort stands.
+     */
+    private fun plugSignalLostAtCut(progress: QualificationProgress, sample: QualificationSample): Boolean {
+        if (progress.phase != RunPhase.CUT_1 && progress.phase != RunPhase.CUT_2) return false
+        if (progress.commandAckedAt <= 0L) return false
+        return sample.nowMillis - progress.commandAckedAt <= PLUG_MASK_WINDOW_MILLIS
     }
 
     /**
