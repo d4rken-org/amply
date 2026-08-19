@@ -194,6 +194,122 @@ class QualificationRunnerContractTest {
     }
 
     /**
+     * The same collision reached through the other door. Reopening the app dispatches `ACTION_CHECK`,
+     * which resolves to boot recovery on *any* pending target — and during a run that target is the
+     * run's own, registered before its first write. Boot recovery repays it and then **clears** it, so
+     * the run keeps commanding experimental policies with nothing left owed, and its finalization
+     * finds no owner and skips the restore: the device stays on the experimental cap for good.
+     */
+    @Test
+    fun `boot recovery leaves a recovery target the live run owns alone`() {
+        val runStore = deps.runStore()
+        val fullChargeStore = deps.fullChargeStore()
+        runBlocking {
+            runStore.put(record(runId = "run-17", token = "token-17"))
+            fullChargeStore.setPendingRecoveryTarget(
+                policy = ChargePolicy.FixedLimit(80),
+                workId = "run-17",
+                origin = RecoveryOrigin.SESSION_RESTORE,
+            )
+        }
+
+        val refused = LogWatcher("a qualification run owns the charge policy")
+        val recovered = LogWatcher("Recovery: resuming convergence check")
+        val controller = Robolectric.buildService(ChargeSessionService::class.java).create()
+        val service = controller.get()
+        Logging.install(refused)
+        Logging.install(recovered)
+        try {
+            service.onStartCommand(
+                Intent(context, ChargeSessionService::class.java).setAction(ChargeSessionService.ACTION_CHECK),
+                0,
+                1,
+            )
+            // The flow that would consume the target never started; the markers are sticky, so the
+            // grace this spends also gives the refusal below time to appear.
+            neverSeen(recovered) shouldBe true
+            // And refusing is what proves the command was handled rather than merely slow.
+            awaitSeen(refused) shouldBe true
+        } finally {
+            Logging.remove(refused)
+            Logging.remove(recovered)
+        }
+
+        runBlocking {
+            fullChargeStore.pendingRecoveryTarget() shouldBe ChargePolicy.FixedLimit(80)
+            fullChargeStore.currentRecovery()?.workId shouldBe "run-17"
+        }
+        controller.destroy()
+
+        // Refusing costs nothing because the run itself still owes the restore: its own close-out
+        // finds the target still owned and writes the baseline.
+        val writes = LogWatcher("apply(policy=")
+        val runner = runner(StandardTestDispatcher(TestCoroutineScheduler()))
+        runBlocking {
+            // Re-stated rather than assumed: the service instance above fed its own runner ticks that
+            // may have closed this record out. What the case is about is the target surviving, and the
+            // close-out below has to start from a run that exists.
+            runStore.put(record(runId = "run-17", token = "token-17"))
+            Logging.install(writes)
+            try {
+                // Contained like the other finalization cases: the surface push at the very end cannot
+                // complete in this environment, and the restore is decided long before it.
+                runCatching { runner.finish(RunTerminal.Aborted(AbortReason.USER_CANCELLED)) }
+            } finally {
+                Logging.remove(writes)
+            }
+
+            writes.seen shouldBe true
+            // The write cannot land here, so the target is still owed; the slot is process-wide.
+            fullChargeStore.clearPendingRecoveryTarget()
+        }
+    }
+
+    /**
+     * The guard is scoped to a target the run owns, not to "a run exists". A session's or a widget
+     * write's unfinished obligation is somebody else's, and a run happening at the same time is no
+     * reason to leave it unpaid.
+     */
+    @Test
+    fun `recovery of a target the run does not own still runs while a run is live`() {
+        val runStore = deps.runStore()
+        val fullChargeStore = deps.fullChargeStore()
+        runBlocking {
+            runStore.put(record(runId = "run-18", token = "token-18"))
+            fullChargeStore.setPendingRecoveryTarget(
+                policy = ChargePolicy.FixedLimit(80),
+                workId = "widget-write-2",
+                origin = RecoveryOrigin.USER_REQUEST,
+            )
+        }
+
+        val refused = LogWatcher("a qualification run owns the charge policy")
+        val recovered = LogWatcher("Recovery: resuming convergence check")
+        val controller = Robolectric.buildService(ChargeSessionService::class.java).create()
+        val service = controller.get()
+        Logging.install(refused)
+        Logging.install(recovered)
+        try {
+            service.onStartCommand(
+                Intent(context, ChargeSessionService::class.java).setAction(ChargeSessionService.ACTION_CHECK),
+                0,
+                1,
+            )
+            awaitSeen(recovered) shouldBe true
+            refused.seen shouldBe false
+        } finally {
+            Logging.remove(refused)
+            Logging.remove(recovered)
+        }
+        controller.destroy()
+
+        runBlocking {
+            runStore.clear()
+            fullChargeStore.clearPendingRecoveryTarget()
+        }
+    }
+
+    /**
      * The flag the passive enforcement recorder stamps onto every battery tick. It must start
      * claiming a run, because the error directions are not symmetric: a wrong `true` costs the
      * recorder a few seconds of observation, a wrong `false` lets it record a terminal refutation for
@@ -921,6 +1037,18 @@ class QualificationRunnerContractTest {
             if (message.contains(marker)) seen = true
         }
     }
+
+    /** Waits for a [LogWatcher]'s marker, the way [awaitNotification] waits for a notification. */
+    private fun awaitSeen(watcher: LogWatcher, timeoutMillis: Long = 10_000L): Boolean = runBlocking {
+        withTimeoutOrNull(timeoutMillis) {
+            while (!watcher.seen) delay(20)
+            true
+        } ?: false
+    }
+
+    /** The absence of a marker, given the same grace a slow path would need to reach it. */
+    private fun neverSeen(watcher: LogWatcher, forMillis: Long = 1_000L): Boolean =
+        !awaitSeen(watcher, forMillis)
 
     private fun stepUntil(steps: StepDispatcher, condition: () -> Boolean): Boolean {
         val deadline = System.currentTimeMillis() + 10_000L

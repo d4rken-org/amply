@@ -765,8 +765,30 @@ class ChargeSessionService : Service() {
         }
     }
 
-    private fun startRecovery() {
+    private suspend fun startRecovery() {
         if (recoveryJob?.isActive == true) return
+        // The same ownership rule ACTION_START enforces one screen up, applied to the other writer of
+        // the charge policy. A live run registers its own recovery target before its first write, and
+        // ACTION_CHECK (the app being reopened) resolves to START_RECOVERY on any pending target —
+        // boot recovery would then repay and CLEAR that target while the run keeps commanding
+        // experimental policies, and the run's own finalization would find nothing owed and skip the
+        // restore, stranding the device on an experimental cap.
+        //
+        // Refusing is safe rather than a lost restore: the run record keeps QualificationWatcher
+        // enabled, which is what holds this foreground service up, so the run's own close-out —
+        // ordinary finalization, startup repair, or onTick's close-out — still performs it.
+        //
+        // Scoped to a target this run owns. Anything else pending is somebody else's obligation and
+        // must still be recovered normally, run or no run.
+        val liveRun = qualificationRunStore.currentRun()
+        val recovery = fullChargeStore.currentRecovery()
+        if (liveRun != null && recovery != null && recovery.workId == liveRun.runId) {
+            log(TAG, Logging.Priority.INFO) {
+                "Ignoring recovery of ${recovery.workId}: a qualification run owns the charge policy"
+            }
+            continueGestureOrStop()
+            return
+        }
         // Quiesce monitoring before recovery writes: with ACTION_CHECK the service can already be
         // alive in gesture-monitor mode, and the monitor loop / battery receiver run outside the
         // dispatch lock — they could replace the recovering notification or begin a session that
