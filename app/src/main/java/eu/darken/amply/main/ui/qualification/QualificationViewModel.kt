@@ -31,10 +31,13 @@ import eu.darken.amply.fullcharge.core.ServiceDispatch
 import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -61,6 +64,8 @@ data class QualificationUiState(
     val outcome: RunTerminal? = null,
     val reportText: String = "",
     val issueUrl: String = "",
+    /** Live pre-check figures; only present while the pre-check step is on screen. */
+    val precheck: PrecheckStatusUi? = null,
 ) {
     val eligible: Boolean get() = eligibility is RunEligibility.Eligible
     val ineligibleReason: IneligibleReason?
@@ -75,6 +80,7 @@ data class QualificationUiState(
  * correctly on return — the run itself lives in the foreground service, which is the only thing that
  * survives all three.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class QualificationViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -87,8 +93,12 @@ class QualificationViewModel @Inject constructor(
     private val step = MutableStateFlow(QualificationStep.INTRO)
     private val eligibility = MutableStateFlow<RunEligibility?>(null)
     private val delivery = MutableStateFlow(Delivery())
+    private val precheck = MutableStateFlow<PrecheckStatusUi?>(null)
 
     private data class Delivery(val reportText: String = "", val issueUrl: String = "")
+
+    private val readouts = batteryReadoutSource.readouts()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BatteryReadout.UNKNOWN)
 
     val state: StateFlow<QualificationUiState> = combine(
         step,
@@ -105,7 +115,12 @@ class QualificationViewModel @Inject constructor(
             reportText = delivery.reportText,
             issueUrl = delivery.issueUrl,
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), QualificationUiState())
+    }
+        .combine(precheck) { base, precheck ->
+            // Only on the step that renders it: a stale block must never outlive the pre-check.
+            base.copy(precheck = precheck.takeIf { base.step == QualificationStep.PRECHECK })
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), QualificationUiState())
 
     /**
      * The record is the authority on whether a run is happening, so a live one always shows the
@@ -124,6 +139,29 @@ class QualificationViewModel @Inject constructor(
 
     init {
         refreshEligibility()
+        // The pre-check is a live screen, not a snapshot: a user who reaches the required level while
+        // sitting on it has to see the figures move and Start become enabled, rather than leave and
+        // come back. flatMapLatest keeps the polling scoped to that step.
+        viewModelScope.launch {
+            step
+                .flatMapLatest { current ->
+                    if (current == QualificationStep.PRECHECK) readouts else flowOf(null)
+                }
+                .collect { readout ->
+                    if (readout == null) {
+                        precheck.value = null
+                        return@collect
+                    }
+                    // Re-resolved on the same cadence as the figures, so the block and the Start
+                    // button can never disagree about the same battery reading.
+                    val resolved = runner.eligibility()
+                    eligibility.value = resolved
+                    precheck.value = precheckStatus(
+                        readout = readout,
+                        requiredPercent = (resolved as? RunEligibility.Ineligible)?.requiredPercent,
+                    )
+                }
+        }
         // A start is a service command now, so its refusal comes back as an event rather than a
         // return value. Without this the screen would sit on a running step for a run that never
         // opened.
@@ -223,9 +261,6 @@ class QualificationViewModel @Inject constructor(
             brand = Build.BRAND,
             createdAtEpochMs = System.currentTimeMillis(),
         )
-
-    private val readouts = batteryReadoutSource.readouts()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BatteryReadout.UNKNOWN)
 
     private fun QualificationRunRecord.toUi(): RunProgressUi {
         val now = System.currentTimeMillis()

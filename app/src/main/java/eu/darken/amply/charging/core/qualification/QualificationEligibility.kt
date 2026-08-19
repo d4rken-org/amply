@@ -103,7 +103,16 @@ sealed interface RunEligibility {
         val isCandidate: Boolean,
     ) : RunEligibility
 
-    data class Ineligible(val reason: IneligibleReason) : RunEligibility
+    /**
+     * [requiredPercent] is the lowest battery level a run could start at on this adapter, carried so
+     * the pre-check can name the number behind its own refusal instead of saying "too low". Only set
+     * for [IneligibleReason.BATTERY_LEVEL] — for [IneligibleReason.BATTERY_TOO_FULL] the user has to
+     * *discharge*, and a "needed" level would read as a target to charge towards.
+     */
+    data class Ineligible(
+        val reason: IneligibleReason,
+        val requiredPercent: Int? = null,
+    ) : RunEligibility
 }
 
 /**
@@ -158,7 +167,10 @@ fun qualificationEligibility(
     if (caps.isEmpty()) return RunEligibility.Ineligible(IneligibleReason.NO_TESTABLE_CAP)
 
     val plan = resolvePlan(caps, adapter.supportedPolicies, percent)
-        ?: return RunEligibility.Ineligible(IneligibleReason.BATTERY_LEVEL)
+        ?: return RunEligibility.Ineligible(
+            IneligibleReason.BATTERY_LEVEL,
+            requiredPercent = minimumStartPercent(caps, adapter.supportedPolicies),
+        )
     return RunEligibility.Eligible(adapter, plan, isCandidate = candidateMapping())
 }
 
@@ -178,6 +190,22 @@ private fun isRefuted(evidence: EnforcementEvidenceState): Boolean = when (evide
     is EnforcementEvidenceState.Present -> evidence.evidence.verdict == EnforcementVerdict.REFUTED
     else -> false
 }
+
+/**
+ * The lowest battery level at which [resolvePlan] yields a plan for these caps, or `null` when no
+ * level does.
+ *
+ * Found by **scanning [resolvePlan]**, never by re-deriving the undershoot/headroom arithmetic: the
+ * whole point of the rule living in one function is that the pre-check, the entry point and the
+ * runner agree by construction, and a second copy of the maths here would be exactly the fourth
+ * approximation that comment warns about. Scanning at most [QualificationProtocol.NEAR_FULL_PERCENT]
+ * values costs nothing and cannot drift.
+ *
+ * A single-cap adapter yields a plan at every level, so the answer there is the lowest scanned value
+ * — which correctly means "this device has no level requirement worth showing".
+ */
+internal fun minimumStartPercent(caps: List<Int>, policies: List<ChargePolicy>): Int? =
+    (0 until QualificationProtocol.NEAR_FULL_PERCENT).firstOrNull { resolvePlan(caps, policies, it) != null }
 
 /**
  * Pick the caps for this run.

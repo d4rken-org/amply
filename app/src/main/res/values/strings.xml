@@ -316,6 +316,13 @@
     <string name="qualification_precheck_checking">Checking…</string>
     <string name="qualification_precheck_ready">Everything is ready.</string>
     <string name="qualification_precheck_plan_variable">Amply will set the limit to %1$d%% first, which is below where your battery is now, so charging should stop almost immediately.</string>
+    <string name="qualification_precheck_status_level">Battery now: %1$d%%</string>
+    <string name="qualification_precheck_status_required">Needed to start: %1$d%%</string>
+    <string name="qualification_precheck_status_charging">Charging</string>
+    <string name="qualification_precheck_status_not_charging">Not charging right now</string>
+    <string name="qualification_precheck_status_eta_minutes">About %1$d minutes to go at this rate</string>
+    <string name="qualification_precheck_status_eta_hour">About an hour to go at this rate</string>
+    <string name="qualification_precheck_status_eta_over_hour">Over an hour to go at this rate</string>
     <string name="qualification_precheck_plan_fixed">Your phone offers a single %1$d%% limit, so Amply will charge up to just under it first. That part can take a while.</string>
 
     <string name="qualification_blocked_no_adapter">Amply doesn\'t know how to set a charge limit on this device, so there is nothing to check.</string>
