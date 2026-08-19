@@ -409,6 +409,7 @@ internal fun RunTerminal?.bodyRes(): Int = when (this) {
         InconclusiveReason.NO_BASELINE -> R.string.qualification_result_no_baseline_body
         InconclusiveReason.SIGNAL_TOO_COARSE -> R.string.qualification_result_signal_too_coarse_body
         InconclusiveReason.PRECONDITION_TIMEOUT -> R.string.qualification_result_precondition_body
+        InconclusiveReason.PLUG_SIGNAL_LOST_AT_CUT -> R.string.qualification_result_plug_signal_lost_body
     }
 
     is RunTerminal.Aborted -> when (reason) {
