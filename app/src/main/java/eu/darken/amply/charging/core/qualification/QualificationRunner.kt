@@ -60,19 +60,39 @@ data class RawQualificationTick(
     val sessionActive: Boolean,
 )
 
+/**
+ * What a finished run's close-out may say about the user's own charge setting.
+ *
+ * Deliberately not a boolean. "No recovery obligation remains" is true in three situations a surface
+ * must describe differently: a restore was written and succeeded, nothing was owed because a newer
+ * choice already holds, and the restore was skipped on purpose so that newer choice is not clobbered.
+ * Only the first of those put the setting back, so only the first may say so — the other two have
+ * nothing to report and must stay silent rather than claim a write that never happened.
+ */
+enum class QualificationRestorePresentation {
+    /** The close-out wrote the user's own setting back and the write succeeded. */
+    APPLIED,
+
+    /**
+     * The close-out tried to write the setting back and could not. The recovery target stays behind
+     * for boot recovery, but nothing here observes that, so no surface may promise a retry.
+     */
+    PENDING,
+
+    /** Nothing to say: no write was owed, or one was deliberately not made. */
+    OMIT,
+}
+
 /** How a finished run ended, for the UI and the report. */
 data class QualificationResult(
     val terminal: RunTerminal,
     val record: QualificationRunRecord,
     /**
-     * Whether the user's own charge setting was back when this result was published.
-     *
-     * False means the close-out could not write it and left the recovery target behind for boot
-     * recovery to repay, so no surface may say the setting has been put back. Presentation only, like
-     * the result itself: the obligation that outlives the process is the persisted recovery target,
-     * not this flag.
+     * What may be said about the user's own charge setting, and nothing else — this does not decide
+     * anything the close-out does. Presentation only, like the result itself: the obligation that
+     * outlives the process is the persisted recovery target, not this value.
      */
-    val restored: Boolean,
+    val restorePresentation: QualificationRestorePresentation,
 )
 
 /**
@@ -628,11 +648,16 @@ class QualificationRunner @Inject constructor(
         // then the baseline is still owed.
         val supersededByUser = terminal is RunTerminal.Aborted &&
             terminal.reason == AbortReason.CONFIGURATION_DRIFT
-        val restored = if (supersededByUser) {
+        // The behavioural flag and what a surface may say are computed side by side, never derived
+        // from one another. [restored] answers "does this run still owe a write" and drives the
+        // recovery-target clearing below; it is equally true of a restore that landed, of a newer
+        // choice that made the restore unnecessary, and of one deliberately skipped. Only the first
+        // of those actually put the user's setting back, so only the first may be shown as one.
+        val (restored, restoreWritePresentation) = if (supersededByUser) {
             log(TAG, Logging.Priority.INFO) {
                 "Run ${record.runId} superseded by a newer choice; leaving the current policy alone"
             }
-            true
+            true to QualificationRestorePresentation.OMIT
         } else {
             // Ownership-gated, because this whole method is replayable: an interrupted finalization
             // can have restored and cleared its recovery target already, and the user can have made
@@ -642,18 +667,34 @@ class QualificationRunner @Inject constructor(
             // else's now; either way it counts as complete here and only the write is skipped.
             runCatching {
                 when (val outcome = repository.restoreQualificationBaselineIfOwned(record.runId, record.baseline)) {
-                    is QualificationRestoreOutcome.Applied -> outcome.result.success
+                    is QualificationRestoreOutcome.Applied -> when {
+                        outcome.result.success -> true to QualificationRestorePresentation.APPLIED
+                        else -> false to QualificationRestorePresentation.PENDING
+                    }
+
                     is QualificationRestoreOutcome.Superseded -> {
                         log(TAG, Logging.Priority.INFO) {
                             "Run ${record.runId} no longer owes its baseline; leaving the current policy alone"
                         }
-                        true
+                        true to QualificationRestorePresentation.OMIT
                     }
                 }
             }.getOrElse {
                 log(TAG, Logging.Priority.ERROR) { "Run ${record.runId} restore threw: ${it.message}" }
-                false
+                false to QualificationRestorePresentation.PENDING
             }
+        }
+        // SERVICE_UNAVAILABLE is refused before the run's service ever starts, so nothing was ever
+        // taken away: its own copy says so, and any restore line there — a reassuring one included —
+        // would talk about a setting the user never saw changed, while a failure line would alarm them
+        // about one. The restore above still runs (the recovery target is registered before the first
+        // write, not after the last), it simply has nothing to report.
+        val restorePresentation = if (terminal is RunTerminal.Aborted &&
+            terminal.reason == AbortReason.SERVICE_UNAVAILABLE
+        ) {
+            QualificationRestorePresentation.OMIT
+        } else {
+            restoreWritePresentation
         }
         if (restored) {
             // Owner-scoped: between this run registering its target and clearing it, a widget or tile
@@ -712,7 +753,7 @@ class QualificationRunner @Inject constructor(
             // record must never be readable as a pass.
             is RunTerminal.Inconclusive, is RunTerminal.Aborted -> Unit
         }
-        resultFlow.value = QualificationResult(terminal, record, restored = restored)
+        resultFlow.value = QualificationResult(terminal, record, restorePresentation = restorePresentation)
         stateMutex.withLock {
             runStore.clear()
             runActiveNow = false

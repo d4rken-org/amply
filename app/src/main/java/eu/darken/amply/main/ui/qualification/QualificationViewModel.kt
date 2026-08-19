@@ -16,6 +16,7 @@ import eu.darken.amply.charging.core.enforcement.BuildIdentitySource
 import eu.darken.amply.charging.core.qualification.IneligibleReason
 import eu.darken.amply.charging.core.qualification.QualificationProtocol
 import eu.darken.amply.charging.core.qualification.QualificationReport
+import eu.darken.amply.charging.core.qualification.QualificationRestorePresentation
 import eu.darken.amply.charging.core.qualification.QualificationRunRecord
 import eu.darken.amply.charging.core.qualification.QualificationRunStore
 import eu.darken.amply.charging.core.qualification.QualificationRunner
@@ -87,11 +88,11 @@ data class QualificationUiState(
     val run: RunProgressUi? = null,
     val outcome: RunTerminal? = null,
     /**
-     * Whether the finished run got the user's own charge setting back. Defaults to false because the
-     * one error worth avoiding here is claiming a restore that did not happen: with no result there is
-     * nothing to claim.
+     * What the finished run may say about the user's own charge setting. Defaults to
+     * [QualificationRestorePresentation.OMIT] because the one error worth avoiding here is claiming a
+     * restore that did not happen: with no result there is nothing to say.
      */
-    val restored: Boolean = false,
+    val restorePresentation: QualificationRestorePresentation = QualificationRestorePresentation.OMIT,
     val reportText: String = "",
     val issueUrl: String = "",
     /** Live pre-check figures; only present while the pre-check step is on screen. */
@@ -132,7 +133,7 @@ class QualificationViewModel @Inject constructor(
         val eligibility: RunEligibility?,
         val record: QualificationRunRecord?,
         val outcome: RunTerminal?,
-        val restored: Boolean,
+        val restorePresentation: QualificationRestorePresentation,
         val delivery: Delivery,
     )
 
@@ -148,7 +149,7 @@ class QualificationViewModel @Inject constructor(
             eligibility = eligibility,
             record = record,
             outcome = result?.terminal,
-            restored = result?.restored == true,
+            restorePresentation = result?.restorePresentation ?: QualificationRestorePresentation.OMIT,
             delivery = delivery,
         )
     }
@@ -182,7 +183,7 @@ class QualificationViewModel @Inject constructor(
                 eligibility = snapshot.eligibility,
                 run = snapshot.record?.toUi(live.readout),
                 outcome = snapshot.outcome,
-                restored = snapshot.restored,
+                restorePresentation = snapshot.restorePresentation,
                 reportText = snapshot.delivery.reportText,
                 issueUrl = snapshot.delivery.issueUrl,
                 // Only on the step that renders it: a stale block must never outlive the pre-check.

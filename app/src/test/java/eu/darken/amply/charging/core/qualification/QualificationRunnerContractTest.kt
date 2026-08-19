@@ -1,11 +1,16 @@
 package eu.darken.amply.charging.core.qualification
 
+import android.Manifest
 import android.app.Application
 import android.app.Notification
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
+import android.content.pm.ResolveInfo
 import android.os.BatteryManager
+import android.os.Build
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
@@ -22,6 +27,7 @@ import eu.darken.amply.R
 import eu.darken.amply.battery.core.BatteryReader
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingRepository
+import eu.darken.amply.charging.core.DeviceInfo
 import eu.darken.amply.charging.core.enforcement.BuildIdentitySource
 import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceState
 import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceStore
@@ -64,6 +70,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowSystemClock
+import org.robolectric.util.ReflectionHelpers
 import java.io.File
 import java.io.IOException
 import java.time.Duration
@@ -116,9 +123,17 @@ class QualificationRunnerContractTest {
     /** Only for the flaky-store case below; the rest run on the injected stores. */
     private val storeScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    // Captured before any case runs, because [fakeWritableDevice] sets these statics and Robolectric
+    // keeps them across the cases in this class: a leaked "Google" would let a write land in the cases
+    // that assert one cannot.
+    private val realManufacturer: String = Build.MANUFACTURER
+    private val realModel: String = Build.MODEL
+
     @After
     fun teardown() {
         storeScope.cancel()
+        ReflectionHelpers.setStaticField(Build::class.java, "MANUFACTURER", realManufacturer)
+        ReflectionHelpers.setStaticField(Build::class.java, "MODEL", realModel)
     }
 
     @Before
@@ -656,8 +671,9 @@ class QualificationRunnerContractTest {
 
             runner.lastResult.value?.terminal shouldBe RunTerminal.Passed
             // This record was written straight into the store, so no recovery target names it and the
-            // close-out owes nothing: the restore counts as complete and the result may say so.
-            runner.lastResult.value?.restored shouldBe true
+            // close-out owes nothing: no write was made, and a close-out that made none says nothing
+            // about the user's setting rather than claiming it was put back.
+            runner.lastResult.value?.restorePresentation shouldBe QualificationRestorePresentation.OMIT
             runStore.currentRun() shouldBe null
             val state = evidenceStore.currentState()
             (state as QualificationEvidenceState.Present).evidence.capPercent shouldBe 70
@@ -1035,9 +1051,10 @@ class QualificationRunnerContractTest {
             runner.lastResult.value?.terminal shouldBe RunTerminal.Inconclusive(InconclusiveReason.NO_RECUT)
             runStore.currentRun() shouldBe null
             writes.seen shouldBe false
-            // Nothing is owed by this run any more, so the result may say the setting is the user's
-            // own again — skipping the write is a completed restore here, not a failed one.
-            runner.lastResult.value?.restored shouldBe true
+            // Nothing is owed by this run any more, so nothing was written — and a close-out that
+            // wrote nothing has nothing to say about the user's setting. Claiming it was put back
+            // here would describe a write that never happened, over a policy this run did not set.
+            runner.lastResult.value?.restorePresentation shouldBe QualificationRestorePresentation.OMIT
             // And the newer obligation is left exactly as its owner stored it.
             fullChargeStore.currentRecovery()?.workId shouldBe "widget-write-1"
             fullChargeStore.pendingRecoveryTarget() shouldBe ChargePolicy.Unrestricted
@@ -1087,12 +1104,126 @@ class QualificationRunnerContractTest {
             writes.seen shouldBe true
             // The write was attempted and could not land, so the published result must not tell the
             // user their setting is back: it is still on the run's value with the restore owed.
-            runner.lastResult.value?.restored shouldBe false
+            runner.lastResult.value?.restorePresentation shouldBe QualificationRestorePresentation.PENDING
 
             // The write cannot land here, so the target is still owed; the slot is process-wide.
             fullChargeStore.clearPendingRecoveryTarget()
         }
     }
+
+    /**
+     * The one close-out that may tell the user their setting is back: the run still owned the owed
+     * restore, the write ran, and it landed. Every other case here reaches finalization without a
+     * write that succeeded, so without this one nothing would ever assert the applied wording.
+     *
+     * The device fiction is the smallest one that lets a real write land in this environment — the
+     * Pixel capability gate plus WRITE_SECURE_SETTINGS, set up exactly as
+     * `ChargingRepositoryPersistenceTest` does. Nothing about the run depends on which adapter
+     * answers; only on the write being able to succeed at all.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `a close-out whose restore lands is the only one that says the setting is back`() {
+        val runStore = deps.runStore()
+        val fullChargeStore = deps.fullChargeStore()
+        val runner = runner(StandardTestDispatcher(TestCoroutineScheduler()), runStore = runStore)
+        fakeWritableDevice()
+        runBlocking {
+            runStore.put(record(runId = "run-21", token = "token-21").copy(phase = RunPhase.CUT_2))
+            fullChargeStore.setPendingRecoveryTarget(
+                policy = ChargePolicy.FixedLimit(80),
+                workId = "run-21",
+                origin = RecoveryOrigin.SESSION_RESTORE,
+            )
+
+            runCatching { runner.finish(RunTerminal.Inconclusive(InconclusiveReason.NO_RECUT)) }
+
+            runner.lastResult.value?.restorePresentation shouldBe QualificationRestorePresentation.APPLIED
+            // The behavioural half, unchanged by the split: a landed restore owes nothing, so the
+            // target this run registered before its first write is cleared.
+            fullChargeStore.pendingRecoveryTarget() shouldBe null
+        }
+    }
+
+    /**
+     * The drift abort writes nothing on purpose: the user made a newer choice than the baseline this
+     * run captured, and restoring would overwrite it with a stale value. Nothing is owed afterwards —
+     * that part is behaviour and unchanged — but nothing was put back either, so a close-out that
+     * skipped its own write must not describe one over a policy it never touched.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `a drift abort writes nothing and says nothing about the setting`() {
+        val runStore = deps.runStore()
+        val fullChargeStore = deps.fullChargeStore()
+        val runner = runner(StandardTestDispatcher(TestCoroutineScheduler()), runStore = runStore)
+        val writes = LogWatcher("apply(policy=")
+        runBlocking {
+            runStore.put(record(runId = "run-22", token = "token-22").copy(phase = RunPhase.CUT_1))
+            fullChargeStore.setPendingRecoveryTarget(
+                policy = ChargePolicy.FixedLimit(80),
+                workId = "run-22",
+                origin = RecoveryOrigin.SESSION_RESTORE,
+            )
+
+            Logging.install(writes)
+            try {
+                runCatching { runner.finish(RunTerminal.Aborted(AbortReason.CONFIGURATION_DRIFT)) }
+            } finally {
+                Logging.remove(writes)
+            }
+
+            writes.seen shouldBe false
+            runner.lastResult.value?.restorePresentation shouldBe QualificationRestorePresentation.OMIT
+            // Unchanged behaviour: the newer choice is what stands, so this run owes nothing and its
+            // own recovery target goes.
+            fullChargeStore.pendingRecoveryTarget() shouldBe null
+        }
+    }
+
+    /**
+     * A run refused before its service ever started. Its own copy says nothing was changed, so any
+     * sentence about the charge setting — the reassuring one included — would describe a change the
+     * user never saw, and the failure one would alarm them about a setting never taken away.
+     *
+     * The close-out still *runs* the restore (the recovery target is registered before the first
+     * write, so a run that died a moment later would owe it), and here that write fails. This is
+     * therefore the case that separates what is said from what was done: every other silent terminal
+     * is silent because no write was made at all.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `a run refused its service says nothing about the setting even when the restore fails`() {
+        val runStore = deps.runStore()
+        val fullChargeStore = deps.fullChargeStore()
+        val runner = runner(StandardTestDispatcher(TestCoroutineScheduler()), runStore = runStore)
+        val writes = LogWatcher("apply(policy=")
+        runBlocking {
+            runStore.put(record(runId = "run-23", token = "token-23").copy(phase = RunPhase.PREFLIGHT))
+            fullChargeStore.setPendingRecoveryTarget(
+                policy = ChargePolicy.FixedLimit(80),
+                workId = "run-23",
+                origin = RecoveryOrigin.SESSION_RESTORE,
+            )
+
+            Logging.install(writes)
+            try {
+                runCatching { runner.finish(RunTerminal.Aborted(AbortReason.SERVICE_UNAVAILABLE)) }
+            } finally {
+                Logging.remove(writes)
+            }
+
+            writes.seen shouldBe true
+            runner.lastResult.value?.restorePresentation shouldBe QualificationRestorePresentation.OMIT
+            // And the behaviour the silence does not touch: the write could not land, so the
+            // obligation stays behind for boot recovery exactly as on any other failure.
+            fullChargeStore.pendingRecoveryTarget() shouldBe ChargePolicy.FixedLimit(80)
+
+            // The recovery slot is process-wide; this one is left owed on purpose above.
+            fullChargeStore.clearPendingRecoveryTarget()
+        }
+    }
+
 
     /**
      * The hand-off above, losing the race it should never have had to run.
@@ -1294,6 +1425,29 @@ class QualificationRunnerContractTest {
             steps.step()
         }
         return condition()
+    }
+
+    /**
+     * The smallest device fiction that lets a policy write actually land here: the Pixel capability
+     * gate (manufacturer, a supported model, telephony, a resolvable charging-optimization activity;
+     * the API level comes from `@Config`) plus WRITE_SECURE_SETTINGS. Every other case in this class
+     * runs on the bare Robolectric device, where no adapter can be driven and a write fails.
+     */
+    private fun fakeWritableDevice() {
+        ReflectionHelpers.setStaticField(Build::class.java, "MANUFACTURER", "Google")
+        ReflectionHelpers.setStaticField(Build::class.java, "MODEL", "Pixel 9 Pro")
+        val shadowPackageManager = shadowOf(context.packageManager)
+        shadowPackageManager.setSystemFeature(PackageManager.FEATURE_TELEPHONY, true)
+        shadowPackageManager.addResolveInfoForIntent(
+            Intent(DeviceInfo.ACTION_CHARGING_OPTIMIZATION),
+            ResolveInfo().apply {
+                activityInfo = ActivityInfo().apply {
+                    packageName = "com.google.android.settings.intelligence"
+                    name = "ChargingOptimizationActivity"
+                }
+            },
+        )
+        shadowOf(context as Application).grantPermissions(Manifest.permission.WRITE_SECURE_SETTINGS)
     }
 
     private fun runner(

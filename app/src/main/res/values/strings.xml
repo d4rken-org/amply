@@ -390,11 +390,13 @@
     <string name="qualification_result_service_unavailable_body">Amply couldn\'t start the background service the check needs, so it never got going. Nothing was changed. Check that Amply is allowed to run in the background and try again.</string>
     <string name="qualification_result_finalization_body">The check couldn\'t be closed out cleanly, so nothing was recorded. If your phone is low on storage, freeing some up and trying again should help.</string>
 
-    <!-- Rendered under every result body: what actually happened to the user's own charge setting.
-         Split in two because a failed close-out leaves the setting on the run's experimental value
-         and hands the write to boot recovery, and the result may not claim otherwise. -->
+    <!-- Rendered under a result body only when the close-out actually wrote the user's own charge
+         setting: a close-out that owed nothing, or deliberately skipped the write to leave a newer
+         choice alone, shows neither line. The failure line states what happened and points at the
+         setting rather than promising a retry - the result is a one-time snapshot and nothing on the
+         screen watches what boot recovery does with the write afterwards. -->
     <string name="qualification_result_restore_done">Your charge setting has been put back.</string>
-    <string name="qualification_result_restore_pending">Amply couldn\'t put your charge setting back yet. It keeps trying, and you can also set it yourself in the meantime.</string>
+    <string name="qualification_result_restore_pending">Amply couldn\'t put your charge setting back when the run finished. Check your charge setting and set it yourself if it isn\'t the one you want.</string>
 
     <string name="qualification_notification_title">Checking the charge limit</string>
     <string name="qualification_notification_stop">Stop</string>
