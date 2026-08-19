@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import eu.darken.amply.R
+import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.qualification.AbortReason
 import eu.darken.amply.charging.core.qualification.IneligibleReason
 import eu.darken.amply.charging.core.qualification.InconclusiveReason
@@ -285,7 +286,14 @@ private fun LazyListScope.runningStep(state: QualificationUiState) {
         item { BodyText(stringResource(R.string.qualification_precheck_checking)) }
         return
     }
-    item { BodyText(stringResource(run.phase.messageRes, run.lowCap)) }
+    item {
+        val message = runMessage(run)
+        BodyText(
+            message.capPercent
+                ?.let { stringResource(message.messageRes, it) }
+                ?: stringResource(message.messageRes),
+        )
+    }
     item { RunProgressCard(run) }
     item { BodyText(stringResource(R.string.qualification_running_leave_hint)) }
 }
@@ -473,6 +481,8 @@ private fun QualificationScreenRunningPreview() = PreviewWrapper {
                 phaseBudgetMillis = 25 * 60_000L,
                 percent = 80,
                 charging = false,
+                commanded = ChargePolicy.FixedLimit(70),
+                commandAcked = true,
             ),
         ),
     )
@@ -494,6 +504,32 @@ private fun QualificationScreenChargeUpPreview() = PreviewWrapper {
                 phaseBudgetMillis = 120 * 60_000L,
                 percent = 68,
                 charging = true,
+                commanded = ChargePolicy.Unrestricted,
+                commandAcked = true,
+            ),
+        ),
+    )
+}
+
+// The write for this phase has not been acknowledged yet, so the screen says what it is doing rather
+// than the phase's own sentence, which describes a limit that is already set.
+@AmplyPreview
+@Composable
+private fun QualificationScreenApplyingPreview() = PreviewWrapper {
+    PreviewScreen(
+        QualificationUiState(
+            step = QualificationStep.RUNNING,
+            run = RunProgressUi(
+                phase = RunPhase.CUT_1,
+                shape = RunShape.VARIABLE_CAP,
+                lowCap = 70,
+                elapsedMillis = 8 * 60_000L,
+                phaseElapsedMillis = 4_000L,
+                phaseBudgetMillis = 25 * 60_000L,
+                percent = 80,
+                charging = true,
+                commanded = ChargePolicy.FixedLimit(70),
+                commandAcked = false,
             ),
         ),
     )

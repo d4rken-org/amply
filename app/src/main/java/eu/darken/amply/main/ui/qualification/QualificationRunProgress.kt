@@ -2,6 +2,7 @@ package eu.darken.amply.main.ui.qualification
 
 import androidx.annotation.StringRes
 import eu.darken.amply.R
+import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.qualification.RunPhase
 import eu.darken.amply.charging.core.qualification.RunShape
 
@@ -65,4 +66,37 @@ private fun RunPhase.stepNameRes(): Int? = when (this) {
     RunPhase.CUT_1 -> R.string.qualification_phase_step_cut_1
     RunPhase.RESUME -> R.string.qualification_phase_step_resume
     RunPhase.CUT_2 -> R.string.qualification_phase_step_cut_2
+}
+
+/**
+ * The sentence the running step renders, and the one argument it takes ([capPercent], null when the
+ * string has no placeholder).
+ */
+data class RunMessageUi(
+    @get:StringRes val messageRes: Int,
+    val capPercent: Int?,
+)
+
+/**
+ * What the running step says right now.
+ *
+ * The phase sentences are written in the perfect tense ("the limit is set", "the limit is back"), but
+ * the phase is persisted *before* its write is dispatched and long before the adapter acknowledges it.
+ * Between the two, rendering the phase sentence asserts a change that has not happened — and on a slow
+ * or failing write that is the whole time the user is looking at the screen.
+ *
+ * So an unacknowledged phase gets a pending sentence instead, picked by what was commanded rather than
+ * by which phase commanded it: every phase is either setting a limit or taking one off, and a pending
+ * variant per phase would be five more strings saying the same two things. Once the write is
+ * acknowledged the phase's own sentence takes over unchanged.
+ *
+ * [RunPhase.PREFLIGHT] commands nothing, so it keeps its sentence throughout.
+ */
+internal fun runMessage(run: RunProgressUi): RunMessageUi {
+    val commanded = run.commanded
+    if (run.commandAcked || commanded == null) return RunMessageUi(run.phase.messageRes, run.lowCap)
+    return when (commanded) {
+        is ChargePolicy.FixedLimit -> RunMessageUi(R.string.qualification_running_applying_limit, commanded.percent)
+        else -> RunMessageUi(R.string.qualification_running_removing_limit, null)
+    }
 }
