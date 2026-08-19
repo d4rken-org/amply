@@ -645,12 +645,14 @@ class QualificationRunner @Inject constructor(
                 EnforcementEvidence(
                     adapterId = record.adapterId,
                     buildIdentity = record.buildIdentity,
-                    // Zero can only come from a record written before the field existed, and such a
-                    // record carries no finalization intent — so it is never a replay across an app
-                    // update, it closes out as FINALIZATION_INTERRUPTED or PROCESS_DEATH instead,
-                    // and the current constant is the version that would have measured it anyway.
-                    algorithmVersion = record.enforcementAlgorithmVersion.takeIf { it != 0 }
-                        ?: EnforcementVerdictEngine.ALGORITHM_VERSION,
+                    // Zero can only come from a record written by a build that stored a finalization
+                    // intent but not yet this field, and every such build measured at algorithm
+                    // version 2. Pinning that constant instead of the current one preserves the
+                    // measurement's provenance across an app update, so EnforcementEvidenceStore
+                    // stays free to decide how a version-2 verdict migrates in a later release.
+                    algorithmVersion = record.enforcementAlgorithmVersion
+                        .takeIf { it != 0 }
+                        ?: LEGACY_UNSTAMPED_QUALIFICATION_ALGORITHM_VERSION,
                     verdict = EnforcementVerdict.REFUTED,
                     capPercent = record.lowCap,
                     observedPercent = record.observedHoldPercent ?: -1,
@@ -694,6 +696,14 @@ class QualificationRunner @Inject constructor(
 
     private companion object {
         val TAG = logTag("Charging", "Qualification", "Runner")
+
+        /**
+         * The algorithm version a run record without [QualificationRunRecord.enforcementAlgorithmVersion]
+         * was measured at. Deliberately a literal, not [EnforcementVerdictEngine.ALGORITHM_VERSION]:
+         * the window of builds that could write such a record is closed, and every one of them ran
+         * algorithm version 2.
+         */
+        const val LEGACY_UNSTAMPED_QUALIFICATION_ALGORITHM_VERSION = 2
     }
 }
 

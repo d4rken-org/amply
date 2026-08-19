@@ -102,6 +102,7 @@ class QualificationRunnerContractTest {
     private companion object {
         const val QUALIFICATION_EVIDENCE_KEY = "qualification.result.v1"
         const val ENFORCEMENT_EVIDENCE_KEY = "enforcement.evidence.v1"
+        const val RUN_KEY = "qualification.run.v1"
     }
 
     private val context: Context = ApplicationProvider.getApplicationContext()
@@ -734,6 +735,57 @@ class QualificationRunnerContractTest {
     }
 
     /**
+     * The record shape the version field's own introduction left behind: the finalization intent
+     * shipped one build before `enforcementAlgorithmVersion`, so a record written in between carries a
+     * replayable refutation *and* a zero version. Reading that zero as "whatever this build measures
+     * at" would stamp the measurement with a later algorithm's version and impose a refutation that
+     * algorithm never produced. Every build that could write this shape measured at version 2, so 2 is
+     * what the replay pins — and `EnforcementEvidenceStore` decides from there what a version-2
+     * verdict is still worth.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `a replayed refutation from a record written before the version field is stamped version 2`() {
+        // Both stores are this test's own: the run record has to be written as raw JSON rather than
+        // through the data class, and a refutation is terminal for its scope.
+        val runData = freshDataStore()
+        val runStore = QualificationRunStore(runData, SerializationModule.json())
+        val enforcementData = freshDataStore()
+        val enforcementStore = EnforcementEvidenceStore(enforcementData, deps.buildIdentity(), SerializationModule.json())
+        val runner = runner(
+            StandardTestDispatcher(TestCoroutineScheduler()),
+            runStore = runStore,
+            enforcementStore = enforcementStore,
+        )
+        runBlocking {
+            // Hand-written, because today's data class cannot produce this shape: no
+            // `enforcementAlgorithmVersion` key at all, next to an intent that must still be replayed.
+            runData.writeRaw(
+                RUN_KEY,
+                """
+                {"baseline":"fixed:80","runId":"run-16","runToken":"token-16",
+                 "adapterId":"lineageos-chargingcontrol-v1",
+                 "buildIdentity":"${deps.buildIdentity().current()}",
+                 "protocolVersion":${QualificationProtocol.PROTOCOL_VERSION},
+                 "phase":"CUT_1","lowCap":70,"releasePolicy":"fixed:85","signal":"COUNTER",
+                 "observedHoldPercent":75,"finalizing":true,
+                 "finalization":{"kind":"REFUTED","decidedAtWallMillis":1700000000000},
+                 "provenance":{"token":"a-dead-process","pid":2,"bootCount":1,"createdAtMillis":1000}}
+                """.trimIndent(),
+            )
+            // The premise of the case: it decodes, and it decodes unstamped.
+            runStore.currentRun()?.enforcementAlgorithmVersion shouldBe 0
+
+            runCatching { runner.onTick(RawQualificationTick(sessionActive = false)) }
+
+            runner.lastResult.value?.terminal shouldBe RunTerminal.Refuted
+            // The literal 2, not the constant: after the next algorithm bump this record must still be
+            // stamped 2, because 2 is the version that measured it.
+            enforcementData.raw(ENFORCEMENT_EVIDENCE_KEY) shouldContain """"algorithmVersion":2"""
+        }
+    }
+
+    /**
      * The replay must not restore a policy the run no longer owes. The sequence it comes from:
      * finalization restored the baseline and cleared its recovery target, its record clear then
      * failed while the claim release succeeded, and before the next tick the user pressed a widget's
@@ -920,6 +972,13 @@ class QualificationRunnerContractTest {
     /** The stored evidence exactly as it was written, which is where the version stamp is visible. */
     private suspend fun AppDataStore.raw(key: String): String =
         store.data.first()[stringPreferencesKey(key)] ?: ""
+
+    /** Stores a record as raw JSON, for shapes today's data classes can no longer produce. */
+    private suspend fun AppDataStore.writeRaw(key: String, value: String) {
+        store.updateData { prefs ->
+            prefs.toMutablePreferences().apply { set(stringPreferencesKey(key), value) }.toPreferences()
+        }
+    }
 
     private fun postedTitle(service: ChargeSessionService): String? =
         shadowOf(service).lastForegroundNotification?.extras?.getString(Notification.EXTRA_TITLE)
