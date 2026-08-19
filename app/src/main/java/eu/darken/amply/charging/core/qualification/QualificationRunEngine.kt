@@ -186,11 +186,18 @@ object QualificationRunEngine {
      * as plausible an explanation as the cable. See [PLUG_MASK_WINDOW_MILLIS]: this changes the
      * wording of a run that ends with no verdict either way, and nothing else. Outside a cut phase,
      * outside the window, or with no acknowledged write, the ordinary unplug abort stands.
+     *
+     * The window is bounded on *both* sides. A backwards wall-clock correction (NTP, a time change, a
+     * user edit) can stamp a sample before our own cut was acknowledged, and a negative elapsed would
+     * otherwise land inside the window and make the run state something untrue about a moment it never
+     * observed. Backwards clocks are a real case in this codebase, not a hypothetical — see the replug
+     * grace window in `fullcharge/core`.
      */
     private fun plugSignalLostAtCut(progress: QualificationProgress, sample: QualificationSample): Boolean {
         if (progress.phase != RunPhase.CUT_1 && progress.phase != RunPhase.CUT_2) return false
         if (progress.commandAckedAt <= 0L) return false
-        return sample.nowMillis - progress.commandAckedAt <= PLUG_MASK_WINDOW_MILLIS
+        val elapsed = sample.nowMillis - progress.commandAckedAt
+        return elapsed >= 0L && elapsed <= PLUG_MASK_WINDOW_MILLIS
     }
 
     /**

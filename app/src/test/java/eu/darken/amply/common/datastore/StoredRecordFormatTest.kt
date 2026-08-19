@@ -7,6 +7,7 @@ import eu.darken.amply.charging.core.enforcement.EnforcementVerdict
 import eu.darken.amply.charging.core.qualification.AbortReason
 import eu.darken.amply.charging.core.qualification.FinalizationIntent
 import eu.darken.amply.charging.core.qualification.FlowSignal
+import eu.darken.amply.charging.core.qualification.InconclusiveReason
 import eu.darken.amply.charging.core.qualification.QualificationRunRecord
 import eu.darken.amply.charging.core.qualification.RunShape
 import eu.darken.amply.charging.core.qualification.TerminalKind
@@ -263,6 +264,24 @@ class StoredRecordFormatTest {
             """"writeFailed":false,"cancelled":false,"finalizing":true,""" +
             """"finalization":{"kind":"ABORTED","abortReason":"RUN_CEILING",""" +
             """"decidedAtWallMillis":1700000000000},"phaseLog":[]}"""
+    }
+
+    /**
+     * The inconclusive reason travels on the same replayed intent, so its constant is stored text too:
+     * a rename would make a run that ended with no verdict decode as one carrying no reason at all,
+     * and the close-out would drop what it told the user.
+     */
+    @Test
+    fun `an inconclusive finalization intent encodes its reason by name`() {
+        val intent = FinalizationIntent(
+            kind = TerminalKind.INCONCLUSIVE,
+            inconclusiveReason = InconclusiveReason.PLUG_SIGNAL_LOST_AT_CUT,
+            decidedAtWallMillis = 1_700_000_000_000L,
+        )
+
+        json.encodeToString(FinalizationIntent.serializer(), intent) shouldBe
+            """{"kind":"INCONCLUSIVE","inconclusiveReason":"PLUG_SIGNAL_LOST_AT_CUT",""" +
+            """"decidedAtWallMillis":1700000000000}"""
     }
 
     /**

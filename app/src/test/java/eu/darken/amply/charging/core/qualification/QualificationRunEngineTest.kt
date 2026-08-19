@@ -634,6 +634,19 @@ class QualificationRunEngineTest {
             RunTerminal.Aborted(AbortReason.UNPLUGGED)
     }
 
+    /**
+     * A sample stamped *before* our own cut was acknowledged: only a backwards clock correction can
+     * produce one, and it is not evidence about the window. Wording it as a plug loss at the cut would
+     * make a claim about a moment the run never observed.
+     */
+    @Test
+    fun `a sample from before the cut is an ordinary unplug`() {
+        val armed = atFirstCut()
+
+        QualificationRunEngine.evaluate(armed, unplugged(armed.commandAckedAt - 1)).terminal shouldBe
+            RunTerminal.Aborted(AbortReason.UNPLUGGED)
+    }
+
     @Test
     fun `phases that write no cut keep the ordinary unplug abort`() {
         val baseline = variableSim().progress
