@@ -31,6 +31,7 @@ import eu.darken.amply.common.ca.toCaString
 import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
+import eu.darken.amply.fullcharge.core.FullChargeStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -176,6 +177,7 @@ class ChargingRepository @Inject constructor(
     private val evidenceStore: EnforcementEvidenceStore,
     private val qualificationStore: QualificationEvidenceStore,
     private val runStore: QualificationRunStore,
+    private val fullChargeStore: FullChargeStore,
     private val buildIdentity: BuildIdentitySource,
 ) {
     private val operationMutex = Mutex()
@@ -246,6 +248,46 @@ class ChargingRepository @Inject constructor(
         operationMutex.withLock {
             applyLocked(policy, persistent = true, forceNotify = forceNotify, evidenceGated = false)
         }
+
+    /**
+     * The baseline restore that closes a qualification run out, written **only while that run still
+     * owns the outstanding restore obligation**.
+     *
+     * The restore is replayable: a finalization can be interrupted after it restored and cleared its
+     * recovery target, and then run again in a later process. Between the two the user can make an
+     * explicit persistent choice — the widget's fixed-limit/unrestricted buttons are not refused
+     * while a run record exists, and `setPersistentPolicy` clears its own recovery target once its
+     * write lands. Replaying the restore unconditionally would silently revert that choice to a
+     * baseline nobody is owed any more, with nothing left behind to bring it back.
+     *
+     * Ownership of the single recovery slot is the proxy for "does this run still owe a restore",
+     * and it is exact in both directions: a first attempt that never reached the restore still owns
+     * the target, a failed restore leaves it owned (finalization deliberately does not clear it),
+     * while a completed restore — or any newer producer having taken the slot — does not.
+     *
+     * The check runs **inside [operationMutex], the same lock as the write**, which is what makes it
+     * a decision rather than a guess: `setPersistentPolicy` registers its new recovery record
+     * *before* entering this mutex, so either the replay's restore completes first and the user's
+     * write lands on top of it, or the replay sees the newer owner and skips. Checked outside the
+     * lock, the two could interleave and the stale baseline would win.
+     *
+     * Ungated exactly like [restorePersistent]: this is a policy the user already had.
+     */
+    internal suspend fun restoreQualificationBaselineIfOwned(
+        runId: String,
+        policy: ChargePolicy,
+    ): QualificationRestoreOutcome = operationMutex.withLock {
+        val owner = fullChargeStore.currentRecovery()?.workId
+        if (owner != runId) {
+            log(TAG, Logging.Priority.INFO) {
+                "Qualification restore for $runId skipped: the owed restore now belongs to $owner"
+            }
+            return@withLock QualificationRestoreOutcome.Superseded
+        }
+        QualificationRestoreOutcome.Applied(
+            applyLocked(policy, persistent = true, forceNotify = true, evidenceGated = false),
+        )
+    }
 
     /**
      * A write commanded by a guided qualification run. Ungated for the same reason as

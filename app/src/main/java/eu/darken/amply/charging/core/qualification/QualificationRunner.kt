@@ -7,6 +7,7 @@ import eu.darken.amply.battery.core.BatteryReader
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingRepository
+import eu.darken.amply.charging.core.QualificationRestoreOutcome
 import eu.darken.amply.charging.core.enforcement.BuildIdentitySource
 import eu.darken.amply.charging.core.enforcement.EnforcementEvidence
 import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceStore
@@ -549,7 +550,8 @@ class QualificationRunner @Inject constructor(
      * **Replayable, and idempotent by construction rather than by machinery.** Any of the four steps
      * can fail halfway, so the outcome is persisted with the claim and this runs again — possibly in
      * the next process — against a record that may already have had some of it applied. Each step
-     * survives that: restoring the baseline again is a no-op write of a policy that is already set;
+     * survives that: the restore only writes while this run still owns the owed restore, so a replay
+     * either re-writes a policy that is already set or skips a baseline nobody is owed any more;
      * `QualificationEvidenceStore.record` overwrites unconditionally, and everything it writes is
      * taken from the record, so the second write is byte-identical; `EnforcementEvidenceStore.record`
      * refuses a duplicate for the same scope and returns false; and republishing [resultFlow] hands
@@ -584,8 +586,22 @@ class QualificationRunner @Inject constructor(
             }
             true
         } else {
+            // Ownership-gated, because this whole method is replayable: an interrupted finalization
+            // can have restored and cleared its recovery target already, and the user can have made
+            // an explicit persistent choice (a widget button) in between — one that clears its own
+            // recovery target when it lands. Writing the baseline again there would revert that
+            // choice permanently. Not owning the target means the restore is done or is somebody
+            // else's now; either way it counts as complete here and only the write is skipped.
             runCatching {
-                repository.restorePersistent(record.baseline, forceNotify = true).success
+                when (val outcome = repository.restoreQualificationBaselineIfOwned(record.runId, record.baseline)) {
+                    is QualificationRestoreOutcome.Applied -> outcome.result.success
+                    is QualificationRestoreOutcome.Superseded -> {
+                        log(TAG, Logging.Priority.INFO) {
+                            "Run ${record.runId} no longer owes its baseline; leaving the current policy alone"
+                        }
+                        true
+                    }
+                }
             }.getOrElse {
                 log(TAG, Logging.Priority.ERROR) { "Run ${record.runId} restore threw: ${it.message}" }
                 false

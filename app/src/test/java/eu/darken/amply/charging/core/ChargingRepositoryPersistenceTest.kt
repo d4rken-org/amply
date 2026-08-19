@@ -37,6 +37,7 @@ import eu.darken.amply.charging.core.qualification.QualificationEvidenceStore
 import eu.darken.amply.charging.core.qualification.QualificationRunStore
 import eu.darken.amply.common.AppDataStore
 import eu.darken.amply.common.serialization.SerializationModule
+import eu.darken.amply.fullcharge.core.FullChargeStore
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -141,6 +142,7 @@ class ChargingRepositoryPersistenceTest {
             evidenceStore = EnforcementEvidenceStore(appDataStore, buildIdentity, SerializationModule.json()),
             qualificationStore = QualificationEvidenceStore(appDataStore, buildIdentity, SerializationModule.json()),
             runStore = QualificationRunStore(appDataStore, SerializationModule.json()),
+            fullChargeStore = FullChargeStore(appDataStore, SerializationModule.json()),
             buildIdentity = buildIdentity,
         )
     }

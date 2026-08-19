@@ -38,6 +38,7 @@ import eu.darken.amply.charging.core.qualification.QualificationRunRecord
 import eu.darken.amply.charging.core.qualification.QualificationRunStore
 import eu.darken.amply.common.AppDataStore
 import eu.darken.amply.common.serialization.SerializationModule
+import eu.darken.amply.fullcharge.core.FullChargeStore
 import eu.darken.amply.fullcharge.core.RecoveryOrigin
 import eu.darken.amply.fullcharge.core.writeRecoveryTarget
 import io.kotest.matchers.shouldBe
@@ -84,6 +85,7 @@ class ChargingRepositoryRestoreGateTest {
 
     private lateinit var evidenceStore: EnforcementEvidenceStore
     private lateinit var runStore: QualificationRunStore
+    private lateinit var fullChargeStore: FullChargeStore
     private lateinit var preferences: ChargingPreferences
     private lateinit var repository: ChargingRepository
 
@@ -111,6 +113,7 @@ class ChargingRepositoryRestoreGateTest {
         val json = SerializationModule.json()
         evidenceStore = EnforcementEvidenceStore(appDataStore, buildIdentity, json)
         runStore = QualificationRunStore(appDataStore, json)
+        fullChargeStore = FullChargeStore(appDataStore, json)
         preferences = ChargingPreferences(appDataStore, json)
         val shizukuController = ShizukuController(context, ShizukuInstallationDetector(context))
         repository = ChargingRepository(
@@ -143,6 +146,7 @@ class ChargingRepositoryRestoreGateTest {
             evidenceStore = evidenceStore,
             qualificationStore = QualificationEvidenceStore(appDataStore, buildIdentity, json),
             runStore = runStore,
+            fullChargeStore = fullChargeStore,
             buildIdentity = buildIdentity,
         )
     }
@@ -298,5 +302,48 @@ class ChargingRepositoryRestoreGateTest {
         repository.applyForQualification(ChargePolicy.Unrestricted, "token-1")
 
         preferences.lastPersistentPolicyNow() shouldBe null
+    }
+
+    private suspend fun owedTo(workId: String) = fullChargeStore.setPendingRecoveryTarget(
+        policy = ChargePolicy.FixedLimit(80),
+        workId = workId,
+        origin = RecoveryOrigin.SESSION_RESTORE,
+    )
+
+    /**
+     * The ordinary close-out: the run still holds the recovery slot it registered before its first
+     * write, so the restore is written — past the enforcement tier, like every other owed restore,
+     * and refused only where a real write fails here (WSS cannot write the Lineage provider).
+     */
+    @Test
+    fun `a qualification restore writes while the run still owns the owed restore`() = runTest {
+        owedTo("run-1")
+
+        val outcome = repository.restoreQualificationBaselineIfOwned("run-1", ChargePolicy.FixedLimit(80))
+
+        outcome.shouldBeInstanceOf<QualificationRestoreOutcome.Applied>()
+        outcome.result.observation.shouldBeInstanceOf<ChargeObservation.Unknown>()
+    }
+
+    /**
+     * A finalization is replayable, so the restore can run a second time in a later process — after
+     * the first attempt already restored and cleared the slot, and after the user made an explicit
+     * persistent choice that registered (and then cleared) a recovery record of its own. Writing the
+     * run's baseline there would revert that choice permanently, so a slot owned by somebody else is
+     * a skip, not a write.
+     */
+    @Test
+    fun `a qualification restore is superseded when the owed restore belongs to someone else`() = runTest {
+        owedTo("widget-write-1")
+
+        repository.restoreQualificationBaselineIfOwned("run-1", ChargePolicy.FixedLimit(80)) shouldBe
+            QualificationRestoreOutcome.Superseded
+    }
+
+    /** Nothing owed at all: the restore already completed and cleared its own slot. */
+    @Test
+    fun `a qualification restore is superseded when nothing is owed any more`() = runTest {
+        repository.restoreQualificationBaselineIfOwned("run-1", ChargePolicy.FixedLimit(80)) shouldBe
+            QualificationRestoreOutcome.Superseded
     }
 }
