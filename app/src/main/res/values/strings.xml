@@ -376,15 +376,21 @@
     <string name="qualification_result_precondition_body">The check never got started. Nothing was recorded.</string>
     <string name="qualification_result_signal_too_coarse_body">Your phone reports how much charge is going in too rarely for this check. With updates that far apart, charging that never stopped and charging that stopped on command look the same, so Amply won\'t call it either way. Nothing was recorded.</string>
     <string name="qualification_result_plug_signal_lost_body">Your phone stopped reporting the charger as connected while Amply had the lower limit set. Some builds report it that way when the limit engages, and it looks the same if the cable slipped out. Amply can\'t tell those apart, so it can\'t finish the check. Make sure the cable is firmly connected and try again. If the check keeps ending here, this build hides the information it needs, and sending the result helps.</string>
-    <string name="qualification_result_unplugged_body">The charger was disconnected, so there was nothing to measure. Your charge setting has been put back. You can start again with the charger connected.</string>
-    <string name="qualification_result_drift_body">The charge setting was changed while the check was running, so the result wouldn\'t mean anything. Your setting has been put back.</string>
-    <string name="qualification_result_write_failed_body">Amply couldn\'t change the charge setting. Your setting has been put back.</string>
-    <string name="qualification_result_session_body">A temporary full charge started, which takes the limit off. Your setting has been put back.</string>
-    <string name="qualification_result_cancelled_body">You stopped the check. Your charge setting has been put back.</string>
-    <string name="qualification_result_ceiling_body">The check ran out of time. Nothing was recorded, and your charge setting has been put back.</string>
-    <string name="qualification_result_process_death_body">Amply was stopped while the check was running, so it couldn\'t finish. Your charge setting has been put back.</string>
+    <string name="qualification_result_unplugged_body">The charger was disconnected, so there was nothing to measure. You can start again with the charger connected.</string>
+    <string name="qualification_result_drift_body">The charge setting was changed while the check was running, so the result wouldn\'t mean anything.</string>
+    <string name="qualification_result_write_failed_body">Amply couldn\'t change the charge setting.</string>
+    <string name="qualification_result_session_body">A temporary full charge started, which takes the limit off.</string>
+    <string name="qualification_result_cancelled_body">You stopped the check.</string>
+    <string name="qualification_result_ceiling_body">The check ran out of time. Nothing was recorded.</string>
+    <string name="qualification_result_process_death_body">Amply was stopped while the check was running, so it couldn\'t finish.</string>
     <string name="qualification_result_service_unavailable_body">Amply couldn\'t start the background service the check needs, so it never got going. Nothing was changed. Check that Amply is allowed to run in the background and try again.</string>
-    <string name="qualification_result_finalization_body">The check couldn\'t be closed out cleanly, so nothing was recorded. Your charge setting has been put back. If your phone is low on storage, freeing some up and trying again should help.</string>
+    <string name="qualification_result_finalization_body">The check couldn\'t be closed out cleanly, so nothing was recorded. If your phone is low on storage, freeing some up and trying again should help.</string>
+
+    <!-- Rendered under every result body: what actually happened to the user's own charge setting.
+         Split in two because a failed close-out leaves the setting on the run's experimental value
+         and hands the write to boot recovery, and the result may not claim otherwise. -->
+    <string name="qualification_result_restore_done">Your charge setting has been put back.</string>
+    <string name="qualification_result_restore_pending">Amply couldn\'t put your charge setting back yet. It keeps trying, and you can also set it yourself in the meantime.</string>
 
     <string name="qualification_notification_title">Checking the charge limit</string>
     <string name="qualification_notification_stop">Stop</string>

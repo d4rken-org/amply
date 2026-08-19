@@ -655,6 +655,9 @@ class QualificationRunnerContractTest {
             runCatching { runner.onTick(RawQualificationTick(sessionActive = false)) }
 
             runner.lastResult.value?.terminal shouldBe RunTerminal.Passed
+            // This record was written straight into the store, so no recovery target names it and the
+            // close-out owes nothing: the restore counts as complete and the result may say so.
+            runner.lastResult.value?.restored shouldBe true
             runStore.currentRun() shouldBe null
             val state = evidenceStore.currentState()
             (state as QualificationEvidenceState.Present).evidence.capPercent shouldBe 70
@@ -1032,6 +1035,9 @@ class QualificationRunnerContractTest {
             runner.lastResult.value?.terminal shouldBe RunTerminal.Inconclusive(InconclusiveReason.NO_RECUT)
             runStore.currentRun() shouldBe null
             writes.seen shouldBe false
+            // Nothing is owed by this run any more, so the result may say the setting is the user's
+            // own again — skipping the write is a completed restore here, not a failed one.
+            runner.lastResult.value?.restored shouldBe true
             // And the newer obligation is left exactly as its owner stored it.
             fullChargeStore.currentRecovery()?.workId shouldBe "widget-write-1"
             fullChargeStore.pendingRecoveryTarget() shouldBe ChargePolicy.Unrestricted
@@ -1079,6 +1085,9 @@ class QualificationRunnerContractTest {
 
             runner.lastResult.value?.terminal shouldBe RunTerminal.Inconclusive(InconclusiveReason.NO_RECUT)
             writes.seen shouldBe true
+            // The write was attempted and could not land, so the published result must not tell the
+            // user their setting is back: it is still on the run's value with the restore owed.
+            runner.lastResult.value?.restored shouldBe false
 
             // The write cannot land here, so the target is still owed; the slot is process-wide.
             fullChargeStore.clearPendingRecoveryTarget()

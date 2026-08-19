@@ -1,5 +1,6 @@
 package eu.darken.amply.main.ui.qualification
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -338,6 +339,28 @@ private fun LazyListScope.resultStep(state: QualificationUiState) {
         ) {}
     }
     item { BodyText(stringResource(state.outcome.bodyRes())) }
+    // Its own line rather than a sentence inside each body: the close-out can fail, and then the
+    // setting is still on the run's experimental value with boot recovery owing the write.
+    if (state.outcome.reportsRestore()) {
+        item { BodyText(stringResource(restoreLineRes(state.restored))) }
+    }
+}
+
+/**
+ * Whether this result has anything to say about the user's own charge setting.
+ *
+ * Everything that reaches finalization attempts the restore, so the line belongs on all of them. The
+ * exception is [AbortReason.SERVICE_UNAVAILABLE], which is refused before the run's service ever
+ * starts: its own copy says nothing was changed, and a restore-failure warning there would alarm the
+ * user about a setting that was never taken away.
+ */
+internal fun RunTerminal?.reportsRestore(): Boolean =
+    this !is RunTerminal.Aborted || reason != AbortReason.SERVICE_UNAVAILABLE
+
+@StringRes
+internal fun restoreLineRes(restored: Boolean): Int = when {
+    restored -> R.string.qualification_result_restore_done
+    else -> R.string.qualification_result_restore_pending
 }
 
 private fun LazyListScope.deliverStep(
@@ -508,7 +531,21 @@ private fun QualificationScreenBlockedOnBatteryPreview() = PreviewWrapper {
 @Composable
 private fun QualificationScreenResultPreview() = PreviewWrapper {
     PreviewScreen(
-        QualificationUiState(step = QualificationStep.RESULT, outcome = RunTerminal.Passed),
+        QualificationUiState(step = QualificationStep.RESULT, outcome = RunTerminal.Passed, restored = true),
+    )
+}
+
+// The close-out could not write the user's setting back, so the result says so instead of claiming it
+// is done: boot recovery still owes the write, and the user can make it themselves meanwhile.
+@AmplyPreview
+@Composable
+private fun QualificationScreenResultUnrestoredPreview() = PreviewWrapper {
+    PreviewScreen(
+        QualificationUiState(
+            step = QualificationStep.RESULT,
+            outcome = RunTerminal.Aborted(AbortReason.USER_CANCELLED),
+            restored = false,
+        ),
     )
 }
 
@@ -519,6 +556,7 @@ private fun QualificationScreenDeliverPreview() = PreviewWrapper {
         QualificationUiState(
             step = QualificationStep.DELIVER,
             outcome = RunTerminal.Passed,
+            restored = true,
             reportText = """
                 Amply qualification report
                 result: PASSED

@@ -64,6 +64,15 @@ data class RawQualificationTick(
 data class QualificationResult(
     val terminal: RunTerminal,
     val record: QualificationRunRecord,
+    /**
+     * Whether the user's own charge setting was back when this result was published.
+     *
+     * False means the close-out could not write it and left the recovery target behind for boot
+     * recovery to repay, so no surface may say the setting has been put back. Presentation only, like
+     * the result itself: the obligation that outlives the process is the persisted recovery target,
+     * not this flag.
+     */
+    val restored: Boolean,
 )
 
 /**
@@ -703,7 +712,7 @@ class QualificationRunner @Inject constructor(
             // record must never be readable as a pass.
             is RunTerminal.Inconclusive, is RunTerminal.Aborted -> Unit
         }
-        resultFlow.value = QualificationResult(terminal, record)
+        resultFlow.value = QualificationResult(terminal, record, restored = restored)
         stateMutex.withLock {
             runStore.clear()
             runActiveNow = false
