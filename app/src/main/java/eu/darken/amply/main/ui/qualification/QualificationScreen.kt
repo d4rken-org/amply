@@ -35,6 +35,7 @@ import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.qualification.AbortReason
 import eu.darken.amply.charging.core.qualification.IneligibleReason
 import eu.darken.amply.charging.core.qualification.InconclusiveReason
+import eu.darken.amply.charging.core.qualification.QualificationRestorePresentation
 import eu.darken.amply.charging.core.qualification.RunEligibility
 import eu.darken.amply.charging.core.qualification.RunPhase
 import eu.darken.amply.charging.core.qualification.RunShape
@@ -348,27 +349,17 @@ private fun LazyListScope.resultStep(state: QualificationUiState) {
     }
     item { BodyText(stringResource(state.outcome.bodyRes())) }
     // Its own line rather than a sentence inside each body: the close-out can fail, and then the
-    // setting is still on the run's experimental value with boot recovery owing the write.
-    if (state.outcome.reportsRestore()) {
-        item { BodyText(stringResource(restoreLineRes(state.restored))) }
-    }
+    // setting is still on the run's experimental value with boot recovery owing the write. Which of
+    // the two lines belongs here — or neither — is decided at the close-out, which is the only place
+    // that knows whether a write was made at all.
+    restoreLineRes(state.restorePresentation)?.let { item { BodyText(stringResource(it)) } }
 }
 
-/**
- * Whether this result has anything to say about the user's own charge setting.
- *
- * Everything that reaches finalization attempts the restore, so the line belongs on all of them. The
- * exception is [AbortReason.SERVICE_UNAVAILABLE], which is refused before the run's service ever
- * starts: its own copy says nothing was changed, and a restore-failure warning there would alarm the
- * user about a setting that was never taken away.
- */
-internal fun RunTerminal?.reportsRestore(): Boolean =
-    this !is RunTerminal.Aborted || reason != AbortReason.SERVICE_UNAVAILABLE
-
 @StringRes
-internal fun restoreLineRes(restored: Boolean): Int = when {
-    restored -> R.string.qualification_result_restore_done
-    else -> R.string.qualification_result_restore_pending
+private fun restoreLineRes(presentation: QualificationRestorePresentation): Int? = when (presentation) {
+    QualificationRestorePresentation.APPLIED -> R.string.qualification_result_restore_done
+    QualificationRestorePresentation.PENDING -> R.string.qualification_result_restore_pending
+    QualificationRestorePresentation.OMIT -> null
 }
 
 private fun LazyListScope.deliverStep(
@@ -567,12 +558,16 @@ private fun QualificationScreenBlockedOnBatteryPreview() = PreviewWrapper {
 @Composable
 private fun QualificationScreenResultPreview() = PreviewWrapper {
     PreviewScreen(
-        QualificationUiState(step = QualificationStep.RESULT, outcome = RunTerminal.Passed, restored = true),
+        QualificationUiState(
+            step = QualificationStep.RESULT,
+            outcome = RunTerminal.Passed,
+            restorePresentation = QualificationRestorePresentation.APPLIED,
+        ),
     )
 }
 
-// The close-out could not write the user's setting back, so the result says so instead of claiming it
-// is done: boot recovery still owes the write, and the user can make it themselves meanwhile.
+// The close-out could not write the user's setting back, so the result says what happened instead of
+// claiming it is done — and points at the setting, because nothing on this screen can promise a retry.
 @AmplyPreview
 @Composable
 private fun QualificationScreenResultUnrestoredPreview() = PreviewWrapper {
@@ -580,7 +575,7 @@ private fun QualificationScreenResultUnrestoredPreview() = PreviewWrapper {
         QualificationUiState(
             step = QualificationStep.RESULT,
             outcome = RunTerminal.Aborted(AbortReason.USER_CANCELLED),
-            restored = false,
+            restorePresentation = QualificationRestorePresentation.PENDING,
         ),
     )
 }
@@ -592,7 +587,7 @@ private fun QualificationScreenDeliverPreview() = PreviewWrapper {
         QualificationUiState(
             step = QualificationStep.DELIVER,
             outcome = RunTerminal.Passed,
-            restored = true,
+            restorePresentation = QualificationRestorePresentation.APPLIED,
             reportText = """
                 Amply qualification report
                 result: PASSED
