@@ -2,6 +2,7 @@ package eu.darken.amply.main.ui.qualification
 
 import android.os.BatteryManager
 import eu.darken.amply.battery.core.BatteryReadout
+import eu.darken.amply.charging.core.qualification.QualificationProtocol
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -30,13 +31,25 @@ internal fun precheckStatus(readout: BatteryReadout, requiredPercent: Int?): Pre
 )
 
 /**
- * Whether the battery is actually taking charge, or `null` when the readout carries no plug/status
- * information at all ([BatteryReadout.UNKNOWN]) — claiming "not charging" from an empty readout would
- * be an assertion about the device rather than about what was observed.
+ * Whether the battery is actually taking charge — a genuine tri-state, because "not charging" is a
+ * claim about the device and the block only makes claims it observed.
+ *
+ * `true` needs both halves to agree: something plugged in **and** [BatteryManager.BATTERY_STATUS_CHARGING].
+ * `false` needs only one observed negative — nothing plugged in, or a status of discharging, not
+ * charging, or full — since either settles it on its own. Everything else is `null`: a missing half of
+ * the positive pair, an unrecognised status, and [BatteryManager.BATTERY_STATUS_UNKNOWN], which is a
+ * valid thing for the platform to report and says nothing either way.
  */
 private fun BatteryReadout.chargingOrNull(): Boolean? {
-    if (plugged == null && status == null) return null
-    return onCharger && status == BatteryManager.BATTERY_STATUS_CHARGING
+    if (plugged == 0) return false
+    if (status == BatteryManager.BATTERY_STATUS_DISCHARGING ||
+        status == BatteryManager.BATTERY_STATUS_NOT_CHARGING ||
+        status == BatteryManager.BATTERY_STATUS_FULL
+    ) {
+        return false
+    }
+    if (plugged == null || status == null) return null
+    return if (status == BatteryManager.BATTERY_STATUS_CHARGING) true else null
 }
 
 /**
@@ -64,10 +77,16 @@ internal fun estimateMinutesToPercent(readout: BatteryReadout, targetPercent: In
     if (targetPercent <= level) return null
 
     val fullCapacity = counterMicroampHours / (level / 100.0)
+    // The same decision [eu.darken.amply.charging.core.qualification.QualificationRunEngine.resolveSignal]
+    // makes about the same input: below this the counter is not believable as microamp-hours, so it is
+    // not a rate signal here either. A counter reported in milli-units against a correctly scaled
+    // current otherwise yields a confident *short* estimate, which the ceiling below cannot catch — it
+    // only rejects a wait that is implausibly long.
+    if (fullCapacity < QualificationProtocol.MIN_PLAUSIBLE_FULL_MICROAMP_HOURS) return null
     val chargeNeeded = (targetPercent - level) / 100.0 * fullCapacity
     val minutes = chargeNeeded / abs(currentMicroamps.toDouble()) * 60.0
-    // Non-finite (zero current), non-positive (zero/negative counter) or absurd figures are a broken
-    // reading, not a long wait.
+    // Non-finite (zero current) or absurd figures are a broken reading, not a long wait. The
+    // non-positive arm is unreachable once the capacity above is plausible, and stays as a floor.
     if (!minutes.isFinite() || minutes <= 0.0 || minutes > MAX_PLAUSIBLE_MINUTES) return null
     return minutes.roundToInt()
 }
