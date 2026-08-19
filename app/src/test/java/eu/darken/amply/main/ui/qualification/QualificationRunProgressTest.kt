@@ -1,6 +1,7 @@
 package eu.darken.amply.main.ui.qualification
 
 import eu.darken.amply.R
+import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.qualification.RunPhase
 import eu.darken.amply.charging.core.qualification.RunShape
 import io.kotest.matchers.shouldBe
@@ -64,5 +65,60 @@ class QualificationRunProgressTest {
                 }
             }
         }
+    }
+
+    private fun progress(
+        phase: RunPhase = RunPhase.CUT_1,
+        commanded: ChargePolicy? = ChargePolicy.FixedLimit(70),
+        commandAcked: Boolean = false,
+    ) = RunProgressUi(
+        phase = phase,
+        shape = RunShape.VARIABLE_CAP,
+        lowCap = 70,
+        elapsedMillis = 0,
+        phaseElapsedMillis = 0,
+        phaseBudgetMillis = 1,
+        percent = 80,
+        charging = true,
+        commanded = commanded,
+        commandAcked = commandAcked,
+    )
+
+    /**
+     * The phase is recorded before its write is dispatched, so until the write is acknowledged the
+     * screen may not render the phase sentence, which says the limit *is* set.
+     */
+    @Test
+    fun `an unacknowledged limit write says it is being set`() {
+        runMessage(progress(commanded = ChargePolicy.FixedLimit(70))) shouldBe
+            RunMessageUi(R.string.qualification_running_applying_limit, 70)
+    }
+
+    /** The pending sentence follows what was commanded, not which phase commanded it. */
+    @Test
+    fun `an unacknowledged release says the limit is being removed`() {
+        runMessage(progress(phase = RunPhase.RESUME, commanded = ChargePolicy.Unrestricted)) shouldBe
+            RunMessageUi(R.string.qualification_running_removing_limit, null)
+    }
+
+    /** A raised cap is still a limit being set, which is why the argument comes from the command. */
+    @Test
+    fun `an unacknowledged raise names the commanded cap, not the run's low cap`() {
+        runMessage(progress(phase = RunPhase.RESUME, commanded = ChargePolicy.FixedLimit(90))) shouldBe
+            RunMessageUi(R.string.qualification_running_applying_limit, 90)
+    }
+
+    /** Once the write has landed the phase's own sentence is what the user gets, unchanged. */
+    @Test
+    fun `an acknowledged write falls through to the phase message`() {
+        runMessage(progress(commandAcked = true)) shouldBe
+            RunMessageUi(R.string.qualification_phase_cut_1, 70)
+    }
+
+    /** Preflight commands nothing, so there is no write to be pending on. */
+    @Test
+    fun `a phase that commanded nothing keeps its phase message`() {
+        runMessage(progress(phase = RunPhase.PREFLIGHT, commanded = null)) shouldBe
+            RunMessageUi(R.string.qualification_phase_preflight, 70)
     }
 }

@@ -10,6 +10,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import eu.darken.amply.BuildConfig
 import eu.darken.amply.battery.core.BatteryReadout
 import eu.darken.amply.battery.core.BatteryReadoutSource
+import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.DeviceInfo
 import eu.darken.amply.charging.core.enforcement.BuildIdentitySource
 import eu.darken.amply.charging.core.qualification.IneligibleReason
@@ -65,6 +66,18 @@ data class RunProgressUi(
      * they are already in the contribution report, which is where a maintainer reads them.
      */
     val charging: Boolean?,
+    /**
+     * The policy this phase asked the adapter for, or null in [RunPhase.PREFLIGHT], which commands
+     * nothing.
+     */
+    val commanded: ChargePolicy?,
+    /**
+     * Whether the write for [commanded] has been acknowledged.
+     *
+     * The phase is persisted *before* its write runs, so a slow or failed write leaves the screen on a
+     * phase whose sentence describes a limit that is not set yet. See `runMessage`.
+     */
+    val commandAcked: Boolean,
 )
 
 data class QualificationUiState(
@@ -316,6 +329,8 @@ class QualificationViewModel @Inject constructor(
             },
             percent = readout?.levelPercent,
             charging = readout?.chargingOrNull(),
+            commanded = ChargePolicy.fromStableId(commanded),
+            commandAcked = commandAckedAtWallMillis != 0L,
         )
     }
 
