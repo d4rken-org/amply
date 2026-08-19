@@ -32,12 +32,17 @@ import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -87,38 +92,74 @@ class QualificationViewModel @Inject constructor(
     private val runner: QualificationRunner,
     private val runStore: QualificationRunStore,
     private val buildIdentity: BuildIdentitySource,
-    batteryReadoutSource: BatteryReadoutSource,
+    private val batteryReadoutSource: BatteryReadoutSource,
 ) : ViewModel() {
 
     private val step = MutableStateFlow(QualificationStep.INTRO)
     private val eligibility = MutableStateFlow<RunEligibility?>(null)
     private val delivery = MutableStateFlow(Delivery())
-    private val precheck = MutableStateFlow<PrecheckStatusUi?>(null)
 
     private data class Delivery(val reportText: String = "", val issueUrl: String = "")
 
-    private val readouts = batteryReadoutSource.readouts()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BatteryReadout.UNKNOWN)
+    /** Everything the UI state is made of except the live battery figures. */
+    private data class Snapshot(
+        val step: QualificationStep,
+        val eligibility: RunEligibility?,
+        val record: QualificationRunRecord?,
+        val outcome: RunTerminal?,
+        val delivery: Delivery,
+    )
 
-    val state: StateFlow<QualificationUiState> = combine(
+    private val snapshots: Flow<Snapshot> = combine(
         step,
         eligibility,
         runStore.run,
         runner.lastResult,
         delivery,
     ) { step, eligibility, record, result, delivery ->
-        QualificationUiState(
+        Snapshot(
             step = resolveStep(step, record, result?.terminal),
             eligibility = eligibility,
-            run = record?.toUi(),
+            record = record,
             outcome = result?.terminal,
-            reportText = delivery.reportText,
-            issueUrl = delivery.issueUrl,
+            delivery = delivery,
         )
     }
-        .combine(precheck) { base, precheck ->
-            // Only on the step that renders it: a stale block must never outlive the pre-check.
-            base.copy(precheck = precheck.takeIf { base.step == QualificationStep.PRECHECK })
+
+    /**
+     * The step actually on screen, which is what the battery polling is scoped to — the *requested*
+     * step is not it: a live run shows the running step from whichever step the user left behind.
+     *
+     * Derived separately from [snapshots] rather than taken off it on purpose: keying the polling off
+     * the whole snapshot would tear the battery subscription down and build it back up on every
+     * unrelated change (a record tick, a delivery, an eligibility write).
+     */
+    private val resolvedStep: Flow<QualificationStep> = combine(
+        step,
+        runStore.run,
+        runner.lastResult,
+    ) { requested, record, result -> resolveStep(requested, record, result?.terminal) }
+
+    private val live: Flow<LiveFigures> = liveFigures(
+        steps = resolvedStep,
+        readouts = { batteryReadoutSource.readouts() },
+        // Resolved on the same cadence as the figures, so the block and the Start button can never
+        // disagree about the same battery reading.
+        resolveEligibility = { runner.eligibility() },
+    ).onEach { figures -> figures.eligibility?.let { eligibility.value = it } }
+
+    val state: StateFlow<QualificationUiState> = snapshots
+        .combine(live) { snapshot, live ->
+            QualificationUiState(
+                step = snapshot.step,
+                eligibility = snapshot.eligibility,
+                run = snapshot.record?.toUi(live.readout),
+                outcome = snapshot.outcome,
+                reportText = snapshot.delivery.reportText,
+                issueUrl = snapshot.delivery.issueUrl,
+                // Only on the step that renders it: a stale block must never outlive the pre-check.
+                precheck = live.precheck.takeIf { snapshot.step == QualificationStep.PRECHECK },
+            )
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), QualificationUiState())
 
@@ -139,29 +180,6 @@ class QualificationViewModel @Inject constructor(
 
     init {
         refreshEligibility()
-        // The pre-check is a live screen, not a snapshot: a user who reaches the required level while
-        // sitting on it has to see the figures move and Start become enabled, rather than leave and
-        // come back. flatMapLatest keeps the polling scoped to that step.
-        viewModelScope.launch {
-            step
-                .flatMapLatest { current ->
-                    if (current == QualificationStep.PRECHECK) readouts else flowOf(null)
-                }
-                .collect { readout ->
-                    if (readout == null) {
-                        precheck.value = null
-                        return@collect
-                    }
-                    // Re-resolved on the same cadence as the figures, so the block and the Start
-                    // button can never disagree about the same battery reading.
-                    val resolved = runner.eligibility()
-                    eligibility.value = resolved
-                    precheck.value = precheckStatus(
-                        readout = readout,
-                        requiredPercent = (resolved as? RunEligibility.Ineligible)?.requiredPercent,
-                    )
-                }
-        }
         // A start is a service command now, so its refusal comes back as an event rather than a
         // return value. Without this the screen would sit on a running step for a run that never
         // opened.
@@ -262,9 +280,8 @@ class QualificationViewModel @Inject constructor(
             createdAtEpochMs = System.currentTimeMillis(),
         )
 
-    private fun QualificationRunRecord.toUi(): RunProgressUi {
+    private fun QualificationRunRecord.toUi(readout: BatteryReadout?): RunProgressUi {
         val now = System.currentTimeMillis()
-        val readout = readouts.value
         return RunProgressUi(
             phase = phase,
             shape = shape,
@@ -282,8 +299,8 @@ class QualificationViewModel @Inject constructor(
                 RunPhase.BASELINE -> QualificationProtocol.BASELINE_WINDOW_MILLIS
                 else -> QualificationProtocol.PHASE_BUDGET_MILLIS
             },
-            percent = readout.levelPercent,
-            chargeCounter = readout.chargeCounterMicroampHours,
+            percent = readout?.levelPercent,
+            chargeCounter = readout?.chargeCounterMicroampHours,
         )
     }
 
@@ -291,3 +308,58 @@ class QualificationViewModel @Inject constructor(
         private val TAG = logTag("Qualification", "ViewModel")
     }
 }
+
+/** The battery figures the live steps render, plus the eligibility resolved from that same reading. */
+internal data class LiveFigures(
+    val readout: BatteryReadout? = null,
+    val precheck: PrecheckStatusUi? = null,
+    val eligibility: RunEligibility? = null,
+)
+
+/**
+ * The live half of the qualification state graph: a battery poll (and, on the pre-check, a fresh
+ * eligibility resolution) for exactly as long as a step that shows figures is on screen.
+ *
+ * **Cold on purpose.** The returned flow polls only while it is collected, so it stops when the UI
+ * state it feeds loses its last subscriber. That matters twice over: the poll costs a battery read
+ * plus a full eligibility resolution — store reads and, on some adapters, a Shizuku binder round trip
+ * — and this is an app about battery care, so it must not keep doing that from the back stack or from
+ * the background. The step is deliberately not treated as a proxy for the screen being visible; only
+ * the collector's lifetime is (see how `MainActivity` collects the state).
+ *
+ * [QualificationStep.RUNNING] polls too, not just the pre-check: the running screen renders the same
+ * percent and charge counter for the half hour to hour and a half a run takes, and a poll that stopped
+ * at the start of the run would leave those figures frozen at the last pre-check reading while looking
+ * live.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+internal fun liveFigures(
+    steps: Flow<QualificationStep>,
+    readouts: () -> Flow<BatteryReadout>,
+    resolveEligibility: suspend () -> RunEligibility,
+): Flow<LiveFigures> = steps
+    .distinctUntilChanged()
+    .flatMapLatest { step ->
+        when (step) {
+            QualificationStep.PRECHECK -> readouts().map { readout ->
+                val resolved = resolveEligibility()
+                LiveFigures(
+                    readout = readout,
+                    precheck = precheckStatus(
+                        readout = readout,
+                        requiredPercent = (resolved as? RunEligibility.Ineligible)?.requiredPercent,
+                    ),
+                    eligibility = resolved,
+                )
+            }
+
+            QualificationStep.RUNNING -> readouts().map { LiveFigures(readout = it) }
+            // No figures, and no poll: nothing on these steps renders one.
+            else -> emptyFlow()
+        }
+            // The step change itself must reach the screen immediately: the first real emission of a
+            // polling step waits on a battery read and an eligibility resolution, and combining on that
+            // would hold the whole UI state on the previous step until both land. It is also the only
+            // emission a non-polling step makes, which is what clears the previous step's figures.
+            .onStart { emit(LiveFigures()) }
+    }
