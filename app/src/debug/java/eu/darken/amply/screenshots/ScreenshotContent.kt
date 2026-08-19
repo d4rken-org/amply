@@ -12,12 +12,10 @@ import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingState
 import eu.darken.amply.charging.core.DeviceInfo
-import eu.darken.amply.charging.core.SettingProbe
 import eu.darken.amply.charging.core.access.AccessSnapshot
 import eu.darken.amply.charging.core.access.BackendStatus
 import eu.darken.amply.common.ca.toCaString
 import eu.darken.amply.common.compose.PreviewWrapper
-import eu.darken.amply.common.theming.ThemeState
 import eu.darken.amply.battery.core.BatteryReadout
 import eu.darken.amply.fullcharge.core.ChargeSessionRecord
 import eu.darken.amply.main.ui.dashboard.DashboardScreen
@@ -26,7 +24,13 @@ import eu.darken.amply.main.ui.dashboard.StatsDashboardState
 import eu.darken.amply.stats.core.ChargeCurvePoint
 import eu.darken.amply.stats.core.StatsLiveSession
 import eu.darken.amply.main.ui.settings.ChargingSettingsScreen
-import eu.darken.amply.main.ui.settings.GeneralSettingsScreen
+import eu.darken.amply.rules.core.ChargeRule
+import eu.darken.amply.rules.core.PlugKind
+import eu.darken.amply.rules.core.RuleCondition
+import eu.darken.amply.rules.core.policy
+import eu.darken.amply.rules.ui.ChargeRuleRow
+import eu.darken.amply.rules.ui.ChargeRulesScreen
+import eu.darken.amply.rules.ui.ChargeRulesUiState
 
 // Device spec shared by every Play Store screenshot. 1080x1920 (9:16) is Play's recommended phone
 // size and stays within its "longest side may not exceed 2x the shorter side" rule — 1080x2400
@@ -45,19 +49,66 @@ internal fun DashboardReadyContent() = DashboardShot(readyState())
 internal fun DashboardActiveContent() = DashboardShot(sessionState())
 
 @Composable
-internal fun SamsungMultiModeContent() = DashboardShot(samsungState())
-
-@Composable
 internal fun SetupGuideContent() = DashboardShot(setupNeededState())
 
+// Three healthy rules covering both condition kinds, with the topmost one currently matching — the
+// list IS the priority editor, so the shot has to show more than one row to mean anything.
 @Composable
-internal fun SettingsContent() = PreviewWrapper {
-    GeneralSettingsScreen(
-        state = ThemeState(),
+internal fun ChargeConditionsContent() = PreviewWrapper {
+    ChargeRulesScreen(
+        state = ChargeRulesUiState(
+            rows = listOf(
+                ruleRow(
+                    id = "car",
+                    label = "Car",
+                    condition = RuleCondition.BluetoothDevice("AA:BB:CC:DD:EE:FF", "Car audio"),
+                    policy = ChargePolicy.Unrestricted,
+                    active = true,
+                    canMoveUp = false,
+                ),
+                ruleRow(
+                    id = "dock",
+                    label = "Desk dock",
+                    condition = RuleCondition.ChargerType(setOf(PlugKind.DOCK, PlugKind.WIRELESS)),
+                    policy = ChargePolicy.FixedLimit(80),
+                ),
+                ruleRow(
+                    id = "bedside",
+                    label = "Overnight",
+                    condition = RuleCondition.BluetoothDevice("11:22:33:44:55:66", "Bedside speaker"),
+                    policy = ChargePolicy.Adaptive,
+                    canMoveDown = false,
+                ),
+            ),
+        ),
         onBack = {},
-        onModeChange = {},
-        onStyleChange = {},
-        onColorChange = {},
+        onAdd = {},
+        onEdit = {},
+        onDelete = {},
+        onEnabledChange = { _, _ -> },
+        onMove = { _, _ -> },
+        onFixBluetoothPermission = {},
+    )
+}
+
+private fun ruleRow(
+    id: String,
+    label: String,
+    condition: RuleCondition,
+    policy: ChargePolicy,
+    active: Boolean = false,
+    canMoveUp: Boolean = true,
+    canMoveDown: Boolean = true,
+): ChargeRuleRow {
+    val rule = ChargeRule(id = id, label = label, condition = condition, policyId = policy.stableId)
+    return ChargeRuleRow(
+        rule = rule,
+        policy = rule.policy,
+        active = active,
+        unsupportedCondition = false,
+        unsupportedPolicy = false,
+        canMoveUp = canMoveUp,
+        canMoveDown = canMoveDown,
     )
 }
 
@@ -245,48 +296,6 @@ private fun sessionState() = DashboardUiState(
     ),
 )
 
-// Samsung One UI 8 multi-mode: four fixed limits plus pause-at-full, shown as chips.
-private fun samsungState() = DashboardUiState(
-    onboardingComplete = true,
-    batteryReadout = holdingAtLimit(),
-    stats = liveStats(),
-    charging = ChargingState(
-        device = DeviceInfo(
-            "samsung",
-            "SM-X210",
-            36,
-            "preview",
-            oneUiVersion = 80000,
-            protectBatteryProbe = SettingProbe.PRESENT,
-        ),
-        adapterName = "Samsung battery protection".toCaString(),
-        adapterId = "samsung-oneui8-v1",
-        supportedPolicies = listOf(
-            ChargePolicy.FixedLimit(80),
-            ChargePolicy.FixedLimit(85),
-            ChargePolicy.FixedLimit(90),
-            ChargePolicy.FixedLimit(95),
-            ChargePolicy.PauseAtFull,
-            ChargePolicy.Unrestricted,
-        ),
-        reconnectSupported = false,
-        controlEnabled = true,
-        access = AccessSnapshot(
-            direct = BackendStatus(
-                available = true,
-                granted = true,
-                detail = "Charge-control access granted".toCaString(),
-            ),
-            shizuku = BackendStatus(
-                available = false,
-                granted = false,
-                detail = "Shizuku not installed".toCaString(),
-            ),
-        ),
-        observation = ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.DIRECT_WSS),
-    ),
-)
-
 // Pixel before access is granted: the dashboard leads with the setup guide.
 private fun setupNeededState() = DashboardUiState(
     // Capture is off here: this shot is about the setup guide, and the charging card showing its
@@ -326,17 +335,17 @@ private fun PreviewDashboardReady() = DashboardReadyContent()
 @Composable
 private fun PreviewDashboardActive() = DashboardActiveContent()
 
-@Preview(name = "3 - Samsung multi-mode", device = DS, showSystemUi = true)
+@Preview(name = "3 - Charge conditions", device = DS, showSystemUi = true)
 @Composable
-private fun PreviewSamsungMultiMode() = SamsungMultiModeContent()
+private fun PreviewChargeConditions() = ChargeConditionsContent()
 
 @Preview(name = "4 - Setup guide", device = DS, showSystemUi = true)
 @Composable
 private fun PreviewSetupGuide() = SetupGuideContent()
 
-@Preview(name = "5 - Settings", device = DS, showSystemUi = true)
+@Preview(name = "5 - Battery hub", device = DS, showSystemUi = true)
 @Composable
-private fun PreviewSettings() = SettingsContent()
+private fun PreviewBatteryHub() = HubTileGridContent()
 
 @Preview(name = "6 - Reconnect gesture", device = DS, showSystemUi = true)
 @Composable

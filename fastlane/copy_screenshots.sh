@@ -23,14 +23,14 @@ screen_file() {
     case "$1" in
         DashboardReady) echo "1_dashboard_light" ;;
         FullChargeActive) echo "2_full_charge_dark" ;;
-        SamsungMultiMode) echo "3_samsung_multimode" ;;
+        ChargeConditions) echo "3_charge_conditions" ;;
         SetupGuide) echo "4_setup_guide" ;;
-        Settings) echo "5_settings" ;;
+        BatteryHub) echo "5_battery_hub" ;;
         ReconnectGesture) echo "6_reconnect_gesture" ;;
         *) return 1 ;;
     esac
 }
-EXPECTED_FILES=(1_dashboard_light 2_full_charge_dark 3_samsung_multimode 4_setup_guide 5_settings 6_reconnect_gesture)
+EXPECTED_FILES=(1_dashboard_light 2_full_charge_dark 3_charge_conditions 4_setup_guide 5_battery_hub 6_reconnect_gesture)
 EXPECTED_PER_LOCALE=${#EXPECTED_FILES[@]}
 
 # ImageMagick flattens the alpha channel (Play rejects transparent PNGs) and reports dimensions.
