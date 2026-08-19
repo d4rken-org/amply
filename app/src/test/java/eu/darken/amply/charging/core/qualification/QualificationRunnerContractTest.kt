@@ -733,6 +733,102 @@ class QualificationRunnerContractTest {
         }
     }
 
+    /**
+     * The replay must not restore a policy the run no longer owes. The sequence it comes from:
+     * finalization restored the baseline and cleared its recovery target, its record clear then
+     * failed while the claim release succeeded, and before the next tick the user pressed a widget's
+     * persistent-policy button — which is *not* refused while a run record exists and clears its own
+     * recovery target once its write lands. Writing `record.baseline` again there would silently
+     * revert that explicit choice, with nothing left owed to bring it back.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `a replayed finalization leaves a policy the run no longer owes alone`() {
+        val runStore = deps.runStore()
+        val fullChargeStore = deps.fullChargeStore()
+        val runner = runner(StandardTestDispatcher(TestCoroutineScheduler()), runStore = runStore)
+        val writes = LogWatcher("apply(policy=")
+        runBlocking {
+            runStore.put(
+                record(runId = "run-14", token = "token-14").copy(
+                    phase = RunPhase.CUT_2,
+                    finalization = FinalizationIntent.of(
+                        RunTerminal.Inconclusive(InconclusiveReason.NO_RECUT),
+                        1_700_000_000_000L,
+                    ),
+                ),
+            )
+            // The widget press, as it leaves the store: its own recovery record, owned by it.
+            fullChargeStore.setPendingRecoveryTarget(
+                policy = ChargePolicy.Unrestricted,
+                workId = "widget-write-1",
+                origin = RecoveryOrigin.USER_REQUEST,
+            )
+
+            Logging.install(writes)
+            try {
+                runCatching { runner.onTick(RawQualificationTick(sessionActive = false)) }
+            } finally {
+                Logging.remove(writes)
+            }
+
+            // The terminal is still published and the record still closed out; only the write is skipped.
+            runner.lastResult.value?.terminal shouldBe RunTerminal.Inconclusive(InconclusiveReason.NO_RECUT)
+            runStore.currentRun() shouldBe null
+            writes.seen shouldBe false
+            // And the newer obligation is left exactly as its owner stored it.
+            fullChargeStore.currentRecovery()?.workId shouldBe "widget-write-1"
+            fullChargeStore.pendingRecoveryTarget() shouldBe ChargePolicy.Unrestricted
+
+            // The recovery slot is process-wide here; leaving this one behind would follow the next case.
+            fullChargeStore.clearPendingRecoveryTarget()
+        }
+    }
+
+    /**
+     * The ordinary half of the same guard: the run still owns the owed restore, so the replay does
+     * write the baseline. It cannot succeed in this environment (no adapter can be driven here), which
+     * is why the assertion is that the write was attempted at all — whether it lands is
+     * `ChargingRepositoryRestoreGateTest`'s question.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `a replayed finalization still restores a baseline the run does owe`() {
+        val runStore = deps.runStore()
+        val fullChargeStore = deps.fullChargeStore()
+        val runner = runner(StandardTestDispatcher(TestCoroutineScheduler()), runStore = runStore)
+        val writes = LogWatcher("apply(policy=")
+        runBlocking {
+            runStore.put(
+                record(runId = "run-15", token = "token-15").copy(
+                    phase = RunPhase.CUT_2,
+                    finalization = FinalizationIntent.of(
+                        RunTerminal.Inconclusive(InconclusiveReason.NO_RECUT),
+                        1_700_000_000_000L,
+                    ),
+                ),
+            )
+            fullChargeStore.setPendingRecoveryTarget(
+                policy = ChargePolicy.FixedLimit(80),
+                workId = "run-15",
+                origin = RecoveryOrigin.SESSION_RESTORE,
+            )
+
+            Logging.install(writes)
+            try {
+                runCatching { runner.onTick(RawQualificationTick(sessionActive = false)) }
+            } finally {
+                Logging.remove(writes)
+            }
+
+            runner.lastResult.value?.terminal shouldBe RunTerminal.Inconclusive(InconclusiveReason.NO_RECUT)
+            writes.seen shouldBe true
+
+            // The write cannot land here, so the target is still owed; the slot is process-wide.
+            fullChargeStore.clearPendingRecoveryTarget()
+        }
+    }
+
     /** A store that stops accepting writes once its [writeBudget] runs out, the way a full one does. */
     private class FlakyStore(private val delegate: DataStore<Preferences>) : DataStore<Preferences> {
         @Volatile var writeBudget: Int = UNLIMITED

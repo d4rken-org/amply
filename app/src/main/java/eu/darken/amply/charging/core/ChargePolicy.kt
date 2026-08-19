@@ -89,3 +89,17 @@ data class ApplyResult(
     val observation: ChargeObservation,
     val message: String,
 )
+
+/**
+ * What became of a qualification run's baseline restore — see
+ * `ChargingRepository.restoreQualificationBaselineIfOwned`.
+ *
+ * Deliberately **not** an [ApplyResult] with a success flag: "no write was made because this run no
+ * longer owes the restore" and "a write was made and failed" must not collapse into one answer. The
+ * first is the run finishing correctly and leaving a newer choice alone; the second leaves a policy
+ * the user is still owed, and the recovery target has to stay behind for it.
+ */
+internal sealed interface QualificationRestoreOutcome {
+    data class Applied(val result: ApplyResult) : QualificationRestoreOutcome
+    data object Superseded : QualificationRestoreOutcome
+}
