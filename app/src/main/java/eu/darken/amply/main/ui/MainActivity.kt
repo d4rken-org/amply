@@ -41,6 +41,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import dagger.hilt.android.AndroidEntryPoint
 import eu.darken.amply.BuildConfig
@@ -139,7 +140,6 @@ class MainActivity : ComponentActivity() {
                     val state by viewModel.state.collectAsState()
                     val debugState by settingsViewModel.debugState.collectAsState()
                     val contributionState by contributionViewModel.state.collectAsState()
-                    val qualificationState by qualificationViewModel.state.collectAsState()
                     var destination by rememberSaveable { mutableStateOf(SettingsDestination.DASHBOARD) }
                     // Where a back-out of the contribution wizard returns to (set on each entry).
                     var wizardOrigin by rememberSaveable { mutableStateOf(SettingsDestination.DASHBOARD) }
@@ -560,27 +560,37 @@ class MainActivity : ComponentActivity() {
                         // never resurrect a screen its own flag says does not exist.
                         SettingsDestination.QUALIFICATION -> if (!BuildConfig.ENABLE_QUALIFICATION_RUN) {
                             LaunchedEffect(Unit) { destination = SettingsDestination.DASHBOARD }
-                        } else QualificationScreen(
-                            state = qualificationState,
-                            onExit = { destination = SettingsDestination.DASHBOARD },
-                            onRefresh = qualificationViewModel::refreshEligibility,
-                            onStart = qualificationViewModel::start,
-                            onCancel = qualificationViewModel::cancel,
-                            onNext = qualificationViewModel::goNext,
-                            onBack = qualificationViewModel::goBack,
-                            onDismissResult = {
-                                qualificationViewModel.dismissResult()
-                                destination = SettingsDestination.DASHBOARD
-                            },
-                            onOpenIssue = {
-                                openContributionIssue(
-                                    qualificationState.issueUrl.takeIf { it.isNotBlank() },
-                                    qualificationState.reportText,
-                                )
-                            },
-                            onCopyReport = { copyContribution(qualificationState.reportText) },
-                            onEmail = { emailContribution(qualificationState.reportText) },
-                        )
+                        } else {
+                            // Collected here rather than at the root, and lifecycle-aware rather than
+                            // plain: this state polls the battery and re-resolves eligibility (a
+                            // Shizuku round trip on some adapters) for as long as it has a subscriber,
+                            // and the ViewModel is activity-scoped. A root collection would keep that
+                            // running for the Activity's life, including while another screen is up or
+                            // the app is in the background — the wizard step is not a proxy for this
+                            // screen being visible.
+                            val qualificationState by qualificationViewModel.state.collectAsStateWithLifecycle()
+                            QualificationScreen(
+                                state = qualificationState,
+                                onExit = { destination = SettingsDestination.DASHBOARD },
+                                onRefresh = qualificationViewModel::refreshEligibility,
+                                onStart = qualificationViewModel::start,
+                                onCancel = qualificationViewModel::cancel,
+                                onNext = qualificationViewModel::goNext,
+                                onBack = qualificationViewModel::goBack,
+                                onDismissResult = {
+                                    qualificationViewModel.dismissResult()
+                                    destination = SettingsDestination.DASHBOARD
+                                },
+                                onOpenIssue = {
+                                    openContributionIssue(
+                                        qualificationState.issueUrl.takeIf { it.isNotBlank() },
+                                        qualificationState.reportText,
+                                    )
+                                },
+                                onCopyReport = { copyContribution(qualificationState.reportText) },
+                                onEmail = { emailContribution(qualificationState.reportText) },
+                            )
+                        }
                         SettingsDestination.SUPPORT -> SupportScreen(
                             state = debugState,
                             onBack = { destination = SettingsDestination.SETTINGS },
