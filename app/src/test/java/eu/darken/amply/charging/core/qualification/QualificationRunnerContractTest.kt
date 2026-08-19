@@ -7,6 +7,7 @@ import android.os.BatteryManager
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.test.core.app.ApplicationProvider
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
@@ -23,6 +24,7 @@ import eu.darken.amply.charging.core.enforcement.BuildIdentitySource
 import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceState
 import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceStore
 import eu.darken.amply.charging.core.enforcement.EnforcementVerdict
+import eu.darken.amply.charging.core.enforcement.EnforcementVerdictEngine
 import eu.darken.amply.common.AppDataStore
 import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.serialization.SerializationModule
@@ -34,6 +36,7 @@ import eu.darken.amply.fullcharge.core.RecoveryOrigin
 import eu.darken.amply.fullcharge.core.WorkProvenance
 import eu.darken.amply.rules.core.RuleApplier
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -41,6 +44,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -93,6 +97,11 @@ class QualificationRunnerContractTest {
         fun ruleApplier(): RuleApplier
         fun processIdentity(): ProcessIdentity
         fun bootCountProvider(): BootCountProvider
+    }
+
+    private companion object {
+        const val QUALIFICATION_EVIDENCE_KEY = "qualification.result.v1"
+        const val ENFORCEMENT_EVIDENCE_KEY = "enforcement.evidence.v1"
     }
 
     private val context: Context = ApplicationProvider.getApplicationContext()
@@ -551,6 +560,179 @@ class QualificationRunnerContractTest {
         }
     }
 
+    /**
+     * The measurement is persisted **with** the claim precisely so a replay can publish it, and this
+     * is the composition of the two: the closing sample is merged into the record at claim time, the
+     * clear then fails, and the replay in the next tick must hand the surfaces that stored record —
+     * its advanced phase, its closing readings and the phase-log row the merge appended — rather than
+     * only the terminal.
+     *
+     * The progress deliberately changes the phase, because that is the arm of the merge that writes to
+     * the phase log. No engine terminal advances the phase today; what is pinned here is the runner's
+     * own contract that whatever the caller hands [QualificationRunner.finish] survives to the replay,
+     * not an engine sequence.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `a replayed finalization publishes the measurement persisted with its claim`() {
+        val flaky = FlakyStore(
+            PreferenceDataStoreFactory.create(scope = storeScope) {
+                File(tempFolder.newFolder(), "run.preferences_pb")
+            },
+        )
+        val runStore = QualificationRunStore(AppDataStore(flaky), SerializationModule.json())
+        val runner = runner(StandardTestDispatcher(TestCoroutineScheduler()), runStore = runStore)
+        runBlocking {
+            val stored = record(runId = "run-11", token = "token-11").copy(
+                phase = RunPhase.RESUME,
+                commanded = ChargePolicy.FixedLimit(85).stableId,
+                phaseStartedAtWallMillis = 5_000L,
+                windowStartPercent = 72,
+                windowStartCounter = 1_000_000,
+                signal = FlowSignal.COUNTER,
+                baselineRatePerHour = 9_000L,
+            )
+            runStore.put(stored)
+            val advanced = stored.toProgress().copy(
+                phase = RunPhase.CUT_2,
+                phaseStartedAt = 9_000L,
+                commanded = ChargePolicy.FixedLimit(70),
+                commandedAt = 9_000L,
+                commandAckedAt = 0L,
+                windowAnchoredAt = 0L,
+                windowStartPercent = -1,
+                windowStartCounter = null,
+                observedHoldPercent = 71,
+            )
+
+            // One write left: the claim commits with the merge folded into it, and the clear and the
+            // release that follow both fail.
+            flaky.writeBudget = 1
+            runCatching {
+                runner.finish(
+                    terminal = RunTerminal.Inconclusive(InconclusiveReason.NO_RECUT),
+                    progress = advanced,
+                    phaseRatePerHour = 4_200L,
+                    exitPercent = 74,
+                    exitCounter = 1_050_000,
+                )
+            }
+
+            flaky.writeBudget = FlakyStore.UNLIMITED
+            // Only the replay may put this back, so a stale value cannot be what the assertions read.
+            runner.clearResult()
+
+            runCatching { runner.onTick(RawQualificationTick(sessionActive = false)) }
+
+            val replayed = runner.lastResult.value
+            replayed?.terminal shouldBe RunTerminal.Inconclusive(InconclusiveReason.NO_RECUT)
+            replayed?.record?.phase shouldBe RunPhase.CUT_2
+            replayed?.record?.observedHoldPercent shouldBe 71
+            replayed?.record?.phaseLog shouldBe listOf(
+                PhaseRecord(
+                    phase = RunPhase.RESUME,
+                    commanded = ChargePolicy.FixedLimit(85).stableId,
+                    enteredAtWallMillis = 5_000L,
+                    entryPercent = 72,
+                    entryCounter = 1_000_000,
+                    exitAtWallMillis = 9_000L,
+                    exitPercent = 74,
+                    exitCounter = 1_050_000,
+                    ratePerHour = 4_200L,
+                ),
+            )
+            runStore.currentRun() shouldBe null
+        }
+    }
+
+    /**
+     * A replay can run in a process started by an **app update**, and the versions the evidence is
+     * stamped with decide whether it still licenses anything. Taking them from today's constants would
+     * present a measurement made by a superseded protocol as one the current protocol produced —
+     * exactly the hole the version stamp exists to close, reopened through the replay door.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `a replayed pass is stamped with the protocol version that measured it`() {
+        val runStore = deps.runStore()
+        // Its own store, so what the assertions read is this replay's write and nothing another case
+        // left in the process-wide one.
+        val evidenceData = freshDataStore()
+        val evidenceStore = QualificationEvidenceStore(evidenceData, deps.buildIdentity(), SerializationModule.json())
+        val runner = runner(
+            StandardTestDispatcher(TestCoroutineScheduler()),
+            runStore = runStore,
+            evidenceStore = evidenceStore,
+        )
+        runBlocking {
+            runStore.put(
+                record(runId = "run-12", token = "token-12").copy(
+                    buildIdentity = deps.buildIdentity().current(),
+                    protocolVersion = QualificationProtocol.PROTOCOL_VERSION - 1,
+                    phase = RunPhase.CUT_2,
+                    signal = FlowSignal.COUNTER,
+                    observedHoldPercent = 70,
+                    finalizing = true,
+                    finalization = FinalizationIntent.of(RunTerminal.Passed, 1_700_000_000_000L),
+                    provenance = deadProcess(),
+                ),
+            )
+
+            runCatching { runner.onTick(RawQualificationTick(sessionActive = false)) }
+
+            runner.lastResult.value?.terminal shouldBe RunTerminal.Passed
+            evidenceData.raw(QUALIFICATION_EVIDENCE_KEY) shouldContain
+                """"protocolVersion":${QualificationProtocol.PROTOCOL_VERSION - 1}"""
+            // And the store, not the runner, is what decides what that pass is worth: a superseded
+            // protocol's pass licenses nothing.
+            evidenceStore.currentState() shouldBe QualificationEvidenceState.Absent
+        }
+    }
+
+    /**
+     * The same across an update for a refutation, where the stamp routes the verdict into
+     * `EnforcementEvidenceStore`'s per-version migration instead of past it.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `a replayed refutation is stamped with the algorithm version that measured it`() {
+        val runStore = deps.runStore()
+        // Its own store, for the same reason as above — and here it is load-bearing: a refutation is
+        // terminal for its scope, so one left by another case would make this write a no-op.
+        val enforcementData = freshDataStore()
+        val enforcementStore = EnforcementEvidenceStore(enforcementData, deps.buildIdentity(), SerializationModule.json())
+        val runner = runner(
+            StandardTestDispatcher(TestCoroutineScheduler()),
+            runStore = runStore,
+            enforcementStore = enforcementStore,
+        )
+        runBlocking {
+            runStore.put(
+                record(runId = "run-13", token = "token-13").copy(
+                    buildIdentity = deps.buildIdentity().current(),
+                    enforcementAlgorithmVersion = EnforcementVerdictEngine.ALGORITHM_VERSION - 1,
+                    phase = RunPhase.CUT_1,
+                    signal = FlowSignal.COUNTER,
+                    observedHoldPercent = 75,
+                    finalizing = true,
+                    finalization = FinalizationIntent.of(RunTerminal.Refuted, 1_700_000_000_000L),
+                    provenance = deadProcess(),
+                ),
+            )
+
+            runCatching { runner.onTick(RawQualificationTick(sessionActive = false)) }
+
+            runner.lastResult.value?.terminal shouldBe RunTerminal.Refuted
+            enforcementData.raw(ENFORCEMENT_EVIDENCE_KEY) shouldContain
+                """"algorithmVersion":${EnforcementVerdictEngine.ALGORITHM_VERSION - 1}"""
+            // Written as version 1, it goes through the store's own migration — which keeps a
+            // refutation, restamped — rather than being laundered into version 2 by the runner.
+            val state = enforcementStore.currentState()
+            (state as EnforcementEvidenceState.Present).evidence.algorithmVersion shouldBe
+                EnforcementVerdictEngine.ALGORITHM_VERSION
+        }
+    }
+
     /** A store that stops accepting writes once its [writeBudget] runs out, the way a full one does. */
     private class FlakyStore(private val delegate: DataStore<Preferences>) : DataStore<Preferences> {
         @Volatile var writeBudget: Int = UNLIMITED
@@ -604,12 +786,14 @@ class QualificationRunnerContractTest {
     private fun runner(
         dispatcher: kotlinx.coroutines.CoroutineDispatcher,
         runStore: QualificationRunStore = deps.runStore(),
+        evidenceStore: QualificationEvidenceStore = deps.qualificationEvidenceStore(),
+        enforcementStore: EnforcementEvidenceStore = deps.enforcementEvidenceStore(),
     ) = QualificationRunner(
         context = context,
         repository = deps.repository(),
         runStore = runStore,
-        evidenceStore = deps.qualificationEvidenceStore(),
-        enforcementStore = deps.enforcementEvidenceStore(),
+        evidenceStore = evidenceStore,
+        enforcementStore = enforcementStore,
         fullChargeStore = deps.fullChargeStore(),
         buildIdentity = deps.buildIdentity(),
         batteryReader = deps.batteryReader(),
@@ -618,6 +802,28 @@ class QualificationRunnerContractTest {
         bootCountProvider = deps.bootCountProvider(),
         dispatcher = dispatcher,
     )
+
+    /** Provenance of a process that is gone, so the record is close-out-only on the next tick. */
+    private fun deadProcess() = WorkProvenance(
+        token = "a-dead-process",
+        pid = 2,
+        bootCount = 1,
+        createdAtMillis = 1_000L,
+    )
+
+    /**
+     * A store of this test's own. The injected one is a process-wide singleton whose backing file
+     * outlives a single case here, so evidence assertions have to stand on a store nobody else wrote.
+     */
+    private fun freshDataStore() = AppDataStore(
+        PreferenceDataStoreFactory.create(scope = storeScope) {
+            File(tempFolder.newFolder(), "evidence.preferences_pb")
+        },
+    )
+
+    /** The stored evidence exactly as it was written, which is where the version stamp is visible. */
+    private suspend fun AppDataStore.raw(key: String): String =
+        store.data.first()[stringPreferencesKey(key)] ?: ""
 
     private fun postedTitle(service: ChargeSessionService): String? =
         shadowOf(service).lastForegroundNotification?.extras?.getString(Notification.EXTRA_TITLE)
