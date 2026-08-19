@@ -136,6 +136,16 @@ data class QualificationRunRecord(
     @SerialName("adapterId") val adapterId: String = "",
     @SerialName("buildIdentity") val buildIdentity: String = "",
     @SerialName("protocolVersion") val protocolVersion: Int = 0,
+    /**
+     * The [eu.darken.amply.charging.core.enforcement.EnforcementVerdictEngine] version this run
+     * measures under, stamped onto the enforcement evidence a refutation writes.
+     *
+     * Recorded here rather than read from the constant at write time for the same reason
+     * [protocolVersion] is: a decided outcome can be written out by a *later* process, and an app
+     * update in between would otherwise stamp this measurement with a version that did not produce
+     * it — laundering a superseded verdict past the evidence store's own scoping and migration.
+     */
+    @SerialName("enforcementAlgorithmVersion") val enforcementAlgorithmVersion: Int = 0,
     @SerialName("shape") val shape: RunShape = RunShape.FIXED_CAP,
     @SerialName("candidate") val candidate: Boolean = false,
     /**

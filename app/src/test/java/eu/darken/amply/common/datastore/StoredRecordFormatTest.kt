@@ -237,6 +237,7 @@ class StoredRecordFormatTest {
             adapterId = "lineageos-chargingcontrol-v1",
             buildIdentity = "0123456789abcdef",
             protocolVersion = 2,
+            enforcementAlgorithmVersion = 2,
             shape = RunShape.VARIABLE_CAP,
             lowCap = 70,
             releasePolicy = ChargePolicy.FixedLimit(85),
@@ -253,7 +254,8 @@ class StoredRecordFormatTest {
         json.encodeToString(QualificationRunRecord.serializer(), record) shouldBe
             """{"baseline":"fixed:80","runId":"run-1","runToken":"tok-1",""" +
             """"adapterId":"lineageos-chargingcontrol-v1","buildIdentity":"0123456789abcdef",""" +
-            """"protocolVersion":2,"shape":"VARIABLE_CAP","candidate":false,"baselineVerified":false,""" +
+            """"protocolVersion":2,"enforcementAlgorithmVersion":2,"shape":"VARIABLE_CAP",""" +
+            """"candidate":false,"baselineVerified":false,""" +
             """"phase":"PREFLIGHT","runStartedAtWallMillis":0,"phaseStartedAtWallMillis":0,"lowCap":70,""" +
             """"releasePolicy":"fixed:85","commandedAtWallMillis":0,"commandAckedAtWallMillis":0,""" +
             """"windowAnchoredAtWallMillis":0,"windowStartPercent":-1,"windowSignalChanges":0,""" +
@@ -274,6 +276,22 @@ class StoredRecordFormatTest {
 
         val decoded = json.decodeFromString(QualificationRunRecord.serializer(), stored)
         decoded.finalizing shouldBe true
+        decoded.finalization shouldBe null
+    }
+
+    /**
+     * A record written before the enforcement algorithm version was stored with the run. It must still
+     * decode — it carries a baseline the user is owed — and its zero is what the runner reads as "this
+     * build's constant", which is safe precisely because such a record can carry no finalization intent
+     * and so is never replayed across an app update.
+     */
+    @Test
+    fun `a run record without an enforcement algorithm version decodes with zero`() {
+        val stored = """{"baseline":"fixed:80","runId":"run-1","runToken":"tok-1","protocolVersion":2}"""
+
+        val decoded = json.decodeFromString(QualificationRunRecord.serializer(), stored)
+        decoded.protocolVersion shouldBe 2
+        decoded.enforcementAlgorithmVersion shouldBe 0
         decoded.finalization shouldBe null
     }
 

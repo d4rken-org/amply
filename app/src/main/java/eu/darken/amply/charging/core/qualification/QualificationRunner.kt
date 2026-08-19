@@ -270,6 +270,7 @@ class QualificationRunner @Inject constructor(
                     adapterId = adapter.id,
                     buildIdentity = buildIdentity.current(),
                     protocolVersion = QualificationProtocol.PROTOCOL_VERSION,
+                    enforcementAlgorithmVersion = EnforcementVerdictEngine.ALGORITHM_VERSION,
                     shape = plan.shape,
                     // Whether the commanded values are a guess is the eligibility layer's answer, not
                     // a literal here: it is what stops a guessed mapping from producing a terminal
@@ -556,7 +557,11 @@ class QualificationRunner @Inject constructor(
      * ledger, and one would only be a second thing to keep in sync.
      *
      * That byte-identity is also why the evidence timestamps come from the intent's
-     * [FinalizationIntent.decidedAtWallMillis] rather than a fresh clock read.
+     * [FinalizationIntent.decidedAtWallMillis] rather than a fresh clock read, and why the protocol
+     * and algorithm versions come from the record rather than from today's constants: a replay can
+     * run in a process started by an app update, and a measurement must be stamped with the versions
+     * that produced it so the evidence stores' own scoping and migration decide whether it still
+     * applies.
      */
     private suspend fun finalize(
         record: QualificationRunRecord,
@@ -597,11 +602,16 @@ class QualificationRunner @Inject constructor(
             }
         }
         when (terminal) {
+            // Both evidence writes take their version from the RECORD, never from the current
+            // constant: a replay can run in a process started by an app update, and stamping the
+            // measurement with a version that did not produce it would slip a superseded pass past
+            // QualificationEvidenceStore's scoping, and a superseded refutation past
+            // EnforcementEvidenceStore's per-verdict migration.
             is RunTerminal.Passed -> evidenceStore.record(
                 QualificationEvidence(
                     adapterId = record.adapterId,
                     buildIdentity = record.buildIdentity,
-                    protocolVersion = QualificationProtocol.PROTOCOL_VERSION,
+                    protocolVersion = record.protocolVersion,
                     shape = record.shape,
                     signal = record.signal,
                     capPercent = record.lowCap,
@@ -619,7 +629,12 @@ class QualificationRunner @Inject constructor(
                 EnforcementEvidence(
                     adapterId = record.adapterId,
                     buildIdentity = record.buildIdentity,
-                    algorithmVersion = EnforcementVerdictEngine.ALGORITHM_VERSION,
+                    // Zero can only come from a record written before the field existed, and such a
+                    // record carries no finalization intent — so it is never a replay across an app
+                    // update, it closes out as FINALIZATION_INTERRUPTED or PROCESS_DEATH instead,
+                    // and the current constant is the version that would have measured it anyway.
+                    algorithmVersion = record.enforcementAlgorithmVersion.takeIf { it != 0 }
+                        ?: EnforcementVerdictEngine.ALGORITHM_VERSION,
                     verdict = EnforcementVerdict.REFUTED,
                     capPercent = record.lowCap,
                     observedPercent = record.observedHoldPercent ?: -1,
