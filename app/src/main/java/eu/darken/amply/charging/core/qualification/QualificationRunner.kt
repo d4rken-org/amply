@@ -323,11 +323,16 @@ class QualificationRunner @Inject constructor(
      *
      * The run record is what keeps the charge service alive, so a close-out that fails its single
      * baseline write used to be the end of the line: the record is cleared either way, the service
-     * stops at the next `continueGestureOrStop` (which looks at the session, the gesture and the
-     * watchers, never at a pending recovery target), and nothing re-dispatches recovery. A boot-time
-     * close-out is where that bites — the backend or provider is routinely not ready yet — and the
-     * device would sit on the run's experimental policy, which includes its deliberately
-     * less-protective release policy, until the next foreground launch or reboot.
+     * stopped at the next stop decision, and nothing re-dispatched recovery. A boot-time close-out is
+     * where that bites — the backend or provider is routinely not ready yet — and the device would sit
+     * on the run's experimental policy, which includes its deliberately less-protective release
+     * policy, until the next foreground launch or reboot.
+     *
+     * This dispatch is one of the two halves that close that hole, and it is the half that cannot be
+     * done from inside the service: it starts one that has already stopped, or was never running. The
+     * other half lives in `ChargeSessionService`, whose stop decisions now keep the instance alive for
+     * an owed recovery target no live run owns — which is what covers this dispatch racing the very
+     * stop it is meant to prevent (clearing the record is what turns the last watcher off).
      *
      * `BootRecoveryFlow` is the machinery for a failed restore: it re-writes until the hardware
      * confirms or a budget expires. The recovery target is deliberately left in place above, so it is
