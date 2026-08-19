@@ -1,6 +1,7 @@
 package eu.darken.amply.main.ui.qualification
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -189,6 +190,7 @@ private fun LazyListScope.introStep() {
 
 private fun LazyListScope.precheckStep(state: QualificationUiState) {
     item { SectionTitle(stringResource(R.string.qualification_precheck_title)) }
+    state.precheck?.let { precheck -> item { PrecheckStatusBlock(precheck) } }
     when (val eligibility = state.eligibility) {
         null -> item { BodyText(stringResource(R.string.qualification_precheck_checking)) }
         is RunEligibility.Eligible -> {
@@ -211,6 +213,53 @@ private fun LazyListScope.precheckStep(state: QualificationUiState) {
         }
 
         is RunEligibility.Ineligible -> item { BodyText(stringResource(eligibility.reason.messageRes())) }
+    }
+}
+
+/**
+ * The figures behind the verdict: where the battery is, where it has to be, and whether it is moving.
+ * Every line is skipped when its value is unknown, so the block can never state something unobserved.
+ */
+@Composable
+private fun PrecheckStatusBlock(status: PrecheckStatusUi) {
+    val lines = buildList {
+        status.currentPercent?.let { add(stringResource(R.string.qualification_precheck_status_level, it)) }
+        status.requiredPercent?.let { add(stringResource(R.string.qualification_precheck_status_required, it)) }
+        when (status.charging) {
+            true -> add(stringResource(R.string.qualification_precheck_status_charging))
+            // Saying it plainly answers the most common cause of the block on its own; an estimate
+            // would be meaningless here anyway.
+            false -> add(stringResource(R.string.qualification_precheck_status_not_charging))
+            null -> Unit
+        }
+        when (val bucket = status.estimatedMinutes?.let { etaBucket(it) }) {
+            is EtaBucket.Minutes -> add(
+                stringResource(R.string.qualification_precheck_status_eta_minutes, bucket.minutes),
+            )
+
+            EtaBucket.AboutAnHour -> add(stringResource(R.string.qualification_precheck_status_eta_hour))
+            EtaBucket.OverAnHour -> add(stringResource(R.string.qualification_precheck_status_eta_over_hour))
+            null -> Unit
+        }
+    }
+    if (lines.isEmpty()) return
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = MaterialTheme.shapes.medium,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            lines.forEach {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 
@@ -362,6 +411,23 @@ private fun QualificationScreenBlockedPreview() = PreviewWrapper {
         QualificationUiState(
             step = QualificationStep.PRECHECK,
             eligibility = RunEligibility.Ineligible(IneligibleReason.NOT_CHARGING),
+        ),
+    )
+}
+
+@AmplyPreview
+@Composable
+private fun QualificationScreenBlockedOnBatteryPreview() = PreviewWrapper {
+    PreviewScreen(
+        QualificationUiState(
+            step = QualificationStep.PRECHECK,
+            eligibility = RunEligibility.Ineligible(IneligibleReason.BATTERY_LEVEL, requiredPercent = 73),
+            precheck = PrecheckStatusUi(
+                currentPercent = 64,
+                requiredPercent = 73,
+                charging = true,
+                estimatedMinutes = 43,
+            ),
         ),
     )
 }

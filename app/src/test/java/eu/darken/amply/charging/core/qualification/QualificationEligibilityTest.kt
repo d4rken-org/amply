@@ -202,9 +202,52 @@ class QualificationEligibilityTest {
             RunEligibility.Ineligible(IneligibleReason.BASELINE_UNREADABLE)
     }
 
+    /**
+     * The refusal carries the level a run would need, so the pre-check can name the number instead of
+     * saying "too low". 73 for these caps: the lowest tick is 70 and a variable-cap run has to start
+     * [QualificationProtocol.VARIABLE_CAP_UNDERSHOOT] above it.
+     */
     @Test
     fun `a battery below the lowest cap cannot host a variable-cap run yet`() {
-        eligibility(percent = 60) shouldBe RunEligibility.Ineligible(IneligibleReason.BATTERY_LEVEL)
+        eligibility(percent = 60) shouldBe
+            RunEligibility.Ineligible(IneligibleReason.BATTERY_LEVEL, requiredPercent = 73)
+    }
+
+    /**
+     * Deliberately absent up here: the way out of a too-full battery is to discharge, and a "needed"
+     * level would read as a target to charge towards.
+     */
+    @Test
+    fun `a too-full battery carries no required level`() {
+        val result = eligibility(percent = 100)
+
+        result.shouldBeInstanceOf<RunEligibility.Ineligible>()
+        result.requiredPercent shouldBe null
+    }
+
+    @Test
+    fun `the required level is the lowest one that yields a plan`() {
+        minimumStartPercent(
+            caps = listOf(70, 75, 80, 85, 90, 95),
+            policies = listOf(ChargePolicy.Unrestricted),
+        ) shouldBe 73
+    }
+
+    /** A single-tick adapter plans at any level, so there is no level requirement to show. */
+    @Test
+    fun `a single-tick adapter has no meaningful level requirement`() {
+        minimumStartPercent(
+            caps = listOf(80),
+            policies = listOf(ChargePolicy.Unrestricted),
+        ) shouldBe 0
+    }
+
+    @Test
+    fun `an adapter that can neither cap below nor release has no start level at all`() {
+        minimumStartPercent(
+            caps = listOf(80),
+            policies = listOf(ChargePolicy.FixedLimit(80)),
+        ) shouldBe null
     }
 
     /**
