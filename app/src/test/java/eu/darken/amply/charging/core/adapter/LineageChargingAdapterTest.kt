@@ -166,7 +166,7 @@ class LineageChargingAdapterTest {
         adapter.defaultProtectivePolicy shouldBe ChargePolicy.FixedLimit(80)
         adapter.verification shouldBe VerificationStrategy.SYNC_READBACK
         adapter.preferShizukuForWrites shouldBe true
-        adapter.reconnectGestureSupported shouldBe false
+        adapter.reconnectGestureSupport shouldBe ReconnectSupport.ANY_LEVEL_ONLY
     }
 
     /** One fake serving BOTH the write backend and the read snapshot from a shared map — mirrors the real

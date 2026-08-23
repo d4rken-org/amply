@@ -21,7 +21,7 @@ single shared store, every write reaches every collector, so the deduplication h
 
 - `AdapterRegistry` selects an OEM adapter from **immutable device information**. Live adapters declare a
   capability surface (`sessionOverridePolicy`, `defaultProtectivePolicy`, `verification`,
-  `reconnectGestureSupported`) that the session/recovery/UI layers consume instead of hardcoding Pixel behavior.
+  `reconnectGestureSupport`) that the session/recovery/UI layers consume instead of hardcoding Pixel behavior.
 - `AccessResolver` independently probes direct WSS and Shizuku.
 - `ChargingRepository` selects the strongest backend per operation: **Shizuku for reads, direct WSS for durable
   writes, then Shizuku for verification** when both are available.
@@ -89,10 +89,29 @@ Opt-in, with two arming bases:
 - **Limit hold (default)**: the public battery broadcast **simultaneously** reports external power, charging-policy
   hardware state `4`, a non-charging battery status, and an expected limit-range level. Once latched during a plug
   period it survives option flips (the evidence was the hardware hold itself).
-- **Any level (opt-in sub-option)**: plugged AND Amply's *persistent* configured policy
-  (`ChargingPreferences.lastPersistentPolicy`, never updated by temporary session writes) is protective. Percent,
-  battery status, and hardware hold are deliberately ignored. This basis is revoked immediately — including an open
-  reconnect window — when the option is switched off or the persistent policy stops being protective.
+- **Any level (opt-in sub-option)**: plugged AND the configured policy is conclusively protective. Evidence comes
+  from `GestureBasis.evidence()` in order: the hardware decode, then the synchronous settings readback
+  (`ChargingRepository.syncReadback()`, null on async-hardware adapters), then Amply's *persistent* write journal
+  (`ChargingPreferences.lastPersistentPolicy`, never updated by temporary session writes). Percent, battery status,
+  and hardware hold are deliberately ignored. This basis is revoked immediately — including an open reconnect
+  window — when the option is switched off or the policy stops being conclusively protective.
+
+Which bases exist is per-adapter, via `ChargingAdapter.reconnectGestureSupport` (`ReconnectSupport`):
+
+- `FULL` — Pixel only. It is the only adapter reporting the charging-policy hardware state the limit-hold basis
+  needs while also applying writes mid-plug-session.
+- `ANY_LEVEL_ONLY` — Samsung (both generations), OnePlus/ColorOS, Xiaomi HyperOS 3, LineageOS. A real cap that
+  reads back synchronously, but no observable hold signal, so the limit-hold basis can never arm. The any-level
+  basis is **implied on** here: the sub-option is not consulted and the settings screen hides it, because honouring
+  an "off" would leave the master switch on with no basis that could ever arm. The settings readback is what keeps
+  these off journal-only evidence, so a limit removed in the OEM's own settings revokes the basis.
+- `NONE` — everything else, for two distinct reasons. GrapheneOS (and any future `policyLatchesAtPlug` adapter)
+  because the gesture's write lands strictly after the replug the ROM already sampled, so it cannot take effect
+  until the *next* replug. Xiaomi HyperOS 2 because Adaptive is its only protective mode *and* that
+  mode's hold is unobserved on the generation (13T, 59%→100% with it configured), so the gesture
+  would have nothing to lift on every tick. Being `enforcementIsConditional` is NOT itself
+  disqualifying: Pixel arms on Adaptive today, and OnePlus/HyperOS 3 will too, since adaptive
+  charging does hold below full before the usual unplug.
 
 A powered→unpowered transition opens a reconnect window of **2–10 seconds** (`elapsedRealtime`-based): the 2s
 debounce floor filters momentary power cuts (car ignition, connector jostle), and a rejected too-fast/too-late replug

@@ -24,7 +24,9 @@ Two live adapters, gated by `ro.build.version.oneui` ranges plus `protect_batter
 
 Writes apply **synchronously** (`VerificationStrategy.SYNC_READBACK`): `apply()` requires read-back equality, no
 pending-settle window, boot recovery converges on settings readback, and no reapply-inversion trick is needed.
-The reconnect gesture is Pixel-only (`reconnectGestureSupported`). One UI 6/7 and 9+ fall through to the
+The reconnect gesture runs in `ReconnectSupport.ANY_LEVEL_ONLY` mode: One UI publishes no charging-policy hold
+signal, so the limit-hold basis can never arm and the any-level basis is implied on (the sub-option is hidden).
+One UI 6/7 and 9+ fall through to the
 diagnostics-only lab adapter. An external `protect_battery=0` makes One UI forget the user's prior mode (it falls back
 to the OEM default on re-enable), so Amply restores the exact prior policy itself rather than trusting Samsung's
 bookkeeping. Verified devices + coverage: see the qualification ledger (`device-qualification` skill).
@@ -92,7 +94,8 @@ NOT any AOSP `settings` namespace: `charging_control_enabled` (0/1), `charging_c
 unprivileged** (`LineageSettingsClient` via ContentResolver, shared by both backends); **writes require Shizuku**
 (`content insert`; the shell UID holds `lineageos.permission.WRITE_SETTINGS`, which `WRITE_SECURE_SETTINGS` cannot
 cover — `preferShizukuForWrites`, and the WSS auto-grant is skipped). `SYNC_READBACK` with read-back equality;
-session override = Unrestricted; protective default = FixedLimit(80); reconnect gesture unsupported.
+session override = Unrestricted; protective default = FixedLimit(80); reconnect gesture
+`ANY_LEVEL_ONLY` (reachable only once the enforcement gate enables control, since it rides `canApply`).
 
 LineageOS's own `ChargingControlController` observes these keys and re-drives the `vendor.lineage.health.
 IChargingControl` HAL, so an external write is honored. But the HAL is **device-dependent** (the setting can flip

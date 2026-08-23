@@ -78,6 +78,10 @@ class LineageChargingAdapter @Inject constructor(
     override val defaultProtectivePolicy = ChargePolicy.FixedLimit(80)
     override val sessionOverridePolicy = ChargePolicy.Unrestricted
     override val verification = VerificationStrategy.SYNC_READBACK
+
+    // Reachability is still decided by the enforcement gate: with control off, `canApply` is
+    // false and no surface offers the gesture, so this never widens what an unqualified build does.
+    override val reconnectGestureSupport = ReconnectSupport.ANY_LEVEL_ONLY
     override val preferShizukuForWrites = true
     override val enforcementEvidenceRequired = true
 

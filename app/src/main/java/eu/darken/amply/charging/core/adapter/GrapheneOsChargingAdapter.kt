@@ -73,6 +73,11 @@ class GrapheneOsChargingAdapter @Inject constructor() : ChargingAdapter {
     override val verification = VerificationStrategy.SYNC_READBACK
     override val policyLatchesAtPlug = true
 
+    // Structural, not a missing signal: this ROM samples the key at plug-session start, and the
+    // gesture's override write lands strictly after the replug broadcast it would have to beat. It
+    // would read back correctly and change nothing until the *next* replug. See the class doc.
+    override val reconnectGestureSupport = ReconnectSupport.NONE
+
     // Not because the namespace needs it (global is WSS-writable elsewhere) but because the key is
     // @Protected: a direct write throws SecurityException no matter which permissions Amply holds,
     // while the shell UID is exempt. Reads share the restriction; readSyncDirectFirst's direct

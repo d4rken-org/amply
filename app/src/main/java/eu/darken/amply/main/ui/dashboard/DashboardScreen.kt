@@ -329,13 +329,17 @@ fun DashboardScreen(
                             onOpen = onOpenConditions,
                         )
                     }
-                    // Hidden where the adapter lacks the gesture's hardware signal (non-Pixel) —
-                    // unless it is still switched on and needs a way to be turned off.
+                    // Hidden where the adapter has no reachable arming basis at all — unless it is
+                    // still switched on and needs a way to be turned off.
                     if (state.charging.reconnectSupported || state.quickFullChargeEnabled) {
                         item(key = "dashboard.reconnect") {
                             QuickFullChargeCard(
                                 enabled = state.quickFullChargeEnabled,
-                                anyLevel = state.quickFullChargeAnyLevel,
+                                // The *effective* basis, not the stored sub-option: where the
+                                // limit-hold basis cannot arm, the gesture runs any-level whatever
+                                // the setting says, and the body copy has to describe that.
+                                anyLevel = state.quickFullChargeAnyLevel ||
+                                    state.charging.reconnectAnyLevelOnly,
                                 canControl = state.charging.reconnectSupported && state.charging.canApply,
                                 onEnabledChange = onQuickFullChargeChange,
                             )

@@ -39,6 +39,7 @@ class ChargingSettingsScreenTest {
     private fun screen(
         gestureEnabled: Boolean = true,
         anyLevelEnabled: Boolean = false,
+        anyLevelOnly: Boolean = false,
         canEnableGesture: Boolean = true,
         availablePolicies: List<ChargePolicy> = emptyList(),
         selectedPolicyIds: List<String> = emptyList(),
@@ -50,6 +51,7 @@ class ChargingSettingsScreenTest {
         ChargingSettingsScreen(
             gestureEnabled = gestureEnabled,
             anyLevelEnabled = anyLevelEnabled,
+            anyLevelOnly = anyLevelOnly,
             canEnableGesture = canEnableGesture,
             availablePolicies = availablePolicies,
             selectedPolicyIds = selectedPolicyIds,
@@ -116,6 +118,29 @@ class ChargingSettingsScreenTest {
         compose.onNodeWithText(string(R.string.settings_reconnect_any_level_title)).performClick()
 
         compose.runOnIdle { changed shouldBe null }
+    }
+
+    // On an ANY_LEVEL_ONLY adapter the gesture already runs any-level, so the sub-option is not a
+    // choice: the row must not render at all, and the master toggle must stay usable on its own.
+    @Test
+    fun `an any-level-only device replaces the sub-option with a statement`() {
+        screen(anyLevelOnly = true)
+
+        compose.onNodeWithText(string(R.string.settings_reconnect_any_level_title)).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.settings_reconnect_any_level_hint)).assertDoesNotExist()
+        compose.onNodeWithText(string(R.string.settings_reconnect_any_level_only_hint))
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun `an any-level-only device still switches the gesture itself`() {
+        var changed: Boolean? = null
+        screen(anyLevelOnly = true, gestureEnabled = false, onGestureEnabledChange = { changed = it })
+
+        compose.onNodeWithText(string(R.string.settings_reconnect_enabled_title)).performClick()
+
+        compose.runOnIdle { changed shouldBe true }
     }
 
     @Test

@@ -62,6 +62,30 @@ enum class VerificationStrategy {
     SYNC_READBACK,
 }
 
+/**
+ * How much of the reconnect gesture an adapter can support.
+ *
+ * [ANY_LEVEL_ONLY] is not a degraded [FULL]: it is the honest description of a device that enforces
+ * a cap but publishes no observable hold signal, so Amply can know the cap is *configured* and never
+ * that it is *holding right now*. Surfaces must not offer the limit-hold sub-option there — it
+ * could never arm — and the gesture runs on the any-level basis regardless of the user's setting.
+ */
+enum class ReconnectSupport {
+    /** No gesture. Either no cap to lift (Adaptive-only adapters) or the write cannot land in time
+     * (adapters with `policyLatchesAtPlug`, where the gesture's write always misses the plug event). */
+    NONE,
+
+    /** Any-level arming only — the hardware hold signal this adapter cannot report is not required. */
+    ANY_LEVEL_ONLY,
+
+    /** Both bases, including arming off an observed hardware limit hold. */
+    FULL,
+    ;
+
+    val available: Boolean get() = this != NONE
+    val impliesAnyLevel: Boolean get() = this == ANY_LEVEL_ONLY
+}
+
 interface ChargingAdapter {
     val id: String
     val displayName: CaString
@@ -76,8 +100,18 @@ interface ChargingAdapter {
 
     val verification: VerificationStrategy get() = VerificationStrategy.ASYNC_HARDWARE
 
-    /** Whether the powered→unpowered reconnect gesture's hardware preconditions exist on this adapter. */
-    val reconnectGestureSupported: Boolean get() = false
+    /**
+     * Which arming bases the powered→unpowered reconnect gesture can actually use here.
+     *
+     * The gesture's *limit-hold* basis reads Android's charging-policy hardware state
+     * (`EXTRA_CHARGING_STATUS` == 4), which only [PixelChargingAdapter] and
+     * [GrapheneOsChargingAdapter] decode at all — every other adapter inherits
+     * [decodeHardware]'s null and can never satisfy it. That is why this started life as a
+     * Pixel-only boolean. The *any-level* basis needs no hardware signal (see [GestureBasis]), so
+     * on an adapter whose protective policy is a real cap it works fine; three states instead of
+     * two is what lets those devices have the gesture without claiming a hold they cannot observe.
+     */
+    val reconnectGestureSupport: ReconnectSupport get() = ReconnectSupport.NONE
 
     /**
      * Prefer Shizuku over direct WSS for writes. Two adapter classes set it: keys in the `system`

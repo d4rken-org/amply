@@ -177,7 +177,7 @@ class GrapheneOsChargingAdapterTest {
         adapter.defaultProtectivePolicy shouldBe ChargePolicy.FixedLimit(80)
         adapter.verification shouldBe VerificationStrategy.SYNC_READBACK
         adapter.policyLatchesAtPlug shouldBe true
-        adapter.reconnectGestureSupported shouldBe false
+        adapter.reconnectGestureSupport shouldBe ReconnectSupport.NONE
         // Not a namespace need: the key is @Protected and only the shell UID (Shizuku) may touch it.
         adapter.preferShizukuForWrites shouldBe true
     }

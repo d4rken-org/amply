@@ -47,7 +47,7 @@ class BootReceiver : BroadcastReceiver() {
                     adapterRegistry.select(
                         evidenceState = EnforcementEvidenceState.Loading,
                         qualification = QualificationEvidenceState.Loading,
-                    ).adapter?.reconnectGestureSupported == true
+                    ).adapter?.reconnectGestureSupport?.available == true
                 val mandatory = sessionExists || pendingRecovery || gestureEnabled
                 val action = ServiceDispatch.startAction(
                     trigger = trigger,
