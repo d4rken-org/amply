@@ -839,6 +839,11 @@ private fun QuickFullChargeCard(
             when {
                 enabled && anyLevel -> stringResource(R.string.dashboard_reconnect_body_on_any_level)
                 enabled -> stringResource(R.string.dashboard_reconnect_body_on)
+                // The off-state has to describe the basis this device would actually use. Naming
+                // the hold where it can never happen was wrong twice over on a legacy Samsung: it
+                // promised a hold the ROM does not report, and named 80% next to that device's
+                // real 85% limit shown one card above.
+                anyLevel -> stringResource(R.string.dashboard_reconnect_body_off_any_level)
                 else -> stringResource(R.string.dashboard_reconnect_body_off)
             },
             style = MaterialTheme.typography.bodySmall,

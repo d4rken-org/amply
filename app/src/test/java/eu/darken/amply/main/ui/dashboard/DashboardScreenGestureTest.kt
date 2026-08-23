@@ -76,6 +76,49 @@ class DashboardScreenGestureTest {
         compose.onAllNodesWithContentDescription(string(R.string.action_settings)).assertCountEquals(1)
     }
 
+    // Found on a real SM-G781B: the off-state copy promised a hold that One UI never reports AND
+    // named 80% while the card directly above it read "85% limit". An adapter that can only arm
+    // any-level must describe that, in the off state too.
+    @Test
+    fun `an any-level-only device describes the basis it will actually use`() {
+        render(
+            state = DashboardUiState(
+                onboardingComplete = true,
+                quickFullChargeEnabled = false,
+                charging = ChargingState(
+                    adapterResolved = true,
+                    reconnectSupported = true,
+                    reconnectAnyLevelOnly = true,
+                ),
+            ),
+        )
+
+        compose.onNode(hasScrollAction())
+            .performScrollToNode(hasText(string(R.string.dashboard_reconnect_title)))
+        compose.onNodeWithText(string(R.string.dashboard_reconnect_body_off_any_level)).assertExists()
+        compose.onAllNodesWithText(string(R.string.dashboard_reconnect_body_off)).assertCountEquals(0)
+    }
+
+    // The hold wording survives where the hold can actually happen (Pixel with the sub-option off).
+    @Test
+    fun `a full-support device keeps the limit-hold wording`() {
+        render(
+            state = DashboardUiState(
+                onboardingComplete = true,
+                quickFullChargeEnabled = false,
+                charging = ChargingState(
+                    adapterResolved = true,
+                    reconnectSupported = true,
+                    reconnectAnyLevelOnly = false,
+                ),
+            ),
+        )
+
+        compose.onNode(hasScrollAction())
+            .performScrollToNode(hasText(string(R.string.dashboard_reconnect_title)))
+        compose.onNodeWithText(string(R.string.dashboard_reconnect_body_off)).assertExists()
+    }
+
     @Test
     fun `the hero states the policy and is not a navigation surface`() {
         render(
