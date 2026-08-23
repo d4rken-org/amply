@@ -48,6 +48,9 @@ class OnePlusChargingAdapter @Inject constructor() : ChargingAdapter {
 
     override val defaultProtectivePolicy = ChargePolicy.FixedLimit(LIMIT_PERCENT)
     override val verification = VerificationStrategy.SYNC_READBACK
+
+    // FixedLimit(80) is a real cap and reads back synchronously; ColorOS publishes no hold signal.
+    override val reconnectGestureSupport = ReconnectSupport.ANY_LEVEL_ONLY
     override val preferShizukuForWrites = true
 
     override fun probe(device: DeviceInfo): AdapterSupport {

@@ -28,7 +28,7 @@ class PixelChargingAdapter @Inject constructor() : ChargingAdapter {
         ChargePolicy.Adaptive,
         ChargePolicy.Unrestricted,
     )
-    override val reconnectGestureSupported = true
+    override val reconnectGestureSupport = ReconnectSupport.FULL
     override val observedSettingUris
         get() = listOf(
             Settings.Secure.getUriFor(KEY_MODE),

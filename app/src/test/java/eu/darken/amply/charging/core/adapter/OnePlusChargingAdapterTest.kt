@@ -138,7 +138,7 @@ class OnePlusChargingAdapterTest {
         adapter.defaultProtectivePolicy shouldBe ChargePolicy.FixedLimit(80)
         adapter.verification shouldBe VerificationStrategy.SYNC_READBACK
         adapter.preferShizukuForWrites shouldBe true
-        adapter.reconnectGestureSupported shouldBe false
+        adapter.reconnectGestureSupport shouldBe ReconnectSupport.ANY_LEVEL_ONLY
         // ColorOS exposes Smart charging (adaptive) too, but the default is the unconditional cap.
         adapter.defaultProtectivePolicy.enforcementIsConditional shouldBe false
     }

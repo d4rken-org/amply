@@ -16,6 +16,9 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
 import eu.darken.amply.R
+import eu.darken.amply.common.ca.toCaString
+import eu.darken.amply.charging.core.ChargeObservation
+import eu.darken.amply.charging.core.adapter.VerificationStrategy
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingPreferences
 import eu.darken.amply.charging.core.ChargingRepository
@@ -574,7 +577,7 @@ class ChargeSessionService : Service() {
         // reuses this one.
         val gestureEnabled = fullChargeStore.isQuickFullChargeEnabled()
         val adapter = if (gestureEnabled) capabilityAdapter() else null
-        if (!gestureEnabled || adapter?.reconnectGestureSupported != true) {
+        if (!gestureEnabled || adapter?.reconnectGestureSupport?.available != true) {
             evaluateRules(plugged, plugKind, sessionActive = false)
             dispatchWatchers(plugged, percent, status, sessionOwned = false, battery, observedAtElapsed)
             // Gesture inactive: keep running only if a watcher still wants the service, showing the
@@ -599,16 +602,57 @@ class ChargeSessionService : Service() {
             return
         }
 
-        val anyLevel = fullChargeStore.isQuickFullChargeAnyLevel()
+        // On an ANY_LEVEL_ONLY adapter the limit-hold basis is unreachable by construction (no
+        // hardware hold signal), so the user's sub-option is not consulted: honouring an "off" there
+        // would leave the master switch on with no basis that can ever arm. Surfaces hide the
+        // sub-option on these adapters for the same reason.
+        val anyLevel = adapter.reconnectGestureSupport.impliesAnyLevel ||
+            fullChargeStore.isQuickFullChargeAnyLevel()
         // The live charging-policy hardware state, freshly decoded on every tick. It is the
         // authoritative source for the any-level basis: a limit set natively (or by a previous
         // install) leaves Amply's own journal empty, and gating on the journal alone meant the
         // basis never armed on such a device. The hardware signal is only reported while powered,
         // so unplugged ticks yield inconclusive evidence, which the engine treats as "no change".
         val hardware = adapter.decodeHardware(chargingStatus, plugged)
+        // Only sync-readback adapters answer (null elsewhere, so Pixel is untouched), and it is
+        // read only once the gesture is known to be enabled and available, keeping it off the
+        // session and watcher-only tick paths that the early returns above already left.
+        //
+        // A failed readback must degrade to "no settings evidence", never propagate: this runs on
+        // the dispatch path, and a thrown timeout would abort the whole battery evaluation — losing
+        // the plug edge that this very tick may be carrying, which is the one thing the gesture
+        // cannot reconstruct later. Falling through to the journal below is exactly the behaviour
+        // that shipped before this source existed, so degrading costs nothing that was ever there.
+        //
+        // `null` and "read failed" must NOT collapse into the same value here. `syncReadback()`
+        // returns null both for an adapter that has no sync source at all AND for one whose read
+        // threw or came back unreadable (`readObservationOrNull` swallows the failure), and those
+        // two mean opposite things downstream: the first legitimately hands the question to the
+        // write journal, while the second is a failure that must never be answered from a journal
+        // the readback exists to override. So a sync-readback adapter always contributes a non-null
+        // observation, falling back to an explicit Unknown, and only a non-sync adapter passes null.
+        val settings = if (anyLevel && adapter.verification == VerificationStrategy.SYNC_READBACK) {
+            val read = try {
+                repository.syncReadback()
+            } catch (e: TimeoutCancellationException) {
+                // Ordered before CancellationException on purpose: a Shizuku bind/command timeout
+                // IS one, and rethrowing it would reach DispatchCoordinator's cancellation rethrow
+                // and kill the battery-evaluation consumer for the rest of the service's life.
+                log(TAG, Logging.Priority.WARN) { "Gesture settings readback timed out" }
+                null
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log(TAG, Logging.Priority.WARN) { "Gesture settings readback failed: ${e.message}" }
+                null
+            }
+            read ?: ChargeObservation.Unknown(R.string.charging_reason_settings_unreadable.toCaString())
+        } else {
+            null
+        }
         val lastPersistent = preferences.lastPersistentPolicyNow()
         val policyEvidence = if (anyLevel) {
-            GestureBasis.evidence(hardware, lastPersistent)
+            GestureBasis.evidence(hardware, settings, lastPersistent)
         } else {
             PolicyEvidence.UNKNOWN
         }
@@ -1099,10 +1143,11 @@ class ChargeSessionService : Service() {
             qualification = QualificationEvidenceState.Loading,
         ).adapter
 
-    // The gesture's arming preconditions (hardware charging-state 4) are Pixel-specific; on
-    // adapters without that signal the monitor would never arm and must not run.
+    // An adapter with no reachable arming basis would run the monitor forever without ever arming,
+    // so it must not run at all. NONE covers both reasons: nothing to lift (Adaptive-only) and a
+    // write that cannot land in time (policyLatchesAtPlug).
     private fun reconnectGestureAvailable() =
-        capabilityAdapter()?.reconnectGestureSupported == true
+        capabilityAdapter()?.reconnectGestureSupport?.available == true
 
     // Resolved once per service lifetime: adapter selection is immutable device information, and
     // per-tick selection is deliberately avoided in the session branch (see the note in

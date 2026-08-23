@@ -41,6 +41,7 @@ import eu.darken.amply.common.settings.SettingsSwitchItem
 fun ChargingSettingsScreen(
     gestureEnabled: Boolean,
     anyLevelEnabled: Boolean,
+    anyLevelOnly: Boolean,
     canEnableGesture: Boolean,
     availablePolicies: List<ChargePolicy>,
     selectedPolicyIds: List<String>,
@@ -83,20 +84,34 @@ fun ChargingSettingsScreen(
                 icon = Icons.TwoTone.Bolt,
                 enabled = masterInteractive,
             )
-            SettingsSwitchItem(
-                title = stringResource(R.string.settings_reconnect_any_level_title),
-                subtitle = stringResource(R.string.settings_reconnect_any_level_body),
-                checked = anyLevelEnabled,
-                onCheckedChange = onAnyLevelChange,
-                icon = Icons.TwoTone.BatteryChargingFull,
-                enabled = gestureEnabled,
-            )
-            Text(
-                stringResource(R.string.settings_reconnect_any_level_hint),
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            // On an any-level-only adapter this is not a choice: the limit-hold alternative needs a
+            // hardware hold signal the device never reports, so the gesture already runs any-level.
+            // Offering a switch that changes nothing (and whose "off" position describes a mode that
+            // cannot arm) would be worse than a shorter screen, so the row and its hint go away and
+            // a single line states the behaviour instead.
+            if (anyLevelOnly) {
+                Text(
+                    stringResource(R.string.settings_reconnect_any_level_only_hint),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                SettingsSwitchItem(
+                    title = stringResource(R.string.settings_reconnect_any_level_title),
+                    subtitle = stringResource(R.string.settings_reconnect_any_level_body),
+                    checked = anyLevelEnabled,
+                    onCheckedChange = onAnyLevelChange,
+                    icon = Icons.TwoTone.BatteryChargingFull,
+                    enabled = gestureEnabled,
+                )
+                Text(
+                    stringResource(R.string.settings_reconnect_any_level_hint),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             if (availablePolicies.size > 2 && masterInteractive) {
                 SettingsCategoryHeader(
                     stringResource(R.string.settings_reconnect_notification_actions_category),
@@ -129,6 +144,7 @@ private fun ChargingSettingsScreenPreview() = PreviewWrapper {
     ChargingSettingsScreen(
         gestureEnabled = true,
         anyLevelEnabled = true,
+        anyLevelOnly = false,
         canEnableGesture = true,
         availablePolicies = binaryPolicies,
         selectedPolicyIds = binaryPolicies.map { it.stableId },
@@ -145,6 +161,7 @@ private fun ChargingSettingsScreenDisabledPreview() = PreviewWrapper {
     ChargingSettingsScreen(
         gestureEnabled = false,
         anyLevelEnabled = false,
+        anyLevelOnly = false,
         canEnableGesture = true,
         availablePolicies = binaryPolicies,
         selectedPolicyIds = binaryPolicies.map { it.stableId },
@@ -161,6 +178,7 @@ private fun ChargingSettingsScreenUnavailablePreview() = PreviewWrapper {
     ChargingSettingsScreen(
         gestureEnabled = false,
         anyLevelEnabled = false,
+        anyLevelOnly = false,
         canEnableGesture = false,
         availablePolicies = emptyList(),
         selectedPolicyIds = emptyList(),
@@ -178,6 +196,7 @@ private fun ChargingSettingsScreenWithNotificationButtonsPreview() = PreviewWrap
     ChargingSettingsScreen(
         gestureEnabled = true,
         anyLevelEnabled = false,
+        anyLevelOnly = false,
         canEnableGesture = true,
         availablePolicies = listOf(
             ChargePolicy.FixedLimit(80),

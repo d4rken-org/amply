@@ -117,6 +117,8 @@ internal fun ReconnectGestureContent() = PreviewWrapper {
     ChargingSettingsScreen(
         gestureEnabled = true,
         anyLevelEnabled = false,
+        // The Play Store shot shows a Pixel, which has both arming bases, so the sub-option renders.
+        anyLevelOnly = false,
         canEnableGesture = true,
         // A two-policy device, so the shot stays on the gesture options themselves.
         availablePolicies = listOf(ChargePolicy.FixedLimit(80), ChargePolicy.Unrestricted),

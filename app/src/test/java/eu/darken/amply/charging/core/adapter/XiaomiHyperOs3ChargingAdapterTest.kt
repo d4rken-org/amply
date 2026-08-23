@@ -143,7 +143,7 @@ class XiaomiHyperOs3ChargingAdapterTest {
         adapter.sessionOverridePolicy shouldBe ChargePolicy.Unrestricted
         adapter.defaultProtectivePolicy shouldBe ChargePolicy.FixedLimit(80)
         adapter.verification shouldBe VerificationStrategy.SYNC_READBACK
-        adapter.reconnectGestureSupported shouldBe false
+        adapter.reconnectGestureSupport shouldBe ReconnectSupport.ANY_LEVEL_ONLY
         adapter.preferShizukuForWrites shouldBe false
         adapter.policyLatchesAtPlug shouldBe false
         // Unlike HyperOS 2, this ROM has an unconditional protective mode (Battery protection), so

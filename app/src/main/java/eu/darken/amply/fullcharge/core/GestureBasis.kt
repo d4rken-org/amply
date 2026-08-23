@@ -7,13 +7,27 @@ import eu.darken.amply.charging.core.ChargePolicy
  * Turns what is actually known about the current charge configuration into the any-level gesture's
  * arming evidence, plus the limit to name in the waiting notification.
  *
- * [evidence] has two sources, in order ([limitPercent] has only the first — see below):
- * 1. [ChargeObservation.Verified] — the live hardware/settings readback. Conclusive on its own; the
- *    journal is not consulted at all, so a native change Amply never made still decides.
- * 2. `lastPersistentPolicy` — Amply's own journal of persistent writes. Null until Amply's first
+ * [evidence] has three sources, in order ([limitPercent] has only the first — see below):
+ * 1. `hardware` — the battery broadcast's charging-policy decode. Conclusive on its own; the
+ *    journal is not consulted at all, so a native change Amply never made still decides. Null on
+ *    every adapter that does not implement `decodeHardware`, i.e. everything but Pixel/GrapheneOS.
+ * 2. `settings` — the synchronous settings readback, and the ONLY conclusive source on the
+ *    `ReconnectSupport.ANY_LEVEL_ONLY` adapters, which publish no hold signal at all. Without it
+ *    those devices would arm purely off the journal below, so a limit removed in the OEM's own
+ *    settings would keep arming the gesture off a write Amply merely remembers making.
+ *
+ *    Null means "this adapter has NO sync source" — never "the read failed". The caller must keep
+ *    those apart, because `ChargingRepository.syncReadback()` itself returns null for both
+ *    (`readObservationOrNull` swallows a failed read), and they take opposite branches here: no
+ *    source hands the question to the journal, a failed read must not. Callers with a sync source
+ *    therefore substitute an explicit [ChargeObservation.Unknown] rather than passing null on.
+ * 3. `lastPersistentPolicy` — Amply's own journal of persistent writes. Null until Amply's first
  *    persistent write, which is exactly why it cannot be the only source: a limit set natively (or
  *    by a previous install) leaves it absent, and the any-level basis would never arm even though
  *    the limit genuinely is set.
+ *
+ * Sources 1 and 2 are never both present in practice (an adapter is either hardware-decoding or
+ * sync-readback), so their relative order is a formality rather than a policy choice.
  *
  * "Protective" is `!allowsFullCharge`, never `!= Unrestricted` — `PauseAtFull` and `FixedLimit(100)`
  * both reach 100 % and must not arm a gesture whose whole purpose is to lift a cap.
@@ -27,11 +41,12 @@ import eu.darken.amply.charging.core.ChargePolicy
  * configured now. A user who applied 80 % through Amply and then set the native charging setting to
  * unrestricted decodes as [ChargeObservation.Unknown] on Pixel's powered NORMAL state, so a journal
  * fallback would keep claiming a limit that no longer exists. Only a [ChargeObservation.Verified]
- * fixed limit may be named. In practice nothing loses a percentage it legitimately had: only the
- * Pixel and GrapheneOS adapters implement `decodeHardware`, and only Pixel supports the reconnect
- * gesture (GrapheneOS latches the setting at plug-session start, so the gesture's write-after-replug
- * can never take effect there) — an unverified state simply falls back to the generic "while your
- * charge limit is holding" copy.
+ * fixed limit may be named. It deliberately does NOT take the `settings` source [evidence] gained:
+ * every adapter that has one is `ReconnectSupport.ANY_LEVEL_ONLY`, where the notification renders
+ * the any-level copy and never names a percent, so feeding it here would add a value nothing reads
+ * while widening the input to the limit-hold basis's `verifiedLimitPercent`. On Pixel, where that
+ * basis does run, `syncReadback()` returns null anyway — an unverified state simply falls back to
+ * the generic "while your charge limit is holding" copy.
  *
  * Accepted residual (arming only, distinct from the above): with any-level ON, inconclusive hardware
  * evidence plus a stale protective journal still arms even if charging was since set unrestricted
@@ -42,20 +57,30 @@ import eu.darken.amply.charging.core.ChargePolicy
  */
 object GestureBasis {
 
-    fun evidence(hardware: ChargeObservation?, lastPersistent: ChargePolicy?): PolicyEvidence {
-        if (hardware is ChargeObservation.Verified) {
-            return if (hardware.policy.allowsFullCharge) {
-                PolicyEvidence.UNRESTRICTED
-            } else {
-                PolicyEvidence.PROTECTIVE
-            }
-        }
+    fun evidence(
+        hardware: ChargeObservation?,
+        settings: ChargeObservation?,
+        lastPersistent: ChargePolicy?,
+    ): PolicyEvidence {
+        (hardware as? ChargeObservation.Verified)?.let { return it.classify() }
+        // Asymmetric with `hardware` on purpose. A non-Verified hardware decode is an ORDINARY
+        // reading — the charging-policy state is absent while unplugged and ambiguous in the NORMAL
+        // state — so it falls through and the journal still answers, exactly as it did before this
+        // parameter existed. A non-null `settings` means the caller HAS a sync source and attempted
+        // it, so a non-Verified result there is a genuine failure, and answering a failed readback
+        // from the journal the readback exists to override is what would let a limit removed in the
+        // OEM's own settings keep arming the gesture. Inconclusive is the honest answer, and the
+        // engine already tolerates it everywhere it must (unplugged ticks and open windows).
+        settings?.let { return (it as? ChargeObservation.Verified)?.classify() ?: PolicyEvidence.UNKNOWN }
         return when {
             lastPersistent == null -> PolicyEvidence.UNKNOWN
             lastPersistent.allowsFullCharge -> PolicyEvidence.UNRESTRICTED
             else -> PolicyEvidence.PROTECTIVE
         }
     }
+
+    private fun ChargeObservation.Verified.classify(): PolicyEvidence =
+        if (policy.allowsFullCharge) PolicyEvidence.UNRESTRICTED else PolicyEvidence.PROTECTIVE
 
     /**
      * The limit percent to name in the waiting notification, or null when nothing *verified* says

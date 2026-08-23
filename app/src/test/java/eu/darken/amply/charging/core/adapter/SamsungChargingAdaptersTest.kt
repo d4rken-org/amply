@@ -229,8 +229,8 @@ class SamsungChargingAdaptersTest {
         legacy.defaultProtectivePolicy shouldBe ChargePolicy.FixedLimit(85)
         modern.verification shouldBe VerificationStrategy.SYNC_READBACK
         legacy.verification shouldBe VerificationStrategy.SYNC_READBACK
-        modern.reconnectGestureSupported shouldBe false
-        legacy.reconnectGestureSupported shouldBe false
+        modern.reconnectGestureSupport shouldBe ReconnectSupport.ANY_LEVEL_ONLY
+        legacy.reconnectGestureSupport shouldBe ReconnectSupport.ANY_LEVEL_ONLY
     }
 
     private class FakeBackend(

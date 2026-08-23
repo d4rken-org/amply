@@ -79,6 +79,8 @@ data class ChargingState(
      */
     val defaultProtectivePolicy: ChargePolicy? = null,
     val reconnectSupported: Boolean = false,
+    /** The limit-hold basis cannot arm here, so surfaces must not offer it as a choice. */
+    val reconnectAnyLevelOnly: Boolean = false,
     /** True when the adapter's configured state is directly readable — Shizuku adds nothing for verification. */
     val syncVerification: Boolean = false,
     /** True when applying a policy needs Shizuku (system-namespace adapter WSS can't write). */
@@ -740,7 +742,8 @@ class ChargingRepository @Inject constructor(
             supportedPolicies = selection.support.licensedPolicies
                 ?: adapter?.supportedPolicies.orEmpty(),
             defaultProtectivePolicy = adapter?.defaultProtectivePolicy,
-            reconnectSupported = adapter?.reconnectGestureSupported == true,
+            reconnectSupported = adapter?.reconnectGestureSupport?.available == true,
+            reconnectAnyLevelOnly = adapter?.reconnectGestureSupport?.impliesAnyLevel == true,
             syncVerification = adapter?.verification == VerificationStrategy.SYNC_READBACK,
             writeRequiresShizuku = adapter?.preferShizukuForWrites == true,
             controlEnabled = selection.support.controlEnabled,

@@ -28,6 +28,10 @@ abstract class SamsungChargingAdapter : ChargingAdapter {
 
     override val verification = VerificationStrategy.SYNC_READBACK
 
+    // No `EXTRA_CHARGING_STATUS` hold signal on One UI, so the limit-hold basis could never
+    // arm; the cap itself is real and read-backable, which is all the any-level basis needs.
+    override val reconnectGestureSupport = ReconnectSupport.ANY_LEVEL_ONLY
+
     override fun probe(device: DeviceInfo): AdapterSupport {
         val oneUi = device.oneUiVersion
         val matched = device.manufacturer.equals("Samsung", ignoreCase = true) &&

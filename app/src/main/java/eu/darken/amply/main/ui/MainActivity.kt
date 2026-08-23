@@ -621,6 +621,7 @@ class MainActivity : ComponentActivity() {
                             // Exactly the dashboard card's gate, so settings can never switch the
                             // gesture on where the card correctly forbids it.
                             canEnableGesture = state.charging.reconnectSupported && state.charging.canApply,
+                            anyLevelOnly = state.charging.reconnectAnyLevelOnly,
                             availablePolicies = state.notificationActionPolicies,
                             selectedPolicyIds = state.notificationActionSelection,
                             onBack = { destination = SettingsDestination.SETTINGS },

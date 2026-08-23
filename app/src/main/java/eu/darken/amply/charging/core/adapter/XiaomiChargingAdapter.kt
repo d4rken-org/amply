@@ -55,6 +55,17 @@ class XiaomiChargingAdapter @Inject constructor() : ChargingAdapter {
     override val defaultProtectivePolicy = ChargePolicy.Adaptive
     override val verification = VerificationStrategy.SYNC_READBACK
 
+    // NOT because Adaptive is `enforcementIsConditional` — Amply deliberately arms the gesture on a
+    // conditional policy elsewhere (Pixel does today, and OnePlus/HyperOS 3 will), because adaptive
+    // charging really does hold below full before the usual unplug, which is precisely when a user
+    // would reach for the gesture. The reason is narrower and specific to HyperOS 2: Adaptive is the
+    // ONLY protective mode this key domain offers, and its hold is unobserved on this generation (a
+    // 13T with Intelligent charging configured and verified charged 59%→100% with no hold at all,
+    // 2026-08-16). So the gesture would have nothing to lift on EVERY tick, not merely on some
+    // configurations, and a permanent foreground notification for a feature that can never do
+    // anything is worse than not offering it.
+    override val reconnectGestureSupport = ReconnectSupport.NONE
+
     override fun probe(device: DeviceInfo): AdapterSupport {
         val matched = device.manufacturer.equals("Xiaomi", ignoreCase = true) &&
             device.hyperOsVersion == QUALIFIED_HYPEROS_VERSION
@@ -149,6 +160,10 @@ class XiaomiHyperOs3ChargingAdapter @Inject constructor() : ChargingAdapter {
     // Intelligent charging's hold remains unobserved on both HyperOS generations.
     override val defaultProtectivePolicy = ChargePolicy.FixedLimit(CAP_PERCENT)
     override val verification = VerificationStrategy.SYNC_READBACK
+
+    // Unlike HyperOS 2 above, mode 2 is a real hard cap with demonstrated hardware enforcement, so
+    // there is something for the gesture to lift. No hold signal exists in `dumpsys battery`.
+    override val reconnectGestureSupport = ReconnectSupport.ANY_LEVEL_ONLY
 
     override fun probe(device: DeviceInfo): AdapterSupport {
         val matched = device.manufacturer.equals("Xiaomi", ignoreCase = true) &&
