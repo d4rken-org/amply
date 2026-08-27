@@ -206,11 +206,15 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
         only suppressors are unplugged samples, a running Amply full-charge session, and a guided run — a ROM
         charging past a cap it still honours is none of those. A refutation is terminal for the build identity,
         so the first recalibration would switch the controls off on a device whose cap works, permanently.
-    - **The protective direction is UNTESTED, and it is the open safety question.** Both observed failures wrote
+    - **The protective direction is UNRESOLVED, and it is the open safety question.** Both observed failures wrote
       the limit *off* while the ROM kept enforcing, which leaves the battery protected and merely makes the UI
       dishonest. Whether a write turning the limit *on* is equally ignored — which would mean Amply claims
-      protection that is not enforced — has never been run by anyone. Asked of the reporter 2026-08-25. Do not
-      widen, re-qualify, or relax anything on this ROM until it is answered.
+      protection that is not enforced — was asked of the reporter 2026-08-25 and **run on 2026-08-27**: the
+      battery charged past a cap that had been written externally moments earlier. That **settles nothing**. The
+      result is equally consistent with the ROM ignoring the external write and with the periodic recalibration
+      charge to 100% described above, which climbs past a cap the ROM *is* honouring, and no signal in the run
+      separates the two. Treat the question as open. Do not widen, re-qualify, or relax anything on this ROM
+      until it is answered.
   - **State 4 below the limit unverified** — evidence was sampled at the 80% hold; if the ROM reports 4 only while
     holding, a FixedLimit pending clears late (at the hold) instead of instantly. Cosmetic.
   - **A plugged restore configures but cannot enforce** — restore-at-100%, the 24h safety timeout,
