@@ -439,14 +439,16 @@ class ChargingRepository @Inject constructor(
         if (adapter == null || !selection.support.controlEnabled) {
             val detail = selection.support.detail.toCaString()
             val observation = ChargeObservation.Unsupported(detail)
-            // Also drop the standing ready note and any hardware-unconfirmed warning: this branch
-            // means the gate just failed on a fresh selection (a capability can vanish between
-            // refresh and tap), and both fields' contracts exclude Unsupported states.
+            // Also drop the standing ready note, any hardware-unconfirmed warning and the
+            // awaiting-hardware-confirmation cap claim: this branch means the gate just failed on a
+            // fresh selection (a capability can vanish between refresh and tap), and all three
+            // fields' contracts exclude Unsupported states.
             mutableState.value = state.value.copy(
                 observation = observation,
                 message = detail,
                 adapterDetail = null,
                 unconfirmedTarget = null,
+                capAwaitsHardwareConfirmation = false,
             )
             return ApplyResult(false, observation, context.getString(selection.support.detail))
         }
@@ -472,8 +474,10 @@ class ChargingRepository @Inject constructor(
             mutableState.value = state.value.copy(
                 observation = observation,
                 message = R.string.charging_message_setup_required.toCaString(),
-                // NeedsSetup never warns (detector contract); drop a now-contradictory stale warning.
+                // NeedsSetup never warns (detector contract) and has no configured cap to qualify;
+                // drop both now-contradictory stale claims.
                 unconfirmedTarget = null,
+                capAwaitsHardwareConfirmation = false,
             )
             return ApplyResult(false, observation, "Setup required")
         }
@@ -506,14 +510,15 @@ class ChargingRepository @Inject constructor(
             log(TAG, Logging.Priority.ERROR) { "Settings write failed for ${policy.stableId}" }
             val observation = ChargeObservation.Unknown(R.string.charging_reason_write_failed.toCaString())
             // Clear any stale pending so the failure is not masked by a prior request's "applying…" cue.
-            // The old unconfirmed warning goes too: a multi-key write can fail after partially changing
-            // configuration, so the previous target is no longer a safe standing claim — the next
-            // refresh recomputes from live evidence.
+            // The old unconfirmed warning and the awaiting-hardware-confirmation cap claim go too: a
+            // multi-key write can fail after partially changing configuration, so the previous target
+            // is no longer a safe standing claim — the next refresh recomputes from live evidence.
             mutableState.value = state.value.copy(
                 busy = false,
                 observation = observation,
                 pending = null,
                 unconfirmedTarget = null,
+                capAwaitsHardwareConfirmation = false,
                 message = R.string.charging_message_write_failed.toCaString(),
             )
             return ApplyResult(false, observation, "Write failed")
