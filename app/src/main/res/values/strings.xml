@@ -144,7 +144,7 @@
     <string name="adapter_detail_requires_oplus">Requires a OnePlus, Oppo, or Realme device on ColorOS 15</string>
     <string name="adapter_detail_oplus_ready">Charging control requires Shizuku on this device</string>
     <string name="adapter_detail_requires_grapheneos">Requires GrapheneOS</string>
-    <string name="adapter_detail_grapheneos_ready">Charging control requires Shizuku; changes take effect the next time the charger is reconnected</string>
+    <string name="adapter_detail_grapheneos_ready">Charging control requires Shizuku. The system only picks up a change when you reconnect the charger.</string>
     <string name="adapter_detail_requires_lineageos">Requires a qualified LineageOS device</string>
     <string name="adapter_detail_lineageos_no_provider">LineageOS charging control is not available on this build</string>
     <string name="adapter_detail_lineageos_ready">Charging control requires Shizuku on this device</string>

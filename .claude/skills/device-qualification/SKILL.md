@@ -200,6 +200,12 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
       reason (a matching settings readback is treated as convergence). Nothing in the app can notice: this adapter
       does not set `enforcementEvidenceRequired`, and the passive verdict engine only detects a climb *past* a
       cap, which is the opposite direction from a ROM enforcing a cap that is configured off.
+      - **Do not answer this by setting `enforcementEvidenceRequired` on the adapter.** Beyond the direction
+        mismatch above, GrapheneOS deliberately runs a periodic recalibration charge to 100% with the limit still
+        on. `EnforcementVerdictEngine` refutes on `climbRose && percent >= cap + OVERSHOOT_ALLOWANCE`, and its
+        only suppressors are unplugged samples, a running Amply full-charge session, and a guided run — a ROM
+        charging past a cap it still honours is none of those. A refutation is terminal for the build identity,
+        so the first recalibration would switch the controls off on a device whose cap works, permanently.
     - **The protective direction is UNTESTED, and it is the open safety question.** Both observed failures wrote
       the limit *off* while the ROM kept enforcing, which leaves the battery protected and merely makes the UI
       dishonest. Whether a write turning the limit *on* is equally ignored — which would mean Amply claims
@@ -213,6 +219,13 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
     (mid-session writes are ignored by design). Amply's state is correct — config protective,
     session/recovery closed, pending-until-replug hint shown — and the exposure is one charge cycle,
     bounded by the plug session the user is already in. Deliberately NOT treated as a defect.
+  - **A write made while unplugged had no honest state either** — the entry above is about writes made *during*
+    a plug session, which do get the pending-until-replug hint (`settled` requires a hardware confirmation
+    whenever the write was not demonstrably made unplugged). A write made unplugged counts as settled, so the
+    replug that follows produced a plain settings read-back and the app called that verified — exactly the claim
+    `frankel` refutes. Now a configured cap that the hardware has not confirmed is shown as set rather than in
+    effect, and the apply message says the value was saved instead of verified. This is a presentation fix only:
+    nothing here can tell the two ROM behaviours apart, so the honest state is "unconfirmed" on both.
   - **Wireless charging and secondary users**: NOT RUN (gated to system user).
 - **Oplus (OnePlus/Oppo/Realme)** — the live gate reads `ro.build.version.oplusrom`, which **does not exist on
   pre-rebrand ColorOS**, so every ColorOS 11-era build is invisible to it and lands on `OnePlusLabAdapter`. This is
