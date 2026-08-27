@@ -109,7 +109,7 @@ class DashboardEnforcementClaimTest {
     }
 
     @Test
-    fun `a hardware-confirmed cap on a latching rom keeps the affirmative card`() {
+    fun `a hardware-confirmed cap on a latching rom is not marked unconfirmed`() {
         // The state this whole change must leave reachable: a plug-latched adapter reads its cap back
         // through Shizuku (it has no other read path), and once the hardware confirms it, the card is
         // the ordinary affirmative one. Keying the withholding on the observation's backend instead of
