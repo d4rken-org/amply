@@ -42,6 +42,11 @@ import javax.inject.Singleton
  * capability flag: pending-until-replug verification, the session replug grace window, and
  * `reapply == apply` (there is no observer to re-trigger; the plug event is the trigger).
  *
+ * That replug is what the latch *permits*, not what it guarantees: it was qualified on one device,
+ * and on a second one an external write was still ignored across the following plug session while
+ * reading back correctly. So no surface here may promise a written value takes effect — see the
+ * qualification ledger in .claude/skills/device-qualification/ for both runs.
+ *
  * While the limit is enforcing, the device reports the same hardware signal as stock Pixel
  * (`EXTRA_CHARGING_STATUS` = 4, battery status NOT_CHARGING at the cap), so [decodeHardware]
  * provides real enforcement evidence — the only proof that beats a merely-configured readback on
