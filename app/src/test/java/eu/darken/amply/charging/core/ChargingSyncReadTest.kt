@@ -2,6 +2,7 @@ package eu.darken.amply.charging.core
 
 import android.content.Context
 import android.content.Intent
+import eu.darken.amply.R
 import eu.darken.amply.battery.core.BatteryReadout
 import eu.darken.amply.charging.core.access.AccessBackend
 import eu.darken.amply.charging.core.access.BackendStatus
@@ -497,6 +498,117 @@ class ChargingSyncReadTest {
             prevCandidate = first.candidate,
             prevSince = first.sinceMillis,
         ).surfaced shouldBe null
+    }
+
+    // --- capAwaitsHardwareConfirmation: a stored cap is not a cap the hardware confirmed ---
+
+    private fun awaits(
+        latches: Boolean = true,
+        observation: ChargeObservation = verified(target, BackendKind.SHIZUKU),
+        hardware: ChargeObservation? = null,
+        plugged: Boolean = true,
+    ) = capAwaitsHardwareConfirmation(
+        policyLatchesAtPlug = latches,
+        observation = observation,
+        hardware = hardware,
+        plugged = plugged,
+    )
+
+    @Test
+    fun `a plugged cap without hardware evidence awaits confirmation`() {
+        awaits() shouldBe true
+    }
+
+    @Test
+    fun `matching hardware evidence settles the cap`() {
+        awaits(hardware = verified(target, BackendKind.BATTERY_HARDWARE)) shouldBe false
+    }
+
+    @Test
+    fun `settings-level verification is not hardware evidence for the cap`() {
+        awaits(hardware = verified(target, BackendKind.SHIZUKU)) shouldBe true
+    }
+
+    @Test
+    fun `unplugged never awaits confirmation`() {
+        // decodeHardware reports nothing off the charger, so the question has no answer to wait for.
+        awaits(plugged = false) shouldBe false
+    }
+
+    @Test
+    fun `unrestricted never awaits confirmation`() {
+        // No hardware representation exists for it, so an unconfirmed one is indistinguishable from
+        // a confirmed one and must not be doubted.
+        awaits(observation = verified(other, BackendKind.SHIZUKU)) shouldBe false
+    }
+
+    @Test
+    fun `a full-charge limit is not a cap`() {
+        awaits(observation = verified(ChargePolicy.FixedLimit(100), BackendKind.SHIZUKU)) shouldBe false
+    }
+
+    @Test
+    fun `adapters that do not latch at plug are unaffected`() {
+        awaits(latches = false) shouldBe false
+    }
+
+    @Test
+    fun `only a verified configured state can await confirmation`() {
+        awaits(observation = ChargeObservation.LastRequested(target)) shouldBe false
+        awaits(observation = generic()) shouldBe false
+        awaits(observation = unrecognized()) shouldBe false
+    }
+
+    // --- selectApplyMessageRes: the message may not outrun what the write achieved ---
+
+    @Test
+    fun `a latched write without hardware confirmation says saved, not verified`() {
+        selectApplyMessageRes(
+            policyLatchesAtPlug = true,
+            awaitingReplug = false,
+            hardwareConfirmsTarget = false,
+            observation = verified(target, BackendKind.SHIZUKU),
+        ) shouldBe R.string.charging_message_saved_unconfirmed
+    }
+
+    @Test
+    fun `a latched write the hardware confirms is verified`() {
+        selectApplyMessageRes(
+            policyLatchesAtPlug = true,
+            awaitingReplug = false,
+            hardwareConfirmsTarget = true,
+            observation = verified(target, BackendKind.SHIZUKU),
+        ) shouldBe R.string.charging_message_verified
+    }
+
+    @Test
+    fun `an owed replug outranks both`() {
+        selectApplyMessageRes(
+            policyLatchesAtPlug = true,
+            awaitingReplug = true,
+            hardwareConfirmsTarget = false,
+            observation = verified(target, BackendKind.SHIZUKU),
+        ) shouldBe R.string.charging_message_applied_replug
+    }
+
+    @Test
+    fun `a non-latched verified write keeps the verified message`() {
+        selectApplyMessageRes(
+            policyLatchesAtPlug = false,
+            awaitingReplug = false,
+            hardwareConfirmsTarget = false,
+            observation = verified(target, BackendKind.SHIZUKU),
+        ) shouldBe R.string.charging_message_verified
+    }
+
+    @Test
+    fun `an unverified write is only a request`() {
+        selectApplyMessageRes(
+            policyLatchesAtPlug = false,
+            awaitingReplug = false,
+            hardwareConfirmsTarget = false,
+            observation = ChargeObservation.LastRequested(target),
+        ) shouldBe R.string.charging_message_requested
     }
 
     private class FakeBackend(override val kind: BackendKind) : AccessBackend {

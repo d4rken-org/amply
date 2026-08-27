@@ -9,6 +9,7 @@ import eu.darken.amply.charging.core.BackendKind
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingState
+import eu.darken.amply.common.ca.toCaString
 import io.kotest.matchers.string.shouldContain
 import org.junit.Rule
 import org.junit.Test
@@ -34,12 +35,21 @@ class DashboardEnforcementClaimTest {
 
     private fun string(res: Int): String = context.getString(res)
 
-    private fun render(observation: ChargeObservation) {
+    private fun render(
+        observation: ChargeObservation,
+        capAwaitsHardwareConfirmation: Boolean = false,
+        adapterDetail: Int? = null,
+    ) {
         compose.setContent {
             DashboardScreenUnderTest(
                 state = DashboardUiState(
                     onboardingComplete = true,
-                    charging = ChargingState(controlEnabled = true, observation = observation),
+                    charging = ChargingState(
+                        controlEnabled = true,
+                        observation = observation,
+                        capAwaitsHardwareConfirmation = capAwaitsHardwareConfirmation,
+                        adapterDetail = adapterDetail?.toCaString(),
+                    ),
                 ),
             )
         }
@@ -96,6 +106,39 @@ class DashboardEnforcementClaimTest {
 
         compose.onNodeWithText(readbackThrough(BackendKind.SHIZUKU)).assertExists()
         compose.onNodeWithText(conditionalReadbackThrough(BackendKind.SHIZUKU)).assertDoesNotExist()
+    }
+
+    @Test
+    fun `a hardware-confirmed cap on a latching rom keeps the affirmative card`() {
+        // The state this whole change must leave reachable: a plug-latched adapter reads its cap back
+        // through Shizuku (it has no other read path), and once the hardware confirms it, the card is
+        // the ordinary affirmative one. Keying the withholding on the observation's backend instead of
+        // on the repository's flag would make that permanently unreachable, and a test feeding only
+        // BATTERY_HARDWARE observations would not notice.
+        render(
+            ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.SHIZUKU),
+            capAwaitsHardwareConfirmation = false,
+            adapterDetail = R.string.adapter_detail_grapheneos_ready,
+        )
+
+        compose.onNodeWithText(string(R.string.dashboard_cap_unconfirmed_note)).assertDoesNotExist()
+        compose.onNodeWithText(readbackThrough(BackendKind.SHIZUKU)).assertExists()
+        compose.onNodeWithText(string(R.string.adapter_detail_grapheneos_ready)).assertExists()
+    }
+
+    @Test
+    fun `an unconfirmed cap is shown as set and never as taking effect`() {
+        // Same read-back, same policy — only the hardware evidence is missing. The note has to say so,
+        // and the adapter's standing "the system picks a change up when you reconnect" line has to go
+        // with it: printed together they would answer the note with the effect it withholds.
+        render(
+            ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.SHIZUKU),
+            capAwaitsHardwareConfirmation = true,
+            adapterDetail = R.string.adapter_detail_grapheneos_ready,
+        )
+
+        compose.onNodeWithText(string(R.string.dashboard_cap_unconfirmed_note)).assertExists()
+        compose.onNodeWithText(string(R.string.adapter_detail_grapheneos_ready)).assertDoesNotExist()
     }
 
     @Test

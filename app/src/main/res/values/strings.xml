@@ -88,6 +88,7 @@
     <string name="charging_message_write_failed">Write failed</string>
     <string name="charging_message_verified">%1$s setting verified</string>
     <string name="charging_message_applied_replug">%1$s set: takes effect after you unplug and replug</string>
+    <string name="charging_message_saved_unconfirmed">%1$s saved. The charging hardware hasn\'t confirmed it</string>
     <string name="charging_message_requested">%1$s requested</string>
     <string name="charging_message_shizuku_granted">Shizuku permission granted</string>
     <string name="charging_message_shizuku_denied">Shizuku permission was not granted</string>
@@ -504,6 +505,7 @@
     <string name="dashboard_enforcement_unverified_title">Charge limit not confirmed</string>
     <string name="dashboard_enforcement_unverified_body">The controls are available, but nothing Amply can see proves the limit works on this build. It keeps watching for the opposite: if the battery is observed charging past the limit, Amply switches its charging controls back off.</string>
     <string name="dashboard_enforcement_unverified_note">Set, but not confirmed to work on this build</string>
+    <string name="dashboard_cap_unconfirmed_note">Set. The charging hardware hasn\'t confirmed the limit</string>
     <string name="dashboard_enforcement_self_qualified_title">You proved the charge limit here</string>
     <string name="dashboard_enforcement_self_qualified_body">The guided check stopped your charging at the limit, started it again, and stopped it a second time, so the charging hardware really is honouring the limit on this build. That result applies to this build only: a system update replaces it, and you can run the check again afterwards.</string>
     <string name="dashboard_enforcement_refuted_title">Charge limiting does not work on this build</string>
