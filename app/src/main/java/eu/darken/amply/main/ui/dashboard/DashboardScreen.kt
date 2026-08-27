@@ -481,13 +481,17 @@ private fun StatusCard(
     val gatedTier = state.charging.enforcement
         ?.takeIf { observation is ChargeObservation.Unsupported }
         ?.takeIf { it == EnforcementStatus.CANDIDATE || it == EnforcementStatus.REFUTED }
-    // Two independent reasons to withhold the green check, both about the same gap between "the ROM
-    // stored the policy" and "the charger is acting on it". Either one alone is disqualifying:
+    // Three independent reasons to withhold the green check, all about the same gap between "the ROM
+    // stored the policy" and "the charger is acting on it". Any one alone is disqualifying:
     //  - the policy itself may be conditional — a readback of adaptive proves the mode is set, not
     //    that it is doing anything right now;
     //  - the build's enforcement may never have been confirmed, and on these adapters no readback can
-    //    confirm it (see EnforcementVerdictEngine — observation can only ever refute).
-    val policyInEffect = observation.provesPolicyInEffect() && !enforcementUnverified
+    //    confirm it (see EnforcementVerdictEngine — observation can only ever refute);
+    //  - the ROM may have sampled the policy when this plug session started, so a stored cap the
+    //    hardware has not confirmed is not yet a cap.
+    val policyInEffect = observation.provesPolicyInEffect() &&
+        !enforcementUnverified &&
+        !state.charging.capAwaitsHardwareConfirmation
 
     // Not clickable. The card states the policy; the measurements (and the way through to them) live
     // in the charging card below. A whole-card tap here used to land on voltage and cycle counts,
@@ -581,18 +585,33 @@ private fun StatusCard(
                 color = MaterialTheme.colorScheme.tertiary,
             )
         }
-        // Standing adapter fact (write latency, Shizuku requirement, replug semantics) — only set
-        // while control is enabled, so it never repeats a gate-failure reason shown above. Hidden
-        // while a replug is pending: the transient hint below states the same fact as an instruction,
-        // and printing both would say "reconnect the charger" twice on latched adapters.
-        state.charging.adapterDetail?.takeIf { !state.charging.isAwaitingReplug() }?.let {
+        // Same gap as the note above, different cause: the value is stored and the hardware has not
+        // said it is acting on it. Neutral rather than an error colour — nothing is wrong here, the
+        // limit simply is not shown to be doing anything yet.
+        if (state.charging.capAwaitsHardwareConfirmation) {
             Spacer(Modifier.height(4.dp))
             Text(
-                it.asComposable(),
+                stringResource(R.string.dashboard_cap_unconfirmed_note),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        // Standing adapter fact (write latency, Shizuku requirement, replug semantics) — only set
+        // while control is enabled, so it never repeats a gate-failure reason shown above. Hidden
+        // while a replug is pending: the transient hint below states the same fact as an instruction,
+        // and printing both would say "reconnect the charger" twice on latched adapters. Hidden while
+        // a cap is unconfirmed for the reverse reason: this line explains when a change is picked up,
+        // which under the note above would read as the effect the note just withheld.
+        state.charging.adapterDetail
+            ?.takeIf { !state.charging.isAwaitingReplug() && !state.charging.capAwaitsHardwareConfirmation }
+            ?.let {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    it.asComposable(),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         // Provenance, not a second policy claim: the title above already says what the policy is,
         // this says who chose it. Withheld while a session or a settling write owns the display —
         // those are the current authors, and naming a rule there would be wrong.

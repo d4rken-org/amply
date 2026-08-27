@@ -85,6 +85,12 @@ data class ChargingState(
     val syncVerification: Boolean = false,
     /** True when applying a policy needs Shizuku (system-namespace adapter WSS can't write). */
     val writeRequiresShizuku: Boolean = false,
+    /**
+     * A cap is configured and reads back, but the charging hardware has not confirmed it, on an
+     * adapter that samples the policy at plug-session start. Surfaces must present the cap as set
+     * rather than as in effect while this holds — the read-back proves storage, not enforcement.
+     */
+    val capAwaitsHardwareConfirmation: Boolean = false,
     val controlEnabled: Boolean = false,
     /**
      * Where this device sits on the "does the hardware actually enforce the cap" question, or null
@@ -516,8 +522,17 @@ class ChargingRepository @Inject constructor(
         // The physical write committed. Record it durably even under cancellation (the setting already
         // changed), and never strand busy=true nor lose the fact that the write landed. Unplugged is
         // only trusted when the samples on BOTH sides of the write agree (see pluggedBeforeWrite).
+        //
+        // ONE readout for everything hardware-derived below: plug state and the hardware decode must
+        // join on the same observation (BatteryReader's doc — never pair plug state across two sticky
+        // reads). Only taken on the latched path, the only one that consults either.
+        val afterWrite: BatteryReadout? = if (adapter.policyLatchesAtPlug) {
+            runCatching { batteryReader.read() }.getOrNull()
+        } else {
+            null
+        }
         val pluggedAtWrite: Boolean? = if (adapter.policyLatchesAtPlug) {
-            val after = runCatching { batteryReader.read().plugged?.let { it != 0 } }.getOrNull()
+            val after = afterWrite?.plugged?.let { it != 0 }
             if (pluggedBeforeWrite == false && after == false) false else true
         } else {
             null
@@ -532,14 +547,17 @@ class ChargingRepository @Inject constructor(
                 VerificationStrategy.ASYNC_HARDWARE ->
                     if (access.shizuku.ready) adapter.read(accessResolver.shizuku) else null
             } as? ChargeObservation.Verified ?: ChargeObservation.LastRequested(policy)
+            // Null off the latched path, where nothing reads it: the async arm below keeps its own
+            // readHardware(context), and the message/claim decisions short-circuit on the flag.
+            val hardwareAfterWrite = afterWrite?.let { adapter.decodeHardware(it.chargingStatus ?: 0, it.onCharger) }
+            val hardwareConfirmsTarget = hardwareConfirms(hardwareAfterWrite, policy)
             // Suppress the settling cue when there is no transition to wait for: sync-readback adapters
             // apply immediately, and async hardware may already report the target on a no-op re-apply.
             // Plug-latched adapters are the exception: their readback only proves *configuration* —
             // settled iff written unplugged (the next plug session samples it) or the hardware already
             // reports the exact target (no-op re-apply while enforcing).
             val settled = when {
-                adapter.policyLatchesAtPlug ->
-                    pluggedAtWrite == false || hardwareConfirms(adapter.readHardware(context), policy)
+                adapter.policyLatchesAtPlug -> pluggedAtWrite == false || hardwareConfirmsTarget
                 else -> when (adapter.verification) {
                     VerificationStrategy.SYNC_READBACK ->
                         (observation as? ChargeObservation.Verified)?.policy == policy
@@ -554,17 +572,27 @@ class ChargingRepository @Inject constructor(
             }
             // Timing copy lives solely in the dashboard's settling line; these must stay accurate
             // when nothing is pending (sync-readback adapters, no-op re-applies).
-            val messageRes = when {
-                pending?.awaitingReplug == true -> R.string.charging_message_applied_replug
-                observation is ChargeObservation.Verified -> R.string.charging_message_verified
-                else -> R.string.charging_message_requested
-            }
+            val messageRes = selectApplyMessageRes(
+                policyLatchesAtPlug = adapter.policyLatchesAtPlug,
+                awaitingReplug = pending?.awaitingReplug == true,
+                hardwareConfirmsTarget = hardwareConfirmsTarget,
+                observation = observation,
+            )
             val message = caString { it.getString(messageRes, policy.label.get(it)) }
             mutableState.value = state.value.copy(
                 busy = false,
                 access = access,
                 observation = observation,
                 pending = pending,
+                // This path copies the live state instead of rebuilding it, so the claim has to be
+                // recomputed here too — a stale value would stand exactly while the user watches the
+                // write land, before the next refresh.
+                capAwaitsHardwareConfirmation = capAwaitsHardwareConfirmation(
+                    policyLatchesAtPlug = adapter.policyLatchesAtPlug,
+                    observation = observation,
+                    hardware = hardwareAfterWrite,
+                    plugged = afterWrite?.onCharger == true,
+                ),
                 // A fresh write voids any prior contradiction: the detector re-arms via refresh once
                 // the new request is past its own grace threshold. Stale warnings must never render
                 // over a new request's settling phase (all three publication copies clear this).
@@ -593,6 +621,7 @@ class ChargingRepository @Inject constructor(
                 observation = ChargeObservation.LastRequested(policy),
                 pending = PendingRequest(policy, now, awaitingReplug = fallbackAwaitsReplug(adapter, pluggedAtWrite)),
                 unconfirmedTarget = null,
+                capAwaitsHardwareConfirmation = false,
             )
             settleScheduler.schedule(now)
             throw e
@@ -607,6 +636,7 @@ class ChargingRepository @Inject constructor(
                 observation = observation,
                 pending = PendingRequest(policy, now, awaitingReplug = fallbackAwaitsReplug(adapter, pluggedAtWrite)),
                 unconfirmedTarget = null,
+                capAwaitsHardwareConfirmation = false,
                 message = message,
             )
             settleScheduler.schedule(now)
@@ -746,6 +776,12 @@ class ChargingRepository @Inject constructor(
             reconnectAnyLevelOnly = adapter?.reconnectGestureSupport?.impliesAnyLevel == true,
             syncVerification = adapter?.verification == VerificationStrategy.SYNC_READBACK,
             writeRequiresShizuku = adapter?.preferShizukuForWrites == true,
+            capAwaitsHardwareConfirmation = capAwaitsHardwareConfirmation(
+                policyLatchesAtPlug = latches,
+                observation = observation,
+                hardware = hardware,
+                plugged = battery.onCharger,
+            ),
             controlEnabled = selection.support.controlEnabled,
             enforcement = selection.support.enforcement,
             contributionWanted = selection.support.contributionWanted,
@@ -992,6 +1028,49 @@ internal fun hardwareConfirms(hardware: ChargeObservation?, target: ChargePolicy
     hardware is ChargeObservation.Verified &&
         hardware.backend == BackendKind.BATTERY_HARDWARE &&
         hardware.policy == target
+
+/**
+ * Behind [ChargingState.capAwaitsHardwareConfirmation]: a cap that reads back is stored, which on a
+ * [ChargingAdapter.policyLatchesAtPlug] ROM is a weaker fact than it looks — the charging service
+ * sampled the key when the plug session started, so the value the settings provider now returns need
+ * not be the one being enforced. [hardwareConfirms] is the only signal that speaks to enforcement.
+ *
+ * It can only speak where it has one, which is what the guards are for. [ChargingAdapter.decodeHardware]
+ * reports nothing while unplugged (the sticky extra keeps its last powered value), and `Unrestricted`
+ * has no hardware representation at all — only the long-life state decodes to a Verified observation —
+ * so an unconfirmed `Unrestricted` is indistinguishable from a confirmed one and must not be doubted.
+ * The question is therefore asked of a cap, and only while plugged; everywhere else the answer is
+ * false and no surface changes.
+ */
+internal fun capAwaitsHardwareConfirmation(
+    policyLatchesAtPlug: Boolean,
+    observation: ChargeObservation,
+    hardware: ChargeObservation?,
+    plugged: Boolean,
+): Boolean {
+    if (!policyLatchesAtPlug || !plugged) return false
+    val policy = (observation as? ChargeObservation.Verified)?.policy ?: return false
+    if (policy !is ChargePolicy.FixedLimit || policy.percent >= 100) return false
+    return !hardwareConfirms(hardware, policy)
+}
+
+/**
+ * Which apply-time message is true of what the write actually achieved, ordered from the least
+ * achieved upwards: a replug is still owed; or the value is stored on a plug-latched adapter with no
+ * hardware confirmation, where "verified" would claim an effect the read-back cannot show; or the
+ * configured state was read back; or only the request itself is known.
+ */
+internal fun selectApplyMessageRes(
+    policyLatchesAtPlug: Boolean,
+    awaitingReplug: Boolean,
+    hardwareConfirmsTarget: Boolean,
+    observation: ChargeObservation,
+): Int = when {
+    awaitingReplug -> R.string.charging_message_applied_replug
+    policyLatchesAtPlug && !hardwareConfirmsTarget -> R.string.charging_message_saved_unconfirmed
+    observation is ChargeObservation.Verified -> R.string.charging_message_verified
+    else -> R.string.charging_message_requested
+}
 
 /**
  * Whether a degraded post-write fallback [PendingRequest] must carry the replug condition: only on a
