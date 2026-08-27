@@ -87,7 +87,7 @@
     <string name="charging_message_applying">Applying %1$s…</string>
     <string name="charging_message_write_failed">Write failed</string>
     <string name="charging_message_verified">%1$s setting verified</string>
-    <string name="charging_message_applied_replug">%1$s set: takes effect after you unplug and replug</string>
+    <string name="charging_message_applied_replug">%1$s set: reconnect the charger for the system to pick it up</string>
     <string name="charging_message_saved_unconfirmed">%1$s saved. The charging hardware hasn\'t confirmed it</string>
     <string name="charging_message_requested">%1$s requested</string>
     <string name="charging_message_shizuku_granted">Shizuku permission granted</string>
@@ -494,7 +494,7 @@
     <string name="dashboard_applying">Applying…</string>
     <string name="dashboard_device_line">%1$s · Android API %2$d</string>
     <string name="dashboard_waiting_target">Waiting for the system to switch to %1$s. This can take about 15 seconds…</string>
-    <string name="dashboard_waiting_replug">Takes effect the next time you unplug and replug the charger</string>
+    <string name="dashboard_waiting_replug">The system picks this up the next time you unplug and replug the charger</string>
     <string name="dashboard_hw_unconfirmed">The charging hardware hasn\'t confirmed %1$s yet. It may not be applying</string>
 
     <!-- Enforcement tier (adapters where a setting can read back while the hardware ignores it) -->
