@@ -263,7 +263,14 @@ class ChargeSessionService : Service() {
         startMonitoringLoop()
         coordinator.open()
         evaluateBattery()
-        SurfaceUpdater.updateNow(this)
+        // Past the commit point: the monitor is live, so a failed push is stale UI, not a failed start.
+        try {
+            SurfaceUpdater.updateNow(this)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log(TAG, Logging.Priority.WARN) { "Surface update after resuming the session failed: ${e.message}" }
+        }
     }
 
     private suspend fun continueGestureOrStop() {
@@ -320,7 +327,14 @@ class ChargeSessionService : Service() {
         // evaluateBattery. Post here so an alarm-only start replaces the bootstrap notification.
         if (!gestureActive) startAsForeground(watcherNotification())
         evaluateBattery()
-        SurfaceUpdater.updateNow(this)
+        // Also past the commit point: the monitor is live, so a failed push is not a failed continuation.
+        try {
+            SurfaceUpdater.updateNow(this)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log(TAG, Logging.Priority.WARN) { "Surface update after continuing monitoring failed: ${e.message}" }
+        }
     }
 
     /** A watcher's isEnabled must never throw the service into stopping; treat failure as false. */
