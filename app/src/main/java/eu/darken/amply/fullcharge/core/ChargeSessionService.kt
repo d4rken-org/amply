@@ -902,40 +902,55 @@ class ChargeSessionService : Service() {
         graceExpiryJob?.cancel()
         unregisterSettingObserver()
         startAsForeground(SessionNotifications.recovering(this))
-        recoveryJob = scope.launch {
-            // Assess whether this recovery is picking up work a dead process left behind, BEFORE the
-            // flow mutates the pending target.
-            val pickup = interruptionAssessor.captureRecoveryPickup()
+        recoveryJob = scope.launch { RecoveryJobFlow(recoveryJobHooks).run() }
+    }
+
+    /** The recovery job's side effects; its sequencing and error policy live in [RecoveryJobFlow]. */
+    private val recoveryJobHooks = object : RecoveryJobFlow.Hooks<InterruptionAssessor.RecoveryPickup> {
+        // Assess whether this recovery is picking up work a dead process left behind, BEFORE the flow
+        // mutates the pending target.
+        override suspend fun capturePickup() = interruptionAssessor.captureRecoveryPickup()
+
+        override suspend fun prepare() {
             // A persisted session already carries the baseline as its restore target, so rule
             // bookkeeping left ACTIVE beside it is stale: recovery is about to write policies, and
             // the rules layer must not come back afterwards claiming to own the result.
-            if (fullChargeStore.currentSession() != null) {
-                try {
-                    ruleApplier.clearActiveAfterSessionPersist()
-                } catch (e: CancellationException) {
-                    // A cancelled recovery job must actually stop here, not carry on into the flow.
-                    throw e
-                } catch (e: Exception) {
-                    log(TAG, Logging.Priority.WARN) { "Rule ownership clear failed: ${e.message}" }
-                }
-            }
-            val result = BootRecoveryFlow(recoveryHooks).run()
-            log(TAG) { "Boot recovery outcome: ${result.outcome}" }
-            // A converged recovery restored the protective policy, so clear any lingering alarm.
-            if (result.outcome == BootRecoveryFlow.Outcome.CONVERGED) {
-                SessionNotifications.cancelRecovery(this@ChargeSessionService)
-            }
+            if (fullChargeStore.currentSession() == null) return
             try {
-                interruptionAssessor.onRecoveryFinished(pickup, result)
-            } finally {
-                // In finally so an interruption-bookkeeping failure can never strand the recovering
-                // foreground state.
-                coordinator.withExclusive {
-                    // continueGestureOrStop() awaits a surface update on every terminal branch, so no path here
-                    // leaves the widget/tile un-pushed (some paths push more than once — updateAll is idempotent).
-                    continueGestureOrStop()
-                }
+                ruleApplier.clearActiveAfterSessionPersist()
+            } catch (e: CancellationException) {
+                // A cancelled recovery job must actually stop here, not carry on into the flow.
+                throw e
+            } catch (e: Exception) {
+                // Stale ownership is not worth skipping an owed restore over.
+                log(TAG, Logging.Priority.WARN) { "Rule ownership clear failed: ${e.message}" }
             }
+        }
+
+        override suspend fun runRecovery() = BootRecoveryFlow(recoveryHooks).run()
+
+        // A converged recovery restored the protective policy, so clear any lingering alarm.
+        override fun onConverged() = SessionNotifications.cancelRecovery(this@ChargeSessionService)
+
+        override suspend fun onFinished(
+            pickup: InterruptionAssessor.RecoveryPickup,
+            result: BootRecoveryFlow.Result,
+        ) = interruptionAssessor.onRecoveryFinished(pickup, result)
+
+        override fun warnRecoveryOwed() = SessionNotifications.showRecovery(this@ChargeSessionService)
+
+        override suspend fun continueOrStop() = coordinator.withExclusive {
+            // continueGestureOrStop() awaits a surface update on every terminal branch, so no path here
+            // leaves the widget/tile un-pushed (some paths push more than once — updateAll is idempotent).
+            continueGestureOrStop()
+        }
+
+        override fun lastResort() {
+            // Not stopMonitoring(): its coordinator.closeAndInvalidate() may only be called from a path
+            // that already holds exclusivity, which is exactly what has just failed. onDestroy still
+            // shuts the coordinator and the scope down.
+            stopForeground(Service.STOP_FOREGROUND_REMOVE)
+            stopSelf()
         }
     }
 
