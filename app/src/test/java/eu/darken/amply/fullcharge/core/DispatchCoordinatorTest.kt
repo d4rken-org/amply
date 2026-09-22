@@ -2,6 +2,7 @@ package eu.darken.amply.fullcharge.core
 
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -105,6 +106,58 @@ class DispatchCoordinatorTest {
 
         evaluationsSeen shouldBe listOf("next")
         errors.map { it.first } shouldBe listOf("Battery evaluation")
+    }
+
+    // --- Cancellation is terminal for its consumer -------------------------------------------------
+
+    /**
+     * The other half of that contract: cancellation is NOT an item failure. A handler that throws
+     * [CancellationException] ends its own consumer for good, which is why no handler may leak one (a
+     * `withTimeout` inside one being the realistic source). Softening the rethrow into an onError report
+     * would make those call-site guards pointless without failing anything else here.
+     *
+     * The throw lands in the consumer's coroutine, not the test's; the surviving consumer's drain is what
+     * proves the test body was still running when the assertions ran.
+     */
+    @Test
+    fun `a command handler throwing cancellation ends only the command consumer`() = runTest {
+        onCommand = {
+            if (it == "cancel") throw CancellationException("gone")
+            commandsSeen += it
+        }
+        val coordinator = launched()
+
+        // Drained on its own, so "next" reaches an already-dead consumer instead of merely queuing behind it.
+        coordinator.submitCommand("cancel")
+        runCurrent()
+
+        coordinator.submitCommand("next")
+        coordinator.submitEvaluation("A")
+        runCurrent()
+
+        commandsSeen shouldBe emptyList()
+        evaluationsSeen shouldBe listOf("A")
+        errors.map { it.first } shouldBe emptyList()
+    }
+
+    @Test
+    fun `an evaluation handler throwing cancellation ends only the evaluation consumer`() = runTest {
+        onEvaluation = {
+            if (it == "cancel") throw CancellationException("gone")
+            evaluationsSeen += it
+        }
+        val coordinator = launched()
+
+        coordinator.submitEvaluation("cancel")
+        runCurrent()
+
+        coordinator.submitEvaluation("next")
+        coordinator.submitCommand("c")
+        runCurrent()
+
+        evaluationsSeen shouldBe emptyList()
+        commandsSeen shouldBe listOf("c")
+        errors.map { it.first } shouldBe emptyList()
     }
 
     // --- Generations ------------------------------------------------------------------------------
