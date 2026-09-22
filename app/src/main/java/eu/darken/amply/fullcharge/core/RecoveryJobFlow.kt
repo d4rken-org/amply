@@ -4,6 +4,7 @@ import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.log
 import eu.darken.amply.common.debug.logging.logTag
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 
 /**
  * Sequencing and error policy for the recovery job that drives [BootRecoveryFlow].
@@ -23,7 +24,8 @@ import kotlinx.coroutines.CancellationException
  *   foreground state.
  *
  * A [CancellationException] is rethrown unchanged at every stage and posts no warning: a recovery
- * cancelled by a newer command is not a failed one.
+ * cancelled by a newer command is not a failed one. A [TimeoutCancellationException] is the one
+ * exception to that: it is a backend giving up on its own budget, so it takes the warning path.
  *
  * Free of Android types and generic over the pickup bookkeeping [P], so it stays JVM-testable.
  */
@@ -61,6 +63,10 @@ internal class RecoveryJobFlow<P>(private val hooks: Hooks<P>) {
             log(TAG) { "Boot recovery outcome: ${result.outcome}" }
             if (result.outcome == BootRecoveryFlow.Outcome.CONVERGED) hooks.onConverged()
             hooks.onFinished(pickup, result)
+        } catch (e: TimeoutCancellationException) {
+            // A backend exhausting its own withTimeout budget, not this job being superseded.
+            log(TAG, Logging.Priority.ERROR) { "Recovery job timed out: ${e.message}" }
+            bestEffort("Recovery warning") { hooks.warnRecoveryOwed() }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

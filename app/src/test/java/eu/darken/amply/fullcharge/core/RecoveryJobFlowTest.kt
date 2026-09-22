@@ -5,7 +5,9 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Test
 
 class RecoveryJobFlowTest {
@@ -154,10 +156,29 @@ class RecoveryJobFlowTest {
         hooks.lastResorts shouldBe 0
     }
 
+    /**
+     * A [kotlinx.coroutines.TimeoutCancellationException] from a post-write backend bind is a
+     * CancellationException that did NOT cancel this job — the supersession path would stop the
+     * service while the protective write is still owed.
+     */
+    @Test
+    fun `a backend timeout inside recovery warns instead of taking the supersession path`() = runTest {
+        val hooks = FakeHooks(onRecovery = { withTimeout(1) { awaitCancellation() } })
+
+        RecoveryJobFlow(hooks).run()
+
+        hooks.warnings shouldBe 1
+        hooks.continuations shouldBe 1
+        hooks.convergedCalls shouldBe 0
+        hooks.finished.shouldBeEmpty()
+        hooks.lastResorts shouldBe 0
+        hooks.pendingTarget shouldBe fixedLimit
+    }
+
     private inner class FakeHooks(
         val onPickup: () -> String = { PICKUP },
         val onPrepare: () -> Unit = {},
-        val onRecovery: () -> BootRecoveryFlow.Result = { converged },
+        val onRecovery: suspend () -> BootRecoveryFlow.Result = { converged },
         val onWarn: () -> Unit = {},
         val onContinue: () -> Unit = {},
     ) : RecoveryJobFlow.Hooks<String> {
