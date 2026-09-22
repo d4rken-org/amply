@@ -1037,7 +1037,15 @@ class ChargeSessionService : Service() {
         interruptionAssessor.onRestoreSucceeded(restoreWorkId)
         interruptionAssessor.onSessionRestoreFinished(assessment, success = true)
         quickGesture.reset()
-        SurfaceUpdater.updateNow(this)
+        // continueGestureOrStop() is what replaces or removes the session notification, which nothing
+        // else repaints — a failing surface update must not skip it. Cancellation still propagates.
+        try {
+            SurfaceUpdater.updateNow(this)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log(TAG, Logging.Priority.WARN) { "Surface update after restore failed: ${e.message}" }
+        }
         continueGestureOrStop()
     }
 
