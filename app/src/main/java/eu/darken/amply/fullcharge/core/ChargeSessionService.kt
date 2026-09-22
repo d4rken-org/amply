@@ -1126,7 +1126,15 @@ class ChargeSessionService : Service() {
             restoring = false
         }
         quickGesture.reset()
-        SurfaceUpdater.updateNow(this)
+        // The session record is already gone at this point, so only continueGestureOrStop() can replace
+        // or remove the notification still claiming it — a failing surface update must not skip it.
+        try {
+            SurfaceUpdater.updateNow(this)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log(TAG, Logging.Priority.WARN) { "Surface update after persistent policy failed: ${e.message}" }
+        }
         continueGestureOrStop()
     }
 
