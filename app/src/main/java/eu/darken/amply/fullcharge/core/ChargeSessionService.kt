@@ -1076,7 +1076,15 @@ class ChargeSessionService : Service() {
             // app instead of dispatching, but a notification action cannot pre-check, so without this
             // its tap is a silent no-op (it also covers a surface racing a lost write capability).
             SessionNotifications.showRecovery(this, R.string.recovery_notification_body_unavailable)
-            SurfaceUpdater.updateNow(this)
+            // Guarded like the other terminal branches: a failing surface update must not skip the
+            // teardown, cancellation still propagates.
+            try {
+                SurfaceUpdater.updateNow(this)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log(TAG, Logging.Priority.WARN) { "Surface update after an unwritable refusal failed: ${e.message}" }
+            }
             continueGestureOrStop()
             return
         }
@@ -1089,7 +1097,14 @@ class ChargeSessionService : Service() {
                 "Persistent policy skipped: ${policy.stableId} is not supported by the current adapter"
             }
             SessionNotifications.showRecovery(this, R.string.recovery_notification_body_unavailable)
-            SurfaceUpdater.updateNow(this)
+            // Same guard as the refusal above.
+            try {
+                SurfaceUpdater.updateNow(this)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log(TAG, Logging.Priority.WARN) { "Surface update after an unsupported refusal failed: ${e.message}" }
+            }
             continueGestureOrStop()
             return
         }
