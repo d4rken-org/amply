@@ -35,6 +35,7 @@ import eu.darken.amply.fullcharge.core.FullChargeStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -59,6 +60,25 @@ internal fun mergeRefreshedState(prev: ChargingState, built: ChargingState): Cha
     } else {
         built
     }
+
+/**
+ * Run the adapter [write] and classify its outcome: true iff the write reported success, false for every
+ * failure, so the caller runs its one failure publication. [onTimeout] reports the timeout case for logging.
+ * A [CancellationException] that is not a timeout is rethrown, so a genuinely cancelled write runs no
+ * failure side effects (state churn, notifications).
+ */
+internal suspend fun runPolicyWrite(write: suspend () -> Boolean, onTimeout: () -> Unit): Boolean = try {
+    write()
+} catch (e: TimeoutCancellationException) {
+    // A backend bind/command timeout is a failed write, not this coroutine being cancelled: no caller
+    // wraps an apply in a timeout, and rethrowing would escape past the caller's failure publication.
+    onTimeout()
+    false
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Exception) {
+    false
+}
 
 data class ChargingState(
     val device: DeviceInfo = DeviceInfo.current(),
@@ -498,14 +518,10 @@ class ChargingRepository @Inject constructor(
             busy = true,
             message = caString { it.getString(R.string.charging_message_applying, policy.label.get(it)) },
         )
-        val written = try {
-            if (forceNotify) adapter.reapply(policy, backend) else adapter.apply(policy, backend)
-        } catch (e: CancellationException) {
-            // A cancelled write must not run failure side effects (state churn, notifications).
-            throw e
-        } catch (e: Exception) {
-            false
-        }
+        val written = runPolicyWrite(
+            write = { if (forceNotify) adapter.reapply(policy, backend) else adapter.apply(policy, backend) },
+            onTimeout = { log(TAG, Logging.Priority.ERROR) { "Settings write timed out for ${policy.stableId}" } },
+        )
         if (!written) {
             log(TAG, Logging.Priority.ERROR) { "Settings write failed for ${policy.stableId}" }
             val observation = ChargeObservation.Unknown(R.string.charging_reason_write_failed.toCaString())
@@ -609,15 +625,16 @@ class ChargingRepository @Inject constructor(
             // so without this a static widget/tile on a killed process would never be pushed the new
             // state after a tap. Scheduling with `now` fires the worker AFTER the settling window, so its
             // refresh() computes pending == null (no phantom settling is reintroduced) and only re-pushes.
-            // Isolate the call locally: a scheduler failure must not fall into the metadata-failure catch
-            // below, which would overwrite this just-published settled state with a phantom PendingRequest.
-            try {
-                settleScheduler.schedule(now)
-            } catch (e: Exception) {
-                log(TAG, Logging.Priority.WARN) { "Surface re-push scheduling failed: ${e.message}" }
-            }
+            // A scheduler failure is swallowed (see scheduleSettle): falling into the metadata-failure
+            // catch below would overwrite this just-published settled state with a phantom PendingRequest.
+            scheduleSettle(now)
             ApplyResult(true, observation, message.get(context))
                 .also { log(TAG, Logging.Priority.INFO) { "Applied ${policy.stableId}: $observation" } }
+        } catch (e: TimeoutCancellationException) {
+            // A backend bind/command timeout is a failed post-write step, not this coroutine being
+            // cancelled: no caller wraps an apply in a timeout, and the write itself already landed.
+            log(TAG, Logging.Priority.WARN) { "Post-write metadata timed out for ${policy.stableId}" }
+            publishDegradedSuccess(policy, adapter, pluggedAtWrite, now)
         } catch (e: CancellationException) {
             // The write committed and is recorded; reflect it so the UI doesn't stay busy and the settle
             // clear still fires, then honour cancellation.
@@ -628,24 +645,44 @@ class ChargingRepository @Inject constructor(
                 unconfirmedTarget = null,
                 capAwaitsHardwareConfirmation = false,
             )
-            settleScheduler.schedule(now)
+            scheduleSettle(now)
             throw e
         } catch (e: Exception) {
-            // Write landed but metadata failed: report a truthful degraded success, keep the pending cue,
-            // and guarantee busy is cleared.
             log(TAG, Logging.Priority.WARN) { "Post-write metadata failed for ${policy.stableId}: ${e.message}" }
-            val observation = ChargeObservation.LastRequested(policy)
-            val message = caString { it.getString(R.string.charging_message_requested, policy.label.get(it)) }
-            mutableState.value = state.value.copy(
-                busy = false,
-                observation = observation,
-                pending = PendingRequest(policy, now, awaitingReplug = fallbackAwaitsReplug(adapter, pluggedAtWrite)),
-                unconfirmedTarget = null,
-                capAwaitsHardwareConfirmation = false,
-                message = message,
-            )
+            publishDegradedSuccess(policy, adapter, pluggedAtWrite, now)
+        }
+    }
+
+    /**
+     * Write landed but a post-write step failed: report a truthful degraded success, keep the pending cue,
+     * and guarantee busy is cleared.
+     */
+    private fun publishDegradedSuccess(
+        policy: ChargePolicy,
+        adapter: ChargingAdapter,
+        pluggedAtWrite: Boolean?,
+        now: Long,
+    ): ApplyResult {
+        val observation = ChargeObservation.LastRequested(policy)
+        val message = caString { it.getString(R.string.charging_message_requested, policy.label.get(it)) }
+        mutableState.value = state.value.copy(
+            busy = false,
+            observation = observation,
+            pending = PendingRequest(policy, now, awaitingReplug = fallbackAwaitsReplug(adapter, pluggedAtWrite)),
+            unconfirmedTarget = null,
+            capAwaitsHardwareConfirmation = false,
+            message = message,
+        )
+        scheduleSettle(now)
+        return ApplyResult(true, observation, message.get(context))
+    }
+
+    /** Best-effort: a scheduler failure must never replace or suppress the outcome just published. */
+    private fun scheduleSettle(now: Long) {
+        try {
             settleScheduler.schedule(now)
-            ApplyResult(true, observation, message.get(context))
+        } catch (e: Exception) {
+            log(TAG, Logging.Priority.WARN) { "Surface re-push scheduling failed: ${e.message}" }
         }
     }
 
