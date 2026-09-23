@@ -45,10 +45,14 @@ enum class CurrentScale {
  *
  * Generalizing "all MagicOS" from one device is a deliberate, bounded bet, and a much cheaper one than the
  * equivalent for charge control: the failure mode is a wrong battery figure, not a false claim that a
- * battery is protected. Other affected ROMs stay uncorrected until one is confirmed and added here.
+ * battery is protected. Other ROMs that misreport both fields stay uncorrected until one is confirmed and
+ * added here.
  *
- * Separately, on Samsung only, [observeCurrent] learns from the readings themselves whether `CURRENT_NOW`
- * alone arrives in milliamps (see [CurrentUnitInference]) and persists the verdict per ROM build.
+ * Samsung is the exception, via [observeCurrent]: some builds report `CURRENT_NOW` alone in milliamps (the
+ * charge counter stays correct), so the unit is learned per ROM build ([CurrentUnitInference]). Its milliamp
+ * evidence is only ever drawn unplugged, where no charge-limit hold exists, so it avoids the trap above. A
+ * verdict needs about a minute of readings unplugged with the screen on; a device Amply only ever reads while
+ * charging keeps showing the uncorrected value until that happens once.
  */
 @Singleton
 class BatteryUnitCalibration @Inject constructor(
