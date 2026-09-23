@@ -112,7 +112,7 @@ class BackupRepositoryTest {
         fullCharge.setGestureNotificationPolicies(
             listOf(ChargePolicy.FixedLimit(90).stableId, ChargePolicy.Unrestricted.stableId),
         )
-        stats.setRetentionDays(12)
+        stats.setRetentionDays(30)
         applier.addRule(carRule)
         applier.addRule(wirelessRule)
     }
@@ -136,7 +136,7 @@ class BackupRepositoryTest {
             fullCharge.isQuickFullChargeAnyLevel() shouldBe true
             fullCharge.gestureNotificationPolicies.value() shouldBe
                 listOf(ChargePolicy.FixedLimit(90).stableId, ChargePolicy.Unrestricted.stableId)
-            stats.retentionDaysNow() shouldBe 12
+            stats.retentionDaysNow() shouldBe 30
             applier.rulesNow() shouldContainExactly listOf(carRule, wirelessRule)
         }
     }
