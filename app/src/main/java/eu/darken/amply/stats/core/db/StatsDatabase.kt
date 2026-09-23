@@ -1,5 +1,6 @@
 package eu.darken.amply.stats.core.db
 
+import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.RoomDatabase
 
@@ -14,8 +15,12 @@ import androidx.room.RoomDatabase
         ChargeSessionEntity::class,
         BatterySampleEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
+    autoMigrations = [
+        // Adds the charge_sessions start/end indices.
+        AutoMigration(from = 1, to = 2),
+    ],
 )
 abstract class StatsDatabase : RoomDatabase() {
     abstract fun statsDao(): StatsDao
