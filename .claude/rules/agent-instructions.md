@@ -11,8 +11,6 @@
 Per the global rules, prefer these for this Kotlin/Android project:
 
 - **`devtools:build-runner`** for all gradle build/test/lint runs — keeps verbose output out of the main context.
-- **`jvm-tools:jvm-dev`** for Kotlin/JVM tasks that may need to inspect a Gradle dependency's API.
-- **`jvm-tools:jar-explorer`** for deep exploration of a library (20+ classes).
 - **`debugbadger`** tools/agent for on-device use-case runs and logcat capture (Android device automation).
 - **`Explore`** / **`general-purpose`** for broad codebase searches when you only need the conclusion.
 
@@ -29,3 +27,9 @@ Follow the global Test-Target rules: never adopt an Android device/emulator you 
 positively ruled out, and never re-point a named target without confirmation. Amply's control paths are
 capability-gated to specific Pixels — record device results in the qualification ledger (`device-qualification` skill)
 rather than loosening the gate to run on an unqualified device.
+
+The Amply test phones sit on the managed USB hub (`usb-ports` skill). Switching a phone's port off is a real unplug,
+which `dumpsys battery unplug` only fakes: use it for disconnect restore, the reconnect-gesture window, the GrapheneOS
+replug latch and a qualification run's plug loss. ADB over that cable drops with it, so observe over wireless ADB or
+read the logs once power is back. Switching a port is covered by the Test-Target rules: only the port of a phone you
+were assigned.
