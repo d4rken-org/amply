@@ -13,6 +13,7 @@ import eu.darken.amply.stats.core.CaptureServiceHealth
 import eu.darken.amply.stats.core.ChargeStatsRecorder
 import eu.darken.amply.stats.core.ChargeStatsRepository
 import eu.darken.amply.stats.core.StatsPreferences
+import eu.darken.amply.stats.core.StatsStorageUsage
 import eu.darken.amply.stats.core.db.StatsDatabase
 import eu.darken.amply.upgrade.core.UpgradeRepo
 import io.kotest.matchers.shouldBe
@@ -106,6 +107,7 @@ class StatsViewModelUpgradeGateTest {
             serviceHealth = CaptureServiceHealth(),
             upgradeRepo = FakeUpgradeRepo(isPro, upgradeError),
             savedStateHandle = SavedStateHandle(),
+            storageUsage = StatsStorageUsage(context, database, Dispatchers.IO),
         )
         return vm to preferences
     }

@@ -13,6 +13,7 @@ import eu.darken.amply.stats.core.CaptureServiceHealth
 import eu.darken.amply.stats.core.ChargeStatsRecorder
 import eu.darken.amply.stats.core.ChargeStatsRepository
 import eu.darken.amply.stats.core.StatsPreferences
+import eu.darken.amply.stats.core.StatsStorageUsage
 import eu.darken.amply.stats.core.db.StatsDatabase
 import eu.darken.amply.upgrade.core.UpgradeRepo
 import io.kotest.matchers.nulls.shouldBeNull
@@ -110,6 +111,7 @@ class StatsViewModelMetricSelectionTest {
             serviceHealth = CaptureServiceHealth(),
             upgradeRepo = FakeUpgradeRepo(),
             savedStateHandle = savedState,
+            storageUsage = StatsStorageUsage(context, database, Dispatchers.IO),
         )
     }
 

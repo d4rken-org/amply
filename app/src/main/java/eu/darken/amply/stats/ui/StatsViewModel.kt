@@ -24,6 +24,7 @@ import eu.darken.amply.stats.core.ChargeStatsRepository
 import eu.darken.amply.stats.core.RecentCurveData
 import eu.darken.amply.stats.core.StatsPreferences
 import eu.darken.amply.stats.core.StatsRetention
+import eu.darken.amply.stats.core.StatsStorageUsage
 import eu.darken.amply.upgrade.core.UpgradeRepo
 import eu.darken.amply.upgrade.core.isProForUi
 import eu.darken.amply.upgrade.core.isProSettled
@@ -78,6 +79,7 @@ class StatsViewModel @Inject constructor(
     private val serviceHealth: CaptureServiceHealth,
     private val upgradeRepo: UpgradeRepo,
     private val savedStateHandle: SavedStateHandle,
+    storageUsage: StatsStorageUsage,
 ) : ViewModel() {
 
     /** Emitted when a capture-enable attempt was denied: the caller routes to the upgrade screen. */
@@ -120,6 +122,10 @@ class StatsViewModel @Inject constructor(
     val retentionDays: StateFlow<Int> = preferences.retentionDays.flow
         .map(StatsRetention::normalize)
         .stateIn(viewModelScope, SharingStarted.Eagerly, StatsRetention.DEFAULT_DAYS)
+
+    // Cold until the settings screen collects it, and it never opens a stats.db that isn't there yet.
+    val historyStorageBytes: StateFlow<Long?> = storageUsage.historyStorageBytes()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), null)
 
     // How many HISTORY_PAGE_SIZE pages of the history list are loaded, counted from the newest charge.
     private val historyPages = MutableStateFlow(1)
