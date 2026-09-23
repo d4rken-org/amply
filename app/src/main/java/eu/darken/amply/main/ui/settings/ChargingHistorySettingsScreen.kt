@@ -1,10 +1,12 @@
 package eu.darken.amply.main.ui.settings
 
+import android.text.format.Formatter
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.twotone.ArrowBack
 import androidx.compose.material.icons.automirrored.twotone.ShowChart
+import androidx.compose.material.icons.twotone.Storage
 import androidx.compose.material.icons.twotone.Timer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -13,10 +15,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import eu.darken.amply.R
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
+import eu.darken.amply.common.settings.SettingsBaseItem
 import eu.darken.amply.common.settings.SettingsDivider
 import eu.darken.amply.common.settings.SettingsSliderItem
 import eu.darken.amply.common.settings.SettingsSwitchItem
@@ -29,11 +33,15 @@ import eu.darken.amply.stats.core.StatsRetention
  *
  * The slider stays enabled while recording is off: retention governs data that is already on the
  * device, which switching capture off does not delete.
+ *
+ * [storageBytes] is the space the recorded history takes up; null hides the row (nothing recorded
+ * yet, or the size couldn't be read).
  */
 @Composable
 fun ChargingHistorySettingsScreen(
     captureEnabled: Boolean,
     retentionDays: Int,
+    storageBytes: Long?,
     onBack: () -> Unit,
     onCaptureEnabledChange: (Boolean) -> Unit,
     onRetentionChange: (Int) -> Unit,
@@ -65,15 +73,40 @@ fun ChargingHistorySettingsScreen(
             }
             item { SettingsDivider() }
             item {
+                // The slider moves over preset indices; only committed days leave this screen.
                 SettingsSliderItem(
                     title = stringResource(R.string.stats_retention_title),
-                    valueLabel = { days -> stringResource(R.string.stats_retention_value, days) },
-                    value = retentionDays,
-                    range = StatsRetention.MIN_DAYS..StatsRetention.MAX_DAYS,
-                    onValueChange = onRetentionChange,
-                    subtitle = stringResource(R.string.stats_retention_footer),
+                    valueLabel = { index ->
+                        val days = StatsRetention.PRESETS[index]
+                        if (StatsRetention.isForever(days)) {
+                            stringResource(R.string.stats_retention_forever)
+                        } else {
+                            stringResource(R.string.stats_retention_value, days)
+                        }
+                    },
+                    value = StatsRetention.presetIndexOf(retentionDays),
+                    range = 0..StatsRetention.PRESETS.lastIndex,
+                    onValueChange = { index -> onRetentionChange(StatsRetention.PRESETS[index]) },
+                    subtitleFor = { index ->
+                        if (StatsRetention.isForever(StatsRetention.PRESETS[index])) {
+                            stringResource(R.string.stats_retention_footer_forever)
+                        } else {
+                            stringResource(R.string.stats_retention_footer)
+                        }
+                    },
                     icon = Icons.TwoTone.Timer,
                 )
+            }
+            if (storageBytes != null) {
+                item { SettingsDivider() }
+                item {
+                    SettingsBaseItem(
+                        title = stringResource(R.string.stats_storage_title),
+                        subtitle = Formatter.formatShortFileSize(LocalContext.current, storageBytes),
+                        icon = Icons.TwoTone.Storage,
+                        onClick = null,
+                    )
+                }
             }
         }
     }
@@ -85,6 +118,7 @@ private fun ChargingHistorySettingsScreenPreview() = PreviewWrapper {
     ChargingHistorySettingsScreen(
         captureEnabled = true,
         retentionDays = StatsRetention.MIN_DAYS,
+        storageBytes = 12_345_678L,
         onBack = {},
         onCaptureEnabledChange = {},
         onRetentionChange = {},
@@ -97,6 +131,20 @@ private fun ChargingHistorySettingsScreenOffPreview() = PreviewWrapper {
     ChargingHistorySettingsScreen(
         captureEnabled = false,
         retentionDays = StatsRetention.DEFAULT_DAYS,
+        storageBytes = null,
+        onBack = {},
+        onCaptureEnabledChange = {},
+        onRetentionChange = {},
+    )
+}
+
+@AmplyPreview
+@Composable
+private fun ChargingHistorySettingsScreenForeverPreview() = PreviewWrapper {
+    ChargingHistorySettingsScreen(
+        captureEnabled = true,
+        retentionDays = StatsRetention.FOREVER,
+        storageBytes = 187_654_321L,
         onBack = {},
         onCaptureEnabledChange = {},
         onRetentionChange = {},

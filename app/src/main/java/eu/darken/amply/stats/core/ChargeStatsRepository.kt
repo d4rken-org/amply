@@ -27,7 +27,7 @@ class ChargeStatsRepository @Inject constructor(
     private val recorder: ChargeStatsRecorder,
     private val bootIdSource: BootIdSource,
 ) {
-    fun recentSessions(limit: Int = DEFAULT_SESSION_LIMIT): Flow<List<ChargeSessionSummary>> =
+    fun recentSessions(limit: Int): Flow<List<ChargeSessionSummary>> =
         database.get().statsDao().finishedSessions(limit).map { rows -> rows.map(::toSummary) }
 
     /** Count of finished sessions (for the dashboard teaser). */
@@ -246,7 +246,6 @@ class ChargeStatsRepository @Inject constructor(
     )
 
     private companion object {
-        const val DEFAULT_SESSION_LIMIT = 100
         const val DEFAULT_CURVE_POINTS = 200
 
         // How many recent finished sessions the charge-time model folds over.

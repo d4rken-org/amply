@@ -163,7 +163,7 @@ class StatsDashboardStatesTest {
         withTimeout(TIMEOUT) { while (seen.size < 2) delay(5) }
 
         // Three writes to another key in the same store, each carrying a new value.
-        repeat(3) { i -> preferences.setRetentionDays(StatsRetention.MIN_DAYS + i) }
+        repeat(3) { i -> preferences.setRetentionDays(StatsRetention.PRESETS[i]) }
         delay(SETTLE)
 
         seen.count { it.loading } shouldBe 1

@@ -1,6 +1,7 @@
 package eu.darken.amply.stats.core.db
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
@@ -17,7 +18,15 @@ import androidx.room.PrimaryKey
  * never by re-scanning raw samples at close — so retention can purge old [BatterySampleEntity] rows
  * without corrupting a finished summary, and a very long session never triggers an unbounded scan.
  */
-@Entity(tableName = "charge_sessions")
+@Entity(
+    tableName = "charge_sessions",
+    indices = [
+        // The history list orders by start.
+        Index("startedAtWallMillis"),
+        // Retention deletes and the open/finished filters go by end.
+        Index("endedAtWallMillis"),
+    ],
+)
 data class ChargeSessionEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
 
