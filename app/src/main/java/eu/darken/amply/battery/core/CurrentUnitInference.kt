@@ -33,6 +33,10 @@ data class CurrentUnitState(
  *   count: a charge-limit hold draws next to nothing in either unit. MILLI is overturned by any later
  *   microamp proof.
  *
+ * `interactive` does not guarantee a lit, power-drawing panel, so a microamp device holding under 10 mA for a
+ * sustained minute while unplugged and interactive would learn MILLI falsely. That draw is implausible with the
+ * screen on, and the next reading of 20 mA or more, in any state, overturns it.
+ *
  * Signs are OEM-defined, so only the magnitude is evaluated.
  *
  * ```
