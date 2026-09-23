@@ -52,6 +52,7 @@ class SettingsScreenTest {
                 onChargeRules = {},
                 captureEnabled = true,
                 onChargingHistory = {},
+                onBackup = {},
                 showDiagnostics = true,
                 diagnosticsReady = true,
                 onDiagnostics = {},

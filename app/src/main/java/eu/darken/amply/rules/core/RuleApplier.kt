@@ -216,6 +216,10 @@ class RuleApplier @Inject constructor(
         store.updateRules { rules -> rules.filterNot { it.id == id } }
     }
 
+    suspend fun replaceRules(rules: List<ChargeRule>) = mutex.withLock {
+        store.updateRules { rules }
+    }
+
     suspend fun setRuleEnabled(id: String, enabled: Boolean) = mutex.withLock {
         store.updateRules { rules -> rules.map { if (it.id == id) it.copy(enabled = enabled) else it } }
     }
