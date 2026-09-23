@@ -135,24 +135,32 @@ class BatteryUnitCalibration @Inject constructor(
         }
     }
 
-    /** Called with the lock held. Launches at most one write; a failed one is retried by a later reading. */
+    /**
+     * Called with the lock held. Launches at most one write; a successful one is followed up if the unit
+     * changed meanwhile, a failed one is retried by a later reading.
+     */
     private fun persistIfNeeded() {
         val unit = unitState.unit
         if (unit == CurrentUnit.UNKNOWN || unit == persistedUnit || writeInFlight) return
         writeInFlight = true
         scope.launch {
+            var succeeded = false
             try {
                 val stored = unitStore.get().learn(unit)
                 synchronized(this@BatteryUnitCalibration) {
                     persistedUnit = stored
                     foldIn(stored)
                 }
+                succeeded = true
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 log(TAG, Logging.Priority.WARN) { "Persisting CURRENT_NOW unit $unit failed: $e" }
             } finally {
-                synchronized(this@BatteryUnitCalibration) { writeInFlight = false }
+                synchronized(this@BatteryUnitCalibration) {
+                    writeInFlight = false
+                    if (succeeded) persistIfNeeded()
+                }
             }
         }
     }

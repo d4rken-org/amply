@@ -193,4 +193,17 @@ class SamsungCurrentUnitCalibrationTest {
 
         backing.writeAttempts shouldBe 0
     }
+
+    @Test
+    fun `a microamp proof seen while a milliamp write is in flight is persisted`() {
+        ShadowBuild.setManufacturer("samsung")
+        val calibration = calibration()
+        scheduler.advanceUntilIdle()
+
+        calibration.milliSequence().last() shouldBe CurrentScale.MILLI_SCALED
+        calibration.charging(1_500_000, 90_000L) shouldBe CurrentScale.AS_REPORTED
+        scheduler.advanceUntilIdle()
+
+        stored() shouldBe CurrentUnit.MICRO
+    }
 }
