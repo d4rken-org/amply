@@ -688,26 +688,32 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         }
-                        SettingsDestination.CHARGING_HISTORY_SETTINGS -> ChargingHistorySettingsScreen(
-                            // Both values come from already-resolved sources (the dashboard state and
-                            // the root-collected retention flow), so neither the switch nor the slider
-                            // can render a placeholder for a frame while a first emission lands.
-                            captureEnabled = state.stats.enabled,
-                            retentionDays = retentionDays,
-                            onBack = { destination = SettingsDestination.SETTINGS },
-                            // Enabling goes through the entitlement gate first, which answers with
-                            // either the upgrade route or the permission flow. Disabling is direct:
-                            // a lapsed entitlement must never trap a user with a running service.
-                            onCaptureEnabledChange = { enabled ->
-                                if (enabled) {
-                                    captureGateOrigin = SettingsDestination.CHARGING_HISTORY_SETTINGS
-                                    statsViewModel.requestEnableCapture()
-                                } else {
-                                    statsViewModel.setCaptureEnabled(false)
-                                }
-                            },
-                            onRetentionChange = statsViewModel::setRetentionDays,
-                        )
+                        SettingsDestination.CHARGING_HISTORY_SETTINGS -> {
+                            // Collected here rather than at the root: the row sits below the slider
+                            // and is hidden while null, so a late first value moves nothing above it.
+                            val storageBytes by statsViewModel.historyStorageBytes.collectAsStateWithLifecycle()
+                            ChargingHistorySettingsScreen(
+                                // Both values come from already-resolved sources (the dashboard state and
+                                // the root-collected retention flow), so neither the switch nor the slider
+                                // can render a placeholder for a frame while a first emission lands.
+                                captureEnabled = state.stats.enabled,
+                                retentionDays = retentionDays,
+                                storageBytes = storageBytes,
+                                onBack = { destination = SettingsDestination.SETTINGS },
+                                // Enabling goes through the entitlement gate first, which answers with
+                                // either the upgrade route or the permission flow. Disabling is direct:
+                                // a lapsed entitlement must never trap a user with a running service.
+                                onCaptureEnabledChange = { enabled ->
+                                    if (enabled) {
+                                        captureGateOrigin = SettingsDestination.CHARGING_HISTORY_SETTINGS
+                                        statsViewModel.requestEnableCapture()
+                                    } else {
+                                        statsViewModel.setCaptureEnabled(false)
+                                    }
+                                },
+                                onRetentionChange = statsViewModel::setRetentionDays,
+                            )
+                        }
                         // The hub reads the battery and the capture flag straight from the dashboard
                         // state (already collected and resolved, so the opt-in card can't flash on for
                         // a frame beside a teaser saying a charge is being recorded) — deliberately not

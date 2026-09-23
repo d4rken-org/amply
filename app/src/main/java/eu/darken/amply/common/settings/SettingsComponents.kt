@@ -30,10 +30,11 @@ import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
 import kotlin.math.roundToInt
 
+/** A null [onClick] makes a read-only row: no click target, no ripple. */
 @Composable
 fun SettingsBaseItem(
     title: String,
-    onClick: () -> Unit,
+    onClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     icon: ImageVector? = null,
@@ -44,7 +45,7 @@ fun SettingsBaseItem(
         modifier = modifier
             .fillMaxWidth()
             .alpha(if (enabled) 1f else 0.38f)
-            .clickable(enabled = enabled, onClick = onClick)
+            .then(if (onClick != null) Modifier.clickable(enabled = enabled, onClick = onClick) else Modifier)
             .padding(horizontal = 16.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

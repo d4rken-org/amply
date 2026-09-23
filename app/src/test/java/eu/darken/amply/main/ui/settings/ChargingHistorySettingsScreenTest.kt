@@ -1,9 +1,11 @@
 package eu.darken.amply.main.ui.settings
 
 import android.app.Application
+import android.text.format.Formatter
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performSemanticsAction
@@ -38,11 +40,18 @@ class ChargingHistorySettingsScreenTest {
 
     private fun slider() = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo))
 
-    private fun render(retentionDays: Int, commits: MutableList<Int> = mutableListOf()) {
+    private val storageTitle get() = context.getString(R.string.stats_storage_title)
+
+    private fun render(
+        retentionDays: Int,
+        commits: MutableList<Int> = mutableListOf(),
+        storageBytes: Long? = null,
+    ) {
         compose.setContent {
             ChargingHistorySettingsScreen(
                 captureEnabled = true,
                 retentionDays = retentionDays,
+                storageBytes = storageBytes,
                 onBack = {},
                 onCaptureEnabledChange = {},
                 onRetentionChange = { commits += it },
@@ -104,5 +113,21 @@ class ChargingHistorySettingsScreenTest {
         compose.onNodeWithText(daysLabel(30)).assertExists()
         compose.onNodeWithText(finiteFooter).assertExists()
         compose.onNodeWithText(foreverFooter).assertDoesNotExist()
+    }
+
+    @Test
+    fun `no storage size hides the storage row`() {
+        render(retentionDays = 14, storageBytes = null)
+
+        compose.onNodeWithText(storageTitle).assertDoesNotExist()
+    }
+
+    @Test
+    fun `a storage size shows the formatted value in a row that is not clickable`() {
+        val bytes = 12_345_678L
+        render(retentionDays = 14, storageBytes = bytes)
+
+        compose.onNodeWithText(storageTitle).assertExists().assertHasNoClickAction()
+        compose.onNodeWithText(Formatter.formatShortFileSize(context, bytes)).assertExists()
     }
 }
