@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.BatteryManager
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.room.Room
+import androidx.room.withTransaction
 import androidx.test.core.app.ApplicationProvider
 import eu.darken.amply.battery.core.BatteryReader
 import eu.darken.amply.battery.core.BatteryUnitCalibration
@@ -93,12 +94,16 @@ class ChargeTimeModelSourceTest {
     /**
      * Wall stamps are anchored to *now*, not to the epoch: the fold applies the retention window to
      * the samples, so epoch-relative stamps would all fall outside it and the model would be empty.
+     *
+     * One transaction, because the fold is triggered by the finished-session ids alone: a fold that
+     * lands between the row and its samples sees a session with no observations, and the later
+     * sample inserts leave the ids unchanged, so nothing re-folds.
      */
     private suspend fun insertFinishedSession(
         startPercent: Int,
         endPercent: Int,
         nowWallMillis: Long = System.currentTimeMillis(),
-    ): Long {
+    ): Long = database.withTransaction {
         val id = database.statsDao().insertSession(
             ChargeSessionEntity(
                 startedAtWallMillis = nowWallMillis,
@@ -124,7 +129,7 @@ class ChargeTimeModelSourceTest {
                 ),
             )
         }
-        return id
+        id
     }
 
     @Test
