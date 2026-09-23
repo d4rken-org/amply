@@ -1,0 +1,11 @@
+[plugins."debugbadger@clanker-cafe"]
+enabled = true
+
+[plugins."google-play@clanker-cafe"]
+enabled = false
+
+[plugins."support@clanker-cafe"]
+enabled = true
+
+[plugins."jvm-tools@clanker-cafe"]
+enabled = true
