@@ -315,6 +315,11 @@ class FullChargeStore @Inject constructor(
         }
     }
 
+    /** An empty [ids] stores the default selection. */
+    suspend fun setGestureNotificationPolicies(ids: List<String>) {
+        gestureNotificationPolicies.value(ids.ifEmpty { null })
+    }
+
     suspend fun setWidgetQuickActions(appWidgetId: Int, ids: List<String>) {
         widgetQuickActions.update { current -> current.orEmpty() + (appWidgetId to ids) }
     }

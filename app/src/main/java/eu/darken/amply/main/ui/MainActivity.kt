@@ -3,6 +3,7 @@ package eu.darken.amply.main.ui
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -46,6 +47,8 @@ import androidx.lifecycle.repeatOnLifecycle
 import dagger.hilt.android.AndroidEntryPoint
 import eu.darken.amply.BuildConfig
 import eu.darken.amply.R
+import eu.darken.amply.backup.ui.BackupScreen
+import eu.darken.amply.backup.ui.BackupViewModel
 import eu.darken.amply.common.AmplyLinks
 import eu.darken.amply.common.theming.AmplyTheme
 import eu.darken.amply.charging.core.DeviceInfo
@@ -88,6 +91,7 @@ class MainActivity : ComponentActivity() {
     private val statsViewModel: StatsViewModel by viewModels()
     private val rulesViewModel: ChargeRulesViewModel by viewModels()
     private val qualificationViewModel: QualificationViewModel by viewModels()
+    private val backupViewModel: BackupViewModel by viewModels()
 
     // Compose-observable so a widget launch that reuses an already-running activity (SINGLE_TOP →
     // onNewIntent, which does not re-run LaunchedEffect(Unit)) still triggers the permission flow.
@@ -246,6 +250,18 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                val backupExportLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.CreateDocument("application/json"),
+                ) { uri -> backupViewModel.export(uri) }
+                val backupImportLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.OpenDocument(),
+                ) { uri -> backupViewModel.loadImport(uri) }
+                // Its own launcher, not notificationLauncher: that one only acts on a grant, while an
+                // import must go ahead either way (a denial imports the notifying features switched off).
+                val backupNotificationLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestPermission(),
+                ) { granted -> backupViewModel.applyPendingImport(notificationsGranted = granted) }
+
                 LaunchedEffect(pendingNotificationRequest.value) {
                     if (pendingNotificationRequest.value) {
                         pendingNotificationRequest.value = false
@@ -307,6 +323,38 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(Unit) {
                     rulesViewModel.closeEditorEvents.collect {
                         destination = SettingsDestination.CHARGE_RULES
+                    }
+                }
+                // Backup: the UI gate answers with the upgrade route or the picker, and a confirmed
+                // import that switches on something notifying asks for the permission first.
+                LaunchedEffect(Unit) {
+                    backupViewModel.upgradeRequiredEvents.collect {
+                        enterUpgrade(SettingsDestination.BACKUP, false)
+                    }
+                }
+                LaunchedEffect(Unit) {
+                    backupViewModel.exportProceedEvents.collect { fileName ->
+                        try {
+                            backupExportLauncher.launch(fileName)
+                        } catch (_: ActivityNotFoundException) {
+                            toast(R.string.backup_no_file_picker)
+                        }
+                    }
+                }
+                LaunchedEffect(Unit) {
+                    backupViewModel.importProceedEvents.collect {
+                        try {
+                            backupImportLauncher.launch(
+                                arrayOf("application/json", "text/plain", "application/octet-stream"),
+                            )
+                        } catch (_: ActivityNotFoundException) {
+                            toast(R.string.backup_no_file_picker)
+                        }
+                    }
+                }
+                LaunchedEffect(Unit) {
+                    backupViewModel.notificationPermissionEvents.collect {
+                        backupNotificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }
                 }
                 // While the editor is open, keep its Bluetooth picture live: the adapter being
@@ -512,6 +560,7 @@ class MainActivity : ComponentActivity() {
                             onChargingHistory = {
                                 destination = SettingsDestination.CHARGING_HISTORY_SETTINGS
                             },
+                            onBackup = { destination = SettingsDestination.BACKUP },
                             // Offered whenever this device is one we want contribution data for (unsupported/lab),
                             // regardless of whether Shizuku is installed yet — the wizard nudges the install.
                             // Withheld where a settings diff can discover nothing, so nobody is walked into a
@@ -708,6 +757,18 @@ class MainActivity : ComponentActivity() {
                             },
                             onRetentionChange = statsViewModel::setRetentionDays,
                         )
+                        SettingsDestination.BACKUP -> {
+                            val backupState by backupViewModel.state.collectAsState()
+                            BackupScreen(
+                                state = backupState,
+                                onBack = { destination = SettingsDestination.SETTINGS },
+                                onExport = backupViewModel::requestExport,
+                                onImport = backupViewModel::requestImport,
+                                onConfirmImport = backupViewModel::confirmImport,
+                                onCancelImport = backupViewModel::cancelImport,
+                                onMessageShown = backupViewModel::onMessageShown,
+                            )
+                        }
                         // The hub reads the battery and the capture flag straight from the dashboard
                         // state (already collected and resolved, so the opt-in card can't flash on for
                         // a frame beside a teaser saying a charge is being recorded) — deliberately not

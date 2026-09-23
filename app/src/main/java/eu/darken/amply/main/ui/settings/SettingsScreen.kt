@@ -13,6 +13,7 @@ import androidx.compose.material.icons.twotone.BugReport
 import androidx.compose.material.icons.twotone.Favorite
 import androidx.compose.material.icons.twotone.History
 import androidx.compose.material.icons.twotone.Settings
+import androidx.compose.material.icons.twotone.SettingsBackupRestore
 import androidx.compose.material.icons.twotone.Stars
 import androidx.compose.material.icons.twotone.SupportAgent
 import androidx.compose.material3.Icon
@@ -50,6 +51,7 @@ fun SettingsScreen(
     onChargeRules: () -> Unit,
     captureEnabled: Boolean,
     onChargingHistory: () -> Unit,
+    onBackup: () -> Unit,
     showDiagnostics: Boolean,
     diagnosticsReady: Boolean,
     onDiagnostics: () -> Unit,
@@ -135,6 +137,17 @@ fun SettingsScreen(
                     onClick = onChargingHistory,
                     // The row itself stays open to everyone: turning recording *off*, and the
                     // retention window for data already recorded, must never sit behind the gate.
+                    trailingContent = { if (showProBadge) ProBadge() },
+                )
+            }
+            item { SettingsDivider() }
+            item {
+                SettingsBaseItem(
+                    title = stringResource(R.string.settings_backup_title),
+                    subtitle = stringResource(R.string.settings_backup_subtitle),
+                    icon = Icons.TwoTone.SettingsBackupRestore,
+                    onClick = onBackup,
+                    // Open to everyone like the rows above; export and import are gated on the screen.
                     trailingContent = { if (showProBadge) ProBadge() },
                 )
             }
@@ -237,6 +250,7 @@ private fun SettingsScreenPreview() = PreviewWrapper {
         onChargeRules = {},
         captureEnabled = true,
         onChargingHistory = {},
+        onBackup = {},
         showDiagnostics = true,
         diagnosticsReady = true,
         onDiagnostics = {},
@@ -263,6 +277,7 @@ private fun SettingsScreenUpgradedPreview() = PreviewWrapper {
         onChargeRules = {},
         captureEnabled = true,
         onChargingHistory = {},
+        onBackup = {},
         showDiagnostics = false,
         diagnosticsReady = false,
         onDiagnostics = {},

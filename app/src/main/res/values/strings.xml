@@ -908,4 +908,59 @@
     <string name="settings_rules_title">Charge conditions</string>
     <string name="settings_rules_subtitle_on">%1$d switched on</string>
     <string name="settings_rules_subtitle_off">Let a policy follow your situation</string>
+
+    <!-- Backup & restore (settings row + screen) -->
+    <string name="settings_backup_title">Backup &amp; restore</string>
+    <string name="settings_backup_subtitle">Save or restore your settings and charge conditions</string>
+    <string name="backup_export_title">Export backup</string>
+    <string name="backup_export_subtitle">Save your settings and charge conditions to a file</string>
+    <string name="backup_import_title">Import backup</string>
+    <string name="backup_import_subtitle">Restore settings and charge conditions from a backup file</string>
+    <string name="backup_disclosure">Backup files aren\'t encrypted. They include the names and addresses of the Bluetooth devices your charge conditions use.</string>
+    <string name="backup_no_file_picker">No file picker available</string>
+    <string name="backup_message_dismiss_action">Dismiss</string>
+
+    <string name="backup_import_dialog_title">Restore this backup?</string>
+    <string name="backup_import_dialog_created">Created %1$s with Amply %2$s</string>
+    <string name="backup_import_dialog_created_date">Created %1$s</string>
+    <string name="backup_import_dialog_created_version">Created with Amply %1$s</string>
+    <string name="backup_import_dialog_settings">Settings: %1$s</string>
+    <string name="backup_import_dialog_settings_none">No settings</string>
+    <string name="backup_import_dialog_settings_separator">", "</string>
+    <plurals name="backup_import_dialog_rules">
+        <item quantity="one">%1$d charge condition. Your current charge conditions will be replaced.</item>
+        <item quantity="other">%1$d charge conditions. Your current charge conditions will be replaced.</item>
+    </plurals>
+    <string name="backup_import_dialog_rules_none">No charge conditions. Your current charge conditions will be removed.</string>
+    <string name="backup_import_dialog_confirm_action">Restore</string>
+    <string name="backup_part_theme">Appearance</string>
+    <string name="backup_part_charge_alarm">Charge alarm</string>
+    <string name="backup_part_reconnect_gesture">Reconnect gesture</string>
+    <string name="backup_part_notification_buttons">Notification buttons</string>
+    <string name="backup_part_history_retention">History retention</string>
+
+    <string name="backup_message_export_saved">Backup saved</string>
+    <string name="backup_message_export_failed">Couldn\'t save the backup</string>
+    <string name="backup_message_read_failed">Couldn\'t read the file</string>
+    <string name="backup_message_not_a_backup">This file isn\'t an Amply backup</string>
+    <string name="backup_message_newer_version">This backup needs a newer version of Amply (backup format %1$d)</string>
+    <string name="backup_message_too_large">This file is too large to be an Amply backup</string>
+    <string name="backup_message_pro_unknown">Couldn\'t confirm your Pro status, try again</string>
+    <string name="backup_message_imported">Backup restored.</string>
+    <string name="backup_message_imported_partial">Backup partially restored, some settings couldn\'t be written.</string>
+    <plurals name="backup_message_rules_imported">
+        <item quantity="one">%1$d charge condition imported.</item>
+        <item quantity="other">%1$d charge conditions imported.</item>
+    </plurals>
+    <string name="backup_message_rules_none">Charge conditions cleared, the backup had none.</string>
+    <plurals name="backup_message_skipped">
+        <item quantity="one">%1$d unreadable entry was skipped.</item>
+        <item quantity="other">%1$d unreadable entries were skipped.</item>
+    </plurals>
+    <plurals name="backup_message_unsupported_rules">
+        <item quantity="one">%1$d charge condition uses a charge mode this device doesn\'t offer.</item>
+        <item quantity="other">%1$d charge conditions use a charge mode this device doesn\'t offer.</item>
+    </plurals>
+    <string name="backup_message_gesture_downgraded">Reconnect gesture turned off, it isn\'t available on this device.</string>
+    <string name="backup_message_notifications_denied">Notifications were denied, so the alarm, gesture and charge conditions were imported switched off.</string>
 </resources>

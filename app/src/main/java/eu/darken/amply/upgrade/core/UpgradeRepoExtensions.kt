@@ -66,6 +66,28 @@ suspend fun UpgradeRepo.isProSettled(timeout: Duration = 5.seconds): Boolean = t
 }
 
 /**
+ * The strict counterpart of [isProSettled], for gates that must not fail open: the same fast path
+ * and one-budget refresh + wait for a Pro emission, but it denies wherever [isProSettled] allows —
+ * on timeout, on a settled non-Pro or error state, and on any exception.
+ */
+suspend fun UpgradeRepo.isProStrict(timeout: Duration = 5.seconds): Boolean = try {
+    if (upgradeInfo.first().isPro) {
+        true
+    } else {
+        withTimeoutOrNull(timeout) {
+            refresh()
+            upgradeInfo.first { it.isPro }
+            true
+        } == true
+    }
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Exception) {
+    log(TAG, WARN) { "isProStrict() failed, denying: ${e.asLog()}" }
+    false
+}
+
+/**
  * Pro check for UI gates: tap handlers that route between a gated action and the upgrade screen.
  *
  * Resolves immediately in the common cases — already Pro, or billing settled and not Pro — so the

@@ -25,6 +25,9 @@ enum class SettingsDestination {
      */
     CHARGING_HISTORY_SETTINGS,
 
+    /** Export and import of the portable settings and charge rules, from the settings hub. */
+    BACKUP,
+
     /** "Battery & charging" — the single telemetry destination (live readout + charge teaser). */
     BATTERY,
 

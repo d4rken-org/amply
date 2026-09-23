@@ -178,6 +178,90 @@ class UpgradeRepoExtensionsTest {
 
     // endregion
 
+    // region isProStrict (gate that must not fail open)
+
+    @Test
+    fun `isProStrict resolves true for a known pro user without refreshing`() = runTest {
+        val repo = FakeRepo(pro = true, settled = false)
+
+        repo.isProStrict() shouldBe true
+
+        repo.refreshCalls shouldBe 0
+        currentTime shouldBe 0
+    }
+
+    @Test
+    fun `isProStrict honors a pro state arriving during the refresh window`() = runTest {
+        val repo = FakeRepo(pro = false, settled = false)
+        backgroundScope.launch {
+            delay(500)
+            repo.settle(pro = true)
+        }
+
+        repo.isProStrict() shouldBe true
+        repo.refreshCalls shouldBe 1
+        currentTime shouldBe 500
+    }
+
+    @Test
+    fun `isProStrict denies a settled non-pro state`() = runTest {
+        val repo = FakeRepo(pro = false, settled = true)
+
+        repo.isProStrict() shouldBe false
+        repo.refreshCalls shouldBe 1
+    }
+
+    @Test
+    fun `isProStrict denies a settled error state`() = runTest {
+        val repo = FakeRepo(pro = false, settled = true, error = IllegalStateException("billing broke"))
+
+        repo.isProStrict() shouldBe false
+    }
+
+    @Test
+    fun `isProStrict denies when billing never settles within the budget`() = runTest {
+        val repo = FakeRepo(pro = false, settled = false)
+
+        repo.isProStrict(timeout = 2.seconds) shouldBe false
+        currentTime shouldBe 2_000
+    }
+
+    @Test
+    fun `isProStrict denies when a hanging refresh eats the budget`() = runTest {
+        val repo = FakeRepo(pro = false, settled = false)
+        repo.onRefresh = { awaitCancellation() }
+
+        repo.isProStrict(timeout = 2.seconds) shouldBe false
+        currentTime shouldBe 2_000
+    }
+
+    @Test
+    fun `isProStrict denies when upgradeInfo throws`() = runTest {
+        explodingRepo().isProStrict() shouldBe false
+    }
+
+    @Test
+    fun `isProStrict denies when refresh throws`() = runTest {
+        val repo = FakeRepo(pro = false, settled = true)
+        repo.onRefresh = { throw IllegalStateException("billing exploded") }
+
+        repo.isProStrict() shouldBe false
+    }
+
+    @Test
+    fun `isProStrict propagates cancellation`() = runTest {
+        val repo = FakeRepo(pro = false, settled = false)
+        repo.onRefresh = { awaitCancellation() }
+
+        val gate = async { repo.isProStrict() }
+        runCurrent()
+        gate.cancel()
+
+        shouldThrow<CancellationException> { gate.await() }
+    }
+
+    // endregion
+
     // region isProForUi (navigation gate)
 
     @Test
