@@ -10,6 +10,7 @@ import androidx.test.core.app.ApplicationProvider
 import eu.darken.amply.battery.core.BatteryReader
 import eu.darken.amply.battery.core.BatteryUnitCalibration
 import eu.darken.amply.common.AppDataStore
+import eu.darken.amply.stats.core.db.BatterySampleEntity
 import eu.darken.amply.stats.core.db.ChargeSessionEntity
 import eu.darken.amply.stats.core.db.StatsDatabase
 import io.kotest.matchers.nulls.shouldNotBeNull
@@ -172,6 +173,18 @@ class ChargeStatsRecorderTest {
             row.copy(endedAtWallMillis = endWall, endedElapsedRealtimeMillis = endWall),
         )
         return id
+    }
+
+    private suspend fun insertSample(sessionId: Long, wallMillis: Long, percent: Int) {
+        database.statsDao().insertSample(
+            BatterySampleEntity(
+                sessionId = sessionId,
+                wallMillis = wallMillis,
+                elapsedRealtimeMillis = wallMillis,
+                bootId = BOOT_ID,
+                percent = percent,
+            ),
+        )
     }
 
     private suspend fun await(condition: suspend () -> Boolean) {
@@ -400,6 +413,48 @@ class ChargeStatsRecorderTest {
         startRecorder()
 
         await { database.statsDao().sessionById(expired) == null }
+    }
+
+    @Test
+    fun `forever keeps old entries and samples until a finite window is chosen`(): Unit = runBlocking {
+        preferences.setRetentionDays(StatsRetention.FOREVER)
+        enableCapture()
+        setBootCount(BOOT_ID.toInt())
+        setBattery(plugged = false, percent = 55)
+
+        val recorder = startRecorder()
+        val ancient = insertClosedSession(endWall = now - 400 * DAY)
+        // A long charge that ended recently: kept as an entry, with its first sample far outside any
+        // finite window.
+        val longCharge = insertClosedSession(endWall = now - DAY, startWall = now - 400 * DAY)
+        insertSample(longCharge, wallMillis = now - 400 * DAY, percent = 40)
+        insertSample(longCharge, wallMillis = now - DAY, percent = 80)
+
+        recorder.purgeNow()
+        // Commands are FIFO on one loop, so the session this tick opens proves the purge before it has
+        // finished — a keep-everything purge has nothing else to await.
+        recorder.offer(
+            RawStatsTick(
+                plugged = true,
+                percent = 60,
+                batteryStatus = BatteryManager.BATTERY_STATUS_CHARGING,
+                sessionActive = false,
+                batteryIntent = null,
+                observedElapsedRealtimeMillis = 60_000,
+                wallMillis = now,
+            ),
+        )
+        await { database.statsDao().openSessions().isNotEmpty() }
+
+        database.statsDao().sessionById(ancient).shouldNotBeNull()
+        database.statsDao().samplesForSessionNow(longCharge).map { it.percent } shouldBe listOf(40, 80)
+
+        preferences.setRetentionDays(30)
+        recorder.purgeNow()
+
+        await { database.statsDao().sessionById(ancient) == null }
+        await { database.statsDao().samplesForSessionNow(longCharge).map { it.percent } == listOf(80) }
+        database.statsDao().sessionById(longCharge).shouldNotBeNull()
     }
 
     @Test

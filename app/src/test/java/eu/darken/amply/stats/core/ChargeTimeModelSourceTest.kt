@@ -94,8 +94,11 @@ class ChargeTimeModelSourceTest {
      * Wall stamps are anchored to *now*, not to the epoch: the fold applies the retention window to
      * the samples, so epoch-relative stamps would all fall outside it and the model would be empty.
      */
-    private suspend fun insertFinishedSession(startPercent: Int, endPercent: Int): Long {
-        val nowWallMillis = System.currentTimeMillis()
+    private suspend fun insertFinishedSession(
+        startPercent: Int,
+        endPercent: Int,
+        nowWallMillis: Long = System.currentTimeMillis(),
+    ): Long {
         val id = database.statsDao().insertSession(
             ChargeSessionEntity(
                 startedAtWallMillis = nowWallMillis,
@@ -223,6 +226,29 @@ class ChargeTimeModelSourceTest {
     }
 
     @Test
+    fun `with forever retention a sample older than the largest finite window still reaches the fold`(): Unit =
+        runBlocking {
+            preferences.setRetentionDays(StatsRetention.FOREVER)
+            val longAgo = System.currentTimeMillis() - 400 * DAY_MS
+            insertFinishedSession(startPercent = 40, endPercent = 50, nowWallMillis = longAgo)
+            insertFinishedSession(startPercent = 40, endPercent = 50, nowWallMillis = longAgo)
+            val source = ChargeTimeModelSource(repository, preferences, Dispatchers.IO)
+
+            val emissions = Channel<ChargeTimeModelState>(Channel.UNLIMITED)
+            val collector = launch(Dispatchers.IO) { source.states.collect { emissions.send(it) } }
+            try {
+                val ready = withTimeout(TIMEOUT_MS) {
+                    var next = emissions.receive()
+                    while (next !is ChargeTimeModelState.Ready) next = emissions.receive()
+                    next
+                }
+                ready.model.pooled.bands[40]!!.medianMillisPerPercent shouldBe 60_000L
+            } finally {
+                collector.cancelAndJoin()
+            }
+        }
+
+    @Test
     fun `a resubscription after the stop timeout never shows Loading between two Ready values`(): Unit =
         runBlocking {
             // `onStart` upstream of `shareIn` re-runs whenever the upstream restarts, so a returning
@@ -257,6 +283,7 @@ class ChargeTimeModelSourceTest {
     private companion object {
         const val TIMEOUT_MS = 10_000L
         const val QUIET_MS = 1_000L
+        const val DAY_MS = 24L * 60 * 60 * 1000
 
         /** Mirrors `ChargeTimeModelSource.STOP_TIMEOUT_MILLIS`, which is private. */
         const val STOP_TIMEOUT_MS = 5_000L

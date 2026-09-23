@@ -112,7 +112,7 @@ class StatsViewModel @Inject constructor(
      * `MainActivity` collects this at its composition root rather than in the settings destination.
      */
     val retentionDays: StateFlow<Int> = preferences.retentionDays.flow
-        .map(StatsRetention::clampDays)
+        .map(StatsRetention::normalize)
         .stateIn(viewModelScope, SharingStarted.Eagerly, StatsRetention.DEFAULT_DAYS)
 
     // Collected only by the history screen. Deliberately NOT gated on captureEnabled: switching capture

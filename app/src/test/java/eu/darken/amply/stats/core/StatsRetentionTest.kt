@@ -6,32 +6,60 @@ import org.junit.jupiter.api.Test
 class StatsRetentionTest {
 
     @Test
-    fun `days are clamped into the offered range`() {
-        StatsRetention.clampDays(StatsRetention.MIN_DAYS - 1) shouldBe StatsRetention.MIN_DAYS
-        StatsRetention.clampDays(0) shouldBe StatsRetention.MIN_DAYS
-        StatsRetention.clampDays(-7) shouldBe StatsRetention.MIN_DAYS
-        StatsRetention.clampDays(StatsRetention.MAX_DAYS + 1) shouldBe StatsRetention.MAX_DAYS
-        StatsRetention.clampDays(365) shouldBe StatsRetention.MAX_DAYS
+    fun `stored values normalize onto a preset`() {
+        listOf(
+            // A zero/negative value must not purge everything up to (or past) now.
+            0 to StatsRetention.MIN_DAYS,
+            -7 to StatsRetention.MIN_DAYS,
+            3 to 3,
+            // Between presets snaps up, never narrowing a window the user already had.
+            4 to 7,
+            10 to 14,
+            14 to 14,
+            15 to 30,
+            365 to 365,
+            // An oversized finite value must not turn into "keep forever".
+            366 to StatsRetention.MAX_DAYS,
+            StatsRetention.FOREVER to StatsRetention.FOREVER,
+        ).forEach { (stored, expected) -> StatsRetention.normalize(stored) shouldBe expected }
     }
 
     @Test
-    fun `days inside the range pass through`() {
-        (StatsRetention.MIN_DAYS..StatsRetention.MAX_DAYS).forEach { StatsRetention.clampDays(it) shouldBe it }
+    fun `every preset normalizes to itself`() {
+        StatsRetention.PRESETS.forEach { StatsRetention.normalize(it) shouldBe it }
     }
 
     @Test
-    fun `cutoff is the window subtracted from now`() {
+    fun `cutoff for a finite preset is the window subtracted from now`() {
         StatsRetention.cutoffWallMillis(NOW, 3) shouldBe NOW - 3 * DAY
         StatsRetention.cutoffWallMillis(NOW, 14) shouldBe NOW - 14 * DAY
+        StatsRetention.cutoffWallMillis(NOW, 365) shouldBe NOW - 365 * DAY
     }
 
     @Test
-    fun `an out of range stored value can neither widen nor collapse the window`() {
-        // A corrupted/oversized value must not turn retention into "keep a year"…
-        StatsRetention.cutoffWallMillis(NOW, 365) shouldBe NOW - StatsRetention.MAX_DAYS * DAY
-        // …and a zero/negative one must not purge everything up to (or past) now.
+    fun `cutoff uses the normalized window`() {
+        StatsRetention.cutoffWallMillis(NOW, 10) shouldBe NOW - 14 * DAY
         StatsRetention.cutoffWallMillis(NOW, 0) shouldBe NOW - StatsRetention.MIN_DAYS * DAY
         StatsRetention.cutoffWallMillis(NOW, -30) shouldBe NOW - StatsRetention.MIN_DAYS * DAY
+    }
+
+    @Test
+    fun `cutoff for forever keeps every wall stamp`() {
+        StatsRetention.cutoffWallMillis(NOW, StatsRetention.FOREVER) shouldBe Long.MIN_VALUE
+    }
+
+    @Test
+    fun `forever is recognized only for the sentinel`() {
+        StatsRetention.isForever(StatsRetention.FOREVER) shouldBe true
+        StatsRetention.isForever(StatsRetention.MAX_DAYS) shouldBe false
+    }
+
+    @Test
+    fun `preset index follows the normalized value`() {
+        StatsRetention.PRESETS.forEachIndexed { index, preset ->
+            StatsRetention.presetIndexOf(preset) shouldBe index
+        }
+        StatsRetention.presetIndexOf(10) shouldBe StatsRetention.PRESETS.indexOf(14)
     }
 
     private companion object {

@@ -74,7 +74,7 @@ class ChargeTimeModelSource @Inject constructor(
                     val batch = repository.bandObservations(
                         cutoffWallMillis = StatsRetention.cutoffWallMillis(
                             nowWallMillis = System.currentTimeMillis(),
-                            days = StatsRetention.clampDays(retentionDays),
+                            days = StatsRetention.normalize(retentionDays),
                         ),
                     )
                     ChargeTimeModelState.Ready(
