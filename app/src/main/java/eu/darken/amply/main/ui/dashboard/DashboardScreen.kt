@@ -1028,6 +1028,7 @@ private fun ChargeObservation.detail(): CaString = when (this) {
     // The backend placeholder stays in both readback strings: this line's job is provenance.
     is ChargeObservation.Verified -> when {
         backend == BackendKind.BATTERY_HARDWARE -> R.string.dashboard_detail_hw_confirmed.toCaString()
+        systemManaged -> R.string.dashboard_detail_system_managed.toCaString()
         policy.enforcementIsConditional -> caString {
             it.getString(
                 R.string.dashboard_detail_readback_conditional,

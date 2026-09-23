@@ -109,6 +109,47 @@ class SamsungChargingAdaptersTest {
     }
 
     @Test
+    fun `modern read verifies the long-term charging maximum as a system-managed cap`() = runTest {
+        // Device Care writes 2 when it turns Maximum on by itself for long-term charging, observed on
+        // an SM-X210 (One UI 8.0) holding at 80%; the cap follows the threshold like user-chosen Maximum.
+        suspend fun observed(threshold: String?): ChargeObservation {
+            val values = mutableMapOf(SamsungChargingAdapter.KEY_PROTECT_BATTERY to "2")
+            threshold?.let { values[SamsungChargingAdapter.KEY_THRESHOLD] = it }
+            return modern.read(FakeBackend(values = values))
+        }
+
+        observed(null) shouldBe ChargeObservation.Verified(
+            ChargePolicy.FixedLimit(80),
+            BackendKind.DIRECT_WSS,
+            systemManaged = true,
+        )
+        observed("90") shouldBe ChargeObservation.Verified(
+            ChargePolicy.FixedLimit(90),
+            BackendKind.DIRECT_WSS,
+            systemManaged = true,
+        )
+        observed("75").shouldBeInstanceOf<ChargeObservation.Unknown>().unrecognizedValue shouldBe true
+    }
+
+    @Test
+    fun `restoring the long-term charging cap writes user maximum, never 2`() = runTest {
+        val backend = FakeBackend(
+            values = mutableMapOf(
+                SamsungChargingAdapter.KEY_PROTECT_BATTERY to "2",
+                SamsungChargingAdapter.KEY_THRESHOLD to "80",
+            ),
+        )
+        val observed = modern.read(backend).shouldBeInstanceOf<ChargeObservation.Verified>()
+
+        modern.apply(observed.policy, backend) shouldBe true
+        backend.writes shouldContainExactly listOf(
+            SettingMutation(SettingNamespace.GLOBAL, SamsungChargingAdapter.KEY_THRESHOLD, "80"),
+            SettingMutation(SettingNamespace.GLOBAL, SamsungChargingAdapter.KEY_PROTECT_BATTERY, "1"),
+        )
+        modern.read(backend) shouldBe ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.DIRECT_WSS)
+    }
+
+    @Test
     fun `modern read rejects out of domain and malformed values`() = runTest {
         suspend fun observed(protect: String?, threshold: String? = null): ChargeObservation {
             val values = mutableMapOf<String, String>()
@@ -117,9 +158,9 @@ class SamsungChargingAdaptersTest {
             return modern.read(FakeBackend(values = values))
         }
 
-        // Unknown mode values (e.g. an unverified One UI generation's "2") never verify and
-        // must carry the machine-readable unrecognized flag so session start can refuse.
-        observed("2").shouldBeInstanceOf<ChargeObservation.Unknown>().unrecognizedValue shouldBe true
+        // Unknown mode values never verify and must carry the machine-readable unrecognized flag
+        // so session start can refuse.
+        observed("4").shouldBeInstanceOf<ChargeObservation.Unknown>().unrecognizedValue shouldBe true
         observed("garbage").shouldBeInstanceOf<ChargeObservation.Unknown>().unrecognizedValue shouldBe true
         observed(null).shouldBeInstanceOf<ChargeObservation.Unknown>().unrecognizedValue shouldBe true
         // Threshold must be a valid tick when the key is present; only absence defaults to 80.

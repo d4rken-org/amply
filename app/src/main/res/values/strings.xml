@@ -172,6 +172,7 @@
     <string name="dashboard_status_unknown">Policy not verified</string>
     <string name="dashboard_detail_hw_confirmed">Confirmed by Android\'s charging hardware</string>
     <string name="dashboard_detail_readback">Read back through %1$s</string>
+    <string name="dashboard_detail_system_managed">Turned on automatically by the system because the device stays plugged in for long periods</string>
     <string name="dashboard_detail_readback_conditional">Mode set and read back through %1$s; the system chooses when it applies</string>
     <string name="dashboard_detail_last_requested">Last requested by Amply; connect Shizuku for exact readback</string>
     <string name="dashboard_policy_adaptive">Adaptive charging</string>

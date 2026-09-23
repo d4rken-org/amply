@@ -79,6 +79,12 @@ abstract class SamsungChargingAdapter : ChargingAdapter {
 
         const val VALUE_OFF = "0"
         const val VALUE_MAXIMUM = "1"
+
+        /**
+         * Maximum protection switched on by Device Care itself for long-term charging, not by the user. Never
+         * written by Amply (and not in the write allowlist); restoring from it writes [VALUE_MAXIMUM].
+         */
+        const val VALUE_MAXIMUM_LONG_TERM = "2"
         const val VALUE_PAUSE_AT_FULL = "3"
     }
 }
@@ -122,7 +128,7 @@ class SamsungModernChargingAdapter @Inject constructor() : SamsungChargingAdapte
         return when (protect.value) {
             VALUE_OFF -> ChargeObservation.Verified(ChargePolicy.Unrestricted, backend.kind)
             VALUE_PAUSE_AT_FULL -> ChargeObservation.Verified(ChargePolicy.PauseAtFull, backend.kind)
-            VALUE_MAXIMUM -> {
+            VALUE_MAXIMUM, VALUE_MAXIMUM_LONG_TERM -> {
                 val threshold = backend.read(SettingNamespace.GLOBAL, KEY_THRESHOLD)
                 if (!threshold.readable) {
                     return ChargeObservation.Unknown(
@@ -133,7 +139,11 @@ class SamsungModernChargingAdapter @Inject constructor() : SamsungChargingAdapte
                 val raw = threshold.value
                 val percent = if (raw == null) THRESHOLD_DEFAULT else raw.toIntOrNull()
                 if (percent != null && percent in THRESHOLD_DOMAIN) {
-                    ChargeObservation.Verified(ChargePolicy.FixedLimit(percent), backend.kind)
+                    ChargeObservation.Verified(
+                        ChargePolicy.FixedLimit(percent),
+                        backend.kind,
+                        systemManaged = protect.value == VALUE_MAXIMUM_LONG_TERM,
+                    )
                 } else {
                     ChargeObservation.Unknown(
                         R.string.charging_reason_value_unrecognized.toCaString(
