@@ -4,9 +4,10 @@ import android.content.Context
 import android.os.BatteryManager
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.room.Room
+import androidx.room.withTransaction
 import androidx.test.core.app.ApplicationProvider
 import eu.darken.amply.battery.core.BatteryReader
-import eu.darken.amply.battery.core.BatteryUnitCalibration
+import eu.darken.amply.battery.core.nonSamsungBatteryUnitCalibration
 import eu.darken.amply.common.AppDataStore
 import eu.darken.amply.stats.core.db.BatterySampleEntity
 import eu.darken.amply.stats.core.db.ChargeSessionEntity
@@ -74,7 +75,7 @@ class ChargeTimeModelSourceTest {
             database = { database },
             preferences = preferences,
             bootIdSource = bootIdSource,
-            batteryReader = BatteryReader(context, BatteryUnitCalibration(context)),
+            batteryReader = BatteryReader(context, nonSamsungBatteryUnitCalibration(context)),
             dispatcher = Dispatchers.IO,
         )
         repository = ChargeStatsRepository(
@@ -93,9 +94,16 @@ class ChargeTimeModelSourceTest {
     /**
      * Wall stamps are anchored to *now*, not to the epoch: the fold applies the retention window to
      * the samples, so epoch-relative stamps would all fall outside it and the model would be empty.
+     *
+     * One transaction, because the fold is triggered by the finished-session ids alone: a fold that
+     * lands between the row and its samples sees a session with no observations, and the later
+     * sample inserts leave the ids unchanged, so nothing re-folds.
      */
-    private suspend fun insertFinishedSession(startPercent: Int, endPercent: Int): Long {
-        val nowWallMillis = System.currentTimeMillis()
+    private suspend fun insertFinishedSession(
+        startPercent: Int,
+        endPercent: Int,
+        nowWallMillis: Long = System.currentTimeMillis(),
+    ): Long = database.withTransaction {
         val id = database.statsDao().insertSession(
             ChargeSessionEntity(
                 startedAtWallMillis = nowWallMillis,
@@ -121,7 +129,7 @@ class ChargeTimeModelSourceTest {
                 ),
             )
         }
-        return id
+        id
     }
 
     @Test
@@ -145,7 +153,7 @@ class ChargeTimeModelSourceTest {
                         ),
                     ),
                     bootIdSource = BootIdSource(context),
-                    batteryReader = BatteryReader(context, BatteryUnitCalibration(context)),
+                    batteryReader = BatteryReader(context, nonSamsungBatteryUnitCalibration(context)),
                     dispatcher = Dispatchers.IO,
                 ),
                 bootIdSource = BootIdSource(context),
@@ -223,6 +231,29 @@ class ChargeTimeModelSourceTest {
     }
 
     @Test
+    fun `with forever retention a sample older than the largest finite window still reaches the fold`(): Unit =
+        runBlocking {
+            preferences.setRetentionDays(StatsRetention.FOREVER)
+            val longAgo = System.currentTimeMillis() - 400 * DAY_MS
+            insertFinishedSession(startPercent = 40, endPercent = 50, nowWallMillis = longAgo)
+            insertFinishedSession(startPercent = 40, endPercent = 50, nowWallMillis = longAgo)
+            val source = ChargeTimeModelSource(repository, preferences, Dispatchers.IO)
+
+            val emissions = Channel<ChargeTimeModelState>(Channel.UNLIMITED)
+            val collector = launch(Dispatchers.IO) { source.states.collect { emissions.send(it) } }
+            try {
+                val ready = withTimeout(TIMEOUT_MS) {
+                    var next = emissions.receive()
+                    while (next !is ChargeTimeModelState.Ready) next = emissions.receive()
+                    next
+                }
+                ready.model.pooled.bands[40]!!.medianMillisPerPercent shouldBe 60_000L
+            } finally {
+                collector.cancelAndJoin()
+            }
+        }
+
+    @Test
     fun `a resubscription after the stop timeout never shows Loading between two Ready values`(): Unit =
         runBlocking {
             // `onStart` upstream of `shareIn` re-runs whenever the upstream restarts, so a returning
@@ -257,6 +288,7 @@ class ChargeTimeModelSourceTest {
     private companion object {
         const val TIMEOUT_MS = 10_000L
         const val QUIET_MS = 1_000L
+        const val DAY_MS = 24L * 60 * 60 * 1000
 
         /** Mirrors `ChargeTimeModelSource.STOP_TIMEOUT_MILLIS`, which is private. */
         const val STOP_TIMEOUT_MS = 5_000L

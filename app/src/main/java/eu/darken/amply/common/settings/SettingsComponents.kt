@@ -30,10 +30,11 @@ import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
 import kotlin.math.roundToInt
 
+/** A null [onClick] makes a read-only row: no click target, no ripple. */
 @Composable
 fun SettingsBaseItem(
     title: String,
-    onClick: () -> Unit,
+    onClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     icon: ImageVector? = null,
@@ -44,7 +45,7 @@ fun SettingsBaseItem(
         modifier = modifier
             .fillMaxWidth()
             .alpha(if (enabled) 1f else 0.38f)
-            .clickable(enabled = enabled, onClick = onClick)
+            .then(if (onClick != null) Modifier.clickable(enabled = enabled, onClick = onClick) else Modifier)
             .padding(horizontal = 16.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -134,7 +135,8 @@ fun SettingsSwitchItem(
  * work the change triggers. [value] changing from outside re-syncs the local state.
  *
  * [valueLabel] formats the **live** dragged value, not [value] — a caller must not pre-format the
- * persisted number, or the label would sit frozen on the old value for the whole gesture.
+ * persisted number, or the label would sit frozen on the old value for the whole gesture. The same
+ * holds for [subtitleFor], which, when set, replaces the static [subtitle].
  */
 @Composable
 fun SettingsSliderItem(
@@ -146,8 +148,10 @@ fun SettingsSliderItem(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     icon: ImageVector? = null,
+    subtitleFor: (@Composable (Int) -> String?)? = null,
 ) {
     var dragged by remember(value) { mutableStateOf(value) }
+    val shownSubtitle = if (subtitleFor != null) subtitleFor(dragged) else subtitle
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -168,7 +172,7 @@ fun SettingsSliderItem(
                     .padding(start = if (icon != null) 16.dp else 0.dp),
             ) {
                 Text(title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
-                subtitle?.let {
+                shownSubtitle?.let {
                     Text(
                         it,
                         modifier = Modifier.padding(top = 2.dp),

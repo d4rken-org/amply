@@ -147,9 +147,8 @@ android {
     }
 }
 
-// Export Room schemas to a committed directory so future schema changes (P2/P3) have a baseline to
-// diff and write tested migrations against. Room v1 has nothing to migrate yet, but the baseline must
-// exist from the first shipped version.
+// Export Room schemas to a committed directory so schema changes have a baseline to diff and write
+// tested migrations against (Room's auto-migrations are generated from these files).
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }

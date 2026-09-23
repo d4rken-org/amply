@@ -24,6 +24,7 @@ import eu.darken.amply.stats.core.ChargeStatsRepository
 import eu.darken.amply.stats.core.RecentCurveData
 import eu.darken.amply.stats.core.StatsPreferences
 import eu.darken.amply.stats.core.StatsRetention
+import eu.darken.amply.stats.core.StatsStorageUsage
 import eu.darken.amply.upgrade.core.UpgradeRepo
 import eu.darken.amply.upgrade.core.isProForUi
 import eu.darken.amply.upgrade.core.isProSettled
@@ -34,6 +35,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
@@ -41,6 +43,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -51,7 +54,11 @@ import javax.inject.Inject
 sealed interface ChargeHistoryState {
     data object Loading : ChargeHistoryState
     data object Unavailable : ChargeHistoryState
-    data class Ready(val sessions: List<ChargeSessionSummary>) : ChargeHistoryState
+    /** [hasMore]: the loaded window came back full, so older sessions may exist beyond it. */
+    data class Ready(
+        val sessions: List<ChargeSessionSummary>,
+        val hasMore: Boolean = false,
+    ) : ChargeHistoryState
 }
 
 /**
@@ -72,6 +79,7 @@ class StatsViewModel @Inject constructor(
     private val serviceHealth: CaptureServiceHealth,
     private val upgradeRepo: UpgradeRepo,
     private val savedStateHandle: SavedStateHandle,
+    storageUsage: StatsStorageUsage,
 ) : ViewModel() {
 
     /** Emitted when a capture-enable attempt was denied: the caller routes to the upgrade screen. */
@@ -112,14 +120,26 @@ class StatsViewModel @Inject constructor(
      * `MainActivity` collects this at its composition root rather than in the settings destination.
      */
     val retentionDays: StateFlow<Int> = preferences.retentionDays.flow
-        .map(StatsRetention::clampDays)
+        .map(StatsRetention::normalize)
         .stateIn(viewModelScope, SharingStarted.Eagerly, StatsRetention.DEFAULT_DAYS)
+
+    // Cold until the settings screen collects it, and it never opens a stats.db that isn't there yet.
+    val historyStorageBytes: StateFlow<Long?> = storageUsage.historyStorageBytes()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), null)
+
+    // How many HISTORY_PAGE_SIZE pages of the history list are loaded, counted from the newest charge.
+    private val historyPages = MutableStateFlow(1)
 
     // Collected only by the history screen. Deliberately NOT gated on captureEnabled: switching capture
     // off must not hide (or make unclearable) what was already recorded.
     val historyState: StateFlow<ChargeHistoryState> = chargeHistoryStates(
-        recentSessions = { repository.recentSessions() },
+        pages = historyPages,
+        recentSessions = { limit -> repository.recentSessions(limit) },
     ).stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), ChargeHistoryState.Loading)
+
+    fun loadMoreHistory() {
+        historyPages.update { pages -> nextHistoryPages(pages, historyState.value) }
+    }
 
     // Backed by SavedStateHandle so the open detail screen survives process death: the restored
     // Activity comes back to STATS_SESSION_DETAIL (a saved destination), and the id it needs is
@@ -341,6 +361,7 @@ class StatsViewModel @Inject constructor(
     internal companion object {
         val TAG = logTag("Stats", "ViewModel")
         const val STOP_TIMEOUT_MILLIS = 5_000L
+        const val HISTORY_PAGE_SIZE = 50
         const val KEY_SELECTED_SESSION = "stats.selected_session_id"
         const val KEY_METRIC_SESSION = "stats.metric.session_id"
         const val KEY_METRIC_NAME = "stats.metric.name"
@@ -353,22 +374,44 @@ class StatsViewModel @Inject constructor(
  * flow, not a flow built at construction.
  *
  * That is not a style preference. `ChargeStatsRepository.recentSessions()` calls `database.get()`
- * eagerly, so `repository.recentSessions().stateIn(…)` would open the Room database the moment this
+ * eagerly, so `repository.recentSessions(…).stateIn(…)` would open the Room database the moment this
  * ViewModel is instantiated — including for a user who never enabled capture and only opened the
  * battery hub. `SharingStarted.WhileSubscribed` defers collection, never construction.
  *
- * Building the provider's flow inside [flow] also means a synchronous construction failure (a broken
- * `stats.db`) lands in [catch] rather than escaping to the collector.
+ * Building the provider's flow inside [flatMapLatest] also means a synchronous construction failure
+ * (a broken `stats.db`) lands in [catch] rather than escaping to the collector.
+ *
+ * [pages] grows one live query from the newest charge: 1 loads the newest 50, 2 the newest 100. A
+ * larger count replaces the query without emitting [ChargeHistoryState.Loading] again, so the rows
+ * already on screen stay put until the bigger window arrives.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 internal fun chargeHistoryStates(
-    recentSessions: () -> Flow<List<ChargeSessionSummary>>,
-): Flow<ChargeHistoryState> = flow<ChargeHistoryState> {
-    emitAll(recentSessions().map { sessions -> ChargeHistoryState.Ready(sessions) })
-}
+    pages: Flow<Int>,
+    recentSessions: (limit: Int) -> Flow<List<ChargeSessionSummary>>,
+): Flow<ChargeHistoryState> = pages
+    .distinctUntilChanged()
+    .flatMapLatest { count ->
+        val limit = count * StatsViewModel.HISTORY_PAGE_SIZE
+        recentSessions(limit).map<List<ChargeSessionSummary>, ChargeHistoryState> { sessions ->
+            ChargeHistoryState.Ready(sessions, hasMore = sessions.size >= limit)
+        }
+    }
     .onStart { emit(ChargeHistoryState.Loading) }
     .catch { e ->
         log(HISTORY_FLOW_TAG, Logging.Priority.ERROR) { "Charge history flow failed: ${e.asLog()}" }
         emit(ChargeHistoryState.Unavailable)
     }
+
+/**
+ * The page count after a load-more request. Grows only once the current window has arrived full:
+ * the list keeps asking while the user sits at its end, and a request made while page 2 is still
+ * loading (50 rows shown, 100 requested) must not skip ahead to page 3.
+ */
+internal fun nextHistoryPages(currentPages: Int, state: ChargeHistoryState): Int {
+    val ready = state as? ChargeHistoryState.Ready ?: return currentPages
+    val windowFilled = ready.sessions.size >= currentPages * StatsViewModel.HISTORY_PAGE_SIZE
+    return if (ready.hasMore && windowFilled) currentPages + 1 else currentPages
+}
 
 private val HISTORY_FLOW_TAG = logTag("Stats", "VM", "History")

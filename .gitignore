@@ -14,3 +14,6 @@ app/src/screenshotTest*/reference/
 # they capture whatever was on the recording device's screen.
 fastlane/play-declarations/**/*.mp4
 
+.codex
+/.pi/*
+!/.pi/settings.json

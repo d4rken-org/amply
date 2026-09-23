@@ -115,6 +115,51 @@ class BatteryReadoutFactoryTest {
     }
 
     @Test
+    fun `a learned milliamp current is rescaled without touching the charge counter`() {
+        // Samsung shape: CURRENT_NOW in mA while CHARGE_COUNTER is correctly in uAh.
+        val readout = BatteryReadoutFactory.build(
+            level = 60,
+            scale = 100,
+            chargeCounterMicroampHours = 2_700_000,
+            currentNowMicroamps = -254,
+            currentIsMilliScaled = true,
+        )
+        readout.currentNowMicroamps shouldBe -254_000
+        readout.chargeCounterMicroampHours shouldBe 2_700_000
+    }
+
+    @Test
+    fun `a learned milliamp current is not scaled twice on a corrected MagicOS reading`() {
+        val readout = BatteryReadoutFactory.build(
+            level = 100,
+            scale = 100,
+            chargeCounterMicroampHours = 6_978,
+            currentNowMicroamps = -300,
+            romMisreportsUnits = true,
+            currentIsMilliScaled = true,
+        )
+        readout.chargeCounterMicroampHours shouldBe 6_978_000
+        readout.currentNowMicroamps shouldBe -300_000
+    }
+
+    @Test
+    fun `current is untouched unless a milliamp unit was learned`() {
+        val readout = BatteryReadoutFactory.build(
+            level = 60,
+            scale = 100,
+            chargeCounterMicroampHours = 2_700_000,
+            currentNowMicroamps = -254,
+        )
+        readout.currentNowMicroamps shouldBe -254
+        readout.chargeCounterMicroampHours shouldBe 2_700_000
+    }
+
+    @Test
+    fun `an absent current stays absent when a milliamp unit was learned`() {
+        BatteryReadoutFactory.build(currentIsMilliScaled = true).currentNowMicroamps shouldBe null
+    }
+
+    @Test
     fun `a nearly empty healthy battery is not mistaken for a milli-reporting one`() {
         // The closest the two populations come: 1% of a 7100 mAh cell is 71_000 uAh, a small absolute
         // number. Normalizing by level is what keeps it separable — implied capacity is still ~7.1 Ah.

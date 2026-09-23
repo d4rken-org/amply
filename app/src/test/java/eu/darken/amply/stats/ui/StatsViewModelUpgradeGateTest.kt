@@ -5,7 +5,7 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import eu.darken.amply.battery.core.BatteryReader
-import eu.darken.amply.battery.core.BatteryUnitCalibration
+import eu.darken.amply.battery.core.nonSamsungBatteryUnitCalibration
 import eu.darken.amply.common.AppDataStore
 import eu.darken.amply.common.datastore.value
 import eu.darken.amply.stats.core.BootIdSource
@@ -13,6 +13,7 @@ import eu.darken.amply.stats.core.CaptureServiceHealth
 import eu.darken.amply.stats.core.ChargeStatsRecorder
 import eu.darken.amply.stats.core.ChargeStatsRepository
 import eu.darken.amply.stats.core.StatsPreferences
+import eu.darken.amply.stats.core.StatsStorageUsage
 import eu.darken.amply.stats.core.db.StatsDatabase
 import eu.darken.amply.upgrade.core.UpgradeRepo
 import io.kotest.matchers.shouldBe
@@ -95,7 +96,7 @@ class StatsViewModelUpgradeGateTest {
             database = database,
             preferences = preferences,
             bootIdSource = bootIdSource,
-            batteryReader = BatteryReader(context, BatteryUnitCalibration(context)),
+            batteryReader = BatteryReader(context, nonSamsungBatteryUnitCalibration(context)),
             dispatcher = Dispatchers.IO,
         )
         val vm = StatsViewModel(
@@ -106,6 +107,7 @@ class StatsViewModelUpgradeGateTest {
             serviceHealth = CaptureServiceHealth(),
             upgradeRepo = FakeUpgradeRepo(isPro, upgradeError),
             savedStateHandle = SavedStateHandle(),
+            storageUsage = StatsStorageUsage(context, database, Dispatchers.IO),
         )
         return vm to preferences
     }

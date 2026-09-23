@@ -191,6 +191,20 @@ class StatsDaoTest {
         dao.sessionById(id)!!.id shouldBe id
     }
 
+    @Test
+    fun `finished sessions are windowed newest first, excluding the open one`() = runTest {
+        // The open session started last, so a query that let it through would put it on top of page 1.
+        val finished = (1..60).map { closedSession(startWall = it * 10_000L, endWall = it * 10_000L + 5_000L) }
+        val open = dao.insertSession(openSession(startWall = 1_000_000L))
+
+        val firstPage = dao.finishedSessions(50).first()
+        firstPage.map { it.id } shouldBe finished.reversed().take(50)
+
+        val twoPages = dao.finishedSessions(100).first()
+        twoPages.map { it.id } shouldBe finished.reversed()
+        twoPages.none { it.id == open } shouldBe true
+    }
+
     private suspend fun closedSession(startWall: Long, endWall: Long): Long {
         val id = dao.insertSession(openSession(startWall = startWall))
         dao.updateSession(

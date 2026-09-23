@@ -33,9 +33,9 @@ class StatsPreferences @Inject constructor(
         captureEnabled.value(enabled)
     }
 
-    suspend fun retentionDaysNow(): Int = StatsRetention.clampDays(retentionDays.value())
+    suspend fun retentionDaysNow(): Int = StatsRetention.normalize(retentionDays.value())
 
     suspend fun setRetentionDays(days: Int) {
-        retentionDays.value(StatsRetention.clampDays(days))
+        retentionDays.value(StatsRetention.normalize(days))
     }
 }
