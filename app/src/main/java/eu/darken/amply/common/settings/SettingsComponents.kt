@@ -134,7 +134,8 @@ fun SettingsSwitchItem(
  * work the change triggers. [value] changing from outside re-syncs the local state.
  *
  * [valueLabel] formats the **live** dragged value, not [value] — a caller must not pre-format the
- * persisted number, or the label would sit frozen on the old value for the whole gesture.
+ * persisted number, or the label would sit frozen on the old value for the whole gesture. The same
+ * holds for [subtitleFor], which, when set, replaces the static [subtitle].
  */
 @Composable
 fun SettingsSliderItem(
@@ -146,8 +147,10 @@ fun SettingsSliderItem(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     icon: ImageVector? = null,
+    subtitleFor: (@Composable (Int) -> String?)? = null,
 ) {
     var dragged by remember(value) { mutableStateOf(value) }
+    val shownSubtitle = if (subtitleFor != null) subtitleFor(dragged) else subtitle
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -168,7 +171,7 @@ fun SettingsSliderItem(
                     .padding(start = if (icon != null) 16.dp else 0.dp),
             ) {
                 Text(title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
-                subtitle?.let {
+                shownSubtitle?.let {
                     Text(
                         it,
                         modifier = Modifier.padding(top = 2.dp),

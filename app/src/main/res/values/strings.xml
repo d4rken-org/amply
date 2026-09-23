@@ -760,6 +760,8 @@
     <string name="stats_retention_title">Keep history for</string>
     <string name="stats_retention_value">%1$d days</string>
     <string name="stats_retention_footer">Charges older than this are deleted automatically.</string>
+    <string name="stats_retention_footer_forever">Charges are kept until you clear them.</string>
+    <string name="stats_retention_forever">Forever</string>
     <string name="stats_empty">No charge sessions recorded yet. Plug in while recording is on to capture one.</string>
     <string name="stats_clear_action">Clear statistics data</string>
     <string name="stats_clear_confirm_title">Clear statistics?</string>

@@ -65,13 +65,27 @@ fun ChargingHistorySettingsScreen(
             }
             item { SettingsDivider() }
             item {
+                // The slider moves over preset indices; only committed days leave this screen.
                 SettingsSliderItem(
                     title = stringResource(R.string.stats_retention_title),
-                    valueLabel = { days -> stringResource(R.string.stats_retention_value, days) },
-                    value = retentionDays,
-                    range = StatsRetention.MIN_DAYS..StatsRetention.MAX_DAYS,
-                    onValueChange = onRetentionChange,
-                    subtitle = stringResource(R.string.stats_retention_footer),
+                    valueLabel = { index ->
+                        val days = StatsRetention.PRESETS[index]
+                        if (StatsRetention.isForever(days)) {
+                            stringResource(R.string.stats_retention_forever)
+                        } else {
+                            stringResource(R.string.stats_retention_value, days)
+                        }
+                    },
+                    value = StatsRetention.presetIndexOf(retentionDays),
+                    range = 0..StatsRetention.PRESETS.lastIndex,
+                    onValueChange = { index -> onRetentionChange(StatsRetention.PRESETS[index]) },
+                    subtitleFor = { index ->
+                        if (StatsRetention.isForever(StatsRetention.PRESETS[index])) {
+                            stringResource(R.string.stats_retention_footer_forever)
+                        } else {
+                            stringResource(R.string.stats_retention_footer)
+                        }
+                    },
                     icon = Icons.TwoTone.Timer,
                 )
             }
@@ -97,6 +111,18 @@ private fun ChargingHistorySettingsScreenOffPreview() = PreviewWrapper {
     ChargingHistorySettingsScreen(
         captureEnabled = false,
         retentionDays = StatsRetention.DEFAULT_DAYS,
+        onBack = {},
+        onCaptureEnabledChange = {},
+        onRetentionChange = {},
+    )
+}
+
+@AmplyPreview
+@Composable
+private fun ChargingHistorySettingsScreenForeverPreview() = PreviewWrapper {
+    ChargingHistorySettingsScreen(
+        captureEnabled = true,
+        retentionDays = StatsRetention.FOREVER,
         onBack = {},
         onCaptureEnabledChange = {},
         onRetentionChange = {},
