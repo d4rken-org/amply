@@ -6,7 +6,7 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import eu.darken.amply.battery.core.BatteryReader
-import eu.darken.amply.battery.core.BatteryUnitCalibration
+import eu.darken.amply.battery.core.nonSamsungBatteryUnitCalibration
 import eu.darken.amply.common.AppDataStore
 import eu.darken.amply.stats.core.db.BatterySampleEntity
 import eu.darken.amply.stats.core.db.ChargeSessionEntity
@@ -74,7 +74,7 @@ class ChargeTimeModelSourceTest {
             database = { database },
             preferences = preferences,
             bootIdSource = bootIdSource,
-            batteryReader = BatteryReader(context, BatteryUnitCalibration(context)),
+            batteryReader = BatteryReader(context, nonSamsungBatteryUnitCalibration(context)),
             dispatcher = Dispatchers.IO,
         )
         repository = ChargeStatsRepository(
@@ -145,7 +145,7 @@ class ChargeTimeModelSourceTest {
                         ),
                     ),
                     bootIdSource = BootIdSource(context),
-                    batteryReader = BatteryReader(context, BatteryUnitCalibration(context)),
+                    batteryReader = BatteryReader(context, nonSamsungBatteryUnitCalibration(context)),
                     dispatcher = Dispatchers.IO,
                 ),
                 bootIdSource = BootIdSource(context),
