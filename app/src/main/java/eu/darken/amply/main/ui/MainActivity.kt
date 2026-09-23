@@ -780,6 +780,7 @@ class MainActivity : ComponentActivity() {
                                 onOpenSession = { id ->
                                     openSession(id, SettingsDestination.CHARGE_HISTORY)
                                 },
+                                onLoadMore = statsViewModel::loadMoreHistory,
                                 onClearData = statsViewModel::clearData,
                             )
                         }
