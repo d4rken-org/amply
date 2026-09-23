@@ -15,7 +15,9 @@ control code**. The ledger of physically-verified devices lives in the `device-q
 Two live adapters, gated by `ro.build.version.oneui` ranges plus `protect_battery` presence plus system user
 (all in world-readable `global` namespace; only writes need WSS):
 
-- **Modern (One UI 8.x)**: `protect_battery` 0=off / 1=Maximum / 3=Standard(pause at 100%, resume 95%), plus
+- **Modern (One UI 8.x)**: `protect_battery` 0=off / 1=Maximum / 3=Standard(pause at 100%, resume 95%) /
+  2=Maximum switched on by Device Care itself for long-term charging (read as the threshold cap with
+  `systemManaged`, never written; a restore from it writes 1 — see the ledger), plus
   `battery_protection_threshold` 80|85|90|95 (absent = 80, only valid ticks decode; malformed → Unknown).
   Policies: FixedLimit(80/85/90/95), PauseAtFull, Unrestricted. Session override = **PauseAtFull** (reaches 100%
   while keeping Samsung's own safety net). Threshold is written before mode.

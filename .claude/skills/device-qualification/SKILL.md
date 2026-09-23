@@ -401,6 +401,25 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
         top-level Xiaomi gap above); only mode `2` has demonstrated hardware enforcement.
       - The gate cannot widen past the codename allowlist: record any new HyperOS 3 device here plus a
         Verified-devices row before adding its codename to `XiaomiHyperOs3ChargingAdapter.QUALIFIED_CODENAMES`.
+- **Samsung One UI 8 — automatic long-term-charging protection (`protect_battery=2`)** — found 2026-09-23 on the Tab
+  A9+ SM-X210 (One UI 8.0, `X210XXSCEZG6`, Device Care `com.samsung.android.lool` 13.8.82.1) after weeks on the
+  hub's USB power: `protect_battery=2`, `key_ltc_state=2`, `prev_protect_battery_ltc=1` (the user's prior mode),
+  `battery_protection_threshold=80`. Amply read it as "Unrecognized value".
+    - Samsung's own Battery protection screen showed **Maximum, 80 %** selected. Hardware held the cap: the
+      broadcast history shows discharge to 78 %, USB charging resuming, then `status 4` / `usb:false` at 80 %.
+    - Device Care's dex strings name the feature: `longtermcharge/LtcWorker`, "Maximum protection is on by LTC",
+      `TURN_OFF_PROTECT_BATTERY_BY_LONG_TERM_TA`, "Change ltc prev value to Basic protection".
+    - Tapping Standard then Maximum in Samsung's screen wrote `3` then `1` (so the UI still writes 1 for Maximum)
+      and reset `key_ltc_state=0`, `prev_protect_battery_ltc=-1`. An external `settings put ... protect_battery 1`
+      left both LTC keys untouched. The original values were restored by hand afterwards.
+    - **Handling:** the modern adapter reads `2` as `FixedLimit(threshold)` with `systemManaged = true`; sessions
+      are allowed and a restore writes `1` (the allowlist stays `{0,1,3}`).
+    - **Unverified:** whether Samsung still restores `prev_protect_battery_ltc` when long-term charging ends and it
+      finds `1` instead of `2` (needs a real long-term cycle; worst case the device stays on Maximum, i.e. more
+      protection), whether LTC honours a threshold other than 80, and whether LTC re-engages mid-session (a
+      native change cancels the session without restoring, which leaves Samsung's cap in place). The S20 FE
+      (One UI 4.1) also carries `key_ltc_state=0`; whether LTC writes `2` there is unobserved, so the legacy
+      adapter still reads `2` as unrecognized.
 - **Samsung — battery telemetry units (issue #92)** — some Samsung builds report `BATTERY_PROPERTY_CURRENT_NOW` in
   **milliamps** where Android documents microamps, so Amply showed "0 mA" / "0.0 W". Telemetry only; no adapter or
   gate is involved.

@@ -68,7 +68,15 @@ sealed interface ChargePolicy {
 }
 
 sealed interface ChargeObservation {
-    data class Verified(val policy: ChargePolicy, val backend: BackendKind) : ChargeObservation
+    /**
+     * [systemManaged] marks a policy the OEM switched on by itself rather than the user choosing it (Samsung's
+     * automatic Maximum protection for long-term charging). It still verifies: the cap is real and enforced.
+     */
+    data class Verified(
+        val policy: ChargePolicy,
+        val backend: BackendKind,
+        val systemManaged: Boolean = false,
+    ) : ChargeObservation
     data class LastRequested(val policy: ChargePolicy) : ChargeObservation
 
     /** [unrecognizedValue] marks a successfully read but unmapped OEM value (vs. unreadable state). */
