@@ -401,6 +401,48 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
         top-level Xiaomi gap above); only mode `2` has demonstrated hardware enforcement.
       - The gate cannot widen past the codename allowlist: record any new HyperOS 3 device here plus a
         Verified-devices row before adding its codename to `XiaomiHyperOs3ChargingAdapter.QUALIFIED_CODENAMES`.
+- **Samsung — battery telemetry units (issue #92)** — some Samsung builds report `BATTERY_PROPERTY_CURRENT_NOW` in
+  **milliamps** where Android documents microamps, so Amply showed "0 mA" / "0.0 W". Telemetry only; no adapter or
+  gate is involved.
+    - **First-hand measurements (2026-09-23, read-only adb + Amply 0.4.0-beta0 UI):**
+      - **Galaxy S20 FE SM-G781B, One UI 4.1** (`RFCT326X0KW`, `r8q`): `CURRENT_NOW` in **mA**, plugged and
+        unplugged. Plugged/charging at 79%, Amply showed "Current now 0 mA" and "Charge power 0,0 W"; sysfs
+        `battery/current_now=79` beside `battery/batt_current_ua_now=79687`. Real unplug via the managed USB hub
+        (64 s, screen awake, status Discharging): `current_now` -132..-565 beside `batt_current_ua_now`
+        -132_812..-565_000; replugged and charging ~1255 vs ~1_255_312; at its 85% hold 0..13. The charge counter
+        is correctly in µAh (3_250_963 at 79%), so the MagicOS whole-readout correction cannot fire.
+      - **Galaxy Tab A9+ SM-X210, One UI 8.0** (`R92X103W0AZ`, `gta9pwifi`): **µA**. On battery, Amply showed
+        "Current now -126 mA".
+      - So the unit is **not uniform across Samsung**; a manufacturer-only rule would multiply correct readings by
+        1000.
+      - Samsung's `dumpsys battery` "current now" line is a **cached** value (sat at -625 for the whole unplugged
+        minute and at 1307 during a hold). Never use it as evidence of the live property.
+      - The reporter's Galaxy A15 5G (#92) is **not verified first-hand**.
+    - **Fix: a per-build learned unit, Samsung only, current only** (`CurrentUnitInference`, run by
+      `BatteryUnitCalibration.observeCurrent` on `Build.MANUFACTURER == samsung`, persisted per ROM build by
+      `BatteryUnitStore`, applied by `BatteryReadoutFactory` to the current field alone; the charge counter is
+      never rescaled). Milliamp evidence = unplugged (`EXTRA_PLUGGED == 0`) AND interactive AND
+      `0 < |raw| < 10_000`; MILLI needs ≥ 3 such readings spanning ≥ 60 s with no non-evidence reading in between.
+      Microamp proof = `20_000 ≤ |raw| < 100_000_000` in any state, and is terminal; `|raw| ≥ 100_000_000` is
+      neutral garbage. MILLI is overturned by any later microamp proof. Until the stored verdict has loaded, the
+      reader reports the current as absent rather than uncorrected.
+    - **Learning precondition:** a verdict needs readings taken unplugged with the screen on for about a minute,
+      which requires the monitor to be alive then (the app open, or stats capture / the reconnect gesture keeping
+      it running). A device Amply only ever reads while charging keeps showing the uncorrected value until that
+      happens once.
+    - **Reconciliation with the HONOR/MagicOS entry below**, which concluded that a purely data-driven unit
+      inference is unsound in this codebase: both of those designs failed on evidence drawn **while plugged**,
+      where Amply manufactures charge-limit holds that draw next to nothing. This signal draws milliamp evidence
+      **only unplugged**, where no hold exists, and its microamp proof is terminal, so a healthy device cannot be
+      pushed into a lasting false MILLI by a state Amply creates.
+    - **Accepted residual risk:** `interactive` does not guarantee a lit, power-drawing panel, so a µA device
+      reading under 10 mA for a sustained minute while unplugged and interactive would learn MILLI falsely. That is
+      not a credible screen-on draw (implausible, not impossible), and it self-heals on the next reading ≥ 20 mA in
+      any state.
+    - **Accepted warts:** history recorded before the fix keeps the uncorrected values (same class as the MagicOS
+      wart below), and a stats session in flight when MILLI is learned shows a 1000× step mid-curve.
+    - **Superseded approach:** a charge-counter-delta vs instantaneous-current ratio (2026-08-23 attempt) was
+      refuted in plan review, because an integral over a window cannot be compared with one end-of-window sample.
 - **Pixel** — wireless at-threshold hold/charge-past and the widget under Shizuku-only remain unexercised (both share
   the verified wired mechanism).
 - **HONOR / MagicOS** — **no adapter of any kind exists** (not even a lab adapter), so HONOR devices fall through
