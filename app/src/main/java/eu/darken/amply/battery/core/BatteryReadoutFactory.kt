@@ -42,12 +42,16 @@ object BatteryReadoutFactory {
         maxChargingCurrentMicroamps: Int = ABSENT,
         maxChargingVoltageMicrovolts: Int = ABSENT,
         romMisreportsUnits: Boolean = false,
+        currentIsMilliScaled: Boolean = false,
     ): BatteryReadout {
         val percent = percentOrNull(level, scale)
         val chargeCounter = chargeCounterMicroampHours.orNull()
         // Both conditions, never one: the ROM must be a known misreporter (see BatteryUnitCalibration)
         // AND the anomaly must be visible in this reading, so a correctly-reporting build is left alone.
         val milliScaled = romMisreportsUnits && chargeCounterLooksMilliScaled(chargeCounter, percent)
+        // Current-only correction for a build whose unit was learned from its current readings; never
+        // stacked on the whole-readout correction above, which already rescales current.
+        val currentMilliScaled = milliScaled || currentIsMilliScaled
         return BatteryReadout(
             levelPercent = percent,
             status = status.orNull(),
@@ -58,7 +62,7 @@ object BatteryReadoutFactory {
             temperatureTenthsC = temperatureTenths.orNull(),
             voltageMillivolts = voltageMillivolts.orNull(),
             // Current is signed; only the MIN_VALUE/absent sentinel is dropped, negatives are kept.
-            currentNowMicroamps = currentNowMicroamps.orNull()?.toMicroUnits(milliScaled),
+            currentNowMicroamps = currentNowMicroamps.orNull()?.toMicroUnits(currentMilliScaled),
             chargeCounterMicroampHours = chargeCounter?.toMicroUnits(milliScaled),
             cycleCount = cycleCount.orNull(),
             // The charger extras are advertised capabilities: a device that reports them while nothing is
