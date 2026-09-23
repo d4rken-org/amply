@@ -7,7 +7,7 @@ import android.content.pm.ProviderInfo
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.test.core.app.ApplicationProvider
 import eu.darken.amply.battery.core.BatteryReader
-import eu.darken.amply.battery.core.BatteryUnitCalibration
+import eu.darken.amply.battery.core.nonSamsungBatteryUnitCalibration
 import eu.darken.amply.charging.core.access.AccessResolver
 import eu.darken.amply.charging.core.access.DirectSettingsBackend
 import eu.darken.amply.charging.core.access.LineageSettingsClient
@@ -142,7 +142,7 @@ class ChargingRepositoryRestoreGateTest {
             settleScheduler = object : SettleScheduler {
                 override fun schedule(requestedAtMillis: Long) = Unit
             },
-            batteryReader = BatteryReader(context, BatteryUnitCalibration(context)),
+            batteryReader = BatteryReader(context, nonSamsungBatteryUnitCalibration(context)),
             evidenceStore = evidenceStore,
             qualificationStore = QualificationEvidenceStore(appDataStore, buildIdentity, json),
             runStore = runStore,
