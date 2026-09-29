@@ -12,6 +12,7 @@ import eu.darken.amply.charging.core.access.AccessResolver
 import eu.darken.amply.charging.core.access.AccessSnapshot
 import eu.darken.amply.charging.core.access.shizuku.PrivilegedManager
 import eu.darken.amply.charging.core.access.shizuku.ShizukuController
+import eu.darken.amply.charging.core.access.withManagerName
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
 import eu.darken.amply.charging.core.adapter.AdapterSelection
 import eu.darken.amply.charging.core.adapter.AdapterSupport
@@ -352,7 +353,7 @@ class ChargingRepository @Inject constructor(
         val result = runCatching { shizukuController.requestPermission() }.getOrDefault(false)
         refresh(
             (if (result) R.string.charging_message_shizuku_granted else R.string.charging_message_shizuku_denied)
-                .toCaString(),
+                .withManagerName(shizukuController.connectedBackend()),
         )
         return result
     }

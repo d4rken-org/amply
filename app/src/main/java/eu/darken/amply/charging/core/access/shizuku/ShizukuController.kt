@@ -59,6 +59,9 @@ class ShizukuController internal constructor(
 
     suspend fun manager(): PrivilegedManager = gateway.availability()
 
+    /** The manager serving the current connection, or null without one. */
+    fun connectedBackend(): ManagerBackend? = gateway.currentLink()?.backend
+
     suspend fun isGranted(): Boolean = gateway.currentLink()?.let { isGrantedOn(it) } == true
 
     /**

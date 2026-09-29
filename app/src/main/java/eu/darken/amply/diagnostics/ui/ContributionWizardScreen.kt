@@ -2,6 +2,7 @@ package eu.darken.amply.diagnostics.ui
 
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -39,6 +40,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import eu.darken.amply.R
 import eu.darken.amply.charging.core.access.BackendStatus
+import eu.darken.amply.charging.core.access.managerName
+import eu.darken.amply.charging.core.access.shizuku.ManagerBackend
 import eu.darken.amply.common.compose.AmplyCard
 import eu.darken.amply.common.compose.AmplyCardDefaults
 import eu.darken.amply.common.compose.AmplyCardTone
@@ -219,6 +222,7 @@ private fun ShizukuCard(
     onAllowShizuku: () -> Unit,
 ) {
     val ready = shizuku?.ready == true
+    val managerName = shizuku.managerName().asComposable()
     AmplyCard(verticalArrangement = Arrangement.spacedBy(AmplyCardDefaults.ItemSpacing)) {
         Text(
             stringResource(
@@ -227,6 +231,7 @@ private fun ShizukuCard(
                 } else {
                     R.string.contribution_shizuku_required_title
                 },
+                managerName,
             ),
             style = MaterialTheme.typography.titleMedium,
         )
@@ -248,10 +253,10 @@ private fun ShizukuCard(
                 }
             }
             shizuku.available && !shizuku.granted -> Button(onClick = onAllowShizuku) {
-                Text(stringResource(R.string.contribution_allow_shizuku))
+                Text(stringResource(R.string.contribution_allow_shizuku, managerName))
             }
             !shizuku.available -> Button(onClick = onOpenShizuku) {
-                Text(stringResource(R.string.contribution_open_shizuku))
+                Text(stringResource(R.string.contribution_open_shizuku, managerName))
             }
         }
     }
@@ -576,7 +581,12 @@ private fun ContributionWizardScreenPreview() = PreviewWrapper {
     PreviewScreen(
         ContributionUiState(
             step = WizardStep.CAPTURE,
-            shizuku = BackendStatus(available = true, granted = true, detail = "Shizuku connected".toCaString()),
+            shizuku = BackendStatus(
+                available = true,
+                granted = true,
+                detail = "Shizuku ready".toCaString(),
+                manager = ManagerBackend.SHIZUKU,
+            ),
             featureName = "Protect battery",
             romVersion = "HyperOS 2",
             pendingLabel = "Adaptive",
@@ -603,7 +613,12 @@ private fun ContributionWizardEmptyReviewPreview() = PreviewWrapper {
     PreviewScreen(
         ContributionUiState(
             step = WizardStep.REVIEW,
-            shizuku = BackendStatus(available = true, granted = true, detail = "Shizuku connected".toCaString()),
+            shizuku = BackendStatus(
+                available = true,
+                granted = true,
+                detail = "Shizuku ready".toCaString(),
+                manager = ManagerBackend.SHIZUKU,
+            ),
             featureName = "Charging protection",
             romVersion = "HyperOS 3",
             modes = listOf(
@@ -613,6 +628,46 @@ private fun ContributionWizardEmptyReviewPreview() = PreviewWrapper {
             review = emptyList(),
         ),
     )
+}
+
+// Every access state the intro card can render: still probing, nothing installed, Porter waiting for
+// Amply's permission, Shizuku ready.
+@AmplyPreview
+@Composable
+private fun ContributionShizukuCardPreview() = PreviewWrapper {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        ShizukuCard(shizuku = null, onOpenShizuku = {}, onAllowShizuku = {})
+        ShizukuCard(
+            shizuku = BackendStatus(
+                available = false,
+                granted = false,
+                installed = false,
+                detail = "Neither Shizuku nor Porter is installed".toCaString(),
+            ),
+            onOpenShizuku = {},
+            onAllowShizuku = {},
+        )
+        ShizukuCard(
+            shizuku = BackendStatus(
+                available = true,
+                granted = false,
+                detail = "Porter permission not granted".toCaString(),
+                manager = ManagerBackend.PORTER,
+            ),
+            onOpenShizuku = {},
+            onAllowShizuku = {},
+        )
+        ShizukuCard(
+            shizuku = BackendStatus(
+                available = true,
+                granted = true,
+                detail = "Shizuku ready".toCaString(),
+                manager = ManagerBackend.SHIZUKU,
+            ),
+            onOpenShizuku = {},
+            onAllowShizuku = {},
+        )
+    }
 }
 
 @Composable

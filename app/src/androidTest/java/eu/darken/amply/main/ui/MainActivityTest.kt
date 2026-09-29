@@ -23,7 +23,7 @@ class MainActivityTest {
         // Page 1 is the welcome page; the interactive setup guide moved to the dashboard and must
         // not appear during onboarding.
         composeRule.onNodeWithText(str(R.string.onboarding_welcome_title)).assertIsDisplayed()
-        composeRule.onNodeWithText("Option 1 · Shizuku").assertDoesNotExist()
+        composeRule.onNodeWithText("Option 1 · ", substring = true).assertDoesNotExist()
         composeRule.onNodeWithText("Option 2 · Computer").assertDoesNotExist()
 
         // Next is pinned at the bottom, so it must be visible without scrolling. It reveals the
@@ -33,7 +33,7 @@ class MainActivityTest {
         composeRule.onNodeWithText(str(R.string.onboarding_caveat_support_title)).assertIsDisplayed()
         composeRule.onNodeWithText(str(R.string.onboarding_caveat_setup_title)).assertIsDisplayed()
         composeRule.onNodeWithText(str(R.string.onboarding_continue_action)).assertIsDisplayed()
-        composeRule.onNodeWithText("Option 1 · Shizuku").assertDoesNotExist()
+        composeRule.onNodeWithText("Option 1 · ", substring = true).assertDoesNotExist()
 
         // There is no visible back button anymore; system back returns to the welcome page.
         Espresso.pressBack()

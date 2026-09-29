@@ -29,6 +29,8 @@ import eu.darken.amply.charging.core.ChargingState
 import eu.darken.amply.charging.core.DeviceInfo
 import eu.darken.amply.charging.core.access.AccessSnapshot
 import eu.darken.amply.charging.core.access.BackendStatus
+import eu.darken.amply.charging.core.access.managerName
+import eu.darken.amply.charging.core.access.shizuku.ManagerBackend
 import eu.darken.amply.common.AmplyLinks
 import eu.darken.amply.common.ca.toCaString
 import eu.darken.amply.common.compose.AmplyCard
@@ -37,6 +39,7 @@ import eu.darken.amply.common.compose.AmplyCardTone
 import eu.darken.amply.common.compose.AmplyCodeBlock
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
+import eu.darken.amply.common.compose.asComposable
 import eu.darken.amply.main.ui.dashboard.DashboardUiState
 
 @Composable
@@ -59,6 +62,8 @@ fun AccessSetupGuide(
     val wssReady = access?.direct?.ready == true
     val shizukuRunning = access?.shizuku?.available == true
     val shizukuReady = access?.shizuku?.ready == true
+    val shizukuMissing = access?.shizuku?.installed == false
+    val managerName = access?.shizuku.managerName().asComposable()
 
     AmplyCard(
         modifier = modifier,
@@ -92,9 +97,12 @@ fun AccessSetupGuide(
 
         if (!wssReady) {
             Spacer(Modifier.height(20.dp))
-            Text(stringResource(R.string.setup_access_option_shizuku), style = MaterialTheme.typography.labelLarge)
             Text(
-                stringResource(R.string.setup_access_shizuku_hint),
+                stringResource(R.string.setup_access_option_shizuku, managerName),
+                style = MaterialTheme.typography.labelLarge,
+            )
+            Text(
+                stringResource(R.string.setup_access_shizuku_hint, managerName),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -116,20 +124,27 @@ fun AccessSetupGuide(
                         Spacer(Modifier.width(8.dp))
                         Text(stringResource(R.string.setup_access_granting_shizuku))
                     } else {
-                        Text(stringResource(R.string.setup_access_grant_shizuku))
+                        Text(stringResource(R.string.setup_access_grant_shizuku, managerName))
                     }
                 }
                 shizukuRunning -> FilledTonalButton(
                     onClick = onAllowShizuku,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(stringResource(R.string.setup_access_allow_shizuku))
+                    Text(stringResource(R.string.setup_access_allow_shizuku, managerName))
+                }
+                // Nothing to open: the same action lands on Porter's setup guide instead.
+                shizukuMissing -> FilledTonalButton(
+                    onClick = onOpenShizuku,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.contribution_install_shizuku))
                 }
                 else -> FilledTonalButton(
                     onClick = onOpenShizuku,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(stringResource(R.string.setup_access_open_shizuku))
+                    Text(stringResource(R.string.setup_access_open_shizuku, managerName))
                 }
             }
 
@@ -211,9 +226,72 @@ private fun AccessSetupGuideGrantingPreview() = PreviewWrapper {
                 controlEnabled = true,
                 access = AccessSnapshot(
                     direct = BackendStatus(available = true, granted = false, detail = "Not granted".toCaString()),
-                    shizuku = BackendStatus(available = true, granted = true, detail = "Shizuku connected".toCaString()),
+                    shizuku = BackendStatus(
+                        available = true,
+                        granted = true,
+                        detail = "Shizuku ready".toCaString(),
+                        manager = ManagerBackend.SHIZUKU,
+                    ),
                 ),
                 grantingWss = true,
+            ),
+        ),
+        adbCommand = "adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS",
+        onOpenShizuku = {},
+        onAllowShizuku = {},
+        onGrantWss = {},
+        onCopyAdb = {},
+        onCopyWebUsbLink = {},
+    )
+}
+
+@AmplyPreview
+@Composable
+private fun AccessSetupGuidePorterPreview() = PreviewWrapper {
+    AccessSetupGuide(
+        state = DashboardUiState(
+            onboardingComplete = false,
+            charging = ChargingState(
+                device = DeviceInfo("Google", "Pixel 8", 36, "preview"),
+                controlEnabled = true,
+                access = AccessSnapshot(
+                    direct = BackendStatus(available = true, granted = false, detail = "Not granted".toCaString()),
+                    shizuku = BackendStatus(
+                        available = true,
+                        granted = false,
+                        detail = "Porter permission not granted".toCaString(),
+                        manager = ManagerBackend.PORTER,
+                    ),
+                ),
+            ),
+        ),
+        adbCommand = "adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS",
+        onOpenShizuku = {},
+        onAllowShizuku = {},
+        onGrantWss = {},
+        onCopyAdb = {},
+        onCopyWebUsbLink = {},
+    )
+}
+
+@AmplyPreview
+@Composable
+private fun AccessSetupGuideNothingInstalledPreview() = PreviewWrapper {
+    AccessSetupGuide(
+        state = DashboardUiState(
+            onboardingComplete = false,
+            charging = ChargingState(
+                device = DeviceInfo("Google", "Pixel 8", 36, "preview"),
+                controlEnabled = true,
+                access = AccessSnapshot(
+                    direct = BackendStatus(available = true, granted = false, detail = "Not granted".toCaString()),
+                    shizuku = BackendStatus(
+                        available = false,
+                        granted = false,
+                        detail = "Neither Shizuku nor Porter is installed".toCaString(),
+                        installed = false,
+                    ),
+                ),
             ),
         ),
         adbCommand = "adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS",

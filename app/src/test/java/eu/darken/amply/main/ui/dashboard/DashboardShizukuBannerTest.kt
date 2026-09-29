@@ -12,6 +12,7 @@ import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingState
 import eu.darken.amply.charging.core.access.AccessSnapshot
 import eu.darken.amply.charging.core.access.BackendStatus
+import eu.darken.amply.charging.core.access.shizuku.ManagerBackend
 import eu.darken.amply.common.ca.toCaString
 import io.kotest.matchers.shouldBe
 import org.junit.Rule
@@ -22,9 +23,9 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * The banner is one tap target for one action, and which action that is depends on whether Shizuku is
- * already running. The tall qualifier renders the whole list so the banner — which ends it — is
- * composed.
+ * The banner is one tap target for one action, and which action that is depends on whether the manager is
+ * already running. It names the detected manager, or "Shizuku or Porter" when none was identified. The
+ * tall qualifier renders the whole list so the banner — which ends it — is composed.
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -35,14 +36,16 @@ class DashboardShizukuBannerTest {
 
     private val context = ApplicationProvider.getApplicationContext<Application>()
 
-    private fun string(res: Int): String = context.getString(res)
+    private fun string(res: Int, vararg args: Any): String = context.getString(res, *args)
+
+    private val anyManager get() = string(R.string.manager_name_any)
 
     private var opened = 0
     private var allowed = 0
 
-    // A Shizuku-only adapter (OnePlus/ColorOS): control is enabled but writes need Shizuku, which is
-    // not connected — the branch that renders the "Shizuku required" banner.
-    private fun render(shizukuRunning: Boolean) {
+    // A Shizuku-only adapter (OnePlus/ColorOS): control is enabled but writes need Shizuku or Porter,
+    // which is not connected — the branch that renders the "… required" banner.
+    private fun render(shizukuRunning: Boolean, manager: ManagerBackend? = null) {
         compose.setContent {
             DashboardScreenUnderTest(
                 state = DashboardUiState(
@@ -61,6 +64,8 @@ class DashboardShizukuBannerTest {
                                 available = shizukuRunning,
                                 granted = false,
                                 detail = "not connected".toCaString(),
+                                installed = shizukuRunning || manager != null,
+                                manager = manager,
                             ),
                         ),
                         observation = ChargeObservation.Verified(
@@ -75,14 +80,28 @@ class DashboardShizukuBannerTest {
         }
     }
 
-    private fun tapBanner() =
-        compose.onNodeWithText(string(R.string.dashboard_shizuku_required_body)).performClick()
+    private fun tapBanner(name: String) =
+        compose.onNodeWithText(string(R.string.dashboard_shizuku_required_body, name)).performClick()
 
     @Test
-    fun `with Shizuku not running the card opens Shizuku`() {
+    fun `with no manager identified the card opens the setup and names both`() {
         render(shizukuRunning = false)
-        compose.onNodeWithText(string(R.string.dashboard_shizuku_open)).assertExists()
-        tapBanner()
+        compose.onNodeWithText(string(R.string.dashboard_shizuku_required_title, anyManager)).assertExists()
+        compose.onNodeWithText(string(R.string.dashboard_shizuku_open, anyManager)).assertExists()
+        compose.onNodeWithText("Open Shizuku or Porter").assertExists()
+        tapBanner(anyManager)
+        compose.runOnIdle {
+            opened shouldBe 1
+            allowed shouldBe 0
+        }
+    }
+
+    @Test
+    fun `with Porter installed but not running the card opens Porter`() {
+        render(shizukuRunning = false, manager = ManagerBackend.PORTER)
+        compose.onNodeWithText("Porter required to change charging").assertExists()
+        compose.onNodeWithText("Open Porter").assertExists()
+        tapBanner("Porter")
         compose.runOnIdle {
             opened shouldBe 1
             allowed shouldBe 0
@@ -91,9 +110,10 @@ class DashboardShizukuBannerTest {
 
     @Test
     fun `with Shizuku running the card asks for access`() {
-        render(shizukuRunning = true)
+        render(shizukuRunning = true, manager = ManagerBackend.SHIZUKU)
+        compose.onNodeWithText("Shizuku required to change charging").assertExists()
         compose.onNodeWithText(string(R.string.dashboard_shizuku_allow)).assertExists()
-        tapBanner()
+        tapBanner("Shizuku")
         compose.runOnIdle {
             allowed shouldBe 1
             opened shouldBe 0

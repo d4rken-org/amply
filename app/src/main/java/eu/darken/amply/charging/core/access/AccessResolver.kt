@@ -14,11 +14,11 @@ data class AccessSnapshot(
     val canVerify: Boolean get() = shizuku.ready
     val label: CaString
         get() = when {
-            direct.ready && shizuku.ready -> R.string.access_label_wss_shizuku
-            direct.ready -> R.string.access_label_wss
-            shizuku.ready -> R.string.access_label_shizuku
-            else -> R.string.access_label_setup_required
-        }.toCaString()
+            direct.ready && shizuku.ready -> R.string.access_label_wss_shizuku.withManagerName(shizuku.manager)
+            direct.ready -> R.string.access_label_wss.toCaString()
+            shizuku.ready -> R.string.access_label_shizuku.withManagerName(shizuku.manager)
+            else -> R.string.access_label_setup_required.toCaString()
+        }
 }
 
 @Singleton

@@ -34,7 +34,7 @@
     <string name="recovery_channel_name">Charge policy recovery</string>
     <string name="recovery_channel_description">Alerts you when your protective charge limit could not be restored</string>
     <string name="recovery_notification_title">Charge limit needs attention</string>
-    <string name="recovery_notification_body">Open Amply and restart Shizuku to restore your protective policy.</string>
+    <string name="recovery_notification_body">Open Amply and restart Shizuku or Porter to restore your protective policy.</string>
     <string name="recovery_notification_body_convergence">The protective policy was rewritten, but the charging hardware has not confirmed it yet. Open Amply to check.</string>
     <string name="recovery_notification_body_unavailable">Your charge mode wasn\'t changed. Charging control isn\'t available right now. Open Amply to check your setup.</string>
     <string name="recovering_notification_title">Restoring charge limit</string>
@@ -73,7 +73,7 @@
     <string name="onboarding_caveat_support_title">Supported devices</string>
     <string name="onboarding_caveat_support_body">Currently: Pixel 6a or newer phones on Android 15+, Samsung on verified One UI versions, Xiaomi on HyperOS 2, and OnePlus, Oppo, or Realme on ColorOS 15. Amply checks your exact device and shows what works.</string>
     <string name="onboarding_caveat_setup_title">Manual setup required</string>
-    <string name="onboarding_caveat_setup_body">You grant the permission yourself: with one ADB command from a computer, or through the Shizuku app. Some devices require Shizuku. The dashboard walks you through the right option.</string>
+    <string name="onboarding_caveat_setup_body">You grant the permission yourself: with one ADB command from a computer, or through the Shizuku or Porter app. Some devices require Shizuku or Porter. The dashboard walks you through the right option.</string>
     <string name="onboarding_page_progress">Page %1$d of %2$d</string>
 
     <!-- Charging policy labels -->
@@ -90,8 +90,8 @@
     <string name="charging_message_applied_replug">%1$s set: reconnect the charger for the system to pick it up</string>
     <string name="charging_message_saved_unconfirmed">%1$s saved. The charging hardware hasn\'t confirmed it</string>
     <string name="charging_message_requested">%1$s requested</string>
-    <string name="charging_message_shizuku_granted">Shizuku permission granted</string>
-    <string name="charging_message_shizuku_denied">Shizuku permission was not granted</string>
+    <string name="charging_message_shizuku_granted">%1$s permission granted</string>
+    <string name="charging_message_shizuku_denied">%1$s permission was not granted</string>
     <string name="charging_message_wss_granted">Charge-control access granted</string>
     <string name="charging_message_wss_failed">Could not grant charge-control access</string>
 
@@ -100,12 +100,12 @@
     <string name="charging_reason_state_unavailable">State unavailable</string>
     <string name="charging_reason_write_failed">The settings write failed</string>
     <string name="charging_reason_qualification_not_running">No qualification run is in progress</string>
-    <string name="charging_reason_needs_setup">Grant charge-control access or connect Shizuku</string>
+    <string name="charging_reason_needs_setup">Grant charge-control access or connect Shizuku or Porter</string>
     <string name="charging_reason_policy_unsupported">%1$s is not supported by %2$s</string>
     <string name="charging_reason_settings_unreadable">Settings are not readable</string>
     <string name="charging_reason_values_unrecognized">Unrecognized values: %1$s=%2$s, %3$s=%4$s</string>
     <string name="charging_reason_value_unrecognized">Unrecognized value: %1$s=%2$s</string>
-    <string name="charging_reason_hw_normal">Charging hardware is normal; without Shizuku, Amply cannot distinguish unrestricted from inactive adaptive charging</string>
+    <string name="charging_reason_hw_normal">Charging hardware is normal; without Shizuku or Porter, Amply cannot distinguish unrestricted from inactive adaptive charging</string>
     <string name="charging_reason_hw_too_cold">Charging is currently temperature-limited because the battery is too cold</string>
     <string name="charging_reason_hw_too_hot">Charging is currently temperature-limited because the battery is too hot</string>
     <string name="charging_reason_hw_unrecognized">Android did not report a recognized charging-hardware state</string>
@@ -142,12 +142,12 @@
     <string name="adapter_detail_xiaomi_ready">Setting changes apply immediately; no reconnect needed</string>
     <string name="adapter_detail_xiaomi_hyperos3_ready">Changes apply to the hardware immediately</string>
     <string name="adapter_detail_requires_oplus">Requires a OnePlus, Oppo, or Realme device on ColorOS 15</string>
-    <string name="adapter_detail_oplus_ready">Charging control requires Shizuku on this device</string>
+    <string name="adapter_detail_oplus_ready">Charging control requires Shizuku or Porter on this device</string>
     <string name="adapter_detail_requires_grapheneos">Requires GrapheneOS</string>
-    <string name="adapter_detail_grapheneos_ready">Charging control requires Shizuku. The system only picks up a change when you reconnect the charger.</string>
+    <string name="adapter_detail_grapheneos_ready">Charging control requires Shizuku or Porter. The system only picks up a change when you reconnect the charger.</string>
     <string name="adapter_detail_requires_lineageos">Requires a qualified LineageOS device</string>
     <string name="adapter_detail_lineageos_no_provider">LineageOS charging control is not available on this build</string>
-    <string name="adapter_detail_lineageos_ready">Charging control requires Shizuku on this device</string>
+    <string name="adapter_detail_lineageos_ready">Charging control requires Shizuku or Porter on this device</string>
     <string name="adapter_detail_enforcement_candidate">Charge limiting is not confirmed on this build</string>
     <string name="adapter_detail_enforcement_refuted">This build charged past the limit it accepted, so charging control is switched off</string>
     <string name="adapter_detail_none">No charging adapter is known for this device</string>
@@ -155,16 +155,17 @@
     <!-- Access backend detail + summary labels -->
     <string name="access_wss_granted">Charge-control access granted</string>
     <string name="access_wss_not_granted">Charge-control access not granted</string>
-    <string name="access_shizuku_not_installed">Shizuku is not installed</string>
-    <string name="access_shizuku_not_running">Shizuku is installed but not running</string>
-    <string name="access_shizuku_not_granted">Shizuku permission not granted</string>
-    <string name="access_shizuku_ready">Shizuku ready</string>
+    <string name="manager_name_any">Shizuku or Porter</string>
+    <string name="access_shizuku_not_installed">Neither Shizuku nor Porter is installed</string>
+    <string name="access_shizuku_not_running">%1$s is installed but not running</string>
+    <string name="access_shizuku_not_granted">%1$s permission not granted</string>
+    <string name="access_shizuku_ready">%1$s ready</string>
     <string name="access_manager_server_too_old">%1$s needs an update to work with Amply</string>
     <string name="access_manager_client_too_old">Amply needs an update to work with this %1$s</string>
     <string name="access_read_blocked">Android blocks third-party reads of this hidden setting</string>
-    <string name="access_label_wss_shizuku">System access + Shizuku</string>
+    <string name="access_label_wss_shizuku">System access + %1$s</string>
     <string name="access_label_wss">System access</string>
-    <string name="access_label_shizuku">Shizuku</string>
+    <string name="access_label_shizuku">%1$s</string>
     <string name="access_label_setup_required">Setup required</string>
 
     <!-- Dashboard status card (observation title + detail, policy short labels) -->
@@ -176,7 +177,7 @@
     <string name="dashboard_detail_readback">Read back through %1$s</string>
     <string name="dashboard_detail_system_managed">Turned on automatically by the system because the device stays plugged in for long periods</string>
     <string name="dashboard_detail_readback_conditional">Mode set and read back through %1$s; the system chooses when it applies</string>
-    <string name="dashboard_detail_last_requested">Last requested by Amply; connect Shizuku for exact readback</string>
+    <string name="dashboard_detail_last_requested">Last requested by Amply; connect %1$s for exact readback</string>
     <string name="dashboard_policy_adaptive">Adaptive charging</string>
     <string name="dashboard_policy_full" formatted="false">100% charging</string>
     <string name="dashboard_policy_fixed">%1$d%% limit</string>
@@ -221,8 +222,8 @@
     <string name="settings_charging_history_subtitle_off">Not recording</string>
     <string name="settings_category_advanced">Advanced</string>
     <string name="settings_diagnostics_title">Help add support</string>
-    <string name="settings_diagnostics_subtitle_ready">Guide a maintainer to add your device · Shizuku ready</string>
-    <string name="settings_diagnostics_subtitle_setup">Guide a maintainer to add your device · Shizuku setup required</string>
+    <string name="settings_diagnostics_subtitle_ready">Guide a maintainer to add your device · Shizuku or Porter ready</string>
+    <string name="settings_diagnostics_subtitle_setup">Guide a maintainer to add your device · Shizuku or Porter setup required</string>
     <string name="settings_category_other">Other</string>
     <string name="settings_support_title">Support</string>
     <string name="settings_support_subtitle">Help, contact, and debug logs</string>
@@ -240,6 +241,8 @@
     <string name="settings_ack_aosp_subtitle">The platform and tools Amply is built on</string>
     <string name="settings_ack_shizuku_title">Shizuku</string>
     <string name="settings_ack_shizuku_subtitle">Privileged API and permission bridge · Apache 2.0</string>
+    <string name="settings_ack_porter_title">Porter SDK</string>
+    <string name="settings_ack_porter_subtitle">Privileged API client for Porter and Shizuku · Apache 2.0 / MIT</string>
     <string name="settings_ack_libraries">Libraries</string>
     <string name="settings_ack_kotlin_title">Kotlin</string>
     <string name="settings_ack_kotlin_subtitle">JetBrains · Apache 2.0</string>
@@ -287,14 +290,14 @@
     <string name="setup_access_setup_title">Set up charge control</string>
     <string name="setup_access_ready_body">Charge-control access is granted.</string>
     <string name="setup_access_setup_body">Amply needs one durable Android permission to change the charge policy.</string>
-    <string name="setup_access_option_shizuku">Option 1 · Shizuku (recommended)</string>
-    <string name="setup_access_shizuku_hint">With Shizuku, Amply can confirm the configured policy and run diagnostics, not just write it. Start or install Shizuku and allow Amply; the durable permission is then granted automatically. The button below is a manual fallback if that fails.</string>
-    <string name="setup_access_grant_shizuku">Grant permission with Shizuku</string>
+    <string name="setup_access_option_shizuku">Option 1 · %1$s (recommended)</string>
+    <string name="setup_access_shizuku_hint">With %1$s, Amply can confirm the configured policy and run diagnostics, not just write it. Start or install %1$s and allow Amply; the durable permission is then granted automatically. The button below is a manual fallback if that fails.</string>
+    <string name="setup_access_grant_shizuku">Grant permission with %1$s</string>
     <string name="setup_access_granting_shizuku">Granting…</string>
-    <string name="setup_access_allow_shizuku">Allow Amply in Shizuku</string>
-    <string name="setup_access_open_shizuku">Open Shizuku</string>
+    <string name="setup_access_allow_shizuku">Allow Amply in %1$s</string>
+    <string name="setup_access_open_shizuku">Open %1$s</string>
     <string name="setup_access_option_computer">Option 2 · Computer</string>
-    <string name="setup_access_webusb_hint">Easiest: no ADB install needed. On the computer your phone is plugged into, open this link in Chrome or Edge to grant control over USB. Shizuku is still needed for diagnostics and reliable readback.</string>
+    <string name="setup_access_webusb_hint">Easiest: no ADB install needed. On the computer your phone is plugged into, open this link in Chrome or Edge to grant control over USB. Shizuku or Porter is still needed for diagnostics and reliable readback.</string>
     <string name="setup_access_copy_webusb">Copy web helper link</string>
     <string name="setup_access_adb_hint">Or, if you already have ADB set up on that computer, run:</string>
     <string name="setup_access_copy_adb">Copy ADB command</string>
@@ -415,14 +418,14 @@
     <string name="contribution_title">Help add support</string>
     <string name="contribution_share_subject">Amply device-support discovery</string>
 
-    <!-- Shizuku access card -->
-    <string name="contribution_shizuku_ready_title">Shizuku ready</string>
-    <string name="contribution_shizuku_required_title">Shizuku needed</string>
-    <string name="contribution_shizuku_checking">Checking Shizuku access…</string>
-    <string name="contribution_shizuku_not_installed_body">This guide reads your hidden settings through Shizuku (read-only). Install and start Shizuku, then come back.</string>
-    <string name="contribution_install_shizuku">How to set up Shizuku</string>
-    <string name="contribution_allow_shizuku">Allow Amply in Shizuku</string>
-    <string name="contribution_open_shizuku">Open Shizuku</string>
+    <!-- Privileged access card -->
+    <string name="contribution_shizuku_ready_title">%1$s ready</string>
+    <string name="contribution_shizuku_required_title">%1$s needed</string>
+    <string name="contribution_shizuku_checking">Checking privileged access…</string>
+    <string name="contribution_shizuku_not_installed_body">This guide reads your hidden settings through Shizuku or Porter (read-only). Install and start Porter, then come back.</string>
+    <string name="contribution_install_shizuku">How to set up Porter</string>
+    <string name="contribution_allow_shizuku">Allow Amply in %1$s</string>
+    <string name="contribution_open_shizuku">Open %1$s</string>
 
     <!-- Step: intro / consent -->
     <string name="contribution_intro_title">Help add support for your device</string>
@@ -449,8 +452,8 @@
     <string name="contribution_label_required">Give this mode a name first.</string>
     <string name="contribution_label_duplicate">You already captured a mode with that name.</string>
     <string name="contribution_status_no_change">That mode changed no settings, recorded anyway.</string>
-    <string name="contribution_status_shizuku_required">Shizuku access is required to capture.</string>
-    <string name="contribution_capture_empty_error">Nothing could be read from the settings providers. Check that Shizuku is still running, then try again.</string>
+    <string name="contribution_status_shizuku_required">Shizuku or Porter access is required to capture.</string>
+    <string name="contribution_capture_empty_error">Nothing could be read from the settings providers. Check that Shizuku or Porter is still running, then try again.</string>
     <string name="contribution_undo_last">Undo last</string>
     <string name="contribution_restart">Start over</string>
     <string name="contribution_modes_captured">%1$d mode(s) captured</string>
@@ -492,8 +495,8 @@
     <string name="dashboard_manufacturer_fallback">these</string>
     <!-- Substituted into setup_unsupported_body on a custom ROM, in place of the hardware vendor. -->
     <string name="platform_name_lineageos">LineageOS</string>
-    <string name="setup_unsupported_probe_hint">Connecting Shizuku lets Amply include which charge-control method your ROM uses, which helps work out whether support is possible.</string>
-    <string name="setup_unsupported_allow_shizuku_action">Allow Amply in Shizuku</string>
+    <string name="setup_unsupported_probe_hint">Connecting Shizuku or Porter lets Amply include which charge-control method your ROM uses, which helps work out whether support is possible.</string>
+    <string name="setup_unsupported_allow_shizuku_action">Allow Amply in %1$s</string>
     <string name="dashboard_applying">Applying…</string>
     <string name="dashboard_device_line">%1$s · Android API %2$d</string>
     <string name="dashboard_waiting_target">Waiting for the system to switch to %1$s. This can take about 15 seconds…</string>
@@ -556,15 +559,15 @@
     <string name="settings_reconnect_notification_actions_hint">Pick up to three charge modes. They appear as buttons on the reconnect-gesture notification and switch your charging permanently.</string>
     <string name="settings_reconnect_any_level_hint">More sensitive: any unplug/replug of 2–10 seconds starts a full charge, e.g. also below 80%. Momentary power cuts shorter than 2 seconds, like a car cutting USB power while starting, never trigger.</string>
     <string name="settings_reconnect_any_level_only_hint">This device reports when a charge limit is set, but not when it is actively holding, so the gesture works at any charge level while a limit is active.</string>
-    <string name="dashboard_shizuku_title">Better with Shizuku</string>
-    <string name="dashboard_shizuku_body">Shizuku gives Amply exact policy readback instead of relying on hardware state and the last request.</string>
-    <string name="dashboard_shizuku_required_title">Shizuku required to change charging</string>
-    <string name="dashboard_shizuku_required_body">This device stores its charging setting where only Shizuku can change it. Connect Shizuku to switch policies; until then the charging controls stay disabled.</string>
+    <string name="dashboard_shizuku_title">Better with %1$s</string>
+    <string name="dashboard_shizuku_body">%1$s gives Amply exact policy readback instead of relying on hardware state and the last request.</string>
+    <string name="dashboard_shizuku_required_title">%1$s required to change charging</string>
+    <string name="dashboard_shizuku_required_body">This device stores its charging setting where only %1$s can change it. Connect %1$s to switch policies; until then the charging controls stay disabled.</string>
     <string name="dashboard_shizuku_allow">Allow access</string>
-    <string name="dashboard_shizuku_open">Open Shizuku</string>
+    <string name="dashboard_shizuku_open">Open %1$s</string>
     <string name="dashboard_adb_copied">ADB command copied</string>
     <string name="dashboard_weblink_copied">Web helper link copied</string>
-    <string name="dashboard_wss_grant_failed_toast">Couldn\'t grant the permission via Shizuku. Make sure Amply is allowed in Shizuku.</string>
+    <string name="dashboard_wss_grant_failed_toast">Couldn\'t grant the permission via %1$s. Make sure Amply is allowed in %1$s.</string>
     <string name="dashboard_quickaccess_title">Quick access</string>
     <string name="dashboard_quickaccess_body" formatted="false">Start a full charge without opening the app: add the Amply widget to your home screen, or the “100% once” tile to Quick Settings.</string>
     <string name="dashboard_quickaccess_add_widget">Add widget</string>
@@ -587,7 +590,7 @@
     <!-- Charge alarm (dashboard card + notification) -->
     <string name="dashboard_alarm_title">Charge alarm</string>
     <string name="dashboard_alarm_body_on">Amply will alert you to unplug when charging reaches your target. Works without any special setup.</string>
-    <string name="dashboard_alarm_body_off">Get a reminder to unplug at a chosen level, even without ADB or Shizuku.</string>
+    <string name="dashboard_alarm_body_off">Get a reminder to unplug at a chosen level, even without ADB, Shizuku or Porter.</string>
     <string name="dashboard_alarm_target_label">Alert at %1$d%%</string>
     <string name="dashboard_alarm_notifications_blocked">Notifications are off, so the alarm can\'t alert you.</string>
     <string name="dashboard_alarm_notifications_fix_action">Turn on</string>

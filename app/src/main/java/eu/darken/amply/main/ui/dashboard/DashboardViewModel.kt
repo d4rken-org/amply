@@ -26,6 +26,7 @@ import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingRepository
 import eu.darken.amply.charging.core.ChargingState
 import eu.darken.amply.charging.core.SETTLING_WINDOW_MILLIS
+import eu.darken.amply.charging.core.access.managerName
 import eu.darken.amply.common.AmplyLinks
 import eu.darken.amply.common.debug.logging.Logging
 import eu.darken.amply.common.debug.logging.asLog
@@ -743,9 +744,10 @@ class DashboardViewModel @Inject constructor(
         // (WSS actually granted), so false is a real failure — not a lost pm-grant reply.
         val granted = repository.grantWriteSecureSettings()
         if (!granted) {
+            val manager = repository.state.value.access?.shizuku.managerName().get(context)
             Toast.makeText(
                 context,
-                context.getString(R.string.dashboard_wss_grant_failed_toast),
+                context.getString(R.string.dashboard_wss_grant_failed_toast, manager),
                 Toast.LENGTH_LONG,
             ).show()
         }
@@ -773,10 +775,7 @@ class DashboardViewModel @Inject constructor(
     fun openShizuku() = viewModelScope.launch {
         val launch = repository.shizukuManagerPackage()
             ?.let(context.packageManager::getLaunchIntentForPackage)
-        val intent = launch ?: Intent(
-            Intent.ACTION_VIEW,
-            Uri.parse("https://shizuku.rikka.app/guide/setup/"),
-        )
+        val intent = launch ?: Intent(Intent.ACTION_VIEW, Uri.parse(AmplyLinks.PORTER_SETUP))
         runCatching { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
     }
 
