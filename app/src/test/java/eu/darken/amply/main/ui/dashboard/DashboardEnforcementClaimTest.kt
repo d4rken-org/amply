@@ -1,7 +1,9 @@
 package eu.darken.amply.main.ui.dashboard
 
 import android.app.Application
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.core.app.ApplicationProvider
 import eu.darken.amply.R
@@ -9,6 +11,9 @@ import eu.darken.amply.charging.core.BackendKind
 import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargePolicy
 import eu.darken.amply.charging.core.ChargingState
+import eu.darken.amply.charging.core.access.AccessSnapshot
+import eu.darken.amply.charging.core.access.BackendStatus
+import eu.darken.amply.charging.core.access.shizuku.ManagerBackend
 import eu.darken.amply.common.ca.toCaString
 import io.kotest.matchers.string.shouldContain
 import org.junit.Rule
@@ -39,6 +44,7 @@ class DashboardEnforcementClaimTest {
         observation: ChargeObservation,
         capAwaitsHardwareConfirmation: Boolean = false,
         adapterDetail: Int? = null,
+        access: AccessSnapshot? = null,
     ) {
         compose.setContent {
             DashboardScreenUnderTest(
@@ -49,18 +55,33 @@ class DashboardEnforcementClaimTest {
                         observation = observation,
                         capAwaitsHardwareConfirmation = capAwaitsHardwareConfirmation,
                         adapterDetail = adapterDetail?.toCaString(),
+                        access = access,
                     ),
                 ),
             )
         }
     }
 
-    private fun readbackThrough(backend: BackendKind): String =
-        context.getString(R.string.dashboard_detail_readback, backend.name.replace('_', ' ').lowercase())
+    private fun sourceName(backend: BackendKind, manager: ManagerBackend?): String = when (backend) {
+        BackendKind.SHIZUKU -> manager?.label ?: string(R.string.manager_name_any)
+        else -> backend.name.replace('_', ' ').lowercase()
+    }
 
-    private fun conditionalReadbackThrough(backend: BackendKind): String = context.getString(
-        R.string.dashboard_detail_readback_conditional,
-        backend.name.replace('_', ' ').lowercase(),
+    private fun readbackThrough(backend: BackendKind, manager: ManagerBackend? = null): String =
+        context.getString(R.string.dashboard_detail_readback, sourceName(backend, manager))
+
+    private fun conditionalReadbackThrough(backend: BackendKind, manager: ManagerBackend? = null): String =
+        context.getString(R.string.dashboard_detail_readback_conditional, sourceName(backend, manager))
+
+    // Direct access is ready too, so the setup guide (which names both managers) stays off the screen.
+    private val porterAccess = AccessSnapshot(
+        direct = BackendStatus(available = true, granted = true, detail = "".toCaString()),
+        shizuku = BackendStatus(
+            available = true,
+            granted = true,
+            detail = "Porter ready".toCaString(),
+            manager = ManagerBackend.PORTER,
+        ),
     )
 
     @Test
@@ -106,6 +127,22 @@ class DashboardEnforcementClaimTest {
 
         compose.onNodeWithText(readbackThrough(BackendKind.SHIZUKU)).assertExists()
         compose.onNodeWithText(conditionalReadbackThrough(BackendKind.SHIZUKU)).assertDoesNotExist()
+    }
+
+    @Test
+    fun `a readback through porter names porter`() {
+        render(ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.SHIZUKU), access = porterAccess)
+
+        compose.onNodeWithText(readbackThrough(BackendKind.SHIZUKU, ManagerBackend.PORTER)).assertExists()
+        compose.onAllNodesWithText("shizuku", substring = true, ignoreCase = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun `an adaptive readback through porter names porter`() {
+        render(ChargeObservation.Verified(ChargePolicy.Adaptive, BackendKind.SHIZUKU), access = porterAccess)
+
+        compose.onNodeWithText(conditionalReadbackThrough(BackendKind.SHIZUKU, ManagerBackend.PORTER)).assertExists()
+        compose.onAllNodesWithText("shizuku", substring = true, ignoreCase = true).assertCountEquals(0)
     }
 
     @Test
