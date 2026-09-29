@@ -87,6 +87,8 @@ sealed interface ChargeObservation {
 
 enum class BackendKind {
     DIRECT_WSS,
+
+    /** The Porter SDK's privileged connection, served by either the Porter or the Shizuku manager. */
     SHIZUKU,
     BATTERY_HARDWARE,
     DEEP_LINK,

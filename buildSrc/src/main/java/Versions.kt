@@ -28,8 +28,8 @@ object Versions {
         const val core = "1.2.0-rc01"
     }
 
-    object Shizuku {
-        const val core = "13.1.5"
+    object Porter {
+        const val sdk = "0.8.0"
     }
 
     object Billing {

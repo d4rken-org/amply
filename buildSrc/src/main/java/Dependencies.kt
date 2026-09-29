@@ -100,9 +100,10 @@ fun DependencyHandlerScope.addGlance() {
     implementation("androidx.glance:glance-material3:${Versions.Glance.core}")
 }
 
-fun DependencyHandlerScope.addShizuku() {
-    implementation("dev.rikka.shizuku:api:${Versions.Shizuku.core}")
-    implementation("dev.rikka.shizuku:provider:${Versions.Shizuku.core}")
+fun DependencyHandlerScope.addPorter() {
+    implementation("com.github.d4rken-org.porter-api:sdk:${Versions.Porter.sdk}")
+    // Never alongside dev.rikka.shizuku:provider: both ship moe.shizuku.api.BinderContainer.
+    implementation("com.github.d4rken-org.porter-api:shizuku-compat:${Versions.Porter.sdk}")
 }
 
 fun DependencyHandlerScope.addTesting() {
