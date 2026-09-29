@@ -13,8 +13,15 @@ devices that justify each gate's current width.
 
 1. **Direct `WRITE_SECURE_SETTINGS`** — durable writes. Android blocks third-party *reads* of the hidden Pixel values,
    so WSS-only control can write but cannot verify hidden state.
-2. **Shizuku** — provides exact configured-setting readback while running, and is preferred for reads and
-   verification.
+2. **Shizuku** — the privileged path through the Porter Client SDK, served by either the **Porter** manager (a
+   maintained Shizuku fork) or original **Shizuku v13+** (the SDK reports older Shizuku servers as incompatible).
+   It provides exact configured-setting readback while running, and is preferred for reads and verification.
+
+"Shizuku" elsewhere in these docs and in identifiers (`ShizukuController`, `BackendKind.SHIZUKU`,
+`preferShizukuForWrites`, the `access/shizuku` package) means this path, whichever manager serves it. Manager
+detection and backend choice belong to the SDK, reached only through `PorterGateway`/`PrivilegedLink`: Porter wins
+whenever a package declares Porter's permission, even while Porter is stopped, otherwise Shizuku. A live connection
+pins its backend until it dies.
 
 `ChargingRepository` combines them: Shizuku for reads, direct WSS for durable writes, Shizuku for verification.
 
@@ -24,8 +31,8 @@ Granting WSS in development:
 adb shell pm grant eu.darken.amply android.permission.WRITE_SECURE_SETTINGS
 ```
 
-(All variants share the applicationId `eu.darken.amply`.) Alternatively start Shizuku, grant Amply access, and
-optionally use the setup card to grant durable WSS.
+(All variants share the applicationId `eu.darken.amply`.) Alternatively start Shizuku or Porter, grant Amply access,
+and optionally use the setup card to grant durable WSS.
 
 ## No Arbitrary Shell API
 
@@ -290,6 +297,9 @@ The temporary override uses a `specialUse` foreground service because dormant ap
 power-disconnect broadcasts. Consequences to respect:
 
 - Force-stopping Amply or revoking its privilege can prevent restoration of the protective policy.
+- Porter's permission is an Android runtime permission: uninstalling Porter, or revoking Amply's grant in Porter,
+  kills Amply's process. During a temporary session this can defer the protective restore until Amply next starts;
+  interruption detection surfaces it, as it does a force-stop.
 - **Google Play publication must stay gated on approval of the declared `specialUse` foreground-service use case.**
 
 ## Diagnostics

@@ -67,6 +67,9 @@ explicitly asks for full output.
 
 - **Plugin versions live in the root `build.gradle.kts`** (AGP, KSP, Kotlin Compose plugin, Hilt) — all applied with
   `apply false` and pulled into `:app`. Keep KSP and the Kotlin Compose plugin compatible with the Kotlin toolchain.
+- The Porter SDK (`sdk` + `shizuku-compat`) comes from JitPack, restricted by `includeGroup` in `settings.gradle.kts`.
+  Never let `shizuku-compat` coexist with `dev.rikka.shizuku:provider`: both ship `moe.shizuku.api.BinderContainer`
+  and the app crashes on launch.
 - `buildFeatures { aidl = true; buildConfig = true; compose = true }` are all enabled — the Shizuku `IChargingControlService.aidl`
   and `BuildConfig.ENABLE_PIXEL_LAB_ADAPTER` depend on this.
 - `testOptions.unitTests.isIncludeAndroidResources = true` — Robolectric tests can read resources.

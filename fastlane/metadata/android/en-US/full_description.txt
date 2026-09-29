@@ -17,7 +17,7 @@ Amply Pro adds:
 
 Available as a yearly subscription with a free trial, or as a one-time purchase.
 
-Useful on any device — no ADB, Shizuku, or special permissions needed:
+Useful on any device — no ADB, Shizuku, Porter, or special permissions needed:
 
 * Charge alarm: pick a level and Amply reminds you to unplug when charging reaches it.
 * Battery details: a live view of level, temperature, voltage, current, charge cycles, and health.
@@ -31,7 +31,7 @@ So Amply doesn't guess: install it and open it. It checks your device on the spo
 
 If direct control isn't available, Amply is still useful — battery details, the charge alarm, and a guide to your phone's own protection setting — and you can contribute your device data to help expand support.
 
-Direct control needs a one-time setup: grant WRITE_SECURE_SETTINGS via Shizuku, or from a computer over ADB. Amply walks you through each step.
+Direct control needs a one-time setup: grant WRITE_SECURE_SETTINGS via Shizuku or Porter, or from a computer over ADB. Amply walks you through each step.
 
 Amply is experimental and open source (GPL-3.0). Charge control is free; the extras above are what the upgrade funds.
 
