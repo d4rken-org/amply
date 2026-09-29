@@ -15,7 +15,7 @@ but still use Kotest matchers. Truth is not a dependency — do not reintroduce 
 
 - Pure decision engines and mapping logic — this is where most value is. Existing examples:
   `SessionDecisionEngine`, `BootRecoveryEngine`, `BootRecoveryFlow`, `QuickFullChargeGesture`, `ChargePolicy`,
-  `PixelChargingAdapter` (+ `…HardwareTest`), `ShizukuInstallationDetector`, `ChargingControlUserService`, `Logging`.
+  `PixelChargingAdapter` (+ `…HardwareTest`), `ShizukuController`, `ChargingControlUserService`, `Logging`.
 - Keep new charge/session decision logic in a pure unit so it can run on the JVM without a device.
 - **Avoid `androidTest` instrumentation tests** where a JVM/Robolectric test can cover the behavior — the one
   existing instrumented test (`MainActivityTest`) is the exception, not the norm.

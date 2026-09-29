@@ -26,7 +26,7 @@ Features include:
 * Quick Settings tile and a home-screen widget for protect / full-charge actions
 * Charge history with per-charge curves — level, speed, and temperature over time
 * Branded light/dark themes, optional Material You, and contrast choices
-* Works via `WRITE_SECURE_SETTINGS` or Shizuku
+* Works via `WRITE_SECURE_SETTINGS`, Shizuku, or Porter
 
 Currently supported for direct control:
 
@@ -34,7 +34,7 @@ Currently supported for direct control:
 * Samsung One UI 8 (multi-mode battery protection)
 * Samsung One UI 4 / 5 (legacy battery-protection toggle)
 * Xiaomi / Redmi / POCO on HyperOS 2 (charging protection)
-* OnePlus / Oppo / Realme on ColorOS 15 (charging protection; requires Shizuku)
+* OnePlus / Oppo / Realme on ColorOS 15 (charging protection; requires Shizuku or Porter)
 
 ## Download
 

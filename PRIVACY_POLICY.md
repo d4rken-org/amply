@@ -8,7 +8,7 @@ title: "Privacy Policy"
 
 Amply works locally on the device. It contains no analytics, advertising, account system, or automatic data transmission.
 
-The optional adapter-discovery tool reads Android settings through user-authorized Shizuku access. A before/after comparison is kept in memory. Reports are created only after explicit user action, redact common identifiers, and are shared only through Android's user-selected share target.
+The optional adapter-discovery tool reads Android settings through user-authorized Shizuku or Porter access. A before/after comparison is kept in memory. Reports are created only after explicit user action, redact common identifiers, and are shared only through Android's user-selected share target.
 
 Debug-log recording is optional and starts only after the user confirms it. A recording can include Amply events, device and Android versions, battery and cable state, and charging-control results. Logs remain in Amply's private app storage until the user explicitly shares or deletes them.
 

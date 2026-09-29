@@ -1,7 +1,8 @@
 # Architecture
 
 Amply follows a **feature/core/ui** organization (as used by CAPod and Octi), with SD Maid SE's typed Shizuku
-UserService boundary. This file, the code, and its comments are the source of truth for the design.
+UserService boundary, running on the Porter Client SDK. This file, the code, and its comments are the source of truth
+for the design.
 
 ## Single Module
 
@@ -125,7 +126,9 @@ Android does not deliver `ACTION_POWER_CONNECTED` / `ACTION_POWER_DISCONNECTED` 
 - Capability gate requires **all** of: Google manufacturer, supported Pixel 6a+ model, Android 15/API 35+, telephony
   capability, and a resolvable Settings Intelligence charging-optimization action. Pixel Tablet is excluded. Do not
   replace this runtime gate with an exact-model allowlist or a version-only check.
-- Shizuku installation is detected by resolving the owner of `ShizukuProvider.PERMISSION`, **not** a fixed package
-  name — this recognizes renamed forks and hidden-package mode. Don't hardcode a package name.
+- Privileged-manager detection and backend selection belong to the Porter SDK (`PorterGateway.availability()` →
+  `Porter.availability`). It resolves managers by permission owner, **not** a fixed package name, so renamed forks
+  are recognized, and prefers Porter whenever Porter's permission is declared. Don't hardcode a package name or add
+  a parallel PackageManager lookup.
 - Pixel/Samsung/Xiaomi/Oplus keys are all live on gated devices (see the `oem-adapters` skill). New writable keys must
   be spike-verified and added to `SettingWritePolicy` with an explicit per-key value domain.

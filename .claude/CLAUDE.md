@@ -55,6 +55,7 @@ constraints:
 Under `app/src/main/java/eu/darken/amply/`:
 
 - `charging/core` — policies, device capability checks, OEM adapters, WSS, Shizuku access (`access/shizuku`, `adapter`)
+  ("Shizuku" here and in these docs means the Porter SDK privileged path, served by Porter or Shizuku v13+)
 - `charging/core/enforcement` — the observed-enforcement gate: verdict engine, durable evidence, monitor watcher
 - `charging/core/qualification` — the guided qualification run: an *active* cut → resume → cut challenge that
   proves the charging hardware obeys a cap, where the enforcement gate can only ever refute one

@@ -25,8 +25,8 @@ any grant.
 
 **2. Direct control requires `WRITE_SECURE_SETTINGS`, granted from a computer.** The permission is
 declared in the manifest but is not grantable from a phone UI; the user grants it once over ADB
-from a computer, or through Shizuku. Amply cannot and does not obtain it by itself, and it works
-without it (with reduced functionality). Amply's setup screen shows the exact command.
+from a computer, or through Shizuku or Porter. Amply cannot and does not obtain it by itself, and
+it works without it (with reduced functionality). Amply's setup screen shows the exact command.
 
 To review the full feature set on a supported device (a Pixel 6a or newer running Android 15 or
 newer), grant it once with the phone connected to a computer:
