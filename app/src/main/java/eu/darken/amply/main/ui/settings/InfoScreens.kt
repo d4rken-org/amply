@@ -52,6 +52,14 @@ fun AcknowledgementsScreen(
                     onClick = { onOpenUrl("https://github.com/RikkaApps/Shizuku") },
                 )
             }
+            item { SettingsDivider(hasIcon = false) }
+            item {
+                SettingsBaseItem(
+                    title = stringResource(R.string.settings_ack_porter_title),
+                    subtitle = stringResource(R.string.settings_ack_porter_subtitle),
+                    onClick = { onOpenUrl("https://github.com/d4rken-org/porter-api") },
+                )
+            }
             item { SettingsCategoryHeader(stringResource(R.string.settings_ack_libraries)) }
             item {
                 SettingsBaseItem(

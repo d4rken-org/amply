@@ -14,6 +14,7 @@ import eu.darken.amply.charging.core.ChargingState
 import eu.darken.amply.charging.core.DeviceInfo
 import eu.darken.amply.charging.core.access.AccessSnapshot
 import eu.darken.amply.charging.core.access.BackendStatus
+import eu.darken.amply.charging.core.access.shizuku.ManagerBackend
 import eu.darken.amply.common.ca.toCaString
 import eu.darken.amply.common.compose.PreviewWrapper
 import eu.darken.amply.battery.core.BatteryReadout
@@ -195,7 +196,8 @@ private fun grantedAccess() = AccessSnapshot(
     shizuku = BackendStatus(
         available = true,
         granted = true,
-        detail = "Shizuku connected".toCaString(),
+        detail = "Shizuku ready".toCaString(),
+        manager = ManagerBackend.SHIZUKU,
     ),
 )
 
@@ -320,7 +322,9 @@ private fun setupNeededState() = DashboardUiState(
             shizuku = BackendStatus(
                 available = false,
                 granted = false,
-                detail = "Shizuku not running".toCaString(),
+                detail = "Porter is installed but not running".toCaString(),
+                installed = true,
+                manager = ManagerBackend.PORTER,
             ),
         ),
         observation = ChargeObservation.NeedsSetup("Grant access to control charging".toCaString()),

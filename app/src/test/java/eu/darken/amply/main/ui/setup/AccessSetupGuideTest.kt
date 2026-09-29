@@ -16,6 +16,7 @@ import eu.darken.amply.charging.core.ChargeObservation
 import eu.darken.amply.charging.core.ChargingState
 import eu.darken.amply.charging.core.access.AccessSnapshot
 import eu.darken.amply.charging.core.access.BackendStatus
+import eu.darken.amply.charging.core.access.shizuku.ManagerBackend
 import eu.darken.amply.common.ca.toCaString
 import eu.darken.amply.main.ui.dashboard.DashboardUiState
 import io.kotest.matchers.shouldBe
@@ -76,6 +77,56 @@ class AccessSetupGuideTest {
         setContent(granted)
 
         compose.onNodeWithText(string(R.string.setup_access_copy_webusb)).assertDoesNotExist()
+    }
+
+    private fun needsSetup(shizuku: BackendStatus) = DashboardUiState(
+        charging = ChargingState(
+            access = AccessSnapshot(
+                direct = BackendStatus(available = true, granted = false, detail = "not granted".toCaString()),
+                shizuku = shizuku,
+            ),
+        ),
+    )
+
+    @Test
+    fun `a detected Porter is named in the option and its action`() {
+        setContent(
+            needsSetup(
+                BackendStatus(
+                    available = true,
+                    granted = false,
+                    detail = "not granted".toCaString(),
+                    manager = ManagerBackend.PORTER,
+                ),
+            ),
+        )
+
+        compose.onNodeWithText("Option 1 · Porter (recommended)").assertExists()
+        compose.onNodeWithText("Allow Amply in Porter").assertExists()
+    }
+
+    @Test
+    fun `an unidentified manager that is not running reads as either`() {
+        setContent(
+            needsSetup(
+                BackendStatus(available = false, granted = false, detail = "not running".toCaString(), installed = true),
+            ),
+        )
+
+        compose.onNodeWithText("Option 1 · Shizuku or Porter (recommended)").assertExists()
+        compose.onNodeWithText("Open Shizuku or Porter").assertExists()
+    }
+
+    @Test
+    fun `with nothing installed the action sets up Porter`() {
+        setContent(
+            needsSetup(
+                BackendStatus(available = false, granted = false, detail = "missing".toCaString(), installed = false),
+            ),
+        )
+
+        compose.onNodeWithText(string(R.string.contribution_install_shizuku)).assertExists()
+        compose.onNodeWithText("How to set up Porter").assertExists()
     }
 
     @Test

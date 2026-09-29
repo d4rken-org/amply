@@ -66,6 +66,9 @@ import eu.darken.amply.charging.core.PendingRequest
 import eu.darken.amply.charging.core.SETTLING_WINDOW_MILLIS
 import eu.darken.amply.charging.core.access.AccessSnapshot
 import eu.darken.amply.charging.core.access.BackendStatus
+import eu.darken.amply.charging.core.access.displayName
+import eu.darken.amply.charging.core.access.shizuku.ManagerBackend
+import eu.darken.amply.charging.core.access.withManagerName
 import eu.darken.amply.charging.core.enforcement.EnforcementStatus
 import eu.darken.amply.charging.core.isAwaitingReplug
 import eu.darken.amply.charging.core.isSettling
@@ -420,6 +423,7 @@ fun DashboardScreen(
                             access?.shizuku?.ready != true -> item(key = "dashboard.shizukubanner") {
                             ShizukuBanner(
                                 running = access?.shizuku?.available == true,
+                                manager = access?.shizuku?.manager,
                                 requiredForControl = true,
                                 onOpen = onOpenShizuku,
                                 onAllow = onAllowShizuku,
@@ -432,6 +436,7 @@ fun DashboardScreen(
                         access?.direct?.ready == true && !access.canVerify && !state.charging.syncVerification -> item(key = "dashboard.shizukubanner") {
                             ShizukuBanner(
                                 running = access.shizuku.available,
+                                manager = access.shizuku.manager,
                                 requiredForControl = false,
                                 onOpen = onOpenShizuku,
                                 onAllow = onAllowShizuku,
@@ -571,7 +576,7 @@ private fun StatusCard(
         HorizontalDivider()
         Spacer(Modifier.height(12.dp))
         Text(
-            observation.detail().asComposable(),
+            observation.detail(state.charging.access?.shizuku?.manager).asComposable(),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -903,22 +908,25 @@ private fun QuickFullChargeCardLargeFontPreview() = PreviewWrapper {
 }
 
 /**
- * The setup nudge for Shizuku, in its two flavors: required for control, or merely better. Like the
- * upgrade promo, the whole card is the tap target — it carries exactly one action, and the action
- * changes with [running] (allow Amply in a Shizuku that is up, or open/install one that isn't), so
- * the card's click label follows it.
+ * The setup nudge for the privileged manager, in its two flavors: required for control, or merely
+ * better. Like the upgrade promo, the whole card is the tap target — it carries exactly one action,
+ * and the action changes with [running] (allow Amply in a manager that is up, or open/install one
+ * that isn't), so the card's click label follows it. [manager] names the detected manager; null
+ * reads as "Shizuku or Porter".
  */
 @Composable
 private fun ShizukuBanner(
     running: Boolean,
+    manager: ManagerBackend?,
     requiredForControl: Boolean,
     onOpen: () -> Unit,
     onAllow: () -> Unit,
 ) {
+    val managerName = manager.displayName().asComposable()
     val actionLabel = if (running) {
         stringResource(R.string.dashboard_shizuku_allow)
     } else {
-        stringResource(R.string.dashboard_shizuku_open)
+        stringResource(R.string.dashboard_shizuku_open, managerName)
     }
     AmplyClickableCard(
         onClick = if (running) onAllow else onOpen,
@@ -929,6 +937,7 @@ private fun ShizukuBanner(
             title = stringResource(
                 if (requiredForControl) R.string.dashboard_shizuku_required_title
                 else R.string.dashboard_shizuku_title,
+                managerName,
             ),
             // A wrench, matching the access setup guide: this card is setup work, not a status.
             icon = Icons.TwoTone.Build,
@@ -939,6 +948,7 @@ private fun ShizukuBanner(
             stringResource(
                 if (requiredForControl) R.string.dashboard_shizuku_required_body
                 else R.string.dashboard_shizuku_body,
+                managerName,
             ),
             style = MaterialTheme.typography.bodySmall,
         )
@@ -952,13 +962,27 @@ private fun ShizukuBanner(
 }
 
 // Both variants, and both action states: the card's one tap target changes what it does with the
-// label, so they have to be seen together.
+// label, so they have to be seen together. One fixture per manager naming: none detected, Porter,
+// Shizuku.
 @AmplyPreview
 @Composable
 private fun ShizukuBannerPreview() = PreviewWrapper {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        ShizukuBanner(running = false, requiredForControl = true, onOpen = {}, onAllow = {})
-        ShizukuBanner(running = true, requiredForControl = false, onOpen = {}, onAllow = {})
+        ShizukuBanner(running = false, manager = null, requiredForControl = true, onOpen = {}, onAllow = {})
+        ShizukuBanner(
+            running = false,
+            manager = ManagerBackend.PORTER,
+            requiredForControl = false,
+            onOpen = {},
+            onAllow = {},
+        )
+        ShizukuBanner(
+            running = true,
+            manager = ManagerBackend.SHIZUKU,
+            requiredForControl = false,
+            onOpen = {},
+            onAllow = {},
+        )
     }
 }
 
@@ -1024,7 +1048,7 @@ private fun ChargeObservation.untieredTitle(): CaString = when (this) {
     is ChargeObservation.Unknown -> R.string.dashboard_status_unknown.toCaString()
 }
 
-private fun ChargeObservation.detail(): CaString = when (this) {
+private fun ChargeObservation.detail(manager: ManagerBackend?): CaString = when (this) {
     // The backend placeholder stays in both readback strings: this line's job is provenance.
     is ChargeObservation.Verified -> when {
         backend == BackendKind.BATTERY_HARDWARE -> R.string.dashboard_detail_hw_confirmed.toCaString()
@@ -1039,7 +1063,7 @@ private fun ChargeObservation.detail(): CaString = when (this) {
             it.getString(R.string.dashboard_detail_readback, backend.name.replace('_', ' ').lowercase())
         }
     }
-    is ChargeObservation.LastRequested -> R.string.dashboard_detail_last_requested.toCaString()
+    is ChargeObservation.LastRequested -> R.string.dashboard_detail_last_requested.withManagerName(manager)
     is ChargeObservation.NeedsSetup -> reason
     is ChargeObservation.Unsupported -> reason
     is ChargeObservation.Unknown -> reason
@@ -1117,6 +1141,7 @@ private fun DashboardScreenPreview() = PreviewWrapper {
                         available = true,
                         granted = true,
                         detail = "Shizuku connected".toCaString(),
+                        manager = ManagerBackend.SHIZUKU,
                     ),
                 ),
                 observation = ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.SHIZUKU),
@@ -1213,6 +1238,7 @@ private fun DashboardScreenLiveChargePreview() = PreviewWrapper {
                         available = true,
                         granted = true,
                         detail = "Shizuku connected".toCaString(),
+                        manager = ManagerBackend.SHIZUKU,
                     ),
                 ),
                 observation = ChargeObservation.Verified(ChargePolicy.Unrestricted, BackendKind.SHIZUKU),
@@ -1287,7 +1313,8 @@ private fun DashboardScreenHwUnconfirmedPreview() = PreviewWrapper {
                     shizuku = BackendStatus(
                         available = false,
                         granted = false,
-                        detail = "Shizuku not installed".toCaString(),
+                        detail = "Neither Shizuku nor Porter is installed".toCaString(),
+                        installed = false,
                     ),
                 ),
                 observation = ChargeObservation.LastRequested(ChargePolicy.FixedLimit(80)),
@@ -1365,6 +1392,7 @@ private fun DashboardScreenConditionalPolicyPreview() = PreviewWrapper {
                         available = true,
                         granted = true,
                         detail = "Shizuku ready".toCaString(),
+                        manager = ManagerBackend.SHIZUKU,
                     ),
                 ),
                 observation = ChargeObservation.Verified(ChargePolicy.Adaptive, BackendKind.SHIZUKU),
@@ -1438,6 +1466,7 @@ private fun DashboardScreenApplyingPreview() = PreviewWrapper {
                         available = true,
                         granted = true,
                         detail = "Shizuku connected".toCaString(),
+                        manager = ManagerBackend.SHIZUKU,
                     ),
                 ),
                 observation = ChargeObservation.LastRequested(ChargePolicy.FixedLimit(80)),
@@ -1495,7 +1524,7 @@ private fun DashboardScreenAwaitingReplugPreview() = PreviewWrapper {
                 device = DeviceInfo("Google", "Pixel 9 Pro XL", 37, "preview"),
                 adapterName = "GrapheneOS charge limit".toCaString(),
                 adapterId = "grapheneos-chargelimit-v1",
-                adapterDetail = ("Charging control requires Shizuku; changes take effect the next " +
+                adapterDetail = ("Charging control requires Shizuku or Porter; changes take effect the next " +
                     "time the charger is reconnected").toCaString(),
                 supportedPolicies = listOf(
                     ChargePolicy.FixedLimit(80),
@@ -1516,6 +1545,7 @@ private fun DashboardScreenAwaitingReplugPreview() = PreviewWrapper {
                         available = true,
                         granted = true,
                         detail = "Shizuku connected".toCaString(),
+                        manager = ManagerBackend.SHIZUKU,
                     ),
                 ),
                 observation = ChargeObservation.Verified(
@@ -1595,6 +1625,7 @@ private fun DashboardScreenSessionActivePreview() = PreviewWrapper {
                         available = true,
                         granted = true,
                         detail = "Shizuku connected".toCaString(),
+                        manager = ManagerBackend.SHIZUKU,
                     ),
                 ),
                 observation = ChargeObservation.Verified(ChargePolicy.Unrestricted, BackendKind.BATTERY_HARDWARE),
@@ -1668,6 +1699,7 @@ private fun DashboardScreenSessionRecordedPreview() = PreviewWrapper {
                         available = true,
                         granted = true,
                         detail = "Shizuku connected".toCaString(),
+                        manager = ManagerBackend.SHIZUKU,
                     ),
                 ),
                 observation = ChargeObservation.Unknown("The settings write failed".toCaString()),
@@ -1706,8 +1738,8 @@ private fun DashboardScreenSessionRecordedPreview() = PreviewWrapper {
     )
 }
 
-// WSS granted via the computer path but Shizuku absent: no setup guide, and the "Better with Shizuku"
-// banner appears to offer exact readback/diagnostics.
+// WSS granted via the computer path, Porter installed but not running: no setup guide, and the
+// "Better with Porter" banner appears to offer exact readback/diagnostics.
 @AmplyPreview
 @Composable
 private fun DashboardScreenWssOnlyPreview() = PreviewWrapper {
@@ -1728,7 +1760,9 @@ private fun DashboardScreenWssOnlyPreview() = PreviewWrapper {
                     shizuku = BackendStatus(
                         available = false,
                         granted = false,
-                        detail = "Shizuku not running".toCaString(),
+                        detail = "Porter is installed but not running".toCaString(),
+                        installed = true,
+                        manager = ManagerBackend.PORTER,
                     ),
                 ),
                 observation = ChargeObservation.LastRequested(ChargePolicy.FixedLimit(80)),
@@ -1803,7 +1837,8 @@ private fun DashboardScreenSamsungPreview() = PreviewWrapper {
                     shizuku = BackendStatus(
                         available = false,
                         granted = false,
-                        detail = "Shizuku not installed".toCaString(),
+                        detail = "Neither Shizuku nor Porter is installed".toCaString(),
+                        installed = false,
                     ),
                 ),
                 observation = ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.DIRECT_WSS),
@@ -1845,8 +1880,8 @@ private fun DashboardScreenSamsungPreview() = PreviewWrapper {
 @AmplyPreview
 @Composable
 private fun DashboardScreenOnePlusNeedsShizukuPreview() = PreviewWrapper {
-    // OnePlus/ColorOS: state is readable via WSS, but writes need Shizuku (not connected here),
-    // so the controls are disabled and the Shizuku-required banner shows.
+    // OnePlus/ColorOS: state is readable via WSS, but writes need Shizuku or Porter (neither installed
+    // here), so the controls are disabled and the manager-required banner shows.
     DashboardScreen(
         state = DashboardUiState(
             onboardingComplete = true,
@@ -1872,7 +1907,8 @@ private fun DashboardScreenOnePlusNeedsShizukuPreview() = PreviewWrapper {
                     shizuku = BackendStatus(
                         available = false,
                         granted = false,
-                        detail = "Shizuku not connected".toCaString(),
+                        detail = "Neither Shizuku nor Porter is installed".toCaString(),
+                        installed = false,
                     ),
                 ),
                 observation = ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.DIRECT_WSS),
@@ -1993,7 +2029,7 @@ private fun DashboardScreenEnforcementCandidatePreview() = PreviewWrapper {
                 writeRequiresShizuku = true,
                 access = AccessSnapshot(
                     direct = BackendStatus(true, true, "Charge-control access granted".toCaString()),
-                    shizuku = BackendStatus(true, true, "Shizuku connected".toCaString()),
+                    shizuku = BackendStatus(true, true, "Shizuku ready".toCaString(), manager = ManagerBackend.SHIZUKU),
                 ),
                 observation = ChargeObservation.Unsupported(
                     // The reason the registry actually publishes for this tier.
@@ -2060,7 +2096,7 @@ private fun DashboardScreenEnforcementRefutedPreview() = PreviewWrapper {
                 writeRequiresShizuku = true,
                 access = AccessSnapshot(
                     direct = BackendStatus(true, true, "Charge-control access granted".toCaString()),
-                    shizuku = BackendStatus(true, true, "Shizuku connected".toCaString()),
+                    shizuku = BackendStatus(true, true, "Shizuku ready".toCaString(), manager = ManagerBackend.SHIZUKU),
                 ),
                 observation = ChargeObservation.Unsupported(
                     R.string.adapter_detail_enforcement_refuted.toCaString(),
@@ -2130,7 +2166,7 @@ private fun DashboardScreenEnforcementUnverifiedPreview() = PreviewWrapper {
                 writeRequiresShizuku = true,
                 access = AccessSnapshot(
                     direct = BackendStatus(true, true, "Charge-control access granted".toCaString()),
-                    shizuku = BackendStatus(true, true, "Shizuku connected".toCaString()),
+                    shizuku = BackendStatus(true, true, "Shizuku ready".toCaString(), manager = ManagerBackend.SHIZUKU),
                 ),
                 observation = ChargeObservation.Verified(ChargePolicy.FixedLimit(80), BackendKind.SHIZUKU),
             ),

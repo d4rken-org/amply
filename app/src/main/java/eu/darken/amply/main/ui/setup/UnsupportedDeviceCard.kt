@@ -35,8 +35,11 @@ import eu.darken.amply.common.compose.AmplyCardHeader
 import eu.darken.amply.common.compose.AmplyCardTone
 import eu.darken.amply.common.compose.AmplyCodeBlock
 import eu.darken.amply.charging.core.access.BackendStatus
+import eu.darken.amply.charging.core.access.managerName
+import eu.darken.amply.charging.core.access.shizuku.ManagerBackend
 import eu.darken.amply.common.compose.AmplyPreview
 import eu.darken.amply.common.compose.PreviewWrapper
+import eu.darken.amply.common.compose.asComposable
 
 /**
  * Shown on the dashboard when a device is unsupported but a useful support
@@ -122,6 +125,7 @@ fun UnsupportedDeviceCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            val managerName = shizuku.managerName().asComposable()
             when {
                 shizuku == null -> Unit
                 !shizuku.installed -> OutlinedButton(
@@ -134,13 +138,13 @@ fun UnsupportedDeviceCard(
                     onClick = onAllowShizuku,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(stringResource(R.string.setup_unsupported_allow_shizuku_action))
+                    Text(stringResource(R.string.setup_unsupported_allow_shizuku_action, managerName))
                 }
                 else -> OutlinedButton(
                     onClick = onOpenShizuku,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(stringResource(R.string.contribution_open_shizuku))
+                    Text(stringResource(R.string.contribution_open_shizuku, managerName))
                 }
             }
         }
@@ -287,7 +291,8 @@ private fun UnsupportedDeviceCardLineagePreview() = PreviewWrapper {
             available = false,
             granted = false,
             installed = true,
-            detail = "Shizuku is not running".toCaString(),
+            detail = "Porter is installed but not running".toCaString(),
+            manager = ManagerBackend.PORTER,
         ),
         onOpenWizard = {},
         onPrepareReport = {},

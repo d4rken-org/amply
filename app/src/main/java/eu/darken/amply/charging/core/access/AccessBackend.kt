@@ -1,6 +1,7 @@
 package eu.darken.amply.charging.core.access
 
 import eu.darken.amply.charging.core.BackendKind
+import eu.darken.amply.charging.core.access.shizuku.ManagerBackend
 import eu.darken.amply.common.ca.CaString
 
 enum class SettingNamespace(val commandName: String) {
@@ -39,6 +40,8 @@ data class BackendStatus(
     val granted: Boolean,
     val detail: CaString,
     val installed: Boolean = available,
+    /** The privileged manager this status describes; null when none was identified. */
+    val manager: ManagerBackend? = null,
 ) {
     val ready: Boolean get() = available && granted
 }

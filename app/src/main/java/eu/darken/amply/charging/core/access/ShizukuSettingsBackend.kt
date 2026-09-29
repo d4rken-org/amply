@@ -103,7 +103,7 @@ internal fun shizukuBackendStatus(
         available = false,
         granted = false,
         installed = true,
-        detail = R.string.access_shizuku_not_running.toCaString(),
+        detail = R.string.access_shizuku_not_running.withManagerName(null),
     )
     is PrivilegedManager.Installed -> {
         val live = manager.connected && available
@@ -111,17 +111,19 @@ internal fun shizukuBackendStatus(
             available = live,
             granted = live && granted,
             installed = true,
+            manager = manager.backend,
             detail = when {
                 !live -> R.string.access_shizuku_not_running
                 !granted -> R.string.access_shizuku_not_granted
                 else -> R.string.access_shizuku_ready
-            }.toCaString(),
+            }.withManagerName(manager.backend),
         )
     }
     is PrivilegedManager.Incompatible -> BackendStatus(
         available = false,
         granted = false,
         installed = true,
+        manager = manager.backend,
         detail = when {
             manager.serverTooOld -> R.string.access_manager_server_too_old
             else -> R.string.access_manager_client_too_old

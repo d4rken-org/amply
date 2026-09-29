@@ -5,6 +5,7 @@ object AmplyLinks {
     const val ISSUES = "$GITHUB/issues"
     const val PRIVACY_POLICY = "https://amply.darken.eu/privacy"
     const val CHANGELOG = "https://amply.darken.eu/changelog"
+    const val PORTER_SETUP = "https://porter.darken.eu/setup"
 
     /**
      * Browser-based ADB helper (WebUSB) deep-linked to Amply. Runs on the *computer* the
