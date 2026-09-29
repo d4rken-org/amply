@@ -12,8 +12,8 @@ import eu.darken.amply.charging.core.access.AccessResolver
 import eu.darken.amply.charging.core.access.DirectSettingsBackend
 import eu.darken.amply.charging.core.access.LineageSettingsClient
 import eu.darken.amply.charging.core.access.ShizukuSettingsBackend
+import eu.darken.amply.charging.core.access.shizuku.FakePorterGateway
 import eu.darken.amply.charging.core.access.shizuku.ShizukuController
-import eu.darken.amply.charging.core.access.shizuku.ShizukuInstallationDetector
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
 import eu.darken.amply.charging.core.adapter.GrapheneOsChargingAdapter
 import eu.darken.amply.charging.core.adapter.LineageChargingAdapter
@@ -104,7 +104,7 @@ class ChargingRepositoryFailurePublicationTest {
             },
         )
         val json = SerializationModule.json()
-        val shizukuController = ShizukuController(context, ShizukuInstallationDetector(context))
+        val shizukuController = ShizukuController(context, FakePorterGateway())
         repository = ChargingRepository(
             context = context,
             registry = AdapterRegistry(

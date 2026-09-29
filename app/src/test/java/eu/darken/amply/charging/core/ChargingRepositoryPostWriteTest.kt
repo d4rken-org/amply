@@ -19,8 +19,8 @@ import eu.darken.amply.charging.core.access.AccessResolver
 import eu.darken.amply.charging.core.access.DirectSettingsBackend
 import eu.darken.amply.charging.core.access.LineageSettingsClient
 import eu.darken.amply.charging.core.access.ShizukuSettingsBackend
+import eu.darken.amply.charging.core.access.shizuku.FakePorterGateway
 import eu.darken.amply.charging.core.access.shizuku.ShizukuController
-import eu.darken.amply.charging.core.access.shizuku.ShizukuInstallationDetector
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
 import eu.darken.amply.charging.core.adapter.GrapheneOsChargingAdapter
 import eu.darken.amply.charging.core.adapter.LineageChargingAdapter
@@ -122,7 +122,7 @@ class ChargingRepositoryPostWriteTest {
 
         faultingContext = FaultingContext(appContext)
         scheduler = RecordingScheduler()
-        val shizukuController = ShizukuController(appContext, ShizukuInstallationDetector(appContext))
+        val shizukuController = ShizukuController(appContext, FakePorterGateway())
         repository = ChargingRepository(
             context = faultingContext,
             registry = AdapterRegistry(

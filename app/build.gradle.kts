@@ -220,7 +220,7 @@ dependencies {
     addRoom()
     addGlance()
 
-    addShizuku()
+    addPorter()
 
     addTesting()
 

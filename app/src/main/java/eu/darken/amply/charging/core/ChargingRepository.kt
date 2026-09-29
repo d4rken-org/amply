@@ -10,6 +10,7 @@ import eu.darken.amply.battery.core.BatteryReadout
 import eu.darken.amply.charging.core.access.AccessBackend
 import eu.darken.amply.charging.core.access.AccessResolver
 import eu.darken.amply.charging.core.access.AccessSnapshot
+import eu.darken.amply.charging.core.access.shizuku.PrivilegedManager
 import eu.darken.amply.charging.core.access.shizuku.ShizukuController
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
 import eu.darken.amply.charging.core.adapter.AdapterSelection
@@ -442,7 +443,11 @@ class ChargingRepository @Inject constructor(
         return readSyncDirectFirst(adapter, accessResolver.direct, shizuku)
     }
 
-    fun shizukuManagerPackage(): String? = shizukuController.managerPackage()
+    suspend fun shizukuManagerPackage(): String? = when (val manager = shizukuController.manager()) {
+        is PrivilegedManager.Installed -> manager.packageName
+        is PrivilegedManager.Incompatible -> manager.packageName
+        PrivilegedManager.NotInstalled, PrivilegedManager.Unreachable -> null
+    }
 
     private suspend fun applyLocked(
         policy: ChargePolicy,

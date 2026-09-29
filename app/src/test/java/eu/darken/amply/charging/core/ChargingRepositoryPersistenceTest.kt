@@ -16,8 +16,8 @@ import eu.darken.amply.charging.core.access.AccessResolver
 import eu.darken.amply.charging.core.access.DirectSettingsBackend
 import eu.darken.amply.charging.core.access.LineageSettingsClient
 import eu.darken.amply.charging.core.access.ShizukuSettingsBackend
+import eu.darken.amply.charging.core.access.shizuku.FakePorterGateway
 import eu.darken.amply.charging.core.access.shizuku.ShizukuController
-import eu.darken.amply.charging.core.access.shizuku.ShizukuInstallationDetector
 import eu.darken.amply.charging.core.enforcement.BuildIdentitySource
 import eu.darken.amply.charging.core.enforcement.EnforcementEvidenceStore
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
@@ -110,7 +110,7 @@ class ChargingRepositoryPersistenceTest {
         )
         preferences = ChargingPreferences(appDataStore, SerializationModule.json())
 
-        val shizukuController = ShizukuController(context, ShizukuInstallationDetector(context))
+        val shizukuController = ShizukuController(context, FakePorterGateway())
         repository = ChargingRepository(
             context = context,
             registry = AdapterRegistry(

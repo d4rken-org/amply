@@ -1,6 +1,7 @@
 package eu.darken.amply.charging.core.access
 
 import eu.darken.amply.R
+import eu.darken.amply.charging.core.access.shizuku.PrivilegedManager
 import eu.darken.amply.charging.core.access.shizuku.ShizukuController
 import eu.darken.amply.charging.core.BackendKind
 import eu.darken.amply.common.ca.toCaString
@@ -10,6 +11,7 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** The privileged backend, served through the Porter SDK by either the Porter or the Shizuku manager. */
 @Singleton
 class ShizukuSettingsBackend @Inject constructor(
     private val controller: ShizukuController,
@@ -17,21 +19,11 @@ class ShizukuSettingsBackend @Inject constructor(
     override val kind = BackendKind.SHIZUKU
 
     override suspend fun status(): BackendStatus {
-        val managerPackage = controller.managerPackage()
-        val installed = managerPackage != null
-        val available = controller.isAvailable()
+        val manager = controller.manager()
+        val connected = manager is PrivilegedManager.Installed && manager.connected
+        val available = connected && controller.isAvailable()
         val granted = available && controller.isGranted()
-        return BackendStatus(
-            available = available,
-            granted = granted,
-            installed = installed,
-            detail = when {
-                !installed -> R.string.access_shizuku_not_installed
-                !available -> R.string.access_shizuku_not_running
-                !granted -> R.string.access_shizuku_not_granted
-                else -> R.string.access_shizuku_ready
-            }.toCaString(),
-        )
+        return shizukuBackendStatus(manager, available, granted)
     }
 
     override suspend fun read(namespace: SettingNamespace, key: String): SettingRead {
@@ -93,4 +85,46 @@ class ShizukuSettingsBackend @Inject constructor(
             null
         }
     }
+}
+
+/** Only a connected, answering manager can be ready; an incompatible or unreachable one never is. */
+internal fun shizukuBackendStatus(
+    manager: PrivilegedManager,
+    available: Boolean,
+    granted: Boolean,
+): BackendStatus = when (manager) {
+    PrivilegedManager.NotInstalled -> BackendStatus(
+        available = false,
+        granted = false,
+        installed = false,
+        detail = R.string.access_shizuku_not_installed.toCaString(),
+    )
+    PrivilegedManager.Unreachable -> BackendStatus(
+        available = false,
+        granted = false,
+        installed = true,
+        detail = R.string.access_shizuku_not_running.toCaString(),
+    )
+    is PrivilegedManager.Installed -> {
+        val live = manager.connected && available
+        BackendStatus(
+            available = live,
+            granted = live && granted,
+            installed = true,
+            detail = when {
+                !live -> R.string.access_shizuku_not_running
+                !granted -> R.string.access_shizuku_not_granted
+                else -> R.string.access_shizuku_ready
+            }.toCaString(),
+        )
+    }
+    is PrivilegedManager.Incompatible -> BackendStatus(
+        available = false,
+        granted = false,
+        installed = true,
+        detail = when {
+            manager.serverTooOld -> R.string.access_manager_server_too_old
+            else -> R.string.access_manager_client_too_old
+        }.toCaString(manager.backend.label),
+    )
 }

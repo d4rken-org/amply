@@ -9,6 +9,8 @@ import eu.darken.amply.charging.core.access.LineageChargeReader
 import eu.darken.amply.charging.core.access.LineageSettingsClient
 import eu.darken.amply.charging.core.access.SettingsSnapshotSource
 import eu.darken.amply.charging.core.access.ShizukuSettingsBackend
+import eu.darken.amply.charging.core.access.shizuku.DefaultPorterGateway
+import eu.darken.amply.charging.core.access.shizuku.PorterGateway
 import eu.darken.amply.charging.core.enforcement.BuildIdentitySource
 import eu.darken.amply.charging.core.enforcement.DeviceBuildIdentitySource
 import eu.darken.amply.diagnostics.core.ContributionRepository
@@ -23,6 +25,9 @@ abstract class ChargingCoreModule {
     /** The contribution wizard depends on the read-only snapshot view, never the full backend that exposes write(). */
     @Binds
     abstract fun bindSettingsSnapshotSource(impl: ShizukuSettingsBackend): SettingsSnapshotSource
+
+    @Binds
+    abstract fun bindPorterGateway(impl: DefaultPorterGateway): PorterGateway
 
     @Binds
     abstract fun bindContributionRepository(impl: DefaultContributionRepository): ContributionRepository

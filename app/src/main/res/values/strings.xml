@@ -159,6 +159,8 @@
     <string name="access_shizuku_not_running">Shizuku is installed but not running</string>
     <string name="access_shizuku_not_granted">Shizuku permission not granted</string>
     <string name="access_shizuku_ready">Shizuku ready</string>
+    <string name="access_manager_server_too_old">%1$s needs an update to work with Amply</string>
+    <string name="access_manager_client_too_old">Amply needs an update to work with this %1$s</string>
     <string name="access_read_blocked">Android blocks third-party reads of this hidden setting</string>
     <string name="access_label_wss_shizuku">System access + Shizuku</string>
     <string name="access_label_wss">System access</string>
