@@ -1054,19 +1054,22 @@ private fun ChargeObservation.detail(manager: ManagerBackend?): CaString = when 
         backend == BackendKind.BATTERY_HARDWARE -> R.string.dashboard_detail_hw_confirmed.toCaString()
         systemManaged -> R.string.dashboard_detail_system_managed.toCaString()
         policy.enforcementIsConditional -> caString {
-            it.getString(
-                R.string.dashboard_detail_readback_conditional,
-                backend.name.replace('_', ' ').lowercase(),
-            )
+            it.getString(R.string.dashboard_detail_readback_conditional, backend.readbackSource(manager).get(it))
         }
         else -> caString {
-            it.getString(R.string.dashboard_detail_readback, backend.name.replace('_', ' ').lowercase())
+            it.getString(R.string.dashboard_detail_readback, backend.readbackSource(manager).get(it))
         }
     }
     is ChargeObservation.LastRequested -> R.string.dashboard_detail_last_requested.withManagerName(manager)
     is ChargeObservation.NeedsSetup -> reason
     is ChargeObservation.Unsupported -> reason
     is ChargeObservation.Unknown -> reason
+}
+
+private fun BackendKind.readbackSource(manager: ManagerBackend?): CaString = if (this == BackendKind.SHIZUKU) {
+    manager.displayName()
+} else {
+    name.replace('_', ' ').lowercase().toCaString()
 }
 
 @Composable
