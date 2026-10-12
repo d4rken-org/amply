@@ -190,8 +190,7 @@ internal class BoundedStreamReader(
  * Pure validation for the privileged write path. Every writable setting carries an explicit
  * per-key value domain — the boundary itself rejects out-of-domain values instead of trusting
  * the adapter layer. Keys must be physically qualified before being added (see the qualification
- * ledger in .claude/skills/device-qualification/); the OnePlus key is present for a future lab adapter
- * and is not invoked by production code.
+ * ledger in .claude/skills/device-qualification/).
  */
 internal object SettingWritePolicy {
     private val WRITABLE: Map<String, Map<String, Set<String>>> = mapOf(
