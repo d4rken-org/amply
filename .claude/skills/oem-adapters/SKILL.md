@@ -1,6 +1,6 @@
 ---
 name: oem-adapters
-description: Per-OEM charge-control adapter detail for Amply — the exact settings keys, value domains, write ordering, verification strategy, and session override of the Samsung, Xiaomi, OnePlus/ColorOS, LineageOS, and Pixel adapters. Use when reading or changing anything under charging/core/adapter, adding an adapter, or reasoning about how a policy maps to real settings values.
+description: Per-OEM charge-control adapter detail for Amply — the exact settings keys, value domains, write ordering, verification strategy, and session override of the Samsung, Xiaomi, OnePlus/ColorOS, Nothing OS, LineageOS, and Pixel adapters. Use when reading or changing anything under charging/core/adapter, adding an adapter, or reasoning about how a policy maps to real settings values.
 ---
 
 # Charging adapters
@@ -73,6 +73,21 @@ override = Unrestricted; protective default = FixedLimit(80). **Writes require S
 namespace, which WRITE_SECURE_SETTINGS cannot write (reads are unprivileged); the adapter sets
 `preferShizukuForWrites`. Unqualified Oplus versions fall to `OnePlusLabAdapter`. Enforcement is directly
 observable (device holds at 80%). See the qualification ledger (`device-qualification` skill).
+
+## Nothing OS Adapter
+
+One live adapter (`nothing-os4-v1`) for the Nothing OS "Battery health" charge limit, gated to manufacturer Nothing +
+the `com.nothing.feature` system feature + a qualified (codename, model) pair (ships ("Asteroids", "A059P"), the
+Phone (3a) Pro) + `sdk == 36` as the Nothing OS 4.x proxy + system user. One **`system`** key,
+`nt_battery_health`: `0` = Unrestricted, `2` = 70% cap → `FixedLimit(70)`, `3` = 80% cap → `FixedLimit(80)`. An
+absent key, `1` ("smart charging", no capture) and `4` (90%, UI capture only) decode as
+`Unknown(unrecognizedValue = true)` and are never overwritten. SYNC_READBACK with read-back equality, writes apply
+live mid-plug-session; session override = Unrestricted; protective default = FixedLimit(80);
+`ReconnectSupport.ANY_LEVEL_ONLY` (no hardware hold signal: the hold reports DISCHARGING). **Writes require
+Shizuku** — `system` namespace, which WRITE_SECURE_SETTINGS cannot write (reads are unprivileged); the adapter sets
+`preferShizukuForWrites`, which also skips the WSS auto-grant. Registered after the ROM-identity and OEM adapters.
+No lab adapter: other Nothing devices get the null selection (`hasNothingFeature` counts as a support lead). See
+the qualification ledger (`device-qualification` skill).
 
 ## LineageOS Adapter
 

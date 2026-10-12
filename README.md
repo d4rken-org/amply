@@ -35,6 +35,7 @@ Currently supported for direct control:
 * Samsung One UI 4 / 5 (legacy battery-protection toggle)
 * Xiaomi / Redmi / POCO on HyperOS 2 (charging protection)
 * OnePlus / Oppo / Realme on ColorOS 15 (charging protection; requires Shizuku or Porter)
+* Nothing Phone (3a) Pro on Nothing OS 4 (Battery health charge limit; requires Shizuku or Porter)
 
 ## Download
 

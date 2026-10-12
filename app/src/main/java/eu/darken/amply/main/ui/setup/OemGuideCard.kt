@@ -77,6 +77,7 @@ private fun oemInstructions(manufacturer: String, isLineageOs: Boolean): Int = w
         manufacturer.equals("oppo", ignoreCase = true) -> R.string.setup_oem_guide_oneplus
     manufacturer.equals("xiaomi", ignoreCase = true) -> R.string.setup_oem_guide_xiaomi
     manufacturer.equals("google", ignoreCase = true) -> R.string.setup_oem_guide_google
+    manufacturer.equals("nothing", ignoreCase = true) -> R.string.setup_oem_guide_nothing
     else -> R.string.setup_oem_guide_generic
 }
 

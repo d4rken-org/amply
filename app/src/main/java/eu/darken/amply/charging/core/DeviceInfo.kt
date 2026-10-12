@@ -21,6 +21,7 @@ data class DeviceInfo(
     val oplusRomVersion: Int? = null,
     val lineageOsVersion: String? = null,
     val hasLineageFeature: Boolean = false,
+    val hasNothingFeature: Boolean = false,
     val hasGrapheneOsPackages: Boolean = false,
     val protectBatteryProbe: SettingProbe = SettingProbe.ABSENT,
     val batteryChargeLimitProbe: SettingProbe = SettingProbe.ABSENT,
@@ -77,6 +78,11 @@ data class DeviceInfo(
             // ro.lineage.* properties, which SELinux denies to untrusted_app. Fail closed.
             hasLineageFeature = context?.let {
                 runCatching { it.packageManager.hasSystemFeature(FEATURE_LINEAGE_OS) }
+                    .getOrDefault(false)
+            } ?: false,
+            // Nothing OS ROM marker; same visibility and fail-closed rules as the LineageOS feature above.
+            hasNothingFeature = context?.let {
+                runCatching { it.packageManager.hasSystemFeature(FEATURE_NOTHING_OS) }
                     .getOrDefault(false)
             } ?: false,
             // GrapheneOS identity via its core system packages (see isGrapheneOs). getApplicationInfo
@@ -146,5 +152,8 @@ data class DeviceInfo(
 
         /** LineageOS's core platform system feature, declared by `lineageos.platform`. */
         const val FEATURE_LINEAGE_OS = "org.lineageos.android"
+
+        /** Nothing OS system feature marker. */
+        const val FEATURE_NOTHING_OS = "com.nothing.feature"
     }
 }

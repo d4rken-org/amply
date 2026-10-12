@@ -33,6 +33,7 @@ class AdapterRegistry @Inject constructor(
     xiaomiLab: XiaomiLabAdapter,
     onePlus: OnePlusChargingAdapter,
     onePlusLab: OnePlusLabAdapter,
+    nothing: NothingChargingAdapter,
 ) {
     // Custom-ROM adapters come FIRST: a custom ROM changes charging control regardless of the OEM
     // hardware underneath, so a LineageOS build on Samsung/Xiaomi/OnePlus/Pixel must be handled by the
@@ -46,6 +47,7 @@ class AdapterRegistry @Inject constructor(
     private val adapters = listOf(
         lineage, lineageLab, grapheneOs,
         pixel, samsungModern, samsungLegacy, samsungLab, xiaomi, xiaomiHyperOs3, xiaomiLab, onePlus, onePlusLab,
+        nothing,
     )
 
     /**

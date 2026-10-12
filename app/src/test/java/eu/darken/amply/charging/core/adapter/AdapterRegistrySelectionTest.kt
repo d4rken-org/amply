@@ -65,6 +65,7 @@ class AdapterRegistrySelectionTest {
         xiaomiLab = XiaomiLabAdapter(),
         onePlus = OnePlusChargingAdapter(),
         onePlusLab = OnePlusLabAdapter(),
+        nothing = NothingChargingAdapter(),
     )
 
     /**
@@ -275,6 +276,37 @@ class AdapterRegistrySelectionTest {
         select(
             DeviceInfo("realme", "RMX3999", 34, "test"),
         ).adapter?.id shouldBe "oneplus-lab"
+    }
+
+    private fun nothingPhone(model: String = "A059P") = DeviceInfo(
+        manufacturer = "Nothing",
+        model = model,
+        sdk = 36,
+        fingerprint = "test",
+        codename = "Asteroids",
+        hasNothingFeature = true,
+        isSystemUser = true,
+    )
+
+    @Test
+    fun `the qualified nothing phone selects the nothing adapter with control`() {
+        val selection = select(nothingPhone())
+        selection.adapter?.id shouldBe "nothing-os4-v1"
+        selection.support.controlEnabled shouldBe true
+    }
+
+    @Test
+    fun `an unqualified nothing phone has no adapter and wants a contribution`() {
+        val selection = select(nothingPhone(model = "A059"))
+        selection.adapter shouldBe null
+        selection.support.controlEnabled shouldBe false
+        selection.support.contributionWanted shouldBe true
+    }
+
+    @Test
+    fun `a lineageos build on the nothing hardware is handled by lineage`() {
+        val device = nothingPhone().copy(hasLineageFeature = true, hasLineageSettingsProvider = true)
+        select(device).adapter?.id shouldBe "lineageos-chargingcontrol-v1"
     }
 
     private fun lineage(

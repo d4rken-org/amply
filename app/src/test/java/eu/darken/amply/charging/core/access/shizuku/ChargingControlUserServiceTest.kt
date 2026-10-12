@@ -89,6 +89,18 @@ class ChargingControlUserServiceTest {
     }
 
     @Test
+    fun `write policy admits only the qualified nothing battery health values`() {
+        listOf("0", "2", "3").forEach { SettingWritePolicy.validate("system", "nt_battery_health", it) }
+        listOf("1", "4").forEach { value ->
+            val failure = runCatching {
+                SettingWritePolicy.validate("system", "nt_battery_health", value)
+            }.exceptionOrNull()
+            failure.shouldBeInstanceOf<IllegalArgumentException>()
+            failure!!.message shouldContain "domain"
+        }
+    }
+
+    @Test
     fun `write policy rejects keys outside their own namespace`() {
         // protect_battery is allowlisted in global only — a secure-namespace write must fail.
         val failure = runCatching {

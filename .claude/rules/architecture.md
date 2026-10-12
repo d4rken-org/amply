@@ -55,7 +55,7 @@ indistinguishable).
 
 ## OEM Adapters
 
-Per-adapter detail (Samsung, Xiaomi, OnePlus/ColorOS, LineageOS, GrapheneOS, Pixel — keys, value domains, write
+Per-adapter detail (Samsung, Xiaomi, OnePlus/ColorOS, Nothing OS, LineageOS, GrapheneOS, Pixel — keys, value domains, write
 ordering, session overrides) lives in the **`oem-adapters` skill** — read it before changing anything under
 `charging/core/adapter`.
 
@@ -101,7 +101,7 @@ Which bases exist is per-adapter, via `ChargingAdapter.reconnectGestureSupport` 
 
 - `FULL` — Pixel only. It is the only adapter reporting the charging-policy hardware state the limit-hold basis
   needs while also applying writes mid-plug-session.
-- `ANY_LEVEL_ONLY` — Samsung (both generations), OnePlus/ColorOS, Xiaomi HyperOS 3, LineageOS. A real cap that
+- `ANY_LEVEL_ONLY` — Samsung (both generations), OnePlus/ColorOS, Xiaomi HyperOS 3, Nothing OS, LineageOS. A real cap that
   reads back synchronously, but no observable hold signal, so the limit-hold basis can never arm. The any-level
   basis is **implied on** here: the sub-option is not consulted and the settings screen hides it, because honouring
   an "off" would leave the master switch on with no basis that could ever arm. The settings readback is what keeps
@@ -130,5 +130,5 @@ Android does not deliver `ACTION_POWER_CONNECTED` / `ACTION_POWER_DISCONNECTED` 
   `Porter.availability`). It resolves managers by permission owner, **not** a fixed package name, so renamed forks
   are recognized, and prefers Porter whenever Porter's permission is declared. Don't hardcode a package name or add
   a parallel PackageManager lookup.
-- Pixel/Samsung/Xiaomi/Oplus keys are all live on gated devices (see the `oem-adapters` skill). New writable keys must
+- Pixel/Samsung/Xiaomi/Oplus/Nothing keys are all live on gated devices (see the `oem-adapters` skill). New writable keys must
   be spike-verified and added to `SettingWritePolicy` with an explicit per-key value domain.
