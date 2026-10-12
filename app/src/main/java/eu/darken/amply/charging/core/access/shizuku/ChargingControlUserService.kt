@@ -217,6 +217,9 @@ internal object SettingWritePolicy {
             // System namespace: writable only via Shizuku (shell UID), not direct WRITE_SECURE_SETTINGS.
             "regular_charge_protection_switch_state" to setOf("0", "1"),
             "smart_charge_protection_switch_state" to setOf("0", "1"),
+            // Nothing OS Battery health charge limit (0 = off, 2 = 70%, 3 = 80%; qualified remotely in issue #111 /
+            // ledger). "1" and "4" are excluded: no hardware evidence for either.
+            "nt_battery_health" to setOf("0", "2", "3"),
         ),
     )
 

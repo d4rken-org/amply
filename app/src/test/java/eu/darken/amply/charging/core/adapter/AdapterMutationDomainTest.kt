@@ -26,6 +26,7 @@ class AdapterMutationDomainTest {
         XiaomiChargingAdapter(),
         XiaomiHyperOs3ChargingAdapter(),
         OnePlusChargingAdapter(),
+        NothingChargingAdapter(),
     )
 
     @Test

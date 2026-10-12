@@ -84,4 +84,12 @@ class ChargingStateSupportLeadTest {
             adapterId = null,
         ).hasSupportLead shouldBe true
     }
+
+    @Test
+    fun `the nothing os feature marker is a lead even when no adapter matched`() {
+        ChargingState(
+            device = device().copy(hasNothingFeature = true),
+            adapterId = null,
+        ).hasSupportLead shouldBe true
+    }
 }

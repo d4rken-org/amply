@@ -46,8 +46,9 @@ for get / put / WSS grant / diagnostic snapshots. Hard rules:
 - Every writable key carries an explicit **per-key value domain** (`SettingWritePolicy`) — the boundary itself
   rejects out-of-domain values. The Samsung keys (`global protect_battery`, `global battery_protection_threshold`),
   the Xiaomi key (`secure security_pc_secure_protect_mode_key`), the Oplus keys (`system
-  regular_charge_protection_switch_state`, `system smart_charge_protection_switch_state`), and the GrapheneOS key
-  (`global battery_charge_limit`) are all **live** on gated devices (see Capability Gates).
+  regular_charge_protection_switch_state`, `system smart_charge_protection_switch_state`), the Nothing key (`system
+  nt_battery_health`), and the GrapheneOS key (`global battery_charge_limit`) are all **live** on gated devices (see
+  Capability Gates).
 
 ## Capability Gates
 
@@ -106,6 +107,25 @@ hardware hold signal exists in `dumpsys battery`, so verification is read-back o
 for the key is `{0,1,2}` **globally** — accepted on HyperOS 2 because no Amply code path emits `2` there and the
 HyperOS 2 decode refuses it. Widen the codename allowlist only with a qualified device plus a ledger row
 (`device-qualification` skill); unqualified HyperOS 3 devices fall to the lab adapter.
+
+### Nothing
+
+Nothing OS control (`nothing-os4-v1`) requires **all** of: Nothing manufacturer, the `com.nothing.feature` system
+feature (`DeviceInfo.hasNothingFeature`, via `hasSystemFeature`, fail closed), a qualified (codename, model) pair
+(ships ("Asteroids", "A059P"), the Phone (3a) Pro; case-insensitive), `sdk == 36`, and the system user. It is the
+first OEM gate using the SDK level as a ROM-version proxy: no app-readable Nothing OS version signal exists (the
+`com.nothing.feature.OS.V2_x` features are stale on Nothing OS 4.x, and the contribution wizard's `rom_version` is
+user-typed), so SDK 36 stands in for Nothing OS 4.x and a Nothing OS 5 / Android 17 build stops matching until
+requalified. The model is required so the untested Phone (3a) (model A059, likely the same `asteroids` tree) stays
+diagnostics-only. The feature marker excludes an aftermarket ROM for the same hardware (a PixelOS port for the
+`asteroids` tree), which reports the same manufacturer, model, codename and SDK; whether every such ROM drops the
+marker is unverified. **Writes require Shizuku**: `system nt_battery_health` is in the `system` namespace, which
+`WRITE_SECURE_SETTINGS` cannot write (reads are unprivileged). The adapter sets `preferShizukuForWrites` and
+read-back-verifies. Write domain `{0,2,3}` (`0` = Unrestricted, `2` = FixedLimit(70), `3` = FixedLimit(80)); an
+absent key, `1` and `4` decode as `Unknown(unrecognizedValue = true)` (no hardware evidence, and the factory meaning
+of absent is unverified), so sessions refuse and charge rules decline rather than overwrite them. There is no lab
+adapter: other Nothing devices get the null selection. Do not widen the pair list or the SDK without a qualified
+device; record results in the qualification ledger (`device-qualification` skill).
 
 ### GrapheneOS
 

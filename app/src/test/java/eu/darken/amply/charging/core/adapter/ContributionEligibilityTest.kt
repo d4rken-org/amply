@@ -38,6 +38,7 @@ class ContributionEligibilityTest {
         xiaomiLab = XiaomiLabAdapter(),
         onePlus = OnePlusChargingAdapter(),
         onePlusLab = OnePlusLabAdapter(),
+        nothing = NothingChargingAdapter(),
     )
 
     /** Nothing here is about the enforcement gate, so every case runs with the fresh-install default. */

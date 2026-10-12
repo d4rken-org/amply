@@ -32,6 +32,9 @@ object ContributionAllowlist {
         // a device that only has the fixed cap.
         SettingId(SettingNamespace.SYSTEM, "regular_charge_protection_switch_state") to setOf("0", "1"),
         SettingId(SettingNamespace.SYSTEM, "smart_charge_protection_switch_state") to setOf("0", "1"),
+        // Nothing OS Battery health modes: named OEM modes, not user data. Disclosure domain, so it is wider than
+        // the write domain and includes the unqualified "1" and "4".
+        SettingId(SettingNamespace.SYSTEM, "nt_battery_health") to setOf("0", "1", "2", "3", "4"),
     )
 
     /** Public value domain for a known charging key, or null if the key is not a known charge-protection setting. */

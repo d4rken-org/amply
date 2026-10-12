@@ -8,6 +8,7 @@ import eu.darken.amply.charging.core.adapter.AdapterRegistry
 import eu.darken.amply.charging.core.adapter.GrapheneOsChargingAdapter
 import eu.darken.amply.charging.core.adapter.LineageChargingAdapter
 import eu.darken.amply.charging.core.adapter.LineageLabAdapter
+import eu.darken.amply.charging.core.adapter.NothingChargingAdapter
 import eu.darken.amply.charging.core.adapter.OnePlusChargingAdapter
 import eu.darken.amply.charging.core.adapter.OnePlusLabAdapter
 import eu.darken.amply.charging.core.adapter.PixelChargingAdapter
@@ -59,6 +60,7 @@ class DeviceInfoLineageDetectionTest {
             xiaomiLab = XiaomiLabAdapter(),
             onePlus = OnePlusChargingAdapter(),
             onePlusLab = OnePlusLabAdapter(),
+            nothing = NothingChargingAdapter(),
         )
     }
 

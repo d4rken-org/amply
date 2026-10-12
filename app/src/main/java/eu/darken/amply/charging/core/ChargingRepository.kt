@@ -185,6 +185,7 @@ data class ChargingState(
             device.hasProtectBattery ||
             device.hasBatteryChargeLimit ||
             device.isGrapheneOs ||
+            device.hasNothingFeature ||
             device.hasLineageSettingsProvider ||
             device.hasChargingOptimization ||
             device.oneUiVersion != null ||
