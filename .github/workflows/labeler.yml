@@ -18,7 +18,7 @@ concurrency:
 jobs:
   label:
     name: Apply labels
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       # Area / flavor / build labels from the changed paths (config: .github/labeler.yml).
       # sync-labels keeps these in step with the current diff (a reverted path drops its label).

@@ -33,7 +33,7 @@ concurrency:
 jobs:
   validate-tag:
     name: Validate tag
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Check tag-name format
         env:
@@ -76,7 +76,7 @@ jobs:
     environment: foss-production
     permissions:
       contents: write
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Decode keystore
         env:
