@@ -220,6 +220,8 @@ internal object SettingWritePolicy {
             // Nothing OS Battery health charge limit (0 = off, 2 = 70%, 3 = 80%; qualified remotely in issue #111 /
             // ledger). "1" and "4" are excluded: no hardware evidence for either.
             "nt_battery_health" to setOf("0", "2", "3"),
+            // Lenovo Battery protection mode (0 = off, 1 = 60%; qualified remotely on the Tab V7 / ledger).
+            "battery_protected_charge" to setOf("0", "1"),
         ),
     )
 

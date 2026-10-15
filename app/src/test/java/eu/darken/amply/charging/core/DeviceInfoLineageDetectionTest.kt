@@ -6,6 +6,7 @@ import eu.darken.amply.charging.core.access.LineageChargeReadout
 import eu.darken.amply.charging.core.access.LineageChargeReader
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
 import eu.darken.amply.charging.core.adapter.GrapheneOsChargingAdapter
+import eu.darken.amply.charging.core.adapter.LenovoChargingAdapter
 import eu.darken.amply.charging.core.adapter.LineageChargingAdapter
 import eu.darken.amply.charging.core.adapter.LineageLabAdapter
 import eu.darken.amply.charging.core.adapter.NothingChargingAdapter
@@ -61,6 +62,7 @@ class DeviceInfoLineageDetectionTest {
             onePlus = OnePlusChargingAdapter(),
             onePlusLab = OnePlusLabAdapter(),
             nothing = NothingChargingAdapter(),
+            lenovo = LenovoChargingAdapter(),
         )
     }
 

@@ -36,6 +36,7 @@ Currently supported for direct control:
 * Xiaomi / Redmi / POCO on HyperOS 2 (charging protection)
 * OnePlus / Oppo / Realme on ColorOS 15 (charging protection; requires Shizuku or Porter)
 * Nothing Phone (3a) Pro on Nothing OS 4 (Battery health charge limit; requires Shizuku or Porter)
+* Lenovo Tab V7 (PB-6505M) on Android 9 (Battery protection mode, 60% cap; requires Shizuku or Porter)
 
 ## Download
 

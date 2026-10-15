@@ -101,6 +101,23 @@ class ChargingControlUserServiceTest {
     }
 
     @Test
+    fun `write policy admits only the lenovo battery protection values`() {
+        listOf("0", "1").forEach { SettingWritePolicy.validate("system", "battery_protected_charge", it) }
+        listOf("2", "60", "-1", "").forEach { value ->
+            val failure = runCatching {
+                SettingWritePolicy.validate("system", "battery_protected_charge", value)
+            }.exceptionOrNull()
+            failure.shouldBeInstanceOf<IllegalArgumentException>()
+            failure!!.message shouldContain "domain"
+        }
+        listOf("secure", "global").forEach { namespace ->
+            runCatching {
+                SettingWritePolicy.validate(namespace, "battery_protected_charge", "1")
+            }.exceptionOrNull().shouldBeInstanceOf<IllegalArgumentException>()
+        }
+    }
+
+    @Test
     fun `write policy rejects keys outside their own namespace`() {
         // protect_battery is allowlisted in global only — a secure-namespace write must fail.
         val failure = runCatching {

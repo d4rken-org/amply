@@ -18,6 +18,7 @@ import eu.darken.amply.charging.core.access.shizuku.FakePorterGateway
 import eu.darken.amply.charging.core.access.shizuku.ShizukuController
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
 import eu.darken.amply.charging.core.adapter.GrapheneOsChargingAdapter
+import eu.darken.amply.charging.core.adapter.LenovoChargingAdapter
 import eu.darken.amply.charging.core.adapter.LineageChargingAdapter
 import eu.darken.amply.charging.core.adapter.LineageLabAdapter
 import eu.darken.amply.charging.core.adapter.NothingChargingAdapter
@@ -105,6 +106,7 @@ class UnmappedDeviceSettingsIntentTest {
                 onePlus = OnePlusChargingAdapter(),
                 onePlusLab = OnePlusLabAdapter(),
                 nothing = NothingChargingAdapter(),
+                lenovo = LenovoChargingAdapter(),
             ),
             accessResolver = AccessResolver(
                 direct = DirectSettingsBackend(context),
