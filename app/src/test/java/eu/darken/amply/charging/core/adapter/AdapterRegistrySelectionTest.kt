@@ -66,6 +66,7 @@ class AdapterRegistrySelectionTest {
         onePlus = OnePlusChargingAdapter(),
         onePlusLab = OnePlusLabAdapter(),
         nothing = NothingChargingAdapter(),
+        lenovo = LenovoChargingAdapter(),
     )
 
     /**
@@ -306,6 +307,41 @@ class AdapterRegistrySelectionTest {
     @Test
     fun `a lineageos build on the nothing hardware is handled by lineage`() {
         val device = nothingPhone().copy(hasLineageFeature = true, hasLineageSettingsProvider = true)
+        select(device).adapter?.id shouldBe "lineageos-chargingcontrol-v1"
+    }
+
+    private fun lenovoTablet(model: String = "Lenovo PB-6505M", sdk: Int = 28) = DeviceInfo(
+        manufacturer = "LENOVO",
+        model = model,
+        sdk = sdk,
+        fingerprint = "test",
+        codename = "PB-6505M",
+        isPhone = false,
+        hasChargingOptimization = false,
+        isSystemUser = true,
+    )
+
+    @Test
+    fun `the qualified lenovo tablet selects the lenovo adapter with control`() {
+        val selection = select(lenovoTablet())
+        selection.adapter?.id shouldBe "lenovo-batteryprotection-v1"
+        selection.support.controlEnabled shouldBe true
+        selection.support.enforcement shouldBe null
+    }
+
+    @Test
+    fun `an unqualified lenovo device has no adapter and wants a contribution`() {
+        listOf(lenovoTablet(model = "Lenovo TB-X606F"), lenovoTablet(sdk = 29)).forEach { device ->
+            val selection = select(device)
+            selection.adapter shouldBe null
+            selection.support.controlEnabled shouldBe false
+            selection.support.contributionWanted shouldBe true
+        }
+    }
+
+    @Test
+    fun `a lineageos build on the lenovo hardware is handled by lineage`() {
+        val device = lenovoTablet().copy(hasLineageFeature = true, hasLineageSettingsProvider = true)
         select(device).adapter?.id shouldBe "lineageos-chargingcontrol-v1"
     }
 

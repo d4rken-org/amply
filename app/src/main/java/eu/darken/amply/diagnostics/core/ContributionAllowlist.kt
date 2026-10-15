@@ -35,6 +35,8 @@ object ContributionAllowlist {
         // Nothing OS Battery health modes: named OEM modes, not user data. Disclosure domain, so it is wider than
         // the write domain and includes the unqualified "1" and "4".
         SettingId(SettingNamespace.SYSTEM, "nt_battery_health") to setOf("0", "1", "2", "3", "4"),
+        // Lenovo Battery protection mode: off / 60% cap.
+        SettingId(SettingNamespace.SYSTEM, "battery_protected_charge") to setOf("0", "1"),
     )
 
     /** Public value domain for a known charging key, or null if the key is not a known charge-protection setting. */

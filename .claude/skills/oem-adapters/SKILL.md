@@ -1,6 +1,6 @@
 ---
 name: oem-adapters
-description: Per-OEM charge-control adapter detail for Amply — the exact settings keys, value domains, write ordering, verification strategy, and session override of the Samsung, Xiaomi, OnePlus/ColorOS, Nothing OS, LineageOS, and Pixel adapters. Use when reading or changing anything under charging/core/adapter, adding an adapter, or reasoning about how a policy maps to real settings values.
+description: Per-OEM charge-control adapter detail for Amply — the exact settings keys, value domains, write ordering, verification strategy, and session override of the Samsung, Xiaomi, OnePlus/ColorOS, Nothing OS, Lenovo, LineageOS, and Pixel adapters. Use when reading or changing anything under charging/core/adapter, adding an adapter, or reasoning about how a policy maps to real settings values.
 ---
 
 # Charging adapters
@@ -88,6 +88,20 @@ Shizuku** — `system` namespace, which WRITE_SECURE_SETTINGS cannot write (read
 `preferShizukuForWrites`, which also skips the WSS auto-grant. Registered after the ROM-identity and OEM adapters.
 No lab adapter: other Nothing devices get the null selection (`hasNothingFeature` counts as a support lead). See
 the qualification ledger (`device-qualification` skill).
+
+## Lenovo Adapter
+
+One live adapter (`lenovo-batteryprotection-v1`) for Lenovo's "Battery protection mode", gated to manufacturer Lenovo +
+a qualified (codename, model) pair (ships ("PB-6505M", "Lenovo PB-6505M"), the Tab V7) + `sdk == 28` + system user;
+no ROM marker exists. One **`system`** key, `battery_protected_charge`: `0` = Unrestricted, `1` = fixed 60% cap →
+`FixedLimit(60)`. An absent key and any other value decode as `Unknown(unrecognizedValue = true)`: sessions refuse
+and charge rules decline rather than overwrite them, while an explicit policy choice can still set the key.
+SYNC_READBACK with read-back equality, writes apply live mid-plug-session; session override =
+Unrestricted; protective default = FixedLimit(60); `ReconnectSupport.ANY_LEVEL_ONLY` (no known hold signal). **Writes
+require Shizuku** — `system` namespace, which WRITE_SECURE_SETTINGS cannot write; the adapter sets
+`preferShizukuForWrites`, which also skips the WSS auto-grant. Registered last, after Nothing. Not eligible for the
+guided qualification run (no `enforcementEvidenceRequired`, same as Nothing). No lab adapter: other Lenovo devices
+get the null selection. See the qualification ledger (`device-qualification` skill).
 
 ## LineageOS Adapter
 

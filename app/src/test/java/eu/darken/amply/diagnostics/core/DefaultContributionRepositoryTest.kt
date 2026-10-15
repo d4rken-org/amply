@@ -10,6 +10,7 @@ import eu.darken.amply.charging.core.access.LineageHealthSummary
 import eu.darken.amply.charging.core.access.SettingsSnapshotSource
 import eu.darken.amply.charging.core.adapter.AdapterRegistry
 import eu.darken.amply.charging.core.adapter.GrapheneOsChargingAdapter
+import eu.darken.amply.charging.core.adapter.LenovoChargingAdapter
 import eu.darken.amply.charging.core.adapter.LineageChargingAdapter
 import eu.darken.amply.charging.core.adapter.LineageLabAdapter
 import eu.darken.amply.charging.core.adapter.NothingChargingAdapter
@@ -67,6 +68,7 @@ class DefaultContributionRepositoryTest {
         onePlus = OnePlusChargingAdapter(),
         onePlusLab = OnePlusLabAdapter(),
         nothing = NothingChargingAdapter(),
+        lenovo = LenovoChargingAdapter(),
     )
 
     @Test

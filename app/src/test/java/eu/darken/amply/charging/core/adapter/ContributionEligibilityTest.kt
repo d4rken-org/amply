@@ -39,6 +39,7 @@ class ContributionEligibilityTest {
         onePlus = OnePlusChargingAdapter(),
         onePlusLab = OnePlusLabAdapter(),
         nothing = NothingChargingAdapter(),
+        lenovo = LenovoChargingAdapter(),
     )
 
     /** Nothing here is about the enforcement gate, so every case runs with the fresh-install default. */

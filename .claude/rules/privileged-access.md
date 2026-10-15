@@ -47,8 +47,8 @@ for get / put / WSS grant / diagnostic snapshots. Hard rules:
   rejects out-of-domain values. The Samsung keys (`global protect_battery`, `global battery_protection_threshold`),
   the Xiaomi key (`secure security_pc_secure_protect_mode_key`), the Oplus keys (`system
   regular_charge_protection_switch_state`, `system smart_charge_protection_switch_state`), the Nothing key (`system
-  nt_battery_health`), and the GrapheneOS key (`global battery_charge_limit`) are all **live** on gated devices (see
-  Capability Gates).
+  nt_battery_health`), the Lenovo key (`system battery_protected_charge`), and the GrapheneOS key (`global
+  battery_charge_limit`) are all **live** on gated devices (see Capability Gates).
 
 ## Capability Gates
 
@@ -126,6 +126,23 @@ absent key, `1` and `4` decode as `Unknown(unrecognizedValue = true)` (no hardwa
 of absent is unverified), so sessions refuse and charge rules decline rather than overwrite them. There is no lab
 adapter: other Nothing devices get the null selection. Do not widen the pair list or the SDK without a qualified
 device; record results in the qualification ledger (`device-qualification` skill).
+
+### Lenovo
+
+Lenovo control (`lenovo-batteryprotection-v1`) requires **all** of: Lenovo manufacturer, a qualified (codename,
+model) pair (ships ("PB-6505M", "Lenovo PB-6505M"), the Tab V7; case-insensitive), `sdk == 28`, and the system user.
+No Lenovo ROM marker or version signal is known, so the pair and the SDK carry the whole gate; an Android update on
+the tablet stops it matching until requalified. **Writes require Shizuku**: `system battery_protected_charge` is in
+the `system` namespace, which `WRITE_SECURE_SETTINGS` cannot write. Android 9 has no wireless debugging, so without
+root Shizuku or Porter needs an adb host to restart after a reboot; a restore owed across the reboot cannot complete
+until access is back and recovery runs again. Whether an unprivileged read works on this build is unverified; if the
+direct read throws, the sync-read fallback consults Shizuku when it is ready, while a direct read returning null
+decodes as never set and does not fall back. The adapter sets `preferShizukuForWrites` and
+read-back-verifies. Write domain `{0,1}` (`0` = Unrestricted, `1` = FixedLimit(60), the lowest cap any adapter
+offers); an absent key or any other value decodes as `Unknown(unrecognizedValue = true)` (the factory meaning of
+absent is unverified), so sessions refuse and charge rules decline rather than overwrite it. There is no lab adapter:
+other Lenovo devices get the null selection. Do not widen the pair list or the SDK without a qualified device; record
+results in the qualification ledger (`device-qualification` skill).
 
 ### GrapheneOS
 

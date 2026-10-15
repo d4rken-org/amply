@@ -8,7 +8,7 @@ Amply is an **experimental Android controller for OEM battery charge-protection 
 temporarily allows a full charge, then restores the user's protective policy at 100%, on unplug, or at a safety
 timeout.
 
-Several control adapters exist — five OEM adapters plus two custom-ROM adapters (LineageOS, GrapheneOS). **Pixel charging optimization** is capability-gated to Pixel 6a and newer phones on
+Several control adapters exist — six OEM adapters plus two custom-ROM adapters (LineageOS, GrapheneOS). **Pixel charging optimization** is capability-gated to Pixel 6a and newer phones on
 Android 15+ when Google's charging-optimization controller is present. **Samsung battery protection** (global
 `protect_battery` keys) is gated to verified One UI generations — One UI 8 multi-mode, and the legacy One UI 4/5
 toggle — on the system user. **Xiaomi charging protection** (secure `security_pc_secure_protect_mode_key`)
@@ -21,7 +21,10 @@ allowlist** (mode `2` is not HyperOS-3-wide and cannot be probed at runtime).
 nt_battery_health`, `0`/`2`/`3` = Unrestricted/FixedLimit(70)/FixedLimit(80); absent, `1` and `4` are refused) is
 gated to the `com.nothing.feature` marker, a qualified (codename, model) pair (Phone (3a) Pro `Asteroids`/`A059P`)
 and `sdk == 36` as the Nothing OS 4.x proxy (no app-readable Nothing OS version exists) on the system user —
-**writes require Shizuku** (system namespace). **LineageOS charging control** (the private
+**writes require Shizuku** (system namespace). **Lenovo battery protection** (`system battery_protected_charge`,
+`0`/`1` = Unrestricted/FixedLimit(60); absent and other values are refused) is gated to a qualified (codename, model)
+pair (Tab V7 `PB-6505M`/`Lenovo PB-6505M`) and `sdk == 28` on the system user, with no ROM marker — **writes
+require Shizuku** (system namespace). **LineageOS charging control** (the private
 `lineagesettings` provider, keys `charging_control_enabled`/`_mode`/`_charging_limit`) is manufacturer-agnostic —
 it matches every LineageOS build that ships the provider (plus the system user), but control is gated on
 **enforcement evidence for that build** (HAL enforcement is per-build, and a read-back proves only that the ROM
@@ -38,7 +41,7 @@ packages including WSS holders, with only the shell UID exempt. The ROM **latche
 (`policyLatchesAtPlug`), so external writes take effect at the next unplug→replug — handled by a
 pending-until-replug verification state and a 30s session grace window; the reconnect gesture is unsupported
 there. Other Pixels, Samsung on unverified One UI versions (6/7, 9+), unqualified Xiaomi devices,
-non-ColorOS-15 Oplus devices, unqualified Nothing devices, and LineageOS builds without the settings provider remain diagnostics-only. See the
+non-ColorOS-15 Oplus devices, unqualified Nothing and Lenovo devices, and LineageOS builds without the settings provider remain diagnostics-only. See the
 qualification
 ledger (`.claude/skills/device-qualification/`) for the verified devices and mappings.
 
