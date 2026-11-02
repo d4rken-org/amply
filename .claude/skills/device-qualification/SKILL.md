@@ -366,6 +366,13 @@ only after adding a row here. Detailed run narratives live in each adapter's lan
       `QUALIFIED_HYPEROS_VERSION` from `2`, whose sole protective mode is Adaptive — blocked on the
       project-wide open item above (adaptive enforcement unobserved on both HyperOS generations), not on
       anything specific to this device.
+      **Third data point, global build (issue #148, 2026-10-15):** a Poco F5 `23049PCD8G` (`marble` global,
+      Android 15 / SDK 35, HyperOS 3.0.4, ROM `OS3.0.4.0.VMRMIXM`, Amply 0.6.1-beta0) captured the same two
+      modes on the same key (Intelligent charging = key absent, Charge fully = `0`) and no value `2`; the only
+      other changed row, `system/wifi_channel_utilization`, is unrelated noise. A HyperOS 3 build newer than
+      `tanzanite`'s 3.0.3 still lacks mode `2`, so a minor-version threshold no longer explains `tanzanite`;
+      model vs Android 16 stays confounded. Wizard capture only, no native-UI screenshot for this build.
+      Support status unchanged: diagnostics-only, for the same reason as `marblein`.
     - **LANDED 2026-08-14: `xiaomi-hyperos3-v1`, gated to a qualified-codename allowlist (`tanzanite` only) —
       GrapheneOS-precedent landing** (remote enforcement qualification via issue #48, see the Verified devices
       row). **First on-device verification run (2026-08-14, issue #48; contributor-run, presumably on
