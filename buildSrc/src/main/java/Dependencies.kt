@@ -69,6 +69,9 @@ fun DependencyHandlerScope.addCompose() {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
+    // Compose BOM 2026.06.00 (and 2026.09.00) resolves graphics-path 1.0.1, whose GNU_RELRO fails the
+    // 16 KB page-size check; 1.1.0 passes.
+    implementation("androidx.graphics:graphics-path:1.1.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
@@ -84,7 +87,7 @@ fun DependencyHandlerScope.addNavigation3() {
 }
 
 fun DependencyHandlerScope.addDataStore() {
-    implementation("androidx.datastore:datastore-preferences:1.2.0")
+    implementation("androidx.datastore:datastore-preferences:1.2.1")
 }
 
 fun DependencyHandlerScope.addRoom() {
